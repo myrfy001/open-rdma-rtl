@@ -1,0 +1,1 @@
+typedef 2 BRAM_LATENCY_TWO_CYCLE;

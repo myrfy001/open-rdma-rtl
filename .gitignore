@@ -1,0 +1,13 @@
+build
+output
+backend/verilog
+backend/achronix/ace/*
+!backend/achronix/ace/*.acxprj
+backend/achronix/syn/*
+!backend/achronix/syn/*.prj
+generate
+*.log
+*.hex
+*.bin
+*.o
+__pycache__
