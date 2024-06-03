@@ -5,6 +5,8 @@ backend/achronix/ace/*
 !backend/achronix/ace/*.acxprj
 backend/achronix/syn/*
 !backend/achronix/syn/*.prj
+stdout.log*
+synlog.tcl
 generate
 *.log
 *.hex

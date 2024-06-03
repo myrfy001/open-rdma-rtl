@@ -10,14 +10,11 @@ RUNTOPHASE ?= all # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
 # PARTNAME = xcvu23p-vsva1365-2L-e
 
-# TARGETFILE ?= ../src/SendQ.bsv
-# TOPMODULE ?= mkSQ
-# TARGETFILE ?= ../src/QueuePair.bsv
-# TOPMODULE ?= mkQP
-# TARGETFILE ?= ../test/TestTop.bsv
-# TOPMODULE ?= mkTestInjectStreamToCmacControllerWrapper
-TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
-TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
+
+# TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
+# TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
+TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
+TOPMODULE ?= mkTestSdpBramWrapperTimingTest
 
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000
