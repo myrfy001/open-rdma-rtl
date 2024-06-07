@@ -1,4 +1,4 @@
-import PsnMerge :: *;
+import ButterflyMerge :: *;
 
 (* doc = "testcase" *)
 module mkTestFourChannelButterflyMergeCreateInstance(Empty);

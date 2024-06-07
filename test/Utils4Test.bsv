@@ -6,6 +6,7 @@ import GetPut :: *;
 import Randomizable :: *;
 import Vector :: *;
 import PAClib :: *;
+import LFSR::*;
 
 import RdmaHeaders :: *;
 import PrimUtils :: *;
@@ -139,4 +140,22 @@ module mkRandomLenPipeOut#(
         minLength, maxLength
     );
     return resultVec[0];
+endmodule
+
+module mkSynthesizableRng32#(Bit#(32) seed)(Get#(Bit#(32)));
+    LFSR#(Bit#(32)) lfsr <- mkLFSR_32;
+    FIFOF#(Bit#(32)) fi <- mkFIFOF;
+    Reg#(Bool) starting <- mkReg(True) ;
+
+    rule start (starting);
+        starting <= False;
+        lfsr.seed(seed);
+    endrule
+    
+    rule run (!starting);
+        fi.enq(lfsr.value);
+        lfsr.next;
+    endrule: run
+
+    return toGet(fi);
 endmodule

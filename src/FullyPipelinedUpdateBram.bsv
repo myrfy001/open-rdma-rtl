@@ -1,10 +1,11 @@
 import FIFOF :: *;
-import BRAM :: *;
 import Vector :: *;
 import GetPut :: *;
 import Connectable :: *;
+import ClientServer :: *;
 
 import PrimUtils :: *;
+import SdpBramWrapper :: *;
 import PrioritySearchBuffer :: *;
 
 typedef struct {
@@ -26,10 +27,9 @@ endinterface
 
 typedef 4 FullyPipelinedUpdateBram2InternalCacheDepth;
 module mkFullyPipelinedUpdateBram2#(
-        BRAM_Configure cfg, 
         function tData updateLogic(tData oldValue, tData newValue)
     )(
-        FullyPipelinedUpdateBram2 #(tAddr, tBankAddr, tData)
+        FullyPipelinedUpdateBram2#(tAddr, tBankAddr, tData)
     ) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tBankAddr, szBankAddr),
@@ -38,10 +38,13 @@ module mkFullyPipelinedUpdateBram2#(
         FShow#(tAddr),
         FShow#(tData),
         FShow#(Tuple2#(tAddr, tData)),
-        PrimIndex#(tBankAddr, a__)
+        PrimIndex#(tBankAddr, a__),
+        Add#(b__, szAddr, ACX_BRAM72K_SDP_ADDR_WIDTH),
+        Add#(c__, szData, BITS_COUNT_72K)
+
     );
 
-    Vector#(TExp#(szBankAddr), BRAM2Port#(tAddr, tData)) bramInstVec <- replicateM(mkBRAM2Server(cfg));
+    Vector#(TExp#(szBankAddr), SdpBram#(tData)) bramInstVec <- replicateM(mkSdpBram);
     PrioritySearchBuffer#(FullyPipelinedUpdateBram2InternalCacheDepth, tAddr, tData) searchCache <- mkPrioritySearchBuffer(valueOf(FullyPipelinedUpdateBram2InternalCacheDepth));
 
     FIFOF#(Tuple5#(Bool, Bool, tAddr, tBankAddr, tData)) inflightBramReadReqQ1              <- mkFIFOF;
@@ -73,12 +76,7 @@ module mkFullyPipelinedUpdateBram2#(
             let req = queryReqQ.first;
             queryReqQ.deq;
             let generateResp = True; // infact, don't care for query request, only as a place holder
-            bramInstVec[req.bankAddress].portA.request.put(BRAMRequest{
-                write: False,
-                responseOnWrite: False,
-                address: req.address,
-                datain: ?
-            });
+            bramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
             inflightBramReadReqQ1.enq(tuple5(isWrite, generateResp, req.address, req.bankAddress, ?));
         end 
         else if (updateReqQ.notEmpty) begin
@@ -86,12 +84,7 @@ module mkFullyPipelinedUpdateBram2#(
             let req = updateReqQ.first;
             updateReqQ.deq;
             let generateResp = req.generateResp;
-            bramInstVec[req.bankAddress].portA.request.put(BRAMRequest{
-                write: False,
-                responseOnWrite: False,
-                address: req.address,
-                datain: ?
-            });
+            bramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
             inflightBramReadReqQ1.enq(tuple5(isWrite, generateResp, req.address, req.bankAddress, req.datain));
         end
     endrule
@@ -99,7 +92,7 @@ module mkFullyPipelinedUpdateBram2#(
     rule handleBramReadResp;
         let {isWrite, generateResp, address, bankAddress, data} = inflightBramReadReqQ2.first;
         inflightBramReadReqQ2.deq;
-        let resp <- bramInstVec[bankAddress].portA.response.get;
+        let resp <- bramInstVec[bankAddress].readSrv.response.get;
 
         if (isWrite) begin
             waitingUpdateDataQ.enq(tuple5(generateResp, address, bankAddress, resp, data));
@@ -123,12 +116,7 @@ module mkFullyPipelinedUpdateBram2#(
     rule handleBramWriteBack;
         let {generateResp, address, bankAddress, updatedData} = bramWriteBackQ.first;
         bramWriteBackQ.deq;
-        bramInstVec[bankAddress].portB.request.put(BRAMRequest{
-            write: True,
-            responseOnWrite: False,
-            address: address,
-            datain: updatedData
-        });
+        bramInstVec[bankAddress].write.put(tuple2(zeroExtend(pack(address)), updatedData));
         if (generateResp) begin
             updateRespQ.enq(updatedData);
         end

@@ -1,7 +1,8 @@
-import BRAM :: *;
 import PrimUtils :: *;
 import Vector :: *;
 import PAClib :: *;
+import ClientServer :: *;
+import GetPut :: *;
 
 import Utils4Test :: *;
 import BluerdmaConsts :: *;
@@ -22,13 +23,10 @@ endfunction
 
 (* doc = "testcase" *)
 module mkTestFullyPipelinedUpdateBram(Empty);
-    BRAM_Configure cfg = defaultValue;
-    cfg.latency = valueOf(BRAM_LATENCY_TWO_CYCLE);
-
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(cfg, mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
 
     // The following instance has a bankAddr type of `Bit#(0)`, which is of zero size, make sure it works.
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(cfg, mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
 
     let cycleCounter <- mkSimulationCycleLimitCounter(10000);
 
@@ -85,13 +83,11 @@ endinterface
 
 (*synthesize*)
 module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest);
-    BRAM_Configure cfg = defaultValue;
-    cfg.latency = valueOf(BRAM_LATENCY_TWO_CYCLE);
 
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(cfg, mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
 
     // The following instance has a bankAddr type of `Bit#(0)`, which is of zero size, make sure it works.
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(cfg, mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
 
     Reg#(Bit#(9)) addrReg1 <- mkReg(0);
 
