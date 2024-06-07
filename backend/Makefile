@@ -11,10 +11,10 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # PARTNAME = xcvu23p-vsva1365-2L-e
 
 
-# TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
-# TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
-TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
-TOPMODULE ?= mkTestSdpBramWrapperTimingTest
+TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
+TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
+# TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
+# TOPMODULE ?= mkTestSdpBramWrapperConflictReadWriteTest
 
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000
@@ -41,7 +41,7 @@ export DIR_BSV_GENERATED_STUB = $(BACKENDDIR)/verilog/stub
 
 compile:
 	mkdir -p $(BUILDDIR)
-	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
+	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
 
 verilog: compile 
 	mkdir -p $(DIR_BSV_GENERATED)

@@ -14,7 +14,11 @@ TEST_DIR=test
 cd $TEST_DIR
 truncate -s 0 $TEST_LOG
 
-FILES=`ls TestFullyPipelinedUpdateBram.bsv`
+# FILES=`ls TestSdpBramWrapper.bsv`
+# FILES=`ls TestFullyPipelinedUpdateBram.bsv`
+FILES=`ls TestButterflyMerge.bsv`
+
+
 
 for FILE in $FILES; do
     # echo $FILE

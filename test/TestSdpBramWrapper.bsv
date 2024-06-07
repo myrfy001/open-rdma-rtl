@@ -72,7 +72,7 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
     Reg#(Bit#(144)) lastErrorReg <- mkReg(0);
 
     Reg#(Bool) errorOccuredReg <- mkReg(False); 
-    Reg#(Bit#(20)) exitCounterReg <- mkReg(0);
+    Reg#(Bit#(10)) exitCounterReg <- mkReg(0);
 
     Reg#(Bit#(144)) constZeroReg <- mkReg(0);
     Reg#(Bit#(144)) constOneReg <- mkReg(-1);
@@ -99,7 +99,7 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
         
         bram.write.put(tuple2(wa, writeOne ? constOneReg : constZeroReg));
         bram.readSrv.request.put(ra);
-        $display("read req @ %0t", $time);
+        // $display("read req @ %0t", $time);
 
         Bool expectedOne = ?;
         if (readAddr > writeAddr) begin
@@ -114,7 +114,7 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
     endrule
 
     rule testReadRespStep1 if (exitCounterReg != -1);
-        $display("read resp @ %0t", $time);
+        // $display("read resp @ %0t", $time);
         Bit#(144) resp <- bram.readSrv.response.get;
         let expectedOne = checkerExpectedResultQ.first;
         checkerExpectedResultQ.deq;

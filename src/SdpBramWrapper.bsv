@@ -11,6 +11,9 @@ typedef 14 ACX_BRAM72K_SDP_ADDR_WIDTH;
 typedef Bit#(ACX_BRAM72K_SDP_ADDR_WIDTH) AcxBram72kAddr;
 typedef TMul#(72,1024) BITS_COUNT_72K;
 
+typedef Bit#(144) Bram72kEntry144;
+typedef Bit#(128) Bram72kEntry128;
+
 interface BRAM72K_SDP#(type tData);
     method Action putReadReq(AcxBram72kAddr addr);
     method tData read;
@@ -174,39 +177,38 @@ module mkSdpBram(SdpBram#(tData)) provisos (
     BRAM72K_SDP#(tData) ram <- mkBRAM72K_SDP;
 
 
-    RWire#(AcxBram72kAddr) writeAddrWire <- mkRWire;
-    RWire#(tData) writeDataWire <- mkRWire;
-    RWire#(AcxBram72kAddr) readAddrWire  <- mkRWire;
+    FIFOF#(Tuple2#(AcxBram72kAddr, tData)) writeReqQ <- mkUGLFIFOF;
+    FIFOF#(AcxBram72kAddr) readAddrQ  <- mkUGLFIFOF;
 
-    Reg#(Maybe#(tData)) writeDelayStep1Reg <- mkReg(tagged Invalid);
-    // Reg#(Maybe#(tData)) writeDelayStep2Reg <- mkReg(tagged Invalid);
+    FIFOF#(tData) outQ <- mkUGSizedFIFOF(4);
+    FIFOF#(Bit#(0)) backPressureQ <- mkUGFIFOF;
+
+    (* no_implicit_conditions *)
+    rule checkConflict;
+        Maybe#(AcxBram72kAddr) writeReqMaybe = tagged Invalid;
+        Maybe#(AcxBram72kAddr) readReqMaybe = tagged Invalid;
+        let {addr, data} = ?;
+        if (writeReqQ.notEmpty) begin
+            writeReqQ.deq;
+            {addr, data} = writeReqQ.first;
+            writeReqMaybe = tagged Valid addr;
+        end
+
+        if (readAddrQ.notEmpty) begin
+            readAddrQ.deq;
+            readReqMaybe = tagged Valid readAddrQ.first;
+        end
     
-    Reg#(Bool) readDelayStep1Reg <- mkReg(False);
-    // Reg#(Bool) readDelayStep2Reg <- mkReg(False);
-
-    FIFOF#(tData) outQ <- mkSizedFIFOF(4);
-    FIFOF#(Bit#(0)) backPressureQ <- mkFIFOF;
-
-    rule putWriteToDelayPipeline;
         Bool isAddrConflict = (
-            isValid(writeAddrWire.wget) && 
-            isValid(readAddrWire.wget)  &&
-            fromMaybe(?, writeAddrWire.wget) == fromMaybe(?, readAddrWire.wget)
+            isValid(writeReqMaybe) && 
+            isValid(readReqMaybe)  &&
+            fromMaybe(?, writeReqMaybe) == fromMaybe(?, readReqMaybe)
         );
-        writeDelayStep1Reg <= isAddrConflict ? writeDataWire.wget : tagged Invalid;
-        // writeDelayStep2Reg <= writeDelayStep1Reg;
-    endrule
 
-    rule putReadToDelayPipeline;
-        readDelayStep1Reg <= isValid(readAddrWire.wget);
-        // readDelayStep2Reg <= readDelayStep1Reg;
-    endrule
+        Bool hasReadReqInThisBeat = readAddrQ.notEmpty;
 
-    rule readBramOutToOutQ;
-        let hasValidOutputThisCycle = readDelayStep1Reg;
-        if (hasValidOutputThisCycle) begin
-            if (writeDelayStep1Reg matches tagged Valid .data) begin
-                // Valid means read and write conflict, need use bypass data
+        if (hasReadReqInThisBeat) begin
+            if (isAddrConflict) begin
                 outQ.enq(data);
             end
             else begin
@@ -214,14 +216,16 @@ module mkSdpBram(SdpBram#(tData)) provisos (
             end
             backPressureQ.enq(0);
         end
+        
+
     endrule
 
     interface Put write;
         method Action put(Tuple2#(AcxBram72kAddr, tData) req);
             let {addr, data} = req;
+            immAssert(writeReqQ.notFull, "UG FIFO writeReqQ is Full when trying to enq", $format(""));
             ram.putWriteReq(addr, data);
-            writeAddrWire.wset(addr);
-            writeDataWire.wset(data);
+            writeReqQ.enq(tuple2(addr,data));
         endmethod
     endinterface
 
@@ -229,12 +233,13 @@ module mkSdpBram(SdpBram#(tData)) provisos (
         interface Put request;
             method Action put(AcxBram72kAddr addr) if (backPressureQ.notFull);
                 ram.putReadReq(addr);
-                readAddrWire.wset(addr);
+                immAssert(readAddrQ.notFull, "UG FIFO readAddrQ is Full when trying to enq", $format(""));
+                readAddrQ.enq(addr);
             endmethod
         endinterface
 
         interface Get response;
-            method ActionValue#(tData) get;
+            method ActionValue#(tData) get if (outQ.notEmpty);
                 outQ.deq;
                 backPressureQ.deq;
                 return outQ.first;
