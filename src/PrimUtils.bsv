@@ -330,3 +330,45 @@ module mkCountCF#(anytype resetVal)(CountCF#(anytype)) provisos(
     endmethod
     method anytype _read() = cntReg;
 endmodule
+
+module mkFixPriorityTwoInputArbiterPipeOut#(PipeOut#(tData) highPriChannel, PipeOut#(tData) lowPriChannel)(PipeOut#(tData)) provisos (Bits#(tData, szData));
+    FIFOF#(tData) outQ <- mkLFIFOF;
+
+    rule doArbit;
+        if (highPriChannel.notEmpty) begin
+            highPriChannel.deq;
+            outQ.enq(highPriChannel.first);
+        end
+        else if (lowPriChannel.notEmpty) begin
+            lowPriChannel.deq;
+            outQ.enq(lowPriChannel.first);
+        end
+    endrule
+
+    return toPipeOut(outQ);
+endmodule
+
+
+module mkFixPriorityTwoInputArbiterNoOutputBufferPipeOut#(PipeOut#(tData) highPriChannel, PipeOut#(tData) lowPriChannel)(PipeOut#(tData)) provisos (Bits#(tData, szData));
+
+    Bool _notEmpty = highPriChannel.notEmpty || lowPriChannel.notEmpty;
+    method notEmpty = _notEmpty;
+
+    method tData first if (_notEmpty);
+        if (highPriChannel.notEmpty) begin
+            return highPriChannel.first;
+        end
+        else begin
+            return lowPriChannel.first;
+        end
+    endmethod
+
+    method Action deq if (_notEmpty);
+        if (highPriChannel.notEmpty) begin
+            highPriChannel.deq;
+        end
+        else begin
+            lowPriChannel.deq;
+        end
+    endmethod
+endmodule

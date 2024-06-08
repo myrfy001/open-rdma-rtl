@@ -3,10 +3,12 @@ import ClientServer :: *;
 import GetPut :: *;
 import Connectable :: *;
 import FIFOF :: *;
+import PAClib :: *;
 
 import FullyPipelinedUpdateBram :: *;
 import BluerdmaConsts :: *;
 import SdpBramWrapper :: *;
+import PrimUtils :: *;
 
 typedef 4 FourChannel;
 
@@ -58,6 +60,26 @@ module mkFourChannelButterflyMerge#(
         Add#(d__, TAdd#(szTag, szData), szBramEntry)
     );
     
+    Vector#(FourChannel, Vector#(2, Integer)) firstStageTwistTable = newVector;
+    firstStageTwistTable[0][0] = 0;
+    firstStageTwistTable[0][1] = 1;
+    firstStageTwistTable[1][0] = 1;
+    firstStageTwistTable[1][1] = 0;
+    firstStageTwistTable[2][0] = 2;
+    firstStageTwistTable[2][1] = 3;
+    firstStageTwistTable[3][0] = 3;
+    firstStageTwistTable[3][1] = 2;
+
+    Vector#(FourChannel, Vector#(2, Integer)) secondStageTwistTable = newVector;
+    secondStageTwistTable[0][0] = 0;
+    secondStageTwistTable[0][1] = 2;
+    secondStageTwistTable[1][0] = 1;
+    secondStageTwistTable[1][1] = 3;
+    secondStageTwistTable[2][0] = 2;
+    secondStageTwistTable[2][1] = 0;
+    secondStageTwistTable[3][0] = 3;
+    secondStageTwistTable[3][1] = 1;
+
     function Tuple2#(tTag, tData) splitTagAndDataFromRawStorageContent(tBramEntry rawData);
         return unpack(truncate(pack(rawData)));
     endfunction
@@ -87,10 +109,91 @@ module mkFourChannelButterflyMerge#(
     Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) firstStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(bramUpdateFunctionAdapter(0)));
     Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) secondStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(bramUpdateFunctionAdapter(1)));
 
-    Vector#(FourChannel, FIFOF#(ButterflyMergeResp#(tRowAddr, tBankAddr, tData, tTag))) outputFifoVec <- replicateM(mkFIFOF);
-    Vector#(FourChannel, ButterflyMergeServer#(tRowAddr, tBankAddr, tData, tTag)) ifc;
 
-    function ButterflyMergeServer#(tRowAddr, tBankAddr, tData, tTag) genInputPort(Integer chIdx1, Integer chIdx2);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageSelfChannelInputQueueVec <- replicateM(mkLFIFOF);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageOtherChannelInputQueueVec <- replicateM(mkLFIFOF);
+
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageSelfChannelInputQueueVec <- replicateM(mkLFIFOF);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageOtherChannelInputQueueVec <- replicateM(mkLFIFOF);
+
+
+    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) firstStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(4));
+    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) secondStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(4));
+
+    Vector#(FourChannel, FIFOF#(ButterflyMergeResp#(tRowAddr, tBankAddr, tData, tTag))) outputFifoVec <- replicateM(mkFIFOF);
+    
+
+
+    // Connect stage one input buffer to BRAM.
+    for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
+        // give other channel higher priority
+        let firstStageInputArbiter <- mkFixPriorityTwoInputArbiterNoOutputBufferPipeOut(
+            toPipeOut(firstStageOtherChannelInputQueueVec[idx]),
+            toPipeOut(firstStageSelfChannelInputQueueVec[idx])
+        );
+        mkConnection(toGet(firstStageInputArbiter), firstStageBramVec[idx].updateSrv.request);
+    end
+
+    // Connect first stage output to second stage input buffer.
+    for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
+        let twistTableEntry = secondStageTwistTable[idx];
+        let selfChannelIdx = twistTableEntry[0];
+        let otherChannelIdx = twistTableEntry[1];
+        rule doFirstStageToSecondStageReq;
+            let firstStageUpdateResult <- firstStageBramVec[idx].updateSrv.response.get;
+            let {rowAddr, bankAddr} = firstStageUpdateInflightReqMetaQueueVec[idx].first;
+            firstStageUpdateInflightReqMetaQueueVec[idx].deq;
+
+
+            let bramReq1 = FullyPipelinedUpdateBramUpdateReq {
+                generateResp: True,
+                address: rowAddr,
+                bankAddress: bankAddr,
+                datain: firstStageUpdateResult
+            };
+
+            // req1 and req2 only different in generate resp or not.
+            let bramReq2 = bramReq1;
+            bramReq2.generateResp = False;
+
+            secondStageSelfChannelInputQueueVec[selfChannelIdx].enq(bramReq1);
+            secondStageOtherChannelInputQueueVec[otherChannelIdx].enq(bramReq2);
+
+            secondStageUpdateInflightReqMetaQueueVec[selfChannelIdx].enq(tuple2(rowAddr, bankAddr));
+        endrule
+    end
+
+
+    // Connect stage two input buffer to BRAM.
+    for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
+        // give other channel higher priority
+        let secondStageInputArbiter <- mkFixPriorityTwoInputArbiterNoOutputBufferPipeOut(
+            toPipeOut(secondStageOtherChannelInputQueueVec[idx]),
+            toPipeOut(secondStageSelfChannelInputQueueVec[idx])
+        );
+        mkConnection(toGet(secondStageInputArbiter), secondStageBramVec[idx].updateSrv.request);
+    end
+
+    // Connect second stage output to module final output
+    for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
+        rule moveSecondStageOutputToModuleFinalOutput;
+            let secondStageUpdateResult <- secondStageBramVec[idx].updateSrv.response.get;
+            let {tag, data} = splitTagAndDataFromRawStorageContent(secondStageUpdateResult);
+            let {rowAddr, bankAddr} = secondStageUpdateInflightReqMetaQueueVec[idx].first;
+            secondStageUpdateInflightReqMetaQueueVec[idx].deq;
+
+            outputFifoVec[idx].enq(ButterflyMergeResp{
+                rowAddr: rowAddr,
+                bankAddr: bankAddr,
+                data: data,
+                tag: tag
+            });
+        endrule
+    end
+
+    
+    function ButterflyMergeServer#(tRowAddr, tBankAddr, tData, tTag) genButterflyMergeServerIfc(Integer chIdx1, Integer chIdx2);
+
         return (interface Server;
             interface Put request;
                 method Action put(ButterflyMergeReq#(tRowAddr, tBankAddr, tData, tTag) req);
@@ -105,8 +208,10 @@ module mkFourChannelButterflyMerge#(
                     let bramReq2 = bramReq1;
                     bramReq2.generateResp = False;
 
-                    firstStageBramVec[chIdx1].updateSrv.request.put(bramReq1);
-                    firstStageBramVec[chIdx2].updateSrv.request.put(bramReq2);
+                    firstStageSelfChannelInputQueueVec[chIdx1].enq(bramReq1);
+                    firstStageOtherChannelInputQueueVec[chIdx2].enq(bramReq2);
+
+                    firstStageUpdateInflightReqMetaQueueVec[chIdx1].enq(tuple2(req.rowAddr, req.bankAddr));
                 endmethod
             endinterface
 
@@ -114,10 +219,11 @@ module mkFourChannelButterflyMerge#(
         endinterface);
     endfunction
 
-    ifc[0] = genInputPort(0, 1);
-    ifc[1] = genInputPort(1, 0);
-    ifc[2] = genInputPort(2, 3);
-    ifc[3] = genInputPort(3, 2);
+    Vector#(FourChannel, ButterflyMergeServer#(tRowAddr, tBankAddr, tData, tTag)) ifc;
+    for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
+        let twistTableEntry = firstStageTwistTable[idx];
+        ifc[idx] = genButterflyMergeServerIfc(twistTableEntry[0], twistTableEntry[1]);
+    end
     
     interface mergeSrvs = ifc;
 endmodule
