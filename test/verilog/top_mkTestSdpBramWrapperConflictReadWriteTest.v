@@ -38,32 +38,40 @@ module top_mkTestSdpBramWrapperConflictReadWriteTest (
 
     /********** user circuit *****************************************************/
 
-    wire [143 : 0] lastError;
-    wire [7:0] zeroErrorCnt, oneErrorCnt;
+    wire [144 : 0] lastError;
+    wire [144 : 0] readResp;
+    wire [23:0] zeroErrorCnt, oneErrorCnt;
+    wire [13:0] wa, ra;
+    wire keepConstRuleFired;
     mkTestSdpBramWrapperConflictReadWriteTest dutInst(
         .CLK(clk),
         .RST_N(rstn),
         .lastError(lastError),
         .zeroErrorCnt(zeroErrorCnt),
-        .oneErrorCnt(oneErrorCnt)
+        .oneErrorCnt(oneErrorCnt),
+        .readResp(readResp),
+        .keepConstRuleFired(keepConstRuleFired),
+        .ra(ra),
+        .wa(wa)
     ) /* synthesis syn_preserve=1 */;
     
     
     /********** snapshot *********************************************************/
-    localparam integer MONITOR_WIDTH = 144 + 8 + 8 + (144 + 144 + 14 + 14 + 1 + 1);
+    localparam integer MONITOR_WIDTH = 145 + 24 + 24 + (145) + 1 + 14 + 14;
     localparam integer MONITOR_DEPTH = 2000; // will be rounded up
     localparam TRIGGER_WIDTH = MONITOR_WIDTH < 40? MONITOR_WIDTH : 40;
     wire [MONITOR_WIDTH-1 : 0] monitor;
 
 
     // ACX_PROBE_POINT #(
-    //     .width(159),
+    //     .width(179),
     //     .tag("bram1")
     // ) probe_counter_a1 (
     //     .din({
     //         bram_ram_inner$rdaddr,
     //         bram_ram_inner$rden,
-    //         bram_ram_inner$dout
+    //         bram_ram_inner$dout,
+    //         exitCounterReg
     //     })
     // );
 
@@ -78,41 +86,48 @@ module top_mkTestSdpBramWrapperConflictReadWriteTest (
     //     })
     // );
 
-    (*must_keep=1*) wire [143 : 0] bram_ram_inner$din, bram_ram_inner$dout;  
-    wire [13 : 0] bram_ram_inner$rdaddr, bram_ram_inner$wraddr; 
-    wire bram_ram_inner$rden, bram_ram_inner$wren; 
+    // (*must_keep=1*) wire [143 : 0] bram_ram_inner$din, bram_ram_inner$dout;
+    // (*must_keep=1*) wire [19:0] exitCounterReg;
+    // wire [13 : 0] bram_ram_inner$rdaddr, bram_ram_inner$wraddr; 
+    // wire bram_ram_inner$rden, bram_ram_inner$wren; 
 
-    ACX_PROBE_CONNECT #(
-        .width(159),
-        .tag("bram1")
-    ) probe_counter_a1 (
-        .dout({
-            bram_ram_inner$rdaddr,
-            bram_ram_inner$rden,
-            bram_ram_inner$dout
-        })
-    );
-    ACX_PROBE_CONNECT #(
-        .width(159),
-        .tag("bram2")
-    ) probe_counter_a2 (
-        .dout({
-            bram_ram_inner$din,
-            bram_ram_inner$wraddr,
-            bram_ram_inner$wren
-        })
-    );
+    // ACX_PROBE_CONNECT #(
+    //     .width(179),
+    //     .tag("bram1")
+    // ) probe_counter_a1 (
+    //     .dout({
+    //         bram_ram_inner$rdaddr,
+    //         bram_ram_inner$rden,
+    //         bram_ram_inner$dout,
+    //         exitCounterReg
+    //     })
+    // );
+    // ACX_PROBE_CONNECT #(
+    //     .width(159),
+    //     .tag("bram2")
+    // ) probe_counter_a2 (
+    //     .dout({
+    //         bram_ram_inner$din,
+    //         bram_ram_inner$wraddr,
+    //         bram_ram_inner$wren
+    //     })
+    // );
 
     assign monitor = {
         lastError,
         zeroErrorCnt,
         oneErrorCnt,
-        bram_ram_inner$rdaddr,
-        bram_ram_inner$rden,
-        bram_ram_inner$dout,
-        bram_ram_inner$din,
-        bram_ram_inner$wraddr,
-        bram_ram_inner$wren
+        readResp,
+        keepConstRuleFired,
+        ra,
+        wa
+        // bram_ram_inner$rdaddr,
+        // bram_ram_inner$rden,
+        // bram_ram_inner$dout,
+        // exitCounterReg,
+        // bram_ram_inner$din,
+        // bram_ram_inner$wraddr,
+        // bram_ram_inner$wren
     };
     localparam STIMULI_WIDTH = 0;
     ACX_SNAPSHOT #(
@@ -121,7 +136,7 @@ module top_mkTestSdpBramWrapperConflictReadWriteTest (
     .MONITOR_DEPTH(MONITOR_DEPTH), // 1..16384
 
     .TRIGGER_WIDTH(TRIGGER_WIDTH), // 1..40
-    .STANDARD_TRIGGERS(1), // use i_monitor[39:0] as trigger input
+    .STANDARD_TRIGGERS(0), // use i_monitor[39:0] as trigger input
     .STIMULI_WIDTH(STIMULI_WIDTH), // 0..512
     .INPUT_PIPELINING(3), // for i_monitor and i_trigger
     .OUTPUT_PIPELINING(0), // for o_stimuli(_valid) and o_arm
@@ -131,7 +146,7 @@ module top_mkTestSdpBramWrapperConflictReadWriteTest (
     .o_jtag_out(o_jtag_out),
     .i_user_clk(clk),
     .i_monitor(monitor),
-    .i_trigger(), // not used if STANDARD_TRIGGERS = 1
+    .i_trigger({zeroErrorCnt, oneErrorCnt}), // not used if STANDARD_TRIGGERS = 1
     .o_stimuli(),
     .o_stimuli_valid(),
     .o_arm(),

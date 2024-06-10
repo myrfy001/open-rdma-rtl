@@ -18,19 +18,19 @@ typedef struct {
     tBankAddr bankAddr;
     tData data;
     tTag tag;
-} ButterflyMergeReq#(type tRowAddr, type tBankAddr, type tData, type tTag) deriving(Bits);
+} ButterflyMergeReq#(type tRowAddr, type tBankAddr, type tData, type tTag) deriving(Bits, FShow);
 
 typedef struct {
     tRowAddr rowAddr;
     tBankAddr bankAddr;
     tData data;
     tTag tag;
-} ButterflyMergeResp#(type tRowAddr, type tBankAddr, type tData, type tTag) deriving(Bits);
+} ButterflyMergeResp#(type tRowAddr, type tBankAddr, type tData, type tTag) deriving(Bits, FShow);
 
 typedef struct {
     tData data;
     tTag tag;
-} ButterflyMergeRowContent#(type tData, type tTag) deriving(Bits);
+} ButterflyMergeRowContent#(type tData, type tTag) deriving(Bits, FShow);
 
 typedef Server#(
     ButterflyMergeReq#(tRowAddr, tBankAddr, tData, tTag), 
@@ -106,15 +106,15 @@ module mkFourChannelButterflyMerge#(
 
 
 
-    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) firstStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(bramUpdateFunctionAdapter(0)));
-    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) secondStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(bramUpdateFunctionAdapter(1)));
+    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) firstStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(False, bramUpdateFunctionAdapter(0)));
+    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) secondStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(False, bramUpdateFunctionAdapter(1)));
 
 
-    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageSelfChannelInputQueueVec <- replicateM(mkLFIFOF);
-    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageOtherChannelInputQueueVec <- replicateM(mkLFIFOF);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageSelfChannelInputQueueVec <- replicateM(mkFIFOF);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageOtherChannelInputQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageSelfChannelInputQueueVec <- replicateM(mkLFIFOF);
-    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageOtherChannelInputQueueVec <- replicateM(mkLFIFOF);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageSelfChannelInputQueueVec <- replicateM(mkFIFOF);
+    Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageOtherChannelInputQueueVec <- replicateM(mkFIFOF);
 
 
     Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) firstStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(4));
@@ -122,6 +122,17 @@ module mkFourChannelButterflyMerge#(
 
     Vector#(FourChannel, FIFOF#(ButterflyMergeResp#(tRowAddr, tBankAddr, tData, tTag))) outputFifoVec <- replicateM(mkFIFOF);
     
+    rule debugRule;
+        for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
+            if (!firstStageSelfChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: firstStageSelfChannelInputQueueVec[%0d]", idx);
+            if (!firstStageOtherChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: firstStageOtherChannelInputQueueVec[%0d]", idx);
+            if (!secondStageSelfChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageSelfChannelInputQueueVec[%0d]", idx);
+            if (!secondStageOtherChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageOtherChannelInputQueueVec[%0d]", idx);
+            if (!firstStageUpdateInflightReqMetaQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: firstStageUpdateInflightReqMetaQueueVec[%0d]", idx);
+            if (!secondStageUpdateInflightReqMetaQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageUpdateInflightReqMetaQueueVec[%0d]", idx);
+            if (!outputFifoVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: outputFifoVec[%d]", idx);
+        end
+    endrule
 
 
     // Connect stage one input buffer to BRAM.
@@ -160,6 +171,12 @@ module mkFourChannelButterflyMerge#(
             secondStageOtherChannelInputQueueVec[otherChannelIdx].enq(bramReq2);
 
             secondStageUpdateInflightReqMetaQueueVec[selfChannelIdx].enq(tuple2(rowAddr, bankAddr));
+
+            $display(
+                "time=%0t, ", $time,
+                "doFirstStageToSecondStageReq[%0d], ", idx,
+                "firstStageUpdateResult=", fshow(firstStageUpdateResult)
+            );
         endrule
     end
 

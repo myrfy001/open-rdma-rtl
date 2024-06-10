@@ -40,13 +40,25 @@ endinterface
 
 interface TestSdpBramWrapperConflictReadWriteTest;
     (* always_ready *)
-    method Bit#(144) lastError;
+    method Bit#(145) lastError;
 
     (* always_ready *)
-    method Bit#(8) zeroErrorCnt;
+    method Bit#(145) readResp;
 
     (* always_ready *)
-    method Bit#(8) oneErrorCnt;
+    method Bit#(24) zeroErrorCnt;
+
+    (* always_ready *)
+    method Bit#(24) oneErrorCnt;
+
+    (* always_ready *)
+    method Bool keepConstRuleFired;
+
+    (* always_ready *)
+    method AcxBram72kAddr ra;
+
+    (* always_ready *)
+    method AcxBram72kAddr wa;
 
 endinterface
 
@@ -65,26 +77,38 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
     Reg#(Bit#(10)) addrWriteReg <- mkReg(0);
     let addrReadRng <- mkSynthesizableRng32(11);
 
-    FIFOF#(Bool) checkerExpectedResultQ <- mkSizedFIFOF(8);
-    Reg#(Bit#(8)) readZeroErrorCntReg <- mkReg(0);
-    Reg#(Bit#(8)) readOneErrorCntReg <- mkReg(0);
+    FIFOF#(Tuple3#(Bool, AcxBram72kAddr, AcxBram72kAddr)) checkerExpectedResultQ <- mkSizedFIFOF(8);
+    Reg#(Bit#(24)) readZeroErrorCntReg <- mkReg(0);
+    Reg#(Bit#(24)) readOneErrorCntReg <- mkReg(0);
 
-    Reg#(Bit#(144)) lastErrorReg <- mkReg(0);
+    Reg#(Bit#(145)) lastErrorReg <- mkReg(0);
 
     Reg#(Bool) errorOccuredReg <- mkReg(False); 
-    Reg#(Bit#(10)) exitCounterReg <- mkReg(0);
 
-    Reg#(Bit#(144)) constZeroReg <- mkReg(0);
-    Reg#(Bit#(144)) constOneReg <- mkReg(-1);
+    Reg#(Bit#(64)) exitCounterReg <- mkReg(0);
     
-    FIFOF#(Tuple4#(Bool, Bool, Bool, Bit#(144))) resultCheckQ1 <- mkFIFOF;
-    FIFOF#(Tuple4#(Bool, Bool, Bool, Bit#(144))) resultCheckQ2 <- mkFIFOF;
-    FIFOF#(Tuple4#(Bool, Bool, Bool, Bit#(144))) resultCheckQ3 <- mkFIFOF;
+    let exitThreshold = genVerilog ? -1 : 2048; 
+
+    Reg#(Bit#(144)) constZeroReg <- mkReg('haaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);
+    Reg#(Bit#(144)) constOneReg <- mkReg('h555555555555555555555555555555555555);
+
+    Reg#(Bit#(145)) readRespReg <- mkReg(0);
+    
+    FIFOF#(Tuple6#(Bool, Bool, Bool, Bit#(144), AcxBram72kAddr, AcxBram72kAddr)) resultCheckQ1 <- mkFIFOF;
+    FIFOF#(Tuple6#(Bool, Bool, Bool, Bit#(144), AcxBram72kAddr, AcxBram72kAddr)) resultCheckQ2 <- mkFIFOF;
+    FIFOF#(Tuple6#(Bool, Bool, Bool, Bit#(144), AcxBram72kAddr, AcxBram72kAddr)) resultCheckQ3 <- mkFIFOF;
+    Reg#(Bool) keepConstRuleFiredReg <- mkReg(False);
+
+    Reg#(AcxBram72kAddr) raReg <- mkRegU;
+    Reg#(AcxBram72kAddr) waReg <- mkRegU;
+
 
     // use a non constant Reg to trick the backend tool to not optmise those 144 signals into 2 signal.
-    rule keepCosnstReg if (exitCounterReg == -1);
-        constZeroReg <= ~constZeroReg;
-        constOneReg <= ~constOneReg;
+    rule keepCosnstReg if (msb(exitCounterReg) == 1);
+        constZeroReg <= constZeroReg << 1;
+        constOneReg <= constOneReg << 1;
+        keepConstRuleFiredReg <= True;
+        exitCounterReg <= exitCounterReg + 1;
     endrule
     
     rule testWriteAndReadReq;
@@ -110,70 +134,72 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
             // the content in the BRAM should be the updated value
             expectedOne = writeOne;
         end
-        checkerExpectedResultQ.enq(expectedOne);
+        checkerExpectedResultQ.enq(tuple3(expectedOne, wa, ra));
     endrule
 
-    rule testReadRespStep1 if (exitCounterReg != -1);
+    rule testReadRespStep1 if (msb(exitCounterReg) != 1);
         // $display("read resp @ %0t", $time);
         Bit#(144) resp <- bram.readSrv.response.get;
-        let expectedOne = checkerExpectedResultQ.first;
+        let {expectedOne, wa, ra} = checkerExpectedResultQ.first;
         checkerExpectedResultQ.deq;
+
+        readRespReg <= {pack(expectedOne), resp};
+
         
-        let expectOneNotMartch = resp[47:0] != constOneReg[47:0];
-        let expectZeroNotMartch = resp[47:0] != constZeroReg[47:0];
-        resultCheckQ1.enq(tuple4(expectedOne, expectOneNotMartch, expectZeroNotMartch, resp));
+        let expectOneNotMatch = resp[47:0] != constOneReg[47:0];
+        let expectZeroNotMatch = resp[47:0] != constZeroReg[47:0];
+        resultCheckQ1.enq(tuple6(expectedOne, expectOneNotMatch, expectZeroNotMatch, resp, wa, ra));
     endrule
 
-    rule testReadRespStep2 if (exitCounterReg != -1);
-        let {expectedOne, expectOneNotMartch, expectZeroNotMartch, resp} = resultCheckQ1.first;
+    rule testReadRespStep2 if (msb(exitCounterReg) != 1);
+        let {expectedOne, expectOneNotMatch, expectZeroNotMatch, resp, wa, ra} = resultCheckQ1.first;
         resultCheckQ1.deq;
         
-        expectOneNotMartch = (resp[95:48] != constOneReg[95:48]) || expectOneNotMartch;
-        expectZeroNotMartch = (resp[95:48] != constZeroReg[95:48]) || expectZeroNotMartch;
-        resultCheckQ2.enq(tuple4(expectedOne, expectOneNotMartch, expectZeroNotMartch, resp));
+        expectOneNotMatch = (resp[95:48] != constOneReg[95:48]) || expectOneNotMatch;
+        expectZeroNotMatch = (resp[95:48] != constZeroReg[95:48]) || expectZeroNotMatch;
+        resultCheckQ2.enq(tuple6(expectedOne, expectOneNotMatch, expectZeroNotMatch, resp, wa, ra));
     endrule
 
-    rule testReadRespStep3 if (exitCounterReg != -1);
-        let {expectedOne, expectOneNotMartch, expectZeroNotMartch, resp} = resultCheckQ2.first;
+    rule testReadRespStep3 if (msb(exitCounterReg) != 1);
+        let {expectedOne, expectOneNotMatch, expectZeroNotMatch, resp, wa, ra} = resultCheckQ2.first;
         resultCheckQ2.deq;
         
-        expectOneNotMartch = (resp[143:96] != constOneReg[143:96]) || expectOneNotMartch;
-        expectZeroNotMartch = (resp[143:96] != constZeroReg[143:96]) || expectZeroNotMartch;
-        resultCheckQ3.enq(tuple4(expectedOne, expectOneNotMartch, expectZeroNotMartch, resp));
+        expectOneNotMatch = (resp[143:96] != constOneReg[143:96]) || expectOneNotMatch;
+        expectZeroNotMatch = (resp[143:96] != constZeroReg[143:96]) || expectZeroNotMatch;
+        resultCheckQ3.enq(tuple6(expectedOne, expectOneNotMatch, expectZeroNotMatch, resp, wa, ra));
     endrule
 
-    rule testReadRespStep4 if (exitCounterReg != -1);
+    rule testReadRespStep4 if (msb(exitCounterReg) != 1);
 
-        let {expectedOne, expectOneNotMartch, expectZeroNotMartch, resp} = resultCheckQ3.first;
+        let {expectedOne, expectOneNotMatch, expectZeroNotMatch, resp, wa, ra} = resultCheckQ3.first;
         resultCheckQ3.deq;
+
         // The content of the BRAM is random in first 512 beat.
         if (exitCounterReg >= 512) begin
-            if (expectedOne && expectOneNotMartch) begin
+            if (expectedOne && expectOneNotMatch) begin
                 readOneErrorCntReg <= readOneErrorCntReg + 1;
-                lastErrorReg <= resp;
+                lastErrorReg <= {pack(expectedOne), resp};
+                raReg <= ra;
+                waReg <= wa;
                 errorOccuredReg <= True;
                 $display("time=%t", $time, "Error, expect all ones");
             end 
-            else if (!expectedOne && expectZeroNotMartch) begin
+            else if (!expectedOne && expectZeroNotMatch) begin
                 readZeroErrorCntReg <= readZeroErrorCntReg + 1;
-                lastErrorReg <= resp;
+                lastErrorReg <= {pack(expectedOne), resp};
+                raReg <= ra;
+                waReg <= wa;
                 errorOccuredReg <= True;
                 $display("time=%t", $time, "Error, expect all zeros");
             end
         end
-        if (genVerilog && exitCounterReg == -2) begin
-            // in generate verilog mode, keep hardware always running, so skip stop condition.
-            exitCounterReg <= 0;
-        end
-        else begin
-            exitCounterReg <= exitCounterReg + 1;
-        end
-        
+
+        exitCounterReg <= exitCounterReg + 1;
     endrule
 
-    rule checkSimEnd;
-        if (genC) begin
-            if (exitCounterReg == -1) begin
+    if (genC) begin
+        rule checkSimEnd;    
+            if (exitCounterReg == fromInteger(exitThreshold)) begin
                 if (errorOccuredReg) begin
                     immFail("mkTestSdpBramWrapperConflictReadWriteTest", $format(""));
                 end
@@ -182,12 +208,20 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
                     $finish;
                 end
             end
-        end
-    endrule
+        endrule
+    end
 
     method lastError = lastErrorReg;
 
     method zeroErrorCnt = readZeroErrorCntReg;
 
     method oneErrorCnt = readOneErrorCntReg;
+
+    method readResp = readRespReg;
+
+    method keepConstRuleFired = keepConstRuleFiredReg;
+
+    method ra = raReg;
+
+    method wa = waReg;
 endmodule

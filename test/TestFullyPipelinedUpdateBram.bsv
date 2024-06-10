@@ -23,10 +23,10 @@ endfunction
 
 (* doc = "testcase" *)
 module mkTestFullyPipelinedUpdateBram(Empty);
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncBitOr);
 
     // The following instance has a bankAddr type of `Bit#(0)`, which is of zero size, make sure it works.
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncBitOr);
 
     let cycleCounter <- mkSimulationCycleLimitCounter(10000);
 
@@ -84,10 +84,10 @@ endinterface
 (*synthesize*)
 module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest);
 
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncBitOr);
 
     // The following instance has a bankAddr type of `Bit#(0)`, which is of zero size, make sure it works.
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncBitOr);
 
     Reg#(Bit#(9)) addrReg1 <- mkReg(0);
 
