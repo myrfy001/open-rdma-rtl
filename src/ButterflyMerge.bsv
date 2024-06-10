@@ -117,8 +117,8 @@ module mkFourChannelButterflyMerge#(
     Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageOtherChannelInputQueueVec <- replicateM(mkFIFOF);
 
 
-    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) firstStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(4));
-    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) secondStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(4));
+    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) firstStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(5));
+    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) secondStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(5));
 
     Vector#(FourChannel, FIFOF#(ButterflyMergeResp#(tRowAddr, tBankAddr, tData, tTag))) outputFifoVec <- replicateM(mkFIFOF);
     

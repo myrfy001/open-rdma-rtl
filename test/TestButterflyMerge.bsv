@@ -1,6 +1,7 @@
 import ClientServer :: *;
 import GetPut :: *;
 
+import PrimUtils :: *;
 import Utils4Test :: *;
 
 import ButterflyMerge :: *;
@@ -52,8 +53,10 @@ module mkTestFourChannelButterflyMergeSingleBeatTest(Empty);
     for (Integer idx = 0; idx < 4; idx = idx + 1) begin
         rule displayResp;
             let resp <- instWithFourBank.mergeSrvs[idx].response.get;
-            $display("$time=%0t, ", $time, fshow(resp));
+            Bit#(128) expectedData = 'hF;
+            immAssert(resp.data == expectedData, "Butterfly merge error, expected 'hF, got", fshow(resp));
         endrule
     end
 
 endmodule
+
