@@ -1,19 +1,19 @@
 #--  Synopsys, Inc.
 #--  Version U-2023.03X-2
 #--  Project file /root/work/backend/achronix/syn/mkTestFullyPipelinedBackendTimingTest.prj
-#--  Written on Fri May 31 13:28:03 2024
+#--  Written on Sun Jun  9 13:33:02 2024
 
 
 #project files
-add_file -verilog "../../verilog/BRAM2.v"
+add_file -verilog -vlog_std sysv "/tools/Achronix-linux/libraries/device_models/AC7t1500ES0_synplify.sv"
 add_file -verilog "../../verilog/FIFO2.v"
 add_file -verilog "../../verilog/mkTestFullyPipelinedBackendTimingTest.v"
 add_file -verilog "../../verilog/RegN.v"
-add_file -verilog "../../verilog/RevertReg.v"
 add_file -verilog "../../verilog/RWire.v"
-add_file -verilog "../../verilog/RWire0.v"
 add_file -verilog "../../verilog/SizedFIFO.v"
 add_file -constraint "../constraints/synplify_constraints.sdc"
+add_file -verilog "../../verilog/FIFO20.v"
+add_file -verilog "../../verilog/FIFOL1.v"
 
 
 #implementation: "rev_1"
@@ -23,6 +23,7 @@ impl -add rev_1 -type fpga
 #implementation attributes
 
 set_option -vlog_std v2005
+set_option -include_path {/tools/Achronix-linux/libraries/}
 
 #device options
 set_option -technology ACHRONIXSPEEDSTER7T
@@ -43,7 +44,7 @@ set_option -rtl_xmr_naming 0
 set_option -use_module_idb 1
 
 # mapper_without_write_options
-set_option -frequency auto
+set_option -frequency 500.000000
 set_option -srs_instrumentation 1
 
 # mapper_options

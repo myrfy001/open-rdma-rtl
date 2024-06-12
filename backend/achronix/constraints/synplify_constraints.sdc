@@ -10,9 +10,12 @@
 # Primary clock timing constraints
 # -------------------------------------------------------------------------
 # Set main clocks to 507MHz.
-
 create_clock -name rdma_clk  [get_ports CLK]  -period 1.971
 
+# JTAG CLK_IPIN pass-through:
+# When using ACX_SNAPSHOT
+create_clock [get_pins x_snapshot.x_jtap_interface.x_acx_jtap.clk_ipin_tck/dout] -period 40 -name tck_core
+set_clock_groups -asynchronous -group {tck_core}
 
 # -------------------------------------------------------------------------
 # Example of defining a generated clock
@@ -38,4 +41,3 @@ create_clock -name rdma_clk  [get_ports CLK]  -period 1.971
 #                                 -group {chk_clk}  \
 #                                 -group {cc_clk}   \
 #                                 -group {reg_clk}
-

@@ -1,27 +1,30 @@
 #--  Synopsys, Inc.
 #--  Version U-2023.03X-2
-#--  Project file /root/work/backend/achronix/syn/mkTestSdpBramWrapperTimingTest.prj
-#--  Written on Tue Jun  4 12:08:29 2024
+#--  Project file /root/work/backend/achronix/syn/TestSdpBramWrapperFunctionBehaviourTest.prj
+#--  Written on Fri Jun  7 08:58:45 2024
 
 
 #project files
-add_file -constraint "../constraints/synplify_constraints.sdc"
-add_file -verilog "../../verilog/RegFile.v"
-add_file -verilog "../../verilog/FIFOL1.v"
-add_file -verilog "../../verilog/mkTestSdpBramWrapperTimingTest.v"
 add_file -verilog -vlog_std sysv "/tools/Achronix-linux/libraries/device_models/AC7t1500ES0_synplify.sv"
+add_file -constraint "../constraints/synplify_constraints.sdc"
 add_file -verilog "../../verilog/FIFO2.v"
-add_file -verilog "../../verilog/SizedFIFO.v"
 add_file -verilog "../../verilog/FIFO20.v"
+add_file -verilog "../../verilog/RegN.v"
+add_file -verilog "../../verilog/RWire.v"
+add_file -verilog "../../verilog/SizedFIFO.v"
+add_file -verilog -vlog_std sysv "../../../src/verilog/reset_processor_v2.sv"
+add_file -verilog "../../verilog/mkTestSdpBramWrapperConflictReadWriteTest.v"
+add_file -verilog "../../../test/verilog/top_mkTestSdpBramWrapperConflictReadWriteTest.v"
+add_file -verilog "../../verilog/FIFOL1.v"
 
 
-#implementation: "rev_2"
-impl -add rev_2 -type fpga
+#implementation: "rev_3"
+impl -add rev_3 -type fpga
 
 #
 #implementation attributes
 
-set_option -vlog_std v2005
+set_option -vlog_std sysv
 set_option -project_relative_includes 1
 set_option -include_path {/tools/Achronix-linux/libraries/}
 
@@ -33,7 +36,7 @@ set_option -speed_grade C1
 set_option -part_companion ""
 
 #compilation/mapping options
-set_option -top_module "mkTestSdpBramWrapperTimingTest"
+set_option -top_module "top_mkTestSdpBramWrapperConflictReadWriteTest"
 
 # hdl_compiler_options
 set_option -distributed_compile 0
@@ -96,5 +99,5 @@ set_option -auto_infer_blackbox 0
 set_option -write_apr_constraint 1
 
 #set result format/file last
-project -result_file "rev_2/mkTestSdpBramWrapperTimingTest.vm"
-impl -active "rev_2"
+project -result_file "rev_3/TestSdpBramWrapperFunctionBehaviourTest.vm"
+impl -active "rev_3"

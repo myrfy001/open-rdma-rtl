@@ -11,10 +11,22 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # PARTNAME = xcvu23p-vsva1365-2L-e
 
 
-TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
-TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
+# TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
+# TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
+
 # TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
 # TOPMODULE ?= mkTestSdpBramWrapperConflictReadWriteTest
+
+# TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
+# TOPMODULE ?= mkTestAcxBram72kSdpConflictRW
+
+TARGETFILE ?= ../test/TestButterflyMerge.bsv
+TOPMODULE ?= mkTestFourChannelButterflyMergeTimingTest
+
+
+# TARGETFILE ?= ../test/TestNapWrapper.bsv
+# TOPMODULE ?= mkTestTestNapWrapper
+
 
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000

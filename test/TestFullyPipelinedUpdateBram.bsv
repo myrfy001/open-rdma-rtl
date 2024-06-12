@@ -57,7 +57,7 @@ module mkTestFullyPipelinedUpdateBram(Empty);
                 generateResp: lsb(addrReg1) == 0,
                 address:      addrReg1,
                 bankAddress:  0,
-                datain:       {oneHot, 16'h0}
+                data:       {oneHot, 16'h0}
             }
         );
         instWithFourBank.updateSrv.request.put(
@@ -65,7 +65,7 @@ module mkTestFullyPipelinedUpdateBram(Empty);
                 generateResp: lsb(addrReg1) == 0,
                 address:      addrReg1,
                 bankAddress:  bankAddr,
-                datain:       {oneHot, 16'h0}
+                data:       {oneHot, 16'h0}
             }
         );
         addrReg1 <= addrReg1 + 1;
@@ -78,7 +78,7 @@ module mkTestFullyPipelinedUpdateBram(Empty);
 endmodule
 
 interface TestFullyPipelinedBackendTimingTest;
-    method Bit#(144) _read;
+    method Bit#(155) _read;
 endinterface
 
 (*synthesize*)
@@ -92,7 +92,7 @@ module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest
     Reg#(Bit#(9)) addrReg1 <- mkReg(0);
 
     Reg#(Bit#(144)) bitmapInputReg <- mkReg(123);
-    Reg#(Bit#(144)) outputReg <- mkReg(0);
+    Reg#(Bit#(155)) outputReg <- mkReg(0);
 
 
     rule testEnq;
@@ -104,7 +104,7 @@ module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest
                 generateResp: lsb(addrReg1) == 0,
                 address:      addrReg1,
                 bankAddress:  0,
-                datain:       bitmapInputReg
+                data:       bitmapInputReg
             }
         );
         instWithFourBank.updateSrv.request.put(
@@ -112,7 +112,7 @@ module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest
                 generateResp: lsb(addrReg1) == 0,
                 address:      addrReg1,
                 bankAddress:  bankAddr,
-                datain:       bitmapInputReg
+                data:       bitmapInputReg
             }
         );
         addrReg1 <= addrReg1 + 1;
@@ -121,7 +121,7 @@ module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest
     rule fetchUpdateResp;
         let resp1 <- instWithOneBank.updateSrv.response.get;
         let resp2 <- instWithFourBank.updateSrv.response.get;
-        outputReg <= resp1 ^ resp2;
+        outputReg <=  zeroExtend(pack(resp1)) ^ pack(resp2);
     endrule
 
     method _read = outputReg;

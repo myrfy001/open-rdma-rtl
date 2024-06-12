@@ -9,6 +9,8 @@
 # -------------------------------------------------------------------------
 # Not needed here, using generated clock constraints from I/O Designer Toolkit
 # Set 507MHz target
-create_clock -name rdma_clk  [get_ports CLK]  -period 1.971
+# create_clock -name rdma_clk  [get_ports CLK]  -period 1.971
 
-
+# Snapshot JTAG clock: 25MHz
+create_clock -period 40 [get_ports {i_jtag_in[0]}] -name tck
+set_clock_groups -asynchronous -group {tck}

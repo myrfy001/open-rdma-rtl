@@ -54,6 +54,8 @@ module mkFourChannelButterflyMerge#(
         FShow#(tRowAddr),
         FShow#(tBramEntry),
         FShow#(Tuple2#(tRowAddr, tBramEntry)),
+        FShow#(Tuple2#(tRowAddr, tBankAddr)),
+        FShow#(FullyPipelinedUpdateBramUpdateResp#(tRowAddr, tBankAddr, tBramEntry)),
         PrimIndex#(tBankAddr, a__),
         Add#(b__, szRowAddr, ACX_BRAM72K_SDP_ADDR_WIDTH),
         Add#(c__, szBramEntry, BITS_COUNT_72K),
@@ -117,8 +119,8 @@ module mkFourChannelButterflyMerge#(
     Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) secondStageOtherChannelInputQueueVec <- replicateM(mkFIFOF);
 
 
-    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) firstStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(5));
-    Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) secondStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(5));
+    // Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) firstStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(5));
+    // Vector#(FourChannel, FIFOF#(Tuple2#(tRowAddr, tBankAddr))) secondStageUpdateInflightReqMetaQueueVec <- replicateM(mkSizedFIFOF(5));
 
     Vector#(FourChannel, FIFOF#(ButterflyMergeResp#(tRowAddr, tBankAddr, tData, tTag))) outputFifoVec <- replicateM(mkFIFOF);
     
@@ -128,8 +130,8 @@ module mkFourChannelButterflyMerge#(
             if (!firstStageOtherChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: firstStageOtherChannelInputQueueVec[%0d]", idx);
             if (!secondStageSelfChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageSelfChannelInputQueueVec[%0d]", idx);
             if (!secondStageOtherChannelInputQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageOtherChannelInputQueueVec[%0d]", idx);
-            if (!firstStageUpdateInflightReqMetaQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: firstStageUpdateInflightReqMetaQueueVec[%0d]", idx);
-            if (!secondStageUpdateInflightReqMetaQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageUpdateInflightReqMetaQueueVec[%0d]", idx);
+            // if (!firstStageUpdateInflightReqMetaQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: firstStageUpdateInflightReqMetaQueueVec[%0d]", idx);
+            // if (!secondStageUpdateInflightReqMetaQueueVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: secondStageUpdateInflightReqMetaQueueVec[%0d]", idx);
             if (!outputFifoVec[idx].notFull) $display("time=%0t, ", $time, "FullQueue: outputFifoVec[%d]", idx);
         end
     endrule
@@ -152,15 +154,15 @@ module mkFourChannelButterflyMerge#(
         let otherChannelIdx = twistTableEntry[1];
         rule doFirstStageToSecondStageReq;
             let firstStageUpdateResult <- firstStageBramVec[idx].updateSrv.response.get;
-            let {rowAddr, bankAddr} = firstStageUpdateInflightReqMetaQueueVec[idx].first;
-            firstStageUpdateInflightReqMetaQueueVec[idx].deq;
+            // let {rowAddr, bankAddr} = firstStageUpdateInflightReqMetaQueueVec[idx].first;
+            // firstStageUpdateInflightReqMetaQueueVec[idx].deq;
 
 
             let bramReq1 = FullyPipelinedUpdateBramUpdateReq {
                 generateResp: True,
-                address: rowAddr,
-                bankAddress: bankAddr,
-                datain: firstStageUpdateResult
+                address: firstStageUpdateResult.address,
+                bankAddress: firstStageUpdateResult.bankAddress,
+                data: firstStageUpdateResult.data
             };
 
             // req1 and req2 only different in generate resp or not.
@@ -170,7 +172,7 @@ module mkFourChannelButterflyMerge#(
             secondStageSelfChannelInputQueueVec[selfChannelIdx].enq(bramReq1);
             secondStageOtherChannelInputQueueVec[otherChannelIdx].enq(bramReq2);
 
-            secondStageUpdateInflightReqMetaQueueVec[selfChannelIdx].enq(tuple2(rowAddr, bankAddr));
+            // secondStageUpdateInflightReqMetaQueueVec[selfChannelIdx].enq(tuple2(rowAddr, bankAddr));
 
             $display(
                 "time=%0t, ", $time,
@@ -195,13 +197,13 @@ module mkFourChannelButterflyMerge#(
     for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
         rule moveSecondStageOutputToModuleFinalOutput;
             let secondStageUpdateResult <- secondStageBramVec[idx].updateSrv.response.get;
-            let {tag, data} = splitTagAndDataFromRawStorageContent(secondStageUpdateResult);
-            let {rowAddr, bankAddr} = secondStageUpdateInflightReqMetaQueueVec[idx].first;
-            secondStageUpdateInflightReqMetaQueueVec[idx].deq;
+            let {tag, data} = splitTagAndDataFromRawStorageContent(secondStageUpdateResult.data);
+            // let {rowAddr, bankAddr} = secondStageUpdateInflightReqMetaQueueVec[idx].first;
+            // secondStageUpdateInflightReqMetaQueueVec[idx].deq;
 
             outputFifoVec[idx].enq(ButterflyMergeResp{
-                rowAddr: rowAddr,
-                bankAddr: bankAddr,
+                rowAddr: secondStageUpdateResult.address,
+                bankAddr: secondStageUpdateResult.bankAddress,
                 data: data,
                 tag: tag
             });
@@ -218,7 +220,7 @@ module mkFourChannelButterflyMerge#(
                         generateResp: True,
                         address:req.rowAddr,
                         bankAddress: req.bankAddr,
-                        datain: mergeTagAndDataFromRawStorageContent(req.tag, req.data)
+                        data: mergeTagAndDataFromRawStorageContent(req.tag, req.data)
                     };
 
                     // req1 and req2 only different in generate resp or not.
@@ -228,7 +230,7 @@ module mkFourChannelButterflyMerge#(
                     firstStageSelfChannelInputQueueVec[chIdx1].enq(bramReq1);
                     firstStageOtherChannelInputQueueVec[chIdx2].enq(bramReq2);
 
-                    firstStageUpdateInflightReqMetaQueueVec[chIdx1].enq(tuple2(req.rowAddr, req.bankAddr));
+                    // firstStageUpdateInflightReqMetaQueueVec[chIdx1].enq(tuple2(req.rowAddr, req.bankAddr));
                 endmethod
             endinterface
 
