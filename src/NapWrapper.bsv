@@ -16,14 +16,15 @@ typedef Bit#(VERTICAL_NAP_DATA_WIDTH) VerticalNapData;
 
 
 interface ACX_NAP_ETHERNET_WRAPPER;
-    // input port
+    
+    // output port
     method Action tx_valid(Bool val);
     method Action tx_data(VerticalNapData val);
     method Action tx_sop(Bool val);
     method Action tx_eop(Bool val);
     method Action rx_ready(Bool val);
 
-    // output port
+    // input port
     method Bool rx_valid;
     method VerticalNapNodeId rx_src;
     method VerticalNapData rx_data;
@@ -57,14 +58,15 @@ module mkAcxNapEthernetWrapperInner#(
 
     port tx_dest = 4'hF;  // 400G_MAC0, From UG086 Table 233, means to EIU
 
-    // input port
+    
+    // output port
     method tx_valid(tx_valid) enable((*inhigh*) EN_NO_USE_1) clocked_by(clk) reset_by(no_reset);
     method tx_data(tx_data) enable((*inhigh*) EN_NO_USE_2) clocked_by(clk) reset_by(no_reset);
     method tx_sop(tx_sop) enable((*inhigh*) EN_NO_USE_3) clocked_by(clk) reset_by(no_reset);
     method tx_eop(tx_eop) enable((*inhigh*) EN_NO_USE_4) clocked_by(clk) reset_by(no_reset);
     method rx_ready(rx_ready) enable((*inhigh*) EN_NO_USE_5) clocked_by(clk) reset_by(no_reset);
 
-    // output port
+    // input port
     method rx_valid rx_valid clocked_by(clk) reset_by(no_reset);
     method rx_src rx_src clocked_by(clk) reset_by(no_reset);
     method rx_data rx_data clocked_by(clk) reset_by(no_reset);
@@ -80,7 +82,7 @@ module mkAcxNapEthernetWrapperInner#(
 endmodule
 
 
-module mkAcxNapEthernetWrapper#(
+module mkAcxNapEthernetPrimitiveWrapper#(
         Bit#(5) tx_eiu_channel,
         Bit#(5) rx_eiu_channel
     )(ACX_NAP_ETHERNET_WRAPPER);
@@ -97,20 +99,20 @@ typedef struct {
 } VerticalNapBeatEntry deriving(Bits, FShow);
 
 
-interface AcxNapEthernet;
+interface AcxNapEthernetWrapper;
     method Action send(VerticalNapBeatEntry beat);
     method ActionValue#(VerticalNapBeatEntry) recv;
 endinterface
 
-module mkAcxNapEthernet#(
+module mkAcxNapEthernetWrapper#(
         Bit#(5) tx_eiu_channel,
         Bit#(5) rx_eiu_channel
-    )(AcxNapEthernet);
+    )(AcxNapEthernetWrapper);
 
     FIFOF#(VerticalNapBeatEntry) txQ <- mkFIFOF;
     FIFOF#(VerticalNapBeatEntry) rxQ <- mkFIFOF;
     
-    let ethNap <- mkAcxNapEthernetWrapper(tx_eiu_channel, rx_eiu_channel);
+    let ethNap <- mkAcxNapEthernetPrimitiveWrapper(tx_eiu_channel, rx_eiu_channel);
 
     rule forwardTxAxiSignal;
         if (txQ.notEmpty) begin
@@ -135,8 +137,8 @@ module mkAcxNapEthernet#(
                 let recvBeat = VerticalNapBeatEntry{
                     nodeId: 4'hF, // according to UG086, the node ID of EIU is 4'hf
                     data: ethNap.rx_data,
-                    Bool ethNap.sop,
-                    Bool ethNap.eop
+                    sop: ethNap.rx_sop,
+                    eop: ethNap.rx_eop
                 };
                 rxQ.enq(recvBeat);
             end
@@ -149,10 +151,12 @@ module mkAcxNapEthernet#(
 
 
     method Action send(VerticalNapBeatEntry beat);
+        txQ.enq(beat);
     endmethod
 
     method ActionValue#(VerticalNapBeatEntry) recv;
-        return ?;
+        rxQ.deq;
+        return rxQ.first;
     endmethod
 endmodule
 
@@ -221,42 +225,107 @@ typedef 2 NAP_AXI_RRESP_WIDTH;
 typedef Bit#(NAP_AXI_RRESP_WIDTH) NapAxiRresp;
 
 
+typedef struct {
+    NapAxiAwid awid;
+    NapAxiAwaddr awaddr;
+    NapAxiAwlen awlen;
+    NapAxiAwsize awsize;
+    NapAxiAwburst awburst;
+    Bool awlock;  
+    NapAxiAwqos awqos;
+} AxiMmNapBeatAw deriving(Bits, FShow);
 
+typedef struct {
+    NapAxiWdata wdata;
+    NapAxiWstrb wstrb;
+    Bool wlast;
+} AxiMmNapBeatW deriving(Bits, FShow);
+
+typedef struct {
+    NapAxiBid bid;
+    NapAxiBresp bresp;
+} AxiMmNapBeatB deriving(Bits, FShow);
+
+typedef struct {
+    NapAxiArid arid;
+    NapAxiAraddr araddr;
+    NapAxiArlen arlen;
+    NapAxiArsize arsize;
+    NapAxiArburst arburst;
+    Bool arlock;
+    NapAxiArqos arqos;
+} AxiMmNapBeatAr deriving(Bits, FShow);
+
+typedef struct {
+    NapAxiRid rid;
+    NapAxiRdata rdata;
+    NapAxiRresp rresp;
+    Bool rlast;
+} AxiMmNapBeatR deriving(Bits, FShow);
 
 
 interface ACX_NAP_AXI_MASTER_WRAPPER;
-    // input port
-    method Action tx_valid(Bool val);
-    method Action tx_data(VerticalNapData val);
-    method Action tx_sop(Bool val);
-    method Action tx_eop(Bool val);
-    method Action rx_ready(Bool val);
-
+    
+    // aw channel ===========
     // output port
-    method Bool rx_valid;
-    method VerticalNapNodeId rx_src;
-    method VerticalNapData rx_data;
-    method Bool rx_sop;
-    method Bool rx_eop;
-    method Bool tx_ready;  
+    method NapAxiAwid awid;
+    method NapAxiAwaddr awaddr;
+    method NapAxiAwlen awlen;
+    method NapAxiAwsize awsize;
+    method NapAxiAwburst awburst;
+    method Bool awlock;
+    method NapAxiAwqos awqos;
+    method Bool awvalid;
+    // input port
+    method Action awready(Bool val);
+
+    // w channel ===========
+    // output port
+    method NapAxiWdata wdata;
+    method NapAxiWstrb wstrb;
+    method Bool wlast;
+    method Bool wvalid;
+    // input port
+    method Action wready(Bool val);
+
+    // b channel ===========
+    // output port 
+    method Bool bready;
+    // input port
+    method Action bid(NapAxiBid val);
+    method Action bresp(NapAxiBresp val);
+    method Action bvalid(Bool val);
+
+    // ar channel ===========
+    // output port 
+    method NapAxiArid arid;
+    method NapAxiAraddr araddr;
+    method NapAxiArlen arlen;
+    method NapAxiArsize arsize;
+    method NapAxiArburst arburst;
+    method Bool arlock;
+    method NapAxiArqos arqos;
+    method Bool arvalid;
+    // input port
+    method Action arready(Bool val);
+
+    // r channel ===========
+    // output port
+    method Bool rready;
+    // input port
+    method Action rid(NapAxiRid val);
+    method Action rdata(NapAxiRdata val);
+    method Action rresp(NapAxiRresp val);
+    method Action rlast(Bool val);
+    method Action rvalid(Bool val);
 endinterface
 
 
-import "BVI" ACX_NAP_ETHERNET =
-module mkAcxNapEthernetWrapperInner#(
-        Bit#(5) tx_eiu_channel,
-        Bit#(5) rx_eiu_channel
-    )(ACX_NAP_ETHERNET_WRAPPER);
+import "BVI" ACX_NAP_AXI_MASTER =
+module mkAcxNapAxiMasterWrapperInner(ACX_NAP_AXI_MASTER_WRAPPER);
 
     let clk <- exposeCurrentClock;
     let rst <- exposeCurrentReset;
-
-    parameter tx_mode = 4'b0111;  // 400G_PKT, From UG086 Table 233
-    parameter rx_mode = 4'b0111;  // 400G_PKT, From UG086 Table 233
-    parameter tx_mac_id = 2'b00;  // 400G_MAC0, From UG086 Table 233
-    parameter rx_mac_id = 2'b00;  // 400G_MAC0, From UG086 Table 233
-    parameter tx_eiu_channel = tx_eiu_channel;
-    parameter rx_eiu_channel = rx_eiu_channel;
 
     input_clock (clk) = clk;
     input_reset rstN(rstn) = rst;
@@ -264,26 +333,574 @@ module mkAcxNapEthernetWrapperInner#(
     default_clock no_clock;
     no_reset;
 
-    port tx_dest = 4'hF;  // 400G_MAC0, From UG086 Table 233, means to EIU
-
+    // aw channel ===========
+    // output port 
+    method awid awid clocked_by(clk) reset_by(no_reset);
+    method awaddr awaddr clocked_by(clk) reset_by(no_reset);
+    method awlen awlen clocked_by(clk) reset_by(no_reset);
+    method awsize awsize clocked_by(clk) reset_by(no_reset);
+    method awburst awburst clocked_by(clk) reset_by(no_reset);
+    method awlock awlock clocked_by(clk) reset_by(no_reset);  
+    method awqos awqos clocked_by(clk) reset_by(no_reset);
+    method awvalid awvalid clocked_by(clk) reset_by(no_reset);
     // input port
-    method tx_valid(tx_valid) enable((*inhigh*) EN_NO_USE_1) clocked_by(clk) reset_by(no_reset);
-    method tx_data(tx_data) enable((*inhigh*) EN_NO_USE_2) clocked_by(clk) reset_by(no_reset);
-    method tx_sop(tx_sop) enable((*inhigh*) EN_NO_USE_3) clocked_by(clk) reset_by(no_reset);
-    method tx_eop(tx_eop) enable((*inhigh*) EN_NO_USE_4) clocked_by(clk) reset_by(no_reset);
-    method rx_ready(rx_ready) enable((*inhigh*) EN_NO_USE_5) clocked_by(clk) reset_by(no_reset);
+    method awready(awready) enable((*inhigh*) EN_NO_USE_1) clocked_by(clk) reset_by(no_reset);
 
+    // w channel ===========
     // output port
-    method rx_valid rx_valid clocked_by(clk) reset_by(no_reset);
-    method rx_src rx_src clocked_by(clk) reset_by(no_reset);
-    method rx_data rx_data clocked_by(clk) reset_by(no_reset);
-    method rx_sop rx_sop clocked_by(clk) reset_by(no_reset);
-    method rx_eop rx_eop clocked_by(clk) reset_by(no_reset);
-    method tx_ready tx_ready clocked_by(clk) reset_by(no_reset);  
+    method wdata wdata clocked_by(clk) reset_by(no_reset);
+    method wstrb wstrb clocked_by(clk) reset_by(no_reset);
+    method wlast wlast clocked_by(clk) reset_by(no_reset);
+    method wvalid wvalid clocked_by(clk) reset_by(no_reset);
+    // input port
+    method wready(wready) enable((*inhigh*) EN_NO_USE_2) clocked_by(clk) reset_by(no_reset);
 
-    schedule (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready) CF (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready);
-    schedule (tx_valid, tx_data, tx_sop, tx_eop, rx_ready) C (tx_valid, tx_data, tx_sop, tx_eop, rx_ready);
-    schedule (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready) SB (tx_valid, tx_data, tx_sop, tx_eop, rx_ready);
+    // b channel ===========
+    // output port 
+    method bready bready clocked_by(clk) reset_by(no_reset);
+    // input port
+    method bid(bid) enable((*inhigh*) EN_NO_USE_3) clocked_by(clk) reset_by(no_reset);
+    method bresp(bresp) enable((*inhigh*) EN_NO_USE_4) clocked_by(clk) reset_by(no_reset);
+    method bvalid(bvalid) enable((*inhigh*) EN_NO_USE_5) clocked_by(clk) reset_by(no_reset);
+
+    // ar channel ===========
+    // output port 
+    method arid arid clocked_by(clk) reset_by(no_reset);
+    method araddr araddr clocked_by(clk) reset_by(no_reset);
+    method arlen arlen clocked_by(clk) reset_by(no_reset);
+    method arsize arsize clocked_by(clk) reset_by(no_reset);
+    method arburst arburst clocked_by(clk) reset_by(no_reset);
+    method arlock arlock clocked_by(clk) reset_by(no_reset);
+    method arqos arqos clocked_by(clk) reset_by(no_reset);
+    method arvalid arvalid clocked_by(clk) reset_by(no_reset);
+    // input port
+    method arready(arready) enable((*inhigh*) EN_NO_USE_6) clocked_by(clk) reset_by(no_reset);
+
+    // r channel ===========
+    // output port
+    method rready rready clocked_by(clk) reset_by(no_reset);
+    // input port
+    method rid(rid) enable((*inhigh*) EN_NO_USE_7) clocked_by(clk) reset_by(no_reset);
+    method rdata(rdata) enable((*inhigh*) EN_NO_USE_8) clocked_by(clk) reset_by(no_reset);
+    method rresp(rresp) enable((*inhigh*) EN_NO_USE_9) clocked_by(clk) reset_by(no_reset);
+    method rlast(rlast) enable((*inhigh*) EN_NO_USE_10) clocked_by(clk) reset_by(no_reset);
+    method rvalid(rvalid) enable((*inhigh*) EN_NO_USE_11) clocked_by(clk) reset_by(no_reset);
+
+    schedule (awid, awaddr, awlen, awsize, awburst, awlock, 
+                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
+                bready, arid, araddr, arlen, arsize, arburst, 
+                arlock, arqos, arvalid, rready
+            ) CF (
+                awid, awaddr, awlen, awsize, awburst, awlock, 
+                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
+                bready, arid, araddr, arlen, arsize, arburst, 
+                arlock, arqos, arvalid, rready);
+    
+    schedule (awready, wready, bid, bresp, bvalid, arready, 
+                rid, rdata, rresp, rlast, rvalid
+            ) C (
+                awready, wready, bid, bresp, bvalid, arready,
+                rid, rdata, rresp, rlast, rvalid);
+
+    schedule (awid, awaddr, awlen, awsize, awburst, awlock, 
+                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
+                bready, arid, araddr, arlen, arsize, arburst, 
+                arlock, arqos, arvalid, rready
+            ) SB (
+                awready, wready, bid, bresp, bvalid, arready,
+                rid, rdata, rresp, rlast, rvalid);
+endmodule
 
 
+
+module mkAcxNapAxiMasterPrimitiveWrapper(ACX_NAP_AXI_MASTER_WRAPPER);
+    let inst <- mkAcxNapAxiMasterWrapperInner;
+    return inst;
+endmodule
+
+
+
+interface AcxNapMasterWrapper;
+    method ActionValue#(AxiMmNapBeatAw) recvWriteAddr;
+    method ActionValue#(AxiMmNapBeatW) recvWriteData;
+    method Action sendWriteResp(AxiMmNapBeatB beat);
+
+    method ActionValue#(AxiMmNapBeatAr) recvReadAddr;
+    method Action sendReadResp(AxiMmNapBeatR beat);
+endinterface
+
+module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
+
+    FIFOF#(AxiMmNapBeatAw) awQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatW)   wQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatB)   bQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatAr) arQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatR)   rQ   <- mkFIFOF;
+    
+    let axiMasterNap <- mkAcxNapAxiMasterPrimitiveWrapper;
+
+    rule forwardAxiSignalAw;
+        if (awQ.notFull) begin
+            axiMasterNap.awready(True);
+            if (axiMasterNap.awvalid) begin
+                let recvBeat = AxiMmNapBeatAw{
+                    awid: axiMasterNap.awid,
+                    awaddr: axiMasterNap.awaddr,
+                    awlen: axiMasterNap.awlen,
+                    awsize: axiMasterNap.awsize,
+                    awburst: axiMasterNap.awburst,
+                    awlock: axiMasterNap.awlock,
+                    awqos: axiMasterNap.awqos
+                };
+                awQ.enq(recvBeat);
+            end
+        end
+        else begin
+            axiMasterNap.awready(False);
+        end
+    endrule
+
+    rule forwardAxiSignalW;
+        if (wQ.notFull) begin
+            axiMasterNap.wready(True);
+            if (axiMasterNap.wvalid) begin
+                let recvBeat = AxiMmNapBeatW{
+                    wdata: axiMasterNap.wdata,
+                    wstrb: axiMasterNap.wstrb,
+                    wlast: axiMasterNap.wlast
+                };
+                wQ.enq(recvBeat);
+            end
+        end
+        else begin
+            axiMasterNap.wready(False);
+        end
+    endrule
+
+
+    rule forwardAxiSignalB;
+        if (bQ.notEmpty) begin
+            let bBeat = bQ.first;
+            axiMasterNap.bvalid(True);
+            axiMasterNap.bid(bBeat.bid);
+            axiMasterNap.bresp(bBeat.bresp);
+
+            if (axiMasterNap.bready) begin
+                bQ.deq;
+            end
+        end
+        else begin
+            axiMasterNap.bvalid(False);
+        end
+    endrule
+
+    
+    rule forwardAxiSignalAr;
+        if (arQ.notFull) begin
+            axiMasterNap.arready(True);
+            if (axiMasterNap.arvalid) begin
+                let recvBeat = AxiMmNapBeatAr{
+                    arid: axiMasterNap.arid,
+                    araddr: axiMasterNap.araddr,
+                    arlen: axiMasterNap.arlen,
+                    arsize: axiMasterNap.arsize,
+                    arburst: axiMasterNap.arburst,
+                    arlock: axiMasterNap.arlock,
+                    arqos: axiMasterNap.arqos
+                };
+                arQ.enq(recvBeat);
+            end
+        end
+        else begin
+            axiMasterNap.arready(False);
+        end
+    endrule
+
+
+    rule forwardAxiSignalR;
+        if (rQ.notEmpty) begin
+            let rBeat = rQ.first;
+            axiMasterNap.rvalid(True);
+            axiMasterNap.rid(rBeat.rid);
+            axiMasterNap.rdata(rBeat.rdata);
+            axiMasterNap.rresp(rBeat.rresp);
+            axiMasterNap.rlast(rBeat.rlast);
+
+            if (axiMasterNap.rready) begin
+                rQ.deq;
+            end
+        end
+        else begin
+            axiMasterNap.rvalid(False);
+        end
+    endrule
+
+
+    method ActionValue#(AxiMmNapBeatAw) recvWriteAddr;
+        awQ.deq;
+        return awQ.first;
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatW) recvWriteData;
+        wQ.deq;
+        return wQ.first;
+    endmethod
+
+    method Action sendWriteResp(AxiMmNapBeatB beat);
+        bQ.enq(beat);
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatAr) recvReadAddr;
+        arQ.deq;
+        return arQ.first;
+    endmethod
+
+    method Action sendReadResp(AxiMmNapBeatR beat);
+        rQ.enq(beat);
+    endmethod
+    
+    
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+interface ACX_NAP_AXI_SLAVE_WRAPPER;
+    
+    // aw channel ===========
+    // input port
+    method Action awid(NapAxiAwid val);
+    method Action awaddr(NapAxiAwaddr val);
+    method Action awlen(NapAxiAwlen val);
+    method Action awsize(NapAxiAwsize val);
+    method Action awburst(NapAxiAwburst val);
+    method Action awlock(Bool val);
+    method Action awqos(NapAxiAwqos val);
+    method Action awvalid(Bool val);
+    // output port
+    method Bool awready;
+
+    // w channel ===========
+    // input port
+    method Action wdata(NapAxiWdata val);
+    method Action wstrb(NapAxiWstrb val);
+    method Action wlast(Bool val);
+    method Action wvalid(Bool val);
+    // output port
+    method Bool wready;
+
+    // b channel ===========
+    // input port
+    method Action bready(Bool val);
+    // output port 
+    method NapAxiBid bid;
+    method NapAxiBresp bresp;
+    method Bool bvalid;
+
+    // ar channel ===========
+    // input port
+    method Action arid(NapAxiArid val);
+    method Action araddr(NapAxiAraddr val);
+    method Action arlen(NapAxiArlen val);
+    method Action arsize(NapAxiArsize val);
+    method Action arburst(NapAxiArburst val);
+    method Action arlock(Bool val);
+    method Action arqos(NapAxiArqos val);
+    method Action arvalid(Bool val);
+    // output port 
+    method Bool arready;
+
+    // r channel ===========
+    // input port
+    method Action rready(Bool val);
+    // output port
+    method NapAxiRid rid;
+    method NapAxiRdata rdata;
+    method NapAxiRresp rresp;
+    method Bool rlast;
+    method Bool rvalid;
+endinterface
+
+
+import "BVI" ACX_NAP_AXI_SLAVE =
+module mkAcxNapAxiSlaveWrapperInner(ACX_NAP_AXI_SLAVE_WRAPPER);
+
+    let clk <- exposeCurrentClock;
+    let rst <- exposeCurrentReset;
+
+    input_clock (clk) = clk;
+    input_reset rstN(rstn) = rst;
+    
+    default_clock no_clock;
+    no_reset;
+
+    // aw channel ===========
+    // input port
+    method awid(awid) enable((*inhigh*) EN_NO_USE_1) clocked_by(clk) reset_by(no_reset);
+    method awaddr(awaddr) enable((*inhigh*) EN_NO_USE_2) clocked_by(clk) reset_by(no_reset);
+    method awlen(awlen) enable((*inhigh*) EN_NO_USE_3) clocked_by(clk) reset_by(no_reset);
+    method awsize(awsize) enable((*inhigh*) EN_NO_USE_4) clocked_by(clk) reset_by(no_reset);
+    method awburst(awburst) enable((*inhigh*) EN_NO_USE_5) clocked_by(clk) reset_by(no_reset);
+    method awlock(awlock) enable((*inhigh*) EN_NO_USE_6) clocked_by(clk) reset_by(no_reset);
+    method awqos(awqos) enable((*inhigh*) EN_NO_USE_7) clocked_by(clk) reset_by(no_reset);
+    method awvalid(awvalid) enable((*inhigh*) EN_NO_USE_8) clocked_by(clk) reset_by(no_reset);
+    // output port
+    method awready awready clocked_by(clk) reset_by(no_reset);
+
+
+    // w channel ===========
+    // input port
+    method wdata(wdata) enable((*inhigh*) EN_NO_USE_9) clocked_by(clk) reset_by(no_reset);
+    method wstrb(wstrb) enable((*inhigh*) EN_NO_USE_10) clocked_by(clk) reset_by(no_reset);
+    method wlast(wlast) enable((*inhigh*) EN_NO_USE_11) clocked_by(clk) reset_by(no_reset);
+    method wvalid(wvalid) enable((*inhigh*) EN_NO_USE_12) clocked_by(clk) reset_by(no_reset);
+   // output port
+    method wready wready clocked_by(clk) reset_by(no_reset);
+
+    // b channel ===========
+    // input port
+    method bready(bready) enable((*inhigh*) EN_NO_USE_13) clocked_by(clk) reset_by(no_reset);
+    // output port 
+    method bid bid clocked_by(clk) reset_by(no_reset);
+    method bresp bresp clocked_by(clk) reset_by(no_reset);
+    method bvalid bvalid clocked_by(clk) reset_by(no_reset);
+
+    // ar channel ===========
+    // input port
+    method arid(arid) enable((*inhigh*) EN_NO_USE_14) clocked_by(clk) reset_by(no_reset);
+    method araddr(araddr) enable((*inhigh*) EN_NO_USE_15) clocked_by(clk) reset_by(no_reset);
+    method arlen(arlen) enable((*inhigh*) EN_NO_USE_16) clocked_by(clk) reset_by(no_reset);
+    method arsize(arsize) enable((*inhigh*) EN_NO_USE_17) clocked_by(clk) reset_by(no_reset);
+    method arburst(arburst) enable((*inhigh*) EN_NO_USE_18) clocked_by(clk) reset_by(no_reset);
+    method arlock(arlock) enable((*inhigh*) EN_NO_USE_19) clocked_by(clk) reset_by(no_reset);
+    method arqos(arqos) enable((*inhigh*) EN_NO_USE_20) clocked_by(clk) reset_by(no_reset);
+    method arvalid(arvalid) enable((*inhigh*) EN_NO_USE_21) clocked_by(clk) reset_by(no_reset);
+    // output port 
+    method arready arready clocked_by(clk) reset_by(no_reset);
+   
+    // r channel ===========
+    // input port
+    method rready(rready) enable((*inhigh*) EN_NO_USE_22) clocked_by(clk) reset_by(no_reset);
+    // output port
+    method rid rid clocked_by(clk) reset_by(no_reset);
+    method rdata rdata clocked_by(clk) reset_by(no_reset);
+    method rresp rresp clocked_by(clk) reset_by(no_reset);
+    method rlast rlast clocked_by(clk) reset_by(no_reset);
+    method rvalid rvalid clocked_by(clk) reset_by(no_reset);
+
+    schedule (awid, awaddr, awlen, awsize, awburst, awlock, 
+                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
+                bready, arid, araddr, arlen, arsize, arburst, 
+                arlock, arqos, arvalid, rready
+            ) CF (
+                awid, awaddr, awlen, awsize, awburst, awlock, 
+                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
+                bready, arid, araddr, arlen, arsize, arburst, 
+                arlock, arqos, arvalid, rready);
+    
+    schedule (awready, wready, bid, bresp, bvalid, arready, 
+                rid, rdata, rresp, rlast, rvalid
+            ) C (
+                awready, wready, bid, bresp, bvalid, arready,
+                rid, rdata, rresp, rlast, rvalid);
+
+    schedule (awready, wready, bid, bresp, bvalid, arready,
+                rid, rdata, rresp, rlast, rvalid
+            ) SB (
+                awid, awaddr, awlen, awsize, awburst, awlock, 
+                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
+                bready, arid, araddr, arlen, arsize, arburst, 
+                arlock, arqos, arvalid, rready);
+endmodule
+
+module mkAcxNapAxiSlavePrimitiveWrapper(ACX_NAP_AXI_SLAVE_WRAPPER);
+    let inst <- mkAcxNapAxiSlaveWrapperInner;
+    return inst;
+endmodule
+
+
+
+interface AcxNapSlaveWrapper;
+
+    method Action sendWriteAddr(AxiMmNapBeatAw beat);
+    method Action sendWriteData(AxiMmNapBeatW beat);
+    method ActionValue#(AxiMmNapBeatB) recvWriteResp;
+
+    method Action sendReadAddr(AxiMmNapBeatAr beat);
+    method ActionValue#(AxiMmNapBeatR) recvReadResp;
+endinterface
+
+module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
+
+    FIFOF#(AxiMmNapBeatAw) awQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatW)   wQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatB)   bQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatAr) arQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatR)   rQ   <- mkFIFOF;
+    
+    let axiSlaveNap <- mkAcxNapAxiSlavePrimitiveWrapper;
+
+
+    rule forwardAxiSignalAw;
+        if (awQ.notEmpty) begin
+            let awBeat = awQ.first;
+            axiSlaveNap.awvalid(True);
+
+            axiSlaveNap.awid(awBeat.awid);
+            axiSlaveNap.awaddr(awBeat.awaddr);
+            axiSlaveNap.awlen(awBeat.awlen);
+            axiSlaveNap.awsize(awBeat.awsize);
+            axiSlaveNap.awburst(awBeat.awburst);
+            axiSlaveNap.awlock(awBeat.awlock);
+            axiSlaveNap.awqos(awBeat.awqos);
+            
+            if (axiSlaveNap.awready) begin
+                awQ.deq;
+            end
+        end
+        else begin
+            axiSlaveNap.awvalid(False);
+        end
+    endrule
+
+
+    rule forwardAxiSignalW;
+        if (wQ.notEmpty) begin
+            let wBeat = wQ.first;
+            axiSlaveNap.wvalid(True);
+
+            axiSlaveNap.wdata(wBeat.wdata);
+            axiSlaveNap.wstrb(wBeat.wstrb);
+            axiSlaveNap.wlast(wBeat.wlast);
+            
+            if (axiSlaveNap.wready) begin
+                wQ.deq;
+            end
+        end
+        else begin
+            axiSlaveNap.wvalid(False);
+        end
+    endrule
+
+
+    rule forwardAxiSignalB;
+        if (bQ.notFull) begin
+            axiSlaveNap.bready(True);
+            if (axiSlaveNap.bvalid) begin
+                let recvBeat = AxiMmNapBeatB{
+                    bid: axiSlaveNap.bid,
+                    bresp: axiSlaveNap.bresp
+                };
+                bQ.enq(recvBeat);
+            end
+        end
+        else begin
+            axiSlaveNap.bready(False);
+        end
+    endrule
+
+    
+    rule forwardAxiSignalAr;
+        if (arQ.notEmpty) begin
+            let arBeat = arQ.first;
+            axiSlaveNap.arvalid(True);
+            axiSlaveNap.arid(arBeat.arid);
+            axiSlaveNap.araddr(arBeat.araddr);
+            axiSlaveNap.arlen(arBeat.arlen);
+            axiSlaveNap.arsize(arBeat.arsize);
+            axiSlaveNap.arburst(arBeat.arburst);
+            axiSlaveNap.arlock(arBeat.arlock);
+            axiSlaveNap.arqos(arBeat.arqos);
+            
+            if (axiSlaveNap.arready) begin
+                arQ.deq;
+            end
+        end
+        else begin
+        axiSlaveNap.arvalid(False);
+        end
+    endrule
+
+    rule forwardAxiSignalR;
+        if (rQ.notFull) begin
+            axiSlaveNap.rready(True);
+            if (axiSlaveNap.rvalid) begin
+                let recvBeat = AxiMmNapBeatR{
+                    rid: axiSlaveNap.rid,
+                    rdata: axiSlaveNap.rdata,
+                    rresp: axiSlaveNap.rresp,
+                    rlast: axiSlaveNap.rlast
+                };
+                rQ.enq(recvBeat);
+            end
+        end
+        else begin
+            axiSlaveNap.rready(False);
+        end
+    endrule
+
+    
+    
+    method Action sendWriteAddr(AxiMmNapBeatAw beat);
+        awQ.enq(beat);
+    endmethod
+
+    method Action sendWriteData(AxiMmNapBeatW beat);
+        wQ.enq(beat);
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatB) recvWriteResp;
+        bQ.deq;
+        return bQ.first;
+    endmethod
+
+    method Action sendReadAddr(AxiMmNapBeatAr beat);
+        arQ.enq(beat);
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatR) recvReadResp;
+        rQ.deq;
+        return rQ.first;
+    endmethod
+    
 endmodule

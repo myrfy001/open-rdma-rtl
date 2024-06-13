@@ -31,7 +31,7 @@ interface FullyPipelinedUpdateBram2#(type tAddr, type tBankAddr, type tData);
     interface Server#(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr), FullyPipelinedUpdateBramUpdateResp#(tAddr, tBankAddr, tData)) querySrv;
 endinterface
 
-typedef 4 FullyPipelinedUpdateBram2InternalCacheDepth;  // must be 2^n
+typedef 6 FullyPipelinedUpdateBram2InternalCacheDepth; 
 module mkFullyPipelinedUpdateBram2#(
         Bool supportQuery,
         function tData updateLogic(tData oldValue, tData newValue)
@@ -83,7 +83,16 @@ module mkFullyPipelinedUpdateBram2#(
             else begin
                 // alloc a new slotID and put it into the buffer.
                 let newSlotId = nextFreeSlotIdCounterReg;
-                nextFreeSlotIdCounterReg <= nextFreeSlotIdCounterReg + 1;
+
+                // nextFreeSlotIdCounterReg <= nextFreeSlotIdCounterReg + 1;
+
+                if (nextFreeSlotIdCounterReg == fromInteger(valueOf(FullyPipelinedUpdateBram2InternalCacheDepth)-1)) begin
+                    nextFreeSlotIdCounterReg <= 0;
+                end
+                else begin
+                    nextFreeSlotIdCounterReg <= nextFreeSlotIdCounterReg + 1;
+                end
+
                 searchCache.enq(tag, newSlotId);
                 isNewAllocSlotID = True;
                 return tuple2(isNewAllocSlotID, newSlotId);
@@ -152,6 +161,7 @@ module mkFullyPipelinedUpdateBram2#(
         let updatedData = updateLogic(oldData, newData);
         cacheRegVec[slotID] <= updatedData;
         bramWriteBackQ.enq(tuple4(generateResp, address, bankAddress, updatedData));
+
     endrule
 
     rule handleBramWriteBack;
