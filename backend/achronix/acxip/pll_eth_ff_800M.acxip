@@ -1,5 +1,5 @@
 #ACE 10.0 IP Properties File, generated on:
-#Wed Jun 12 00:02:27 CST 2024
+#Fri Jun 14 16:32:39 CST 2024
 acxip_version=7
 clkout0.clkout.port_name=eth_ff_clk
 clkout0.int_ODN_output_divider=8
@@ -45,7 +45,7 @@ float_target_out0_frequency=800
 int_OS_output_divider=1
 is_forcing_integer_feedback=No
 is_inner_bypass=No
-is_pll_lock_exposed_to_core=No
+is_pll_lock_exposed_to_core=Yes
 is_ring_osc_overriding_clkout3=No
 library=Speedster7t
 name=PLL

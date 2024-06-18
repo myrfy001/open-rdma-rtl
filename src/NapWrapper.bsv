@@ -10,23 +10,24 @@ import PrimUtils :: *;
 typedef 4 VERTICAL_NAP_NODE_ID_WIDTH;
 typedef 293 VERTICAL_NAP_DATA_WIDTH;
 
-typedef Bit#(VERTICAL_NAP_NODE_ID_WIDTH) VerticalNapNodeId;
+typedef Bit#(VERTICAL_NAP_NODE_ID_WIDTH) VerticalNapsrcOrDstNodeId;
 typedef Bit#(VERTICAL_NAP_DATA_WIDTH) VerticalNapData;
 
+typedef 15 ETHERNET_NAP_NODE_ID; // according to UG086, the node ID of EIU is 4'hf
 
 
 interface ACX_NAP_ETHERNET_WRAPPER;
     
-    // output port
+    // input port
     method Action tx_valid(Bool val);
     method Action tx_data(VerticalNapData val);
     method Action tx_sop(Bool val);
     method Action tx_eop(Bool val);
     method Action rx_ready(Bool val);
 
-    // input port
+    // output port
     method Bool rx_valid;
-    method VerticalNapNodeId rx_src;
+    method VerticalNapsrcOrDstNodeId rx_src;
     method VerticalNapData rx_data;
     method Bool rx_sop;
     method Bool rx_eop;
@@ -59,14 +60,14 @@ module mkAcxNapEthernetWrapperInner#(
     port tx_dest = 4'hF;  // 400G_MAC0, From UG086 Table 233, means to EIU
 
     
-    // output port
+    // input port
     method tx_valid(tx_valid) enable((*inhigh*) EN_NO_USE_1) clocked_by(clk) reset_by(no_reset);
     method tx_data(tx_data) enable((*inhigh*) EN_NO_USE_2) clocked_by(clk) reset_by(no_reset);
     method tx_sop(tx_sop) enable((*inhigh*) EN_NO_USE_3) clocked_by(clk) reset_by(no_reset);
     method tx_eop(tx_eop) enable((*inhigh*) EN_NO_USE_4) clocked_by(clk) reset_by(no_reset);
     method rx_ready(rx_ready) enable((*inhigh*) EN_NO_USE_5) clocked_by(clk) reset_by(no_reset);
 
-    // input port
+    // output port
     method rx_valid rx_valid clocked_by(clk) reset_by(no_reset);
     method rx_src rx_src clocked_by(clk) reset_by(no_reset);
     method rx_data rx_data clocked_by(clk) reset_by(no_reset);
@@ -75,8 +76,10 @@ module mkAcxNapEthernetWrapperInner#(
     method tx_ready tx_ready clocked_by(clk) reset_by(no_reset);  
 
     schedule (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready) CF (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready);
-    schedule (tx_valid, tx_data, tx_sop, tx_eop, rx_ready) C (tx_valid, tx_data, tx_sop, tx_eop, rx_ready);
-    schedule (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready) SB (tx_valid, tx_data, tx_sop, tx_eop, rx_ready);
+    schedule (tx_valid, tx_data, tx_sop, tx_eop) CF (tx_valid, tx_data, tx_sop, tx_eop, rx_ready);
+
+    schedule (rx_ready) C (rx_ready);
+    schedule (rx_valid, rx_src, rx_data, rx_sop, rx_eop, tx_ready) CF (tx_valid, tx_data, tx_sop, tx_eop, rx_ready);
 
 
 endmodule
@@ -92,7 +95,7 @@ module mkAcxNapEthernetPrimitiveWrapper#(
 endmodule
 
 typedef struct {
-    VerticalNapNodeId nodeId;
+    VerticalNapsrcOrDstNodeId srcOrDstNodeId;
     VerticalNapData data;
     Bool sop;
     Bool eop;
@@ -109,24 +112,22 @@ module mkAcxNapEthernetWrapper#(
         Bit#(5) rx_eiu_channel
     )(AcxNapEthernetWrapper);
 
-    FIFOF#(VerticalNapBeatEntry) txQ <- mkFIFOF;
-    FIFOF#(VerticalNapBeatEntry) rxQ <- mkFIFOF;
+    FIFOF#(VerticalNapBeatEntry) txQ <- mkUGFIFOF;
+    FIFOF#(VerticalNapBeatEntry) rxQ <- mkUGFIFOF;
     
     let ethNap <- mkAcxNapEthernetPrimitiveWrapper(tx_eiu_channel, rx_eiu_channel);
 
     rule forwardTxAxiSignal;
+        let txBeat = txQ.first;
+        ethNap.tx_valid(txQ.notEmpty);
+        ethNap.tx_data(txBeat.data);
+        ethNap.tx_sop(txBeat.sop);
+        ethNap.tx_eop(txBeat.eop);
+
         if (txQ.notEmpty) begin
-            let txBeat = txQ.first;
-            ethNap.tx_valid(True);
-            ethNap.tx_data(txBeat.data);
-            ethNap.tx_sop(txBeat.sop);
-            ethNap.tx_eop(txBeat.eop);
             if (ethNap.tx_ready) begin
                 txQ.deq;
             end
-        end
-        else begin
-            ethNap.tx_valid(False);
         end
     endrule
 
@@ -135,7 +136,7 @@ module mkAcxNapEthernetWrapper#(
             ethNap.rx_ready(True);
             if (ethNap.rx_valid) begin
                 let recvBeat = VerticalNapBeatEntry{
-                    nodeId: 4'hF, // according to UG086, the node ID of EIU is 4'hf
+                    srcOrDstNodeId: fromInteger(valueOf(ETHERNET_NAP_NODE_ID)),
                     data: ethNap.rx_data,
                     sop: ethNap.rx_sop,
                     eop: ethNap.rx_eop
@@ -150,11 +151,11 @@ module mkAcxNapEthernetWrapper#(
 
 
 
-    method Action send(VerticalNapBeatEntry beat);
+    method Action send(VerticalNapBeatEntry beat) if (txQ.notFull);
         txQ.enq(beat);
     endmethod
 
-    method ActionValue#(VerticalNapBeatEntry) recv;
+    method ActionValue#(VerticalNapBeatEntry) recv if (rxQ.notEmpty);
         rxQ.deq;
         return rxQ.first;
     endmethod
@@ -166,7 +167,7 @@ endmodule
 typedef 8 NAP_AXI_AWID_WIDTH;
 typedef Bit#(NAP_AXI_AWID_WIDTH) NapAxiAwid;
 
-typedef 28 NAP_AXI_AWADDR_WIDTH;
+typedef 42 NAP_AXI_AWADDR_WIDTH;
 typedef Bit#(NAP_AXI_AWADDR_WIDTH) NapAxiAwaddr;
 
 typedef 8 NAP_AXI_AWLEN_WIDTH;
@@ -199,7 +200,7 @@ typedef Bit#(NAP_AXI_BRESP_WIDTH) NapAxiBresp;
 typedef 8 NAP_AXI_ARID_WIDTH;
 typedef Bit#(NAP_AXI_ARID_WIDTH) NapAxiArid;
 
-typedef 28 NAP_AXI_ARADDR_WIDTH;
+typedef 42 NAP_AXI_ARADDR_WIDTH;
 typedef Bit#(NAP_AXI_ARADDR_WIDTH) NapAxiAraddr;
 
 typedef 8 NAP_AXI_ARLEN_WIDTH;
@@ -224,6 +225,22 @@ typedef Bit#(NAP_AXI_RDATA_WIDTH) NapAxiRdata;
 typedef 2 NAP_AXI_RRESP_WIDTH;
 typedef Bit#(NAP_AXI_RRESP_WIDTH) NapAxiRresp;
 
+typedef enum {
+    NapAxiSize1B   = 0,
+    NapAxiSize2B   = 1,
+    NapAxiSize4B   = 2,
+    NapAxiSize8B   = 3,
+    NapAxiSize16B  = 4,
+    NapAxiSize32B  = 5,
+    NapAxiSize64B  = 6,
+    NapAxiSize128B = 7
+} NapAxiSize deriving(Bits, FShow, Eq);
+
+typedef enum {
+    NapAxiBurstFixed  = 0,
+    NapAxiBurstIncr   = 1,
+    NapAxiBurstWrap   = 2
+} NapAxiBurst deriving(Bits, FShow, Eq);
 
 typedef struct {
     NapAxiAwid awid;
@@ -431,11 +448,11 @@ endinterface
 
 module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
 
-    FIFOF#(AxiMmNapBeatAw) awQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatW)   wQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatB)   bQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatAr) arQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatR)   rQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatB)   bQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatAr) arQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatR)   rQ   <- mkUGFIFOF;
     
     let axiMasterNap <- mkAcxNapAxiMasterPrimitiveWrapper;
 
@@ -445,7 +462,7 @@ module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
             if (axiMasterNap.awvalid) begin
                 let recvBeat = AxiMmNapBeatAw{
                     awid: axiMasterNap.awid,
-                    awaddr: axiMasterNap.awaddr,
+                    awaddr: zeroExtend(axiMasterNap.awaddr),
                     awlen: axiMasterNap.awlen,
                     awsize: axiMasterNap.awsize,
                     awburst: axiMasterNap.awburst,
@@ -479,18 +496,14 @@ module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
 
 
     rule forwardAxiSignalB;
+        let bBeat = bQ.first;
+        axiMasterNap.bvalid(bQ.notEmpty);
+        axiMasterNap.bid(bBeat.bid);
+        axiMasterNap.bresp(bBeat.bresp);
         if (bQ.notEmpty) begin
-            let bBeat = bQ.first;
-            axiMasterNap.bvalid(True);
-            axiMasterNap.bid(bBeat.bid);
-            axiMasterNap.bresp(bBeat.bresp);
-
             if (axiMasterNap.bready) begin
                 bQ.deq;
             end
-        end
-        else begin
-            axiMasterNap.bvalid(False);
         end
     endrule
 
@@ -501,7 +514,7 @@ module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
             if (axiMasterNap.arvalid) begin
                 let recvBeat = AxiMmNapBeatAr{
                     arid: axiMasterNap.arid,
-                    araddr: axiMasterNap.araddr,
+                    araddr: zeroExtend(axiMasterNap.araddr),
                     arlen: axiMasterNap.arlen,
                     arsize: axiMasterNap.arsize,
                     arburst: axiMasterNap.arburst,
@@ -518,90 +531,45 @@ module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
 
 
     rule forwardAxiSignalR;
-        if (rQ.notEmpty) begin
-            let rBeat = rQ.first;
-            axiMasterNap.rvalid(True);
-            axiMasterNap.rid(rBeat.rid);
-            axiMasterNap.rdata(rBeat.rdata);
-            axiMasterNap.rresp(rBeat.rresp);
-            axiMasterNap.rlast(rBeat.rlast);
+        let rBeat = rQ.first;
+        axiMasterNap.rvalid(rQ.notEmpty);
+        axiMasterNap.rid(rBeat.rid);
+        axiMasterNap.rdata(rBeat.rdata);
+        axiMasterNap.rresp(rBeat.rresp);
+        axiMasterNap.rlast(rBeat.rlast);
 
+        if (rQ.notEmpty) begin
             if (axiMasterNap.rready) begin
                 rQ.deq;
             end
         end
-        else begin
-            axiMasterNap.rvalid(False);
-        end
     endrule
 
 
-    method ActionValue#(AxiMmNapBeatAw) recvWriteAddr;
+    method ActionValue#(AxiMmNapBeatAw) recvWriteAddr if (awQ.notEmpty);
         awQ.deq;
         return awQ.first;
     endmethod
 
-    method ActionValue#(AxiMmNapBeatW) recvWriteData;
+    method ActionValue#(AxiMmNapBeatW) recvWriteData if (wQ.notEmpty);
         wQ.deq;
         return wQ.first;
     endmethod
 
-    method Action sendWriteResp(AxiMmNapBeatB beat);
+    method Action sendWriteResp(AxiMmNapBeatB beat) if (bQ.notFull);
         bQ.enq(beat);
     endmethod
 
-    method ActionValue#(AxiMmNapBeatAr) recvReadAddr;
+    method ActionValue#(AxiMmNapBeatAr) recvReadAddr if (arQ.notEmpty);
         arQ.deq;
         return arQ.first;
     endmethod
 
-    method Action sendReadResp(AxiMmNapBeatR beat);
+    method Action sendReadResp(AxiMmNapBeatR beat) if (rQ.notFull);
         rQ.enq(beat);
     endmethod
     
-    
 endmodule
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -731,26 +699,18 @@ module mkAcxNapAxiSlaveWrapperInner(ACX_NAP_AXI_SLAVE_WRAPPER);
     schedule (awid, awaddr, awlen, awsize, awburst, awlock, 
                 awqos, awvalid, wdata, wstrb, wlast, wvalid, 
                 bready, arid, araddr, arlen, arsize, arburst, 
-                arlock, arqos, arvalid, rready
+                arlock, arqos, arvalid, rready, bid, awready, 
+                wready, bvalid, arready, rid, rdata, rresp, 
+                rlast, rvalid, bresp
             ) CF (
                 awid, awaddr, awlen, awsize, awburst, awlock, 
                 awqos, awvalid, wdata, wstrb, wlast, wvalid, 
                 bready, arid, araddr, arlen, arsize, arburst, 
-                arlock, arqos, arvalid, rready);
-    
-    schedule (awready, wready, bid, bresp, bvalid, arready, 
-                rid, rdata, rresp, rlast, rvalid
-            ) C (
-                awready, wready, bid, bresp, bvalid, arready,
-                rid, rdata, rresp, rlast, rvalid);
+                arlock, arqos, arvalid, rready, bresp, bvalid,
+                awready, wready, bvalid, arready, rid, rdata,
+                rresp, rlast, rvalid, bid);
 
-    schedule (awready, wready, bid, bresp, bvalid, arready,
-                rid, rdata, rresp, rlast, rvalid
-            ) SB (
-                awid, awaddr, awlen, awsize, awburst, awlock, 
-                awqos, awvalid, wdata, wstrb, wlast, wvalid, 
-                bready, arid, araddr, arlen, arsize, arburst, 
-                arlock, arqos, arvalid, rready);
+
 endmodule
 
 module mkAcxNapAxiSlavePrimitiveWrapper(ACX_NAP_AXI_SLAVE_WRAPPER);
@@ -772,53 +732,47 @@ endinterface
 
 module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
 
-    FIFOF#(AxiMmNapBeatAw) awQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatW)   wQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatB)   bQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatAr) arQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatR)   rQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatB)   bQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatAr) arQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatR)   rQ   <- mkUGFIFOF;
     
     let axiSlaveNap <- mkAcxNapAxiSlavePrimitiveWrapper;
 
 
     rule forwardAxiSignalAw;
-        if (awQ.notEmpty) begin
-            let awBeat = awQ.first;
-            axiSlaveNap.awvalid(True);
+        let awBeat = awQ.first;
+        axiSlaveNap.awvalid(awQ.notEmpty);
 
-            axiSlaveNap.awid(awBeat.awid);
-            axiSlaveNap.awaddr(awBeat.awaddr);
-            axiSlaveNap.awlen(awBeat.awlen);
-            axiSlaveNap.awsize(awBeat.awsize);
-            axiSlaveNap.awburst(awBeat.awburst);
-            axiSlaveNap.awlock(awBeat.awlock);
-            axiSlaveNap.awqos(awBeat.awqos);
-            
+        axiSlaveNap.awid(awBeat.awid);
+        axiSlaveNap.awaddr(awBeat.awaddr);
+        axiSlaveNap.awlen(awBeat.awlen);
+        axiSlaveNap.awsize(awBeat.awsize);
+        axiSlaveNap.awburst(awBeat.awburst);
+        axiSlaveNap.awlock(awBeat.awlock);
+        axiSlaveNap.awqos(awBeat.awqos);
+
+        if (awQ.notEmpty) begin
             if (axiSlaveNap.awready) begin
                 awQ.deq;
             end
-        end
-        else begin
-            axiSlaveNap.awvalid(False);
         end
     endrule
 
 
     rule forwardAxiSignalW;
-        if (wQ.notEmpty) begin
-            let wBeat = wQ.first;
-            axiSlaveNap.wvalid(True);
+        let wBeat = wQ.first;
+        axiSlaveNap.wvalid(wQ.notEmpty);
 
-            axiSlaveNap.wdata(wBeat.wdata);
-            axiSlaveNap.wstrb(wBeat.wstrb);
-            axiSlaveNap.wlast(wBeat.wlast);
-            
+        axiSlaveNap.wdata(wBeat.wdata);
+        axiSlaveNap.wstrb(wBeat.wstrb);
+        axiSlaveNap.wlast(wBeat.wlast);
+
+        if (wQ.notEmpty) begin
             if (axiSlaveNap.wready) begin
                 wQ.deq;
             end
-        end
-        else begin
-            axiSlaveNap.wvalid(False);
         end
     endrule
 
@@ -841,24 +795,22 @@ module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
 
     
     rule forwardAxiSignalAr;
+        let arBeat = arQ.first;
+        axiSlaveNap.arvalid(arQ.notEmpty);
+        axiSlaveNap.arid(arBeat.arid);
+        axiSlaveNap.araddr(arBeat.araddr);
+        axiSlaveNap.arlen(arBeat.arlen);
+        axiSlaveNap.arsize(arBeat.arsize);
+        axiSlaveNap.arburst(arBeat.arburst);
+        axiSlaveNap.arlock(arBeat.arlock);
+        axiSlaveNap.arqos(arBeat.arqos);
+
         if (arQ.notEmpty) begin
-            let arBeat = arQ.first;
-            axiSlaveNap.arvalid(True);
-            axiSlaveNap.arid(arBeat.arid);
-            axiSlaveNap.araddr(arBeat.araddr);
-            axiSlaveNap.arlen(arBeat.arlen);
-            axiSlaveNap.arsize(arBeat.arsize);
-            axiSlaveNap.arburst(arBeat.arburst);
-            axiSlaveNap.arlock(arBeat.arlock);
-            axiSlaveNap.arqos(arBeat.arqos);
-            
             if (axiSlaveNap.arready) begin
                 arQ.deq;
             end
         end
-        else begin
-        axiSlaveNap.arvalid(False);
-        end
+        
     endrule
 
     rule forwardAxiSignalR;
@@ -881,24 +833,24 @@ module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
 
     
     
-    method Action sendWriteAddr(AxiMmNapBeatAw beat);
+    method Action sendWriteAddr(AxiMmNapBeatAw beat) if (awQ.notFull);
         awQ.enq(beat);
     endmethod
 
-    method Action sendWriteData(AxiMmNapBeatW beat);
+    method Action sendWriteData(AxiMmNapBeatW beat) if (wQ.notFull);
         wQ.enq(beat);
     endmethod
 
-    method ActionValue#(AxiMmNapBeatB) recvWriteResp;
+    method ActionValue#(AxiMmNapBeatB) recvWriteResp if (bQ.notEmpty);
         bQ.deq;
         return bQ.first;
     endmethod
 
-    method Action sendReadAddr(AxiMmNapBeatAr beat);
+    method Action sendReadAddr(AxiMmNapBeatAr beat) if (arQ.notFull);
         arQ.enq(beat);
     endmethod
 
-    method ActionValue#(AxiMmNapBeatR) recvReadResp;
+    method ActionValue#(AxiMmNapBeatR) recvReadResp if (rQ.notEmpty);
         rQ.deq;
         return rQ.first;
     endmethod

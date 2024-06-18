@@ -1,5 +1,5 @@
 #ACE 10.0 IP Properties File, generated on:
-#Wed Jun 12 00:03:23 CST 2024
+#Fri Jun 14 16:32:39 CST 2024
 acxip_version=7
 clkout0.clkout.port_name=eth_ref_clk
 clkout0.int_ODN_output_divider=8
@@ -39,9 +39,9 @@ clkout3.phase_shift=0
 enable_spread_spectrum=No
 external_feedback_clkout=0
 external_feedback_clock_name=fbclk
-feedback_divider=20
+feedback_divider=18
 feedback_mode=Pure Internal
-float_target_out0_frequency=1000
+float_target_out0_frequency=900
 int_OS_output_divider=1
 is_forcing_integer_feedback=No
 is_inner_bypass=No

@@ -1,5 +1,5 @@
 #ACE 10.0 IP Properties File, generated on:
-#Wed Jun 12 00:03:58 CST 2024
+#Tue Jun 18 13:25:53 CST 2024
 acxip_version=5
 enable_ref_clk_sharing=No
 ff_clk0=eth_ff_clk
@@ -93,7 +93,7 @@ override_1ms_reference=No
 override_free_running_counter=No
 override_link_up=No
 placement=ETH_1
-ref_clk=CLK
+ref_clk=eth_ref_clk
 reset_source=Internal Reset from FCU
 reset_source_name=ethernet_rstn
 target_device=AC7t1500ES0
