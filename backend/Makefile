@@ -20,12 +20,12 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
 # TOPMODULE ?= mkTestAcxBram72kSdpConflictRW
 
-TARGETFILE ?= ../test/TestButterflyMerge.bsv
-TOPMODULE ?= mkTestFourChannelButterflyMergeTimingTest
+# TARGETFILE ?= ../test/TestButterflyMerge.bsv
+# TOPMODULE ?= mkTestFourChannelButterflyMergeTimingTest
 
 
-# TARGETFILE ?= ../test/TestNapWrapper.bsv
-# TOPMODULE ?= mkTestTestNapWrapper
+TARGETFILE ?= ../test/TestNapWrapper.bsv
+TOPMODULE ?= mkTestEthernetNapLoopBack
 
 
 BACKENDDIR ?= .

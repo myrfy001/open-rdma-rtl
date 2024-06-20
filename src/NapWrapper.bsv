@@ -3,6 +3,7 @@ import ClientServer :: *;
 import RegFile :: *;
 import FIFOF :: *;
 import Vector :: *;
+import Reserved :: *;
 
 import PrimUtils :: *;
 
@@ -10,11 +11,56 @@ import PrimUtils :: *;
 typedef 4 VERTICAL_NAP_NODE_ID_WIDTH;
 typedef 293 VERTICAL_NAP_DATA_WIDTH;
 
+typedef 256 NOC_DATA_BUS_BIT_WIDTH;
+typedef TDiv#(NOC_DATA_BUS_BIT_WIDTH, BYTE_WIDTH) NOC_DATA_BUS_BYTE_WIDTH;
+typedef Bit#(NOC_DATA_BUS_BIT_WIDTH) NocData;
+
 typedef Bit#(VERTICAL_NAP_NODE_ID_WIDTH) VerticalNapsrcOrDstNodeId;
 typedef Bit#(VERTICAL_NAP_DATA_WIDTH) VerticalNapData;
 
+typedef VERTICAL_NAP_DATA_WIDTH ETHERNET_NAP_DATA_WIDTH;
+typedef Bit#(ETHERNET_NAP_DATA_WIDTH) EthernetNapData;
+
 typedef 15 ETHERNET_NAP_NODE_ID; // according to UG086, the node ID of EIU is 4'hf
 
+typedef 5 ETH_NAP_MOD_WIDTH;
+typedef Bit#(ETH_NAP_MOD_WIDTH) EthernetNapMod;
+
+typedef 30 ETH_NAP_TIMESTAMP_WIDTH;
+typedef Bit#(ETH_NAP_TIMESTAMP_WIDTH) EthernetNapTimestamp;
+
+typedef 5 ETH_NAP_SEQ_ID_WIDTH;
+typedef Bit#(ETH_NAP_SEQ_ID_WIDTH) EthernetNapSeqID;
+
+
+typedef struct {
+    ReservedZero#(16) revd1;
+    EthernetNapSeqID sequenceID;
+    Bool vlan;
+    Bool transmitError;
+    Bool invertedCRC;
+    Bool shortFrame;
+    Bool fifoOverflow;
+    Bool decodeError;
+    Bool crcError;
+    Bool lengthError;
+    Bool error;
+} EthernetNapRecvFlags deriving(Bits, FShow);
+
+
+typedef struct {
+    ReservedZero#(2) rsvd2;
+    EthernetNapTimestamp timestamp;
+    ReservedZero#(ETH_NAP_MOD_WIDTH) rsvd1;
+    NocData data;
+} EthernetNapRecvFirstBeat;
+
+typedef struct {
+    ReservedZero#(2) rsvd2;
+    EthernetNapRecvFlags flags;
+    EthernetNapMod mod;
+    NocData data;
+} EthernetNapRecvOtherBeat;
 
 interface ACX_NAP_ETHERNET_WRAPPER;
     
@@ -100,6 +146,8 @@ typedef struct {
     Bool sop;
     Bool eop;
 } VerticalNapBeatEntry deriving(Bits, FShow);
+
+typedef VerticalNapBeatEntry EthernetNapBeatEntry;
 
 
 interface AcxNapEthernetWrapper;

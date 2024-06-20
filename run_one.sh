@@ -16,17 +16,28 @@ truncate -s 0 $TEST_LOG
 
 # FILES=`ls TestSdpBramWrapper.bsv`
 # FILES=`ls TestFullyPipelinedUpdateBram.bsv`
-FILES=`ls TestButterflyMerge.bsv`
+
+# for FILE in $FILES; do
+#     # echo $FILE
+#     TESTCASES=`grep -Phzo 'doc.*?\nmodule\s+\S+(?=\()' $FILE | xargs -0  -I {}  echo "{}" | grep module | cut -d ' ' -f 2`
+#     for TESTCASE in $TESTCASES; do
+#         make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
+#     done
+# done
 
 
 
-for FILE in $FILES; do
-    # echo $FILE
-    TESTCASES=`grep -Phzo 'doc.*?\nmodule\s+\S+(?=\()' $FILE | xargs -0  -I {}  echo "{}" | grep module | cut -d ' ' -f 2`
-    for TESTCASE in $TESTCASES; do
-        make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
-    done
-done
+
+FILE=`ls TestButterflyMerge.bsv`
+# TESTCASE=mkTestFourChannelButterflyMergeTimingTest
+TESTCASE=mkTestFourChannelButterflyMergeSingleBeatTest
+
+# FILE=`ls TestNapWrapper.bsv`
+# TESTCASE=mkTestFourChannelButterflyMergeSingleBeatTest
+
+make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
+
+
 
 
 FAIL_KEYWORKS='Error\|ImmAssert'

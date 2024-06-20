@@ -6,6 +6,7 @@ import StmtFSM :: * ;
 
 import PrimUtils :: *;
 import Utils4Test :: *;
+import EthernetFrameIO :: *;
 
 import NapWrapper :: *;
 
