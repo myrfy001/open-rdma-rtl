@@ -22,11 +22,8 @@ typedef 100000000 BOARD_SYS_CLK_FREQ;
 // RDMA device attributes
 // Must be power of 2
 
-`ifdef IS_250MHZ_512BITS
-typedef 512 DATA_BUS_WIDTH;
-`else
 typedef 256 DATA_BUS_WIDTH;
-`endif
+
 
 typedef TExp#(31)           MAX_MR_SIZE;   // 2GB
 typedef TExp#(21)           PAGE_SIZE_CAP; // 2MB

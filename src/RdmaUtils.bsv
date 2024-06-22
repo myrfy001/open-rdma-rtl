@@ -26,12 +26,12 @@ endfunction
 
 
 function DataStream reverseStream(DataStream st);
-    st.data = swapEndian(st.data);
+    st.data = swapEndianByte(st.data);
     return st;
 endfunction
 
 function DataStreamEn reverseStreamEnAndData(DataStreamEn st);
-    st.data = swapEndian(st.data);
+    st.data = swapEndianByte(st.data);
     st.byteEn = swapEndianBit(st.byteEn);
     return st;
 endfunction

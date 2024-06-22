@@ -390,3 +390,61 @@ function Bool rdmaOpCodeHasPayload(RdmaOpCode opcode);
         default                       : False;
     endcase;
 endfunction
+
+typedef struct {
+    ImmDt imm; 
+} RdmaExtendHeaderImm deriving(Bits, FShow);
+
+typedef struct {
+    RETH reth; 
+    ImmDt imm; 
+} RdmaExtendHeaderRethImm deriving(Bits, FShow);
+
+typedef struct {
+    RETH reth; 
+    RETH secondaryReth; 
+} RdmaExtendHeaderRethReth deriving(Bits, FShow);
+
+typedef struct {
+    AtomicEth atomiceth; 
+} RdmaExtendHeaderAtomiceth deriving(Bits, FShow);
+
+typedef struct {
+    IETH ieth; 
+} RdmaExtendHeaderIeth deriving(Bits, FShow);
+
+typedef struct {
+    AETH aeth; 
+    NRETH nreth;
+    AtomicAckEth atomicAckEth;
+} RdmaExtendHeaderAethNrethAtomicAck deriving(Bits, FShow);
+
+typedef struct {
+    XRCETH xrceth;
+    ImmDt imm; 
+} RdmaExtendHeaderXrcethImm deriving(Bits, FShow);
+
+typedef struct {
+    XRCETH xrceth;
+    RETH reth;
+    ImmDt imm; 
+} RdmaExtendHeaderXrcethRethImm deriving(Bits, FShow);
+
+typedef struct {
+    XRCETH xrceth;
+    AtomicEth atomiceth; 
+} RdmaExtendHeaderXrcethAtomiceth deriving(Bits, FShow);
+
+typedef struct {
+    XRCETH xrceth;
+    IETH ieth; 
+} RdmaExtendHeaderXrcethIeth deriving(Bits, FShow);
+
+typedef struct {
+    DETH deth;
+    ImmDt imm;
+} RdmaExtendHeaderDethImm deriving(Bits, FShow);
+
+typedef struct {
+    PayloadCNP cnp;
+} RdmaExtendHeaderCnp deriving(Bits, FShow);

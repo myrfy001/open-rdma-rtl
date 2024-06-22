@@ -96,7 +96,7 @@ typedef 14 ETH_HDR_BYTE_WIDTH;                 // 14 bytes
 typedef TMul#(IP_IHL_VAL,4) IP_HDR_BYTE_WIDTH; // 20 bytes
 typedef 8  UDP_HDR_BYTE_WIDTH;                 // 8 bytes
 typedef TAdd#(IP_HDR_BYTE_WIDTH, UDP_HDR_BYTE_WIDTH) IP_UDP_HDR_BYTE_WIDTH;
-typedef TAdd#(ETH_HDR_BYTE_WIDTH, IP_UDP_HDR_BYTE_WIDTH) TOTAL_HDR_BYTE_WIDTH;
+typedef TAdd#(ETH_HDR_BYTE_WIDTH, IP_UDP_HDR_BYTE_WIDTH) MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH;
 
 typedef TDiv#(ETH_HDR_BYTE_WIDTH,2) ETH_HDR_WORD_WIDTH; // 7 words
 typedef 10 IP_HDR_WORD_WIDTH;  // 10 words
@@ -107,7 +107,7 @@ typedef TMul#(ETH_HDR_BYTE_WIDTH, 8) ETH_HDR_WIDTH;
 typedef TMul#(IP_HDR_BYTE_WIDTH,  8) IP_HDR_WIDTH;
 typedef TMul#(UDP_HDR_BYTE_WIDTH, 8) UDP_HDR_WIDTH;
 typedef TMul#(IP_UDP_HDR_BYTE_WIDTH,8) IP_UDP_HDR_WIDTH;
-typedef TMul#(TOTAL_HDR_BYTE_WIDTH, 8) TOTAL_HDR_WIDTH;
+typedef TMul#(MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH, 8) MAC_IP_UDP_TOTAL_HDR_WIDTH;
 
 typedef 1500 ETH_DATA_MAX_SIZE;  // The maximum byte-width of payload of Ethnernrt Frame
 typedef 46   ETH_DATA_MIN_SIZE;  // The minimum byte-width of payload of Ethnernrt Frame
@@ -255,4 +255,22 @@ typedef struct {
     IpEcn      ipEcn;
     IpAddr     srcIpAddr;
     UdpPort    srcPort;
-} ThinMacIpUdpMetaData;
+} ThinMacIpUdpMetaDataForRecv deriving(Bits, FShow, Eq);
+
+typedef struct {
+    EthMacAddr dstMacAddr;
+    IpDscp     ipDscp;
+    IpEcn      ipEcn;
+    IpAddr     dstIpAddr;
+    UdpPort    srcPort;
+    UdpPort    dstPort;
+    UdpLength  udpPayloadLen;
+    EthType    ethType;
+} ThinMacIpUdpMetaDataForSend deriving(Bits, FShow, Eq);
+
+typedef struct {
+    EthMacAddr macAddr;
+    IpAddr ipAddr;
+    IpAddr gatewayAddr;
+    IpAddr netMask;
+} LocalNetworkSettings deriving(Bits, FShow, Eq);

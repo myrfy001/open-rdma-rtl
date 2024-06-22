@@ -5,6 +5,7 @@ import FIFOF :: *;
 import Vector :: *;
 import Reserved :: *;
 
+import DataTypes :: *;
 import PrimUtils :: *;
 
 
@@ -45,7 +46,7 @@ typedef struct {
     Bool crcError;
     Bool lengthError;
     Bool error;
-} EthernetNapRecvFlags deriving(Bits, FShow);
+} EthernetNapRecvFlags deriving(Bits, FShow, Eq);
 
 
 typedef struct {
@@ -53,14 +54,45 @@ typedef struct {
     EthernetNapTimestamp timestamp;
     ReservedZero#(ETH_NAP_MOD_WIDTH) rsvd1;
     NocData data;
-} EthernetNapRecvFirstBeat;
+} EthernetNapRecvFirstBeat deriving(Bits, FShow, Eq);
 
 typedef struct {
-    ReservedZero#(2) rsvd2;
+    ReservedZero#(2) rsvd1;
     EthernetNapRecvFlags flags;
     EthernetNapMod mod;
     NocData data;
-} EthernetNapRecvOtherBeat;
+} EthernetNapRecvOtherBeat deriving(Bits, FShow, Eq);
+
+typedef 17 ETH_NAP_TRANSMIT_ID_FLAG_WIDTH;
+typedef Bit#(ETH_NAP_TRANSMIT_ID_FLAG_WIDTH) EthernetNapTransmitID;
+
+typedef struct {
+    ReservedZero#(6) revd1;
+    Bool classB;
+    Bool classA;
+    Bool crcOverride;
+    Bool crcInvert;
+    Bool crcInsert;
+    Bool txError;
+    Bool frame;
+    EthernetNapTransmitID id;
+} EthernetNapSendFlags deriving(Bits, FShow, Eq);
+
+typedef struct {
+    ReservedZero#(2) rsvd2;
+    EthernetNapTimestamp timestamp;
+    ReservedZero#(ETH_NAP_MOD_WIDTH) rsvd1;
+    NocData data;
+} EthernetNapSendFirstBeat deriving(Bits, FShow, Eq);
+
+typedef struct {
+    ReservedZero#(2) rsvd1;
+    EthernetNapSendFlags flags;
+    EthernetNapMod mod;
+    NocData data;
+} EthernetNapSendOtherBeat deriving(Bits, FShow, Eq);
+
+
 
 interface ACX_NAP_ETHERNET_WRAPPER;
     

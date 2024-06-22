@@ -1,4 +1,5 @@
 import PAClib :: *;
+import FIFOF :: *;
 
 // re-export PAAClib's PipeOut
 export PipeOut;
@@ -10,11 +11,12 @@ export ServerF;
 export ClientF;
 export ServerP;
 export ClientP;
+export f_FIFOF_to_PipeIn;
 
 
 interface PipeIn#(type tData);
     method Action enq(tData data);
-    method Bool notEmpty;
+    method Bool notFull;
 endinterface
 
 interface GetF#(type tData);
@@ -46,3 +48,14 @@ interface ClientP#(type tReq, type tResp);
     interface PipeOut#(tReq) request;
     interface PipeIn#(tResp) response;
 endinterface
+
+function PipeIn#(tData) f_FIFOF_to_PipeIn(FIFOF#(tData) fifof);
+    return (interface PipeIn;
+               method Action enq (tData data);
+                  fifof.enq(data);
+               endmethod
+               method Bool notFull;
+                  return fifof.notFull;
+               endmethod
+            endinterface);
+ endfunction

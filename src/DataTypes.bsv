@@ -8,6 +8,9 @@ import RdmaHeaders :: *;
 import Settings :: *;
 
 typedef 8 BYTE_WIDTH;
+typedef 16 WORD_WIDTH;
+typedef Bit#(BYTE_WIDTH) Byte;
+typedef Bit#(WORD_WIDTH) Word;
 
 // Protocol settings
 typedef TExp#(31) RDMA_MAX_LEN;
@@ -39,20 +42,16 @@ typedef TLog#(MAX_SGE)          SGE_IDX_WIDTH;
 typedef TAdd#(1, SGE_IDX_WIDTH) SGE_NUM_WIDTH;
 
 // 12 + 4 + 16 + 16 = 48 bytes
-typedef TAdd#(TAdd#(BTH_BYTE_WIDTH, XRCETH_BYTE_WIDTH), TAdd#(RETH_BYTE_WIDTH, LETH_BYTE_WIDTH)) HEADER_MAX_BYTE_LENGTH;
-// // 12 + 4 + 28 = 44 bytes
-// typedef TAdd#(TAdd#(BTH_BYTE_WIDTH, XRCETH_BYTE_WIDTH), ATOMIC_ETH_BYTE_WIDTH) HEADER_MAX_BYTE_LENGTH;
+typedef TAdd#(TAdd#(BTH_BYTE_WIDTH, XRCETH_BYTE_WIDTH), TAdd#(RETH_BYTE_WIDTH, LETH_BYTE_WIDTH)) RDMA_HEADER_MAX_BYTE_LENGTH;
+typedef 42 ETH_IP_UDP_HEADER_BYTE_LENGTH; // 14(MAC) + 20(IP) + 8(UDP) = 42
+typedef TAdd#(ETH_IP_UDP_HEADER_BYTE_LENGTH, RDMA_HEADER_MAX_BYTE_LENGTH) ETH_IP_UDP_RDMA_HEADER_MAX_BYTE_LENGTH;
+typedef TAdd#(ETH_IP_UDP_RDMA_HEADER_MAX_BYTE_LENGTH, MAX_PMTU) RDMA_ETHERNET_FRAME_MAX_BYTE_LENGTH;
+typedef Bit#(TAdd#(1, TLog#(RDMA_ETHERNET_FRAME_MAX_BYTE_LENGTH))) RdmaEthernetFrameByteLen;
 
 typedef TDiv#(DATA_BUS_WIDTH, 8)   DATA_BUS_BYTE_WIDTH; // 32 (bus 256b), 64 (bus 512b)
 typedef TLog#(DATA_BUS_BYTE_WIDTH) DATA_BUS_BYTE_NUM_WIDTH; // 5 (bus 256b), 6 (bus 512b)
 typedef TLog#(DATA_BUS_WIDTH)      DATA_BUS_BIT_NUM_WIDTH; // 8 (bus 256b), 9 (bus 512b)
 
-typedef TDiv#(HEADER_MAX_BYTE_LENGTH, DATA_BUS_BYTE_WIDTH) HEADER_MAX_FRAG_NUM; // 2 (bus 256b), 1 (bus 512b)
-typedef TMul#(DATA_BUS_WIDTH, HEADER_MAX_FRAG_NUM)         HEADER_MAX_DATA_WIDTH; // 512
-typedef TMul#(DATA_BUS_BYTE_WIDTH, HEADER_MAX_FRAG_NUM)    HEADER_MAX_BYTE_EN_WIDTH; // 64
-typedef TLog#(TAdd#(1, HEADER_MAX_BYTE_EN_WIDTH))          HEADER_MAX_BYTE_NUM_WIDTH; // 7
-typedef TLog#(TAdd#(1, HEADER_MAX_DATA_WIDTH))             HEADER_MAX_BIT_NUM_WIDTH;  // 10
-typedef TLog#(TAdd#(1, HEADER_MAX_FRAG_NUM))               HEADER_FRAG_NUM_WIDTH; // 2 (bus 256b), 1 (bus 512b)
 
 typedef TLog#(MAX_PMTU)                      MAX_PMTU_WIDTH; // 12
 // typedef TLog#(TLog#(MAX_PMTU))               PMTU_VALUE_MAX_WIDTH; // 4
@@ -97,13 +96,6 @@ typedef Bit#(DATA_BUS_BYTE_WIDTH) ByteEn;
 typedef Bit#(SGE_IDX_WIDTH) IdxSGL;
 typedef Bit#(SGE_NUM_WIDTH) NumSGE;
 
-typedef Bit#(HEADER_MAX_DATA_WIDTH)                 HeaderData;
-typedef Bit#(HEADER_MAX_BYTE_EN_WIDTH)              HeaderByteEn;
-typedef Bit#(HEADER_MAX_BYTE_NUM_WIDTH)             HeaderByteNum;  // 7
-typedef Bit#(HEADER_MAX_BIT_NUM_WIDTH)              HeaderBitNum;
-typedef Bit#(HEADER_FRAG_NUM_WIDTH)                 HeaderFragNum;
-typedef Bit#(TSub#(HEADER_MAX_BYTE_NUM_WIDTH, 1))   HeaderByteWidthMask;  // 6
-typedef Bit#(TSub#(HEADER_MAX_BIT_NUM_WIDTH, 1))    HeaderBitWidthMask;   // 9
 
 typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8 (bus 256b), 9 (bus 512b)
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5 (bus 256b), 6 (bus 512b)
@@ -112,7 +104,7 @@ typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5 (bus 256b), 6 (bus 
 typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9 (bus 256b), 10 (bus 512b)
 typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6 (bus 256b), 7 (bus 512b)
 
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftByteNum; // 5 (bus 256b), 6 (bus 512b)
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) DataBusOneBasedByteIndex; // 5 (bus 256b), 6 (bus 512b)
 
 
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
@@ -202,27 +194,27 @@ typedef Client#(DmaWriteReq, DmaWriteResp)    DmaWriteClt;
 typedef Server#(PermCheckReq, Bool) PermCheckSrv;
 typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
-interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
-    interface PipeOut#(RdmaPktMetaDataAndQPC) pktMetaData;
-    interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
-endinterface
+// interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
+//     interface PipeOut#(RdmaPktMetaDataAndQPC) pktMetaData;
+//     interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
+// endinterface
 
 // RDMA related requests and responses
 
-typedef enum {
-    RDMA_RESP_NORMAL,
-    RDMA_RESP_RETRY,
-    RDMA_RESP_ERROR,
-    RDMA_RESP_UNKNOWN
-} RdmaRespType deriving(Bits, Eq, FShow);
+// typedef enum {
+//     RDMA_RESP_NORMAL,
+//     RDMA_RESP_RETRY,
+//     RDMA_RESP_ERROR,
+//     RDMA_RESP_UNKNOWN
+// } RdmaRespType deriving(Bits, Eq, FShow);
 
-typedef enum {
-    RETRY_REASON_NOT_RETRY,
-    RETRY_REASON_RNR,
-    RETRY_REASON_SEQ_ERR,
-    RETRY_REASON_IMPLICIT,
-    RETRY_REASON_TIMEOUT
-} RetryReason deriving(Bits, Eq, FShow);
+// typedef enum {
+//     RETRY_REASON_NOT_RETRY,
+//     RETRY_REASON_RNR,
+//     RETRY_REASON_SEQ_ERR,
+//     RETRY_REASON_IMPLICIT,
+//     RETRY_REASON_TIMEOUT
+// } RetryReason deriving(Bits, Eq, FShow);
 
 // DATA are left aligned
 typedef struct {
@@ -238,63 +230,94 @@ typedef struct {
     ByteEn byteEn;
     Bool isFirst;
     Bool isLast;
-} DataStreamEn deriving(Bits, Bounded, Eq, FShow);
+} DataStreamEn deriving(Bits, FShow);
+
+// This buffer should be able to contain the largest extend header combinations.
+// For now, the largest one is 32 Byte;
+typedef 256 RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH;
+typedef Bit#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) RdmaExtendHeaderBuffer;
+typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;
+typedef TAdd#(1, TLog#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH)) RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH;
+typedef Bit#(RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH) RdmaExtendHeaderLength;
+
+typedef TAdd#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH, BTH_BYTE_WIDTH) RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH;
+typedef TAdd#(1, TLog#(RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH)) RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH;
+typedef Bit#(RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH) RdmaBthAndEthTotalLength;
+
 
 typedef struct {
-    HeaderByteNum                   headerLen;
-    HeaderFragNum                   headerFragNum;
-    ByteEnBitNum                    lastFragValidByteNum;
-    Bool                            hasPayload;
-    Bool                            isEmptyHeader;
-    RecvPacketSrcMacIpBufferIdx     srcMacIpIdx;
-} HeaderMetaData deriving(Bits, Bounded, Eq);
+    BTH bth;
+    RdmaExtendHeaderBuffer rdmaExtendHeaderBuf;
+} RdmaBthAndExtendHeader deriving(Bits, FShow);
 
 typedef struct {
-    ByteEnBitNum lastFragValidByteNum;
-} PayloadMetaData deriving(Bits, Bounded, Eq);
-
-instance FShow#(HeaderMetaData);
-    function Fmt fshow(HeaderMetaData hmd);
-        return $format(
-            "HeaderMetaData { headerLen=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
-            hmd.headerLen, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
-        );
-    endfunction
-endinstance
-
-// HeaderData and HeaderByteEn are left aligned
-typedef struct {
-    HeaderData                headerData;
-    HeaderByteNum              headerByteNum;
-    HeaderMetaData            headerMetaData;
-} HeaderRDMA deriving(Bits, Bounded, FShow);
-
-typedef enum {
-    PKT_ST_VALID,
-    PKT_ST_LEN_ERR
-    // PKT_ST_QP_ACC_ERR,
-    // PKT_ST_DISCARD
-} PktVeriStatus deriving(Bits, Bounded, Eq, FShow);
+    RdmaBthAndExtendHeader header;
+    Bool hasPayload;
+    DataBusOneBasedByteIndex firstPayloadByteOffsetInFirstPayloadBeat;
+} RdmaRecvPacketMeta deriving(Bits, FShow);
 
 typedef struct {
-    PktLen pktPayloadLen;
-    PktFragNum pktFragNum;
-    Bool isZeroPayloadLen;
-    HeaderRDMA pktHeader;
-    Bool pktValid;
-    PktVeriStatus pktStatus;
-} RdmaPktMetaData deriving(Bits, Bounded);
+    RdmaBthAndExtendHeader header;
+    RdmaBthAndEthTotalLength bthAndEthTotalLength;
+    Bool hasPayload;
+} RdmaSendPacketMeta deriving(Bits, FShow);
 
-instance FShow#(RdmaPktMetaData);
-    function Fmt fshow(RdmaPktMetaData rpmd);
-        return $format(
-            "RdmaPktMetaData { pktPayloadLen=%0d, pktFragNum=%0d",
-            rpmd.pktPayloadLen, rpmd.pktFragNum,
-            ", pktHeader=", fshow(rpmd.pktHeader),
-            ", pktValid=", fshow(rpmd.pktValid), " }"
-        );
-    endfunction
-endinstance
+
+// typedef struct {
+//     HeaderByteNum                   headerLen;
+//     HeaderFragNum                   headerFragNum;
+//     ByteEnBitNum                    lastFragValidByteNum;
+//     Bool                            hasPayload;
+//     Bool                            isEmptyHeader;
+//     RecvPacketSrcMacIpBufferIdx     srcMacIpIdx;
+// } HeaderMetaData deriving(Bits, Bounded, Eq);
+
+// typedef struct {
+//     ByteEnBitNum lastFragValidByteNum;
+// } PayloadMetaData deriving(Bits, Bounded, Eq);
+
+// instance FShow#(HeaderMetaData);
+//     function Fmt fshow(HeaderMetaData hmd);
+//         return $format(
+//             "HeaderMetaData { headerLen=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
+//             hmd.headerLen, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
+//         );
+//     endfunction
+// endinstance
+
+// // HeaderData and HeaderByteEn are left aligned
+// typedef struct {
+//     HeaderData                headerData;
+//     HeaderByteNum              headerByteNum;
+//     HeaderMetaData            headerMetaData;
+// } HeaderRDMA deriving(Bits, Bounded, FShow);
+
+// typedef enum {
+//     PKT_ST_VALID,
+//     PKT_ST_LEN_ERR
+//     // PKT_ST_QP_ACC_ERR,
+//     // PKT_ST_DISCARD
+// } PktVeriStatus deriving(Bits, Bounded, Eq, FShow);
+
+// typedef struct {
+//     PktLen pktPayloadLen;
+//     PktFragNum pktFragNum;
+//     Bool isZeroPayloadLen;
+//     HeaderRDMA pktHeader;
+//     Bool pktValid;
+//     PktVeriStatus pktStatus;
+// } RdmaPktMetaData deriving(Bits, Bounded);
+
+// instance FShow#(RdmaPktMetaData);
+//     function Fmt fshow(RdmaPktMetaData rpmd);
+//         return $format(
+//             "RdmaPktMetaData { pktPayloadLen=%0d, pktFragNum=%0d",
+//             rpmd.pktPayloadLen, rpmd.pktFragNum,
+//             ", pktHeader=", fshow(rpmd.pktHeader),
+//             ", pktValid=", fshow(rpmd.pktValid), " }"
+//         );
+//     endfunction
+// endinstance
 
 // DMA related
 
@@ -815,10 +838,10 @@ typedef struct {
 } EntryCommonQPC deriving(Bits, Eq, FShow);
 
 
-typedef struct {
-    RdmaPktMetaData                 metadata;
-    EntryCommonQPC                  qpc;
-} RdmaPktMetaDataAndQPC deriving(Bits, FShow);
+// typedef struct {
+//     RdmaPktMetaData                 metadata;
+//     EntryCommonQPC                  qpc;
+// } RdmaPktMetaDataAndQPC deriving(Bits, FShow);
 
 // typedef struct {
 //     QPN  qpn;

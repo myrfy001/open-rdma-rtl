@@ -1,5 +1,6 @@
 import FIFOF :: *;
 import PAClib :: *;
+import ConnectableF :: *;
 
 typedef 2 TWO;
 typedef 4 FOUR;
@@ -176,25 +177,11 @@ endfunction
 function PipeOut#(anytype) toPipeOut(FIFOF#(anytype) queue);
     return f_FIFOF_to_PipeOut(queue);
 endfunction
-/*
-function PipeOut#(anytype) toPipeOutWithAction(
-    FIFOF#(anytype) queue,
-    function Action deqAction(anytype deqVal)
-);
-    return (interface PipeOut;
-        method anytype first();
-            return queue.first;
-        endmethod
-        method Action deq();
-            queue.deq;
-            deqAction(queue.first);
-        endmethod
-        method Bool notEmpty();
-            return queue.notEmpty;
-        endmethod
-    endinterface);
+
+function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
+    return f_FIFOF_to_PipeIn(queue);
 endfunction
-*/
+
 // FlagsType related
 
 typedef struct {
