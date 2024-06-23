@@ -49,6 +49,7 @@ typedef struct {
     Bool isAddrMatch;
 } EthernetPacketMeta deriving(Bits, FShow, Eq);
 
+(*synthesize*)
 module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
@@ -135,8 +136,9 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
         EthernetNapRecvOtherBeat beatPayload = unpack(beat.data);
 
-        let byteNum =  beat.eop ? (
-                beatPayload.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : beatPayload.mod
+
+        ByteEnBitNum byteNum =  beat.eop ? (
+                beatPayload.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : zeroExtend(beatPayload.mod)
             ) : fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
 
         let ds = DataStream{
@@ -200,8 +202,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
         );
 
         EthernetNapRecvOtherBeat beatPayload = unpack(beat.data);
-        let byteNum =  beat.eop ? (
-                beatPayload.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : beatPayload.mod
+        ByteEnBitNum byteNum =  beat.eop ? (
+                beatPayload.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : zeroExtend(beatPayload.mod)
             ) : fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
 
         let ds = DataStream{
@@ -255,6 +257,10 @@ typedef TSub#(BYTE_NUM_OF_TWO_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_N
 typedef MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT;
 typedef TMul#(BYTE_WIDTH, BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT;
 
+typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;
+typedef TSub#(BYTE_NUM_OF_THREE_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_ETH_IN_THIRD_BEAT;
+
+
 // The above BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT and BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT can also be defined and calculated by
 // the following method:
 // ETH + IP + UDP = 14 + 20 + 8 = 42, each beat has 32 byte
@@ -278,6 +284,7 @@ typedef enum {
     RdmaHeaderExtractorStateHandleMoreBeat = 3
 } RdmaHeaderExtractorState deriving(Bits, FShow, Eq);
 
+(*synthesize*)
 module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
 
     Reg#(RdmaHeaderExtractorState) stateReg <- mkReg(RdmaHeaderExtractorStateHandleFirstBeat);
@@ -433,7 +440,7 @@ interface EthernetPacketGenerator;
     interface PipeIn#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
     interface PipeIn#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
     interface PipeIn#(DataStream) rdmaPayloadPipeIn;
-    interface PipeOut#(EthernetNapBeatEntry) rdmaPacketMetaPipeOut;
+    interface PipeOut#(EthernetNapBeatEntry) ethernetPacketPipeOut;
 
     method Action setMacAndIp(LocalNetworkSettings networkSettings);
 endinterface
@@ -441,7 +448,7 @@ endinterface
 typedef enum {
     EthernetPacketGeneratorStateGenFirstBeat = 0,
     EthernetPacketGeneratorStateGenSecondBeat = 1,
-    EthernetPacketGeneratorStateGenThiedBeat = 2,
+    EthernetPacketGeneratorStateGenThirdBeat = 2,
     EthernetPacketGeneratorStateGenMoreBeat = 3
 } EthernetPacketGeneratorState deriving(Bits, FShow, Eq);
 
@@ -488,21 +495,26 @@ typedef struct {
 
 typedef struct {
     TotalHeader                 totalHeader;
-} FirstBeatToSecondBeatPipelineEntry deriving(Bits, FShow);
+} PacketGeneratorFirstBeatToSecondBeatPipelineEntry deriving(Bits, FShow);
 
+typedef struct {
+    TotalHeader                 totalHeader;
+    RdmaSendPacketMeta          rdmaMeta;
+} PacketGeneratorSecondBeatToThirdBeatPipelineEntry deriving(Bits, FShow);
 
-
+(*synthesize*)
 module mkEthernetPacketGenerator(EthernetPacketGenerator);
     FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkFIFOF;
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) rdmaPayloadPipeInQ <- mkFIFOF;
-    FIFOF#(EthernetNapBeatEntry) rdmaPacketMetaPipeOutQ <- mkFIFOF;
+    FIFOF#(EthernetNapBeatEntry) ethernetPacketPipeOutQ <- mkFIFOF;
 
     FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
 
     // Pipeline FIFOs and Regs
     FIFOF#(IpHeaderChecksumCalcPipelineEntry) ipHeaderChecksumCalcPipelineQ <- mkSizedFIFOF(3);
-    Reg#(FirstBeatToSecondBeatPipelineEntry) firstBeatToSecondBeatPipelineReg <- mkRegU;
+    Reg#(PacketGeneratorFirstBeatToSecondBeatPipelineEntry) firstBeatToSecondBeatPipelineReg <- mkRegU;
+    Reg#(PacketGeneratorSecondBeatToThirdBeatPipelineEntry) secondBeatToThirdBeatPipelineReg <- mkRegU;
 
     Reg#(Maybe#(LocalNetworkSettings)) networkSettingsReg <- mkReg(tagged Invalid);
 
@@ -514,6 +526,24 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     let ipHdrCheckSumStreamPipeOut <- mkIpHdrCheckSumStream(toPipeOut(ipHeaderForChecksumCalcQ));
 
     IpID defaultIpId = 1;
+
+    function EthernetNapBeatEntry genEthernetPacket(NocData data, EthernetNapMod mod, EthernetNapSendFlags flags, Bool isSop, Bool isEop);
+        let beatData = EthernetNapSendOtherBeat{
+            data: data,
+            mod: mod,
+            flags: flags,
+            rsvd1: unpack(0)
+        };
+
+        let outBeat = EthernetNapBeatEntry{
+            srcOrDstNodeId: ?,    // For Eth nap, the id is hardcoded, so don't care for now.
+            data: pack(beatData),
+            sop: isSop,
+            eop: isEop
+        };
+
+        return outBeat;
+    endfunction
 
     rule prepareIpHeader;
         let macIpUdpMeta = macIpUdpMetaPipeInQ.first;
@@ -567,9 +597,9 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             eop: False
         };
 
-        rdmaPacketMetaPipeOutQ.enq(outBeat);
+        ethernetPacketPipeOutQ.enq(outBeat);
 
-        firstBeatToSecondBeatPipelineReg <= FirstBeatToSecondBeatPipelineEntry {
+        firstBeatToSecondBeatPipelineReg <= PacketGeneratorFirstBeatToSecondBeatPipelineEntry {
             totalHeader: pipelineEntry.totalHeader
         };
         statusReg <= EthernetPacketGeneratorStateGenSecondBeat;
@@ -593,7 +623,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let ethIpUdpBthEth = {pack(totalHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(ethIpUdpBthEth << valueOf(DATA_BUS_WIDTH));
 
-        // let wholeBthAndEthContainedInThisBeat = 
+        let wholeBthAndEthContainedInThisBeat = rdmaMeta.bthAndEthTotalLength <= fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT));
         let hasExtraSpaceForPayloadInThisBeat = rdmaMeta.bthAndEthTotalLength < fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT));
         if (hasExtraSpaceForPayloadInThisBeat && rdmaMeta.hasPayload) begin
             let payload = rdmaPayloadPipeInQ.first;
@@ -603,6 +633,74 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             RdmaBthAndEthTotalLength tmpMinusResult = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength;
             DataBusOneBasedByteIndex firstPayloadByteOneBasedIndexInThisBeat = truncate(tmpMinusResult);
 
+
+            immAssert(
+                (data << fromInteger(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) - firstPayloadByteOneBasedIndexInThisBeat) == 0,
+                "The lower part of data should be zero",
+                $format("Got data = ", fshow(data), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
+            );
+
+            immAssert(
+                (payload.data >> (firstPayloadByteOneBasedIndexInThisBeat-1)) == 0,
+                "The higher part of payload should be zero",
+                $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
+            );
+
+            immAssert(
+                payload.byteNum <= truncate(fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength),
+                "payload has too many valid byte in this beat",
+                $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
+            );
+
+
+            data = data | payload.data;
+        end
+
+        let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
+
+        ethernetPacketPipeOutQ.enq(outBeat);
+
+        secondBeatToThirdBeatPipelineReg <= PacketGeneratorSecondBeatToThirdBeatPipelineEntry{
+            totalHeader : firstBeatToSecondBeatPipelineReg.totalHeader,
+            rdmaMeta    : rdmaMeta
+        };
+
+        if (isEop) begin
+            statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
+        end
+        else if (wholeBthAndEthContainedInThisBeat) begin
+            statusReg <= EthernetPacketGeneratorStateGenMoreBeat;
+        end
+        else begin
+            statusReg <= EthernetPacketGeneratorStateGenThirdBeat;
+        end
+    endrule
+
+
+
+    rule genThirdBeat if (statusReg == EthernetPacketGeneratorStateGenThirdBeat);
+
+        let rdmaMeta = secondBeatToThirdBeatPipelineReg.rdmaMeta;
+
+        ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let isEop = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let mod = truncate(ethernetFrameLeftByteCounterReg);
+
+        let flags = unpack(0);
+        flags.crcInsert = True;
+
+        let totalHeader = secondBeatToThirdBeatPipelineReg.totalHeader;
+        let ethIpUdpBthEth = {pack(totalHeader), pack(rdmaMeta.header)};
+        NocData data = truncateLSB(ethIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS));
+
+        let hasExtraSpaceForPayloadInThisBeat = rdmaMeta.bthAndEthTotalLength < fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT) + valueOf(DATA_BUS_BYTE_WIDTH));
+        if (hasExtraSpaceForPayloadInThisBeat && rdmaMeta.hasPayload) begin
+            let payload = rdmaPayloadPipeInQ.first;
+            rdmaPayloadPipeInQ.deq;
+
+            // To use the bit OR operation to merge two part of data, the lower part of data and the higher part of payload in this beat should be 0
+            RdmaBthAndEthTotalLength tmpMinusResult = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength;
+            DataBusOneBasedByteIndex firstPayloadByteOneBasedIndexInThisBeat = truncate(tmpMinusResult);
 
             immAssert(
                 (data << fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - firstPayloadByteOneBasedIndexInThisBeat) == 0,
@@ -626,26 +724,46 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             data = data | payload.data;
         end
 
-        
+        let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
 
+        ethernetPacketPipeOutQ.enq(outBeat);
 
-        let beatData = EthernetNapSendOtherBeat{
-            data: swapEndianByte(data),
-            mod: mod,
-            flags: flags,
-            rsvd1: unpack(0)
-        };
+        if (isEop) begin
+            statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
+        end
+        else begin
+            statusReg <= EthernetPacketGeneratorStateGenMoreBeat;
+        end
+    endrule
 
-        let outBeat = EthernetNapBeatEntry{
-            srcOrDstNodeId: ?,    // For Eth nap, the id is hardcoded, so don't care for now.
-            data: pack(beatData),
-            sop: False,
-            eop: isEop
-        };
+    
 
-        rdmaPacketMetaPipeOutQ.enq(outBeat);
+    rule genMoreBeat if (statusReg == EthernetPacketGeneratorStateGenMoreBeat);
 
-        statusReg <= EthernetPacketGeneratorStateGenSecondBeat;
+        ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let isEop = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let mod = truncate(ethernetFrameLeftByteCounterReg);
+
+        let flags = unpack(0);
+        flags.crcInsert = True;
+
+        let payload = rdmaPayloadPipeInQ.first;
+        rdmaPayloadPipeInQ.deq;
+        NocData data = payload.data;
+
+        let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
+
+        ethernetPacketPipeOutQ.enq(outBeat);
+
+        if (isEop) begin
+            immAssert(
+                payload.isLast,
+                "payload should be last packet when isEop is true. mismatch between two calculate method",
+                $format("Got payload = ", fshow(payload), "ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
+            );
+
+            statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
+        end
     endrule
 
     method Action setMacAndIp(LocalNetworkSettings networkSettings);
@@ -655,8 +773,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     interface macIpUdpMetaPipeIn    = toPipeIn(macIpUdpMetaPipeInQ);
     interface rdmaPacketMetaPipeIn  = toPipeIn(rdmaPacketMetaPipeInQ);
     interface rdmaPayloadPipeIn     = toPipeIn(rdmaPayloadPipeInQ);
-    interface rdmaPacketMetaPipeOut = toPipeOut(rdmaPacketMetaPipeOutQ);
-
+    interface ethernetPacketPipeOut = toPipeOut(ethernetPacketPipeOutQ);
 endmodule
 
 

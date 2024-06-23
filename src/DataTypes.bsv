@@ -104,7 +104,7 @@ typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5 (bus 256b), 6 (bus 
 typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9 (bus 256b), 10 (bus 512b)
 typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6 (bus 256b), 7 (bus 512b)
 
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) DataBusOneBasedByteIndex; // 5 (bus 256b), 6 (bus 512b)
+typedef ByteEnBitNum DataBusOneBasedByteIndex; // 6 (bus 256b), 7 (bus 512b)
 
 
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;

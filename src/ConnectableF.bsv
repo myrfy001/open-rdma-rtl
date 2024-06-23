@@ -1,5 +1,6 @@
 import PAClib :: *;
 import FIFOF :: *;
+import Connectable :: *;
 
 // re-export PAAClib's PipeOut
 export PipeOut;
@@ -12,6 +13,7 @@ export ClientF;
 export ServerP;
 export ClientP;
 export f_FIFOF_to_PipeIn;
+export Connectable;
 
 
 interface PipeIn#(type tData);
@@ -59,3 +61,13 @@ function PipeIn#(tData) f_FIFOF_to_PipeIn(FIFOF#(tData) fifof);
                endmethod
             endinterface);
  endfunction
+
+
+ instance Connectable#(PipeOut#(t), PipeIn#(t));
+    module mkConnection#(PipeOut#(t) fo, PipeIn#(t) fi)(Empty);
+       rule connect;
+          fi.enq(fo.first);
+           fo.deq;
+       endrule
+    endmodule
+ endinstance
