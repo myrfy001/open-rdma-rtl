@@ -5,13 +5,13 @@ import Connectable :: *;
 // re-export PAAClib's PipeOut
 export PipeOut;
 
-export PipeIn;
-export GetF;
-export PutF;
-export ServerF;
-export ClientF;
-export ServerP;
-export ClientP;
+export PipeIn(..);
+export GetF(..);
+export PutF(..);
+export ServerF(..);
+export ClientF(..);
+export ServerP(..);
+export ClientP(..);
 export f_FIFOF_to_PipeIn;
 export Connectable;
 

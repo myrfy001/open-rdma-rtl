@@ -676,8 +676,6 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         end
     endrule
 
-
-
     rule genThirdBeat if (statusReg == EthernetPacketGeneratorStateGenThirdBeat);
 
         let rdmaMeta = secondBeatToThirdBeatPipelineReg.rdmaMeta;
@@ -775,51 +773,6 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     interface rdmaPayloadPipeIn     = toPipeIn(rdmaPayloadPipeInQ);
     interface ethernetPacketPipeOut = toPipeOut(ethernetPacketPipeOutQ);
 endmodule
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

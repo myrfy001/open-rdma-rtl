@@ -129,6 +129,11 @@ typedef enum {
 
 typedef SizeOf#(RdmaOpCode) RDMA_OPCODE_WIDTH;
 
+typedef struct {
+    TransType trans;
+    RdmaOpCode opcode;
+} RdmaTransAndOpcode deriving(Bits, Bounded, Eq, FShow);
+
 typedef enum {
     AETH_CODE_ACK  = 2'b00,
     AETH_CODE_RNR  = 2'b01,

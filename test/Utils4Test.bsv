@@ -60,7 +60,12 @@ module mkSimulationCycleLimitCounter#(Integer maxValue)(Long);
 endmodule
 
 
-
+module mkFunc2Pipe#(
+    function tb func(ta inputVal), PipeOut#(ta) pipeIn
+)(PipeOut#(tb));
+    let resultPipeOut <- mkFn_to_Pipe(func, pipeIn); // No delay
+    return resultPipeOut;
+endmodule
 
 
 // Random PipeOut related
@@ -140,6 +145,19 @@ module mkRandomLenPipeOut#(
         minLength, maxLength
     );
     return resultVec[0];
+endmodule
+
+module mkRandomItemFromVec#(
+    Vector#(vSz, anytype) items
+)(PipeOut#(anytype)) provisos(
+    Bits#(anytype, tSz),
+    NumAlias#(TLog#(vSz), idxSz)
+);
+    UInt#(idxSz) maxIdx = fromInteger(valueOf(vSz) - 1);
+    Vector#(1, PipeOut#(UInt#(idxSz))) vecIdxPipeOut <-
+        mkRandomValueInRangePipeOut(0, maxIdx);
+    let resultPipeOut <- mkFunc2Pipe(select(items), vecIdxPipeOut[0]);
+    return resultPipeOut;
 endmodule
 
 module mkSynthesizableRng32#(Bit#(32) seed)(Get#(Bit#(32)));
