@@ -8,6 +8,8 @@ import Vector :: *;
 import PAClib :: *;
 import LFSR::*;
 
+import DataTypes :: *;
+import ConnectableF :: *;
 import RdmaHeaders :: *;
 import PrimUtils :: *;
 
@@ -176,4 +178,67 @@ module mkSynthesizableRng32#(Bit#(32) seed)(Get#(Bit#(32)));
     endrule: run
 
     return toGet(fi);
+endmodule
+
+interface FixedLengthDateStreamRandomGen;
+    interface PipeIn#(Length) reqPipeIn;
+    interface PipeOut#(DataStream) streamPipeOut;
+endinterface
+
+module mkFixedLengthDateStreamRandomGen(FixedLengthDateStreamRandomGen);
+    FIFOF#(Length) reqPipeInQ <- mkFIFOF;
+    FIFOF#(DataStream) streamPipeOutQ <- mkFIFOF;
+
+    PipeOut#(DATA) dataRandomGenPipeOut <- mkGenericRandomPipeOut;
+
+    Reg#(Length) leftLenReg <- mkRegU;
+    Reg#(Bool) isFirstReg <- mkReg(True);
+
+    
+
+    rule gen;
+        let len = leftLenReg;
+        Bool isFirst = False;
+        Bool isLast = False;
+        if (isFirstReg) begin
+            len = reqPipeInQ.first;
+            reqPipeInQ.deq;
+            isFirst = True;
+        end
+        leftLenReg <= len - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+
+        let data = dataRandomGenPipeOut.first;
+        dataRandomGenPipeOut.deq;
+
+        BusBitNum tmpShiftCnt = 0;
+        ByteIndexInBeat startByteIdx = 0;
+        ByteEnBitNum byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+
+        if (len <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
+            tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(len)) * fromInteger(valueOf(BYTE_WIDTH));
+            data = data << tmpShiftCnt;
+            isLast = True;
+            if (isFirst) begin
+                ByteEnBitNum busWidth = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+                startByteIdx = truncate(busWidth) - truncate(len);
+            end
+            byteNum = truncate(len);
+            isFirstReg <= True;
+        end
+        else begin
+            isFirstReg <= False;
+        end
+
+        let ds = DataStream{
+            data: data,
+            byteNum: byteNum,
+            startByteIdx: startByteIdx,
+            isFirst: isFirst,
+            isLast: isLast
+        };
+        streamPipeOutQ.enq(ds);
+    endrule
+
+    interface reqPipeIn = toPipeIn(reqPipeInQ);
+    interface streamPipeOut = toPipeOut(streamPipeOutQ);
 endmodule

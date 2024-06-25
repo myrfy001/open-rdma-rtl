@@ -95,7 +95,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
         // Important! For a 32B beat, the first beat only have the first (32-14=18) Byte of IP header
         // i.e., the dest IP field in this ip header is broken.
-        IpHeader  partialIpHeader   = unpack(truncateLSB(pack(ds.data) << valueOf(IP_HEADER_OFFSET_IN_FIRST_BEAT)));
+        IpHeader  partialIpHeader   = unpack(truncateLSB(pack(ds.data) << valueOf(IP_HEADER_OFFSET_IN_FIRST_BEAT) * valueOf(BYTE_WIDTH)));
 
         Bool mustNotBeRdmaPacket = False;
         if (ethHeader.ethType != fromInteger(valueOf(ETH_TYPE_IP))) begin
@@ -118,17 +118,32 @@ module mkInputPacketClassifier(InputPacketClassifier);
             Bool unicastMatch = netSettings.macAddr == ethHeader.dstMacAddr;
             Bool broadcastMatch = netSettings.macAddr == -1;
             macAddrMatch = unicastMatch || broadcastMatch;
+            if (!macAddrMatch) begin
+                $display(
+                    "time=%0t:", $time, " mkInputPacketClassifier mac address check failed",
+                    ", netSettings=", fshow(netSettings),
+                    ", ethHeader=", fshow(ethHeader)
+                );
+            end
         end
 
-        ethPacketMetaExtractPipelineEntry <= EthernetPacketMetaExtractPipelineEntry{
+        let outPipelineEntry =  EthernetPacketMetaExtractPipelineEntry{
             mustNotBeRdmaPacket: mustNotBeRdmaPacket,
             macIpUdpMeta: macIpUdpMeta,
             isAddrMatch: macAddrMatch
         };
+        ethPacketMetaExtractPipelineEntry <= outPipelineEntry;
 
         partialDstIpAddrHigher16BitsReg <= truncateLSB(partialIpHeader.dstIpAddr);
         
         stateReg <= InputPacketClassifierStateHandleSecondBeat;
+
+        $display(
+            "time=%0t:", $time, " mkInputPacketClassifier handleFirstBeatStage",
+            ", partialIpHeader=", fshow(partialIpHeader),
+            ", ds=", fshow(ds),
+            ", outPipelineEntry=", fshow(outPipelineEntry)
+        );
     endrule
 
     rule handleSecondBeatStage if (stateReg == InputPacketClassifierStateHandleSecondBeat);
@@ -163,11 +178,19 @@ module mkInputPacketClassifier(InputPacketClassifier);
         if (networkSettingsReg matches tagged Valid .netSettings) begin
             Bool unicastMatch = netSettings.ipAddr == dstIpAddr;
             ipAddrMatch = unicastMatch;
+
+            if (!ipAddrMatch) begin
+                $display(
+                    "time=%0t:", $time, " mkInputPacketClassifier IP address check failed",
+                    ", netSettings=", fshow(netSettings),
+                    ", dstIpAddr=", fshow(dstIpAddr)
+                );
+            end
         end
 
         let isAddrMatch = ethPacketMetaExtractPipelineEntry.isAddrMatch && ipAddrMatch;
 
-        UdpHeader udpHeader = unpack(truncateLSB(pack(ds.data) << valueOf(UDP_HEADER_OFFSET_IN_SECOND_BEAT)));
+        UdpHeader udpHeader = unpack(truncateLSB(pack(ds.data) << valueOf(UDP_HEADER_OFFSET_IN_SECOND_BEAT) * valueOf(BYTE_WIDTH)));
 
         Bool mustNotBeRdmaPacket = False;
         if (udpHeader.dstPort != fromInteger(valueOf(UDP_PORT_RDMA))) begin
@@ -191,6 +214,12 @@ module mkInputPacketClassifier(InputPacketClassifier);
         end
         
         stateReg <= beat.eop ? InputPacketClassifierStateHandleFirstBeat : InputPacketClassifierStateHandleMoreBeat;
+        
+        $display(
+            "time=%0t:", $time, " mkInputPacketClassifier handleSecondBeatStage",
+            ", ds=", fshow(ds),
+            ", macIpUdpMeta=", fshow(macIpUdpMeta)
+        );
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);
@@ -220,6 +249,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
         if (beat.eop) begin
             stateReg <= InputPacketClassifierStateHandleFirstBeat;
         end
+
+        $display(
+            "time=%0t:", $time, " mkInputPacketClassifier handleMoreBeatStage",
+            ", ds=", fshow(ds)
+        );
     endrule
 
     rule dispatchStream;
@@ -235,6 +269,14 @@ module mkInputPacketClassifier(InputPacketClassifier);
             else begin
                 otherRawPacketOutQ.enq(ds);
             end
+        end
+        else begin
+            $display(
+                "time=%0t:", $time, " mkInputPacketClassifier dispatchStream >>>>> DISCARD PACKET <<<<<",
+                ", ethPktMeta.isError=", fshow(ethPktMeta.isError),
+                ", ethPktMeta.isAddrMatch=", fshow(ethPktMeta.isAddrMatch),
+                ", ds=", fshow(ds)
+            );
         end
 
         if (ds.isLast) begin
@@ -319,7 +361,7 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         BTH bth = unpack(ds.data[valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - 1 : bthEndPosInSecondBeat]);
         let hasPayload = rdmaOpCodeHasPayload(bth.opcode);
         let rdmaTotalHeaderLen = calcHeaderLenByTransTypeAndRdmaOpCode(bth.trans, bth.opcode);
-        DataBusOneBasedByteIndex firstPayloadByteOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) - rdmaTotalHeaderLen);
+        DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) - rdmaTotalHeaderLen);
 
         RdmaExtendHeaderFragmentInSecondBeat extendHeaderFragment = ds.data[bthEndPosInSecondBeat-1 : 0];
         RdmaExtendHeaderBuffer rdmaExtendHeaderBuf = zeroExtendLSB(extendHeaderFragment);
@@ -345,7 +387,7 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
                 rdmaExtendHeaderBuf: rdmaExtendHeaderBuf
             },
             hasPayload: hasPayload,
-            firstPayloadByteOffsetInFirstPayloadBeat: firstPayloadByteOffsetInFirstPayloadBeat
+            firstPayloadByteOneBasedOffsetInFirstPayloadBeat: firstPayloadByteOneBasedOffsetInFirstPayloadBeat
         };
 
         partialRdmaMetaReg <= outPacketMeta;
@@ -380,7 +422,7 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         if (rdmaMeta.hasPayload) begin
             let payloadDs = ds;
             payloadDs.isFirst = True;
-            payloadDs.byteNum = ds.byteNum - (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - rdmaMeta.firstPayloadByteOffsetInFirstPayloadBeat);
+            payloadDs.byteNum = ds.byteNum - (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - rdmaMeta.firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
             if (ds.isLast) begin
                 payloadDs.startByteIdx = truncate(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - ds.byteNum);
                 payloadStreamOutputIsFirstReg <= True;
@@ -594,15 +636,22 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         RdmaEthernetFrameByteLen ethFrameLen = truncate(macIpUdpMeta.udpPayloadLen) + fromInteger(valueOf(MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH));
 
         ipHeaderForChecksumCalcQ.enq(udpIpHeader.ipHeader);
-        ipHeaderChecksumCalcPipelineQ.enq(IpHeaderChecksumCalcPipelineEntry{
+        let outPipelineEntry = IpHeaderChecksumCalcPipelineEntry{
             totalHeader: TotalHeader{
                 ethHeader: ethHeader,
                 ipHeader: udpIpHeader.ipHeader,
                 udpHeader: udpIpHeader.udpHeader
             },
             totalEthernetFrameLen: ethFrameLen
-        });
+        };
 
+        ipHeaderChecksumCalcPipelineQ.enq(outPipelineEntry);
+
+        $display(
+            "time=%0t:", $time, " mkEthernetPacketGenerator prepareIpHeader",
+            ", udpPayloadLen=", fshow(macIpUdpMeta.udpPayloadLen),
+            ", outPipelineEntry=", fshow(outPipelineEntry)
+        );
     endrule
 
     rule genFirstBeat if (statusReg == EthernetPacketGeneratorStateGenFirstBeat);
@@ -631,16 +680,24 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
-        firstBeatToSecondBeatPipelineReg <= PacketGeneratorFirstBeatToSecondBeatPipelineEntry {
+        let outPipelineEntry = PacketGeneratorFirstBeatToSecondBeatPipelineEntry {
             totalHeader: pipelineEntry.totalHeader
         };
+        firstBeatToSecondBeatPipelineReg <= outPipelineEntry;
         statusReg <= EthernetPacketGeneratorStateGenSecondBeat;
+
+        $display(
+            "time=%0t:", $time, " mkEthernetPacketGenerator genFirstBeat",
+            ", outBeat=", fshow(outBeat),
+            ", ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg),
+            ", outPipelineEntry=", fshow(outPipelineEntry)
+        );
+
     endrule
 
 
 
     rule genSecondBeat if (statusReg == EthernetPacketGeneratorStateGenSecondBeat);
-
         let rdmaMeta = rdmaPacketMetaPipeInQ.first;
         rdmaPacketMetaPipeInQ.deq;
 
@@ -665,15 +722,20 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             RdmaBthAndEthTotalLength tmpMinusResult = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength;
             DataBusOneBasedByteIndex firstPayloadByteOneBasedIndexInThisBeat = truncate(tmpMinusResult);
 
-
+            BusBitNum tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPayloadByteOneBasedIndexInThisBeat)) * fromInteger(valueOf(BYTE_WIDTH));
             immAssert(
-                (data << fromInteger(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) - firstPayloadByteOneBasedIndexInThisBeat) == 0,
+                (data << tmpShiftCnt) == 0,
                 "The lower part of data should be zero",
-                $format("Got data = ", fshow(data), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
+                $format(
+                    "Got data = ", fshow(data), 
+                    ", firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat),
+                    ", rdmaMeta=",fshow(rdmaMeta)
+                )
             );
 
+            tmpShiftCnt = zeroExtend(firstPayloadByteOneBasedIndexInThisBeat-1) * fromInteger(valueOf(BYTE_WIDTH));
             immAssert(
-                (payload.data >> (firstPayloadByteOneBasedIndexInThisBeat-1)) == 0,
+                (payload.data >> tmpShiftCnt) == 0,
                 "The higher part of payload should be zero",
                 $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
             );
@@ -692,10 +754,11 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
-        secondBeatToThirdBeatPipelineReg <= PacketGeneratorSecondBeatToThirdBeatPipelineEntry{
+        let outPipelineEntry = PacketGeneratorSecondBeatToThirdBeatPipelineEntry{
             totalHeader : firstBeatToSecondBeatPipelineReg.totalHeader,
             rdmaMeta    : rdmaMeta
         };
+        secondBeatToThirdBeatPipelineReg <= outPipelineEntry;
 
         if (isEop) begin
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
@@ -706,6 +769,13 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         else begin
             statusReg <= EthernetPacketGeneratorStateGenThirdBeat;
         end
+
+        $display(
+            "time=%0t:", $time, " mkEthernetPacketGenerator genSecondBeat",
+            ", outBeat=", fshow(outBeat),
+            ", ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg),
+            ", outPipelineEntry=", fshow(outPipelineEntry)
+        );
     endrule
 
     rule genThirdBeat if (statusReg == EthernetPacketGeneratorStateGenThirdBeat);
@@ -721,7 +791,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         let totalHeader = secondBeatToThirdBeatPipelineReg.totalHeader;
         let ethIpUdpBthEth = {pack(totalHeader), pack(rdmaMeta.header)};
-        NocData data = truncateLSB(ethIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS));
+        NocData data = truncateLSB(ethIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS) * valueOf(BYTE_WIDTH));
 
         let hasExtraSpaceForPayloadInThisBeat = rdmaMeta.bthAndEthTotalLength < fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT) + valueOf(DATA_BUS_BYTE_WIDTH));
         if (hasExtraSpaceForPayloadInThisBeat && rdmaMeta.hasPayload) begin
@@ -732,14 +802,16 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             RdmaBthAndEthTotalLength tmpMinusResult = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength;
             DataBusOneBasedByteIndex firstPayloadByteOneBasedIndexInThisBeat = truncate(tmpMinusResult);
 
+            BusBitNum tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPayloadByteOneBasedIndexInThisBeat)) * fromInteger(valueOf(BYTE_WIDTH));
             immAssert(
-                (data << fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - firstPayloadByteOneBasedIndexInThisBeat) == 0,
+                (data << tmpShiftCnt) == 0,
                 "The lower part of data should be zero",
                 $format("Got data = ", fshow(data), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
             );
 
+            tmpShiftCnt = zeroExtend(firstPayloadByteOneBasedIndexInThisBeat-1) * fromInteger(valueOf(BYTE_WIDTH));
             immAssert(
-                (payload.data >> (firstPayloadByteOneBasedIndexInThisBeat-1)) == 0,
+                (payload.data >> tmpShiftCnt) == 0,
                 "The higher part of payload should be zero",
                 $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
             );
@@ -764,6 +836,13 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         else begin
             statusReg <= EthernetPacketGeneratorStateGenMoreBeat;
         end
+
+        $display(
+            "time=%0t:", $time, " mkEthernetPacketGenerator genThirdBeat",
+            ", outBeat=", fshow(outBeat),
+            ", ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg),
+            ", rdmaMeta=", fshow(rdmaMeta)
+        );
     endrule
 
     
@@ -785,6 +864,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
+        $display(
+            "time=%0t:", $time, " mkEthernetPacketGenerator genMoreBeat",
+            ", outBeat=", fshow(outBeat),
+            ", ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg)
+        );
+
         if (isEop) begin
             immAssert(
                 payload.isLast,
@@ -794,6 +879,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
         end
+
+        
     endrule
 
     method Action setMacAndIp(LocalNetworkSettings networkSettings);

@@ -272,12 +272,12 @@ module mkBiDirectionStreamShifter(StreamShifter);
         if ((pipelineEntry.ds.isLast && !inputBeatCanFitInOutputBeatForNonOnlyBeat) || (isOnlyBeat && !inputBeatCanFitInOutputBeatForOnlyBeat)) begin
             rightShiftStateReg <= BiDirectionStreamShifterRightShiftStateOutputExtraBeat;
         end
-        // $display(
-        //     "time=%0t:", $time, " shiftRightOptput",
-        //     ", pipelineEntry=", fshow(pipelineEntry),
-        //     ", rightShiftPrevDataReg=", fshow(leftShiftPrevDataReg),
-        //     ", outDs=", fshow(outDs)
-        // );
+        $display(
+            "time=%0t:", $time, " shiftRightOptput",
+            ", pipelineEntry=", fshow(pipelineEntry),
+            ", rightShiftPrevDataReg=", fshow(leftShiftPrevDataReg),
+            ", outDs=", fshow(outDs)
+        );
     endrule
 
 
@@ -299,11 +299,11 @@ module mkBiDirectionStreamShifter(StreamShifter);
         streamPipeOutQ.enq(outDs);
 
         rightShiftStateReg <= BiDirectionStreamShifterRightShiftStateOutputBeat;
-        // $display(
-        //     "time=%0t:", $time, " shiftRightOptputExtra",
-        //     ", rightShiftPrevDataReg=", fshow(rightShiftPrevDataReg),
-        //     ", outDs=", fshow(outDs)
-        // );
+        $display(
+            "time=%0t:", $time, " shiftRightOptputExtra",
+            ", rightShiftPrevDataReg=", fshow(rightShiftPrevDataReg),
+            ", outDs=", fshow(outDs)
+        );
     endrule
 
     interface offsetPipeIn  = toPipeIn(offsetPipeInQ);

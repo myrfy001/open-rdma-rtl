@@ -10,6 +10,7 @@ import DataTypes :: *;
 import RdmaHeaders :: *;
 import ConnectableF :: *;
 import EthernetFrameIO :: *;
+import StreamShifter :: *;
 
 
 
@@ -43,7 +44,7 @@ module mkTestInputPacketClassifier(Empty);
 
     let trueFalseVec = vec(True, False, True, False);
 
-    PipeOut#(Length) rdmaPayloadLenRandPipeOut <- mkRandomLenPipeOut(1, fromInteger(valueOf(MAX_PMTU)));
+    PipeOut#(Length) rdmaPayloadLenRandPipeOut <- mkRandomLenPipeOut(1, 256);//fromInteger(valueOf(MAX_PMTU)));
     PipeOut#(RdmaTransAndOpcode) transAndOpecodeRandPipeOut <- mkRandomItemFromVec(rdmaOpcodeVec);
     PipeOut#(Bool) hasPayloadRandPipeOut <- mkRandomItemFromVec(trueFalseVec);
     PipeOut#(Bool) isRdmaPacketRandPipeOut <- mkRandomItemFromVec(trueFalseVec);
@@ -55,13 +56,19 @@ module mkTestInputPacketClassifier(Empty);
 
     FIFOF#(Tuple2#(RdmaBthAndEthTotalLength, PktLen)) payloadGenReqQ <- mkFIFOF;
 
-
+    let payloadStreamGen <- mkFixedLengthDateStreamRandomGen;
+    let txStreamShifter <- mkBiDirectionStreamShifter;
+    mkConnection(payloadStreamGen.streamPipeOut, txStreamShifter.streamPipeIn);
+    mkConnection(txStreamShifter.streamPipeOut, packetGen.rdmaPayloadPipeIn);
 
     rule genRandomPacketHeader;
+        
         ThinMacIpUdpMetaDataForSend macIpUdpMeta = unpack(0);
 
         let isRdmaPacket = isRdmaPacketRandPipeOut.first;
         isRdmaPacketRandPipeOut.deq;
+        isRdmaPacket = True;
+
         let hasPayload = hasPayloadRandPipeOut.first;
         hasPayloadRandPipeOut.deq;
         PktLen rdmaPayloadLen = truncate(rdmaPayloadLenRandPipeOut.first);
@@ -79,6 +86,16 @@ module mkTestInputPacketClassifier(Empty);
         
         macIpUdpMeta.dstMacAddr = macAddr;
         macIpUdpMeta.dstIpAddr = ipAddrForTest;
+
+        let localNetworkSettings = LocalNetworkSettings{
+            macAddr: macAddr,
+            ipAddr: ipAddrForTest,
+            gatewayAddr: unpack(0),
+            netMask: unpack(0)
+        };
+
+        packetGen.setMacAndIp(localNetworkSettings);
+        packetClassifier.setMacAndIp(localNetworkSettings);
 
         if (isRdmaPacket) begin
             macIpUdpMeta.dstPort = fromInteger(valueOf(UDP_PORT_RDMA));
@@ -115,22 +132,23 @@ module mkTestInputPacketClassifier(Empty);
                 hasPayload: hasPayload
             };
             if (hasPayload) begin
-                payloadGenReqQ.enq(tuple2(bthAndEthTotalLength, rdmaPayloadLen));
+                payloadStreamGen.reqPipeIn.enq(zeroExtend(rdmaPayloadLen));
+                DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - truncate(bthAndEthTotalLength);
+                DataBusSignedShiftOffset signedShiftOffset = fromInteger(valueOf(BTH_BYTE_WIDTH)) - zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
+                txStreamShifter.offsetPipeIn.enq(signedShiftOffset);
             end
             packetGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
         end
+        
     endrule
 
-    rule genRandomPayloadFirstBeat;
-        let {bthAndEthTotalLength, rdmaPayloadLen} = payloadGenReqQ.first;
-        payloadGenReqQ.deq;
-        packetGen.rdmaPayloadPipeIn.enq(DataStream{
-            data: -1,
-            byteNum: -1,
-            startByteIdx: 0,
-            isFirst: True,
-            isLast: True
-        });
+    rule getPacketClassifierOutput;
+        if (packetClassifier.rdmaRawPacketPipeOut.notEmpty) begin
+            packetClassifier.rdmaRawPacketPipeOut.deq;
+        end
+        if (packetClassifier.rdmaMacIpUdpMetaPipeOut.notEmpty) begin
+            packetClassifier.rdmaMacIpUdpMetaPipeOut.deq;
+        end
     endrule
 
 endmodule

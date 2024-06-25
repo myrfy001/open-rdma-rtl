@@ -240,12 +240,12 @@ typedef struct {
 // For now, the largest one is 32 Byte;
 typedef 256 RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH;
 typedef Bit#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) RdmaExtendHeaderBuffer;
-typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;
-typedef TAdd#(1, TLog#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH)) RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH;
+typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;        // 32
+typedef TAdd#(1, TLog#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH)) RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH;          // 6
 typedef Bit#(RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH) RdmaExtendHeaderLength;
 
-typedef TAdd#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH, BTH_BYTE_WIDTH) RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH;
-typedef TAdd#(1, TLog#(RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH)) RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH;
+typedef TAdd#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH, BTH_BYTE_WIDTH) RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH;        // 44
+typedef TAdd#(1, TLog#(RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH)) RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH;                 // 7    TODO: should reduce to 6?
 typedef Bit#(RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH) RdmaBthAndEthTotalLength;
 
 
@@ -257,7 +257,7 @@ typedef struct {
 typedef struct {
     RdmaBthAndExtendHeader header;
     Bool hasPayload;
-    DataBusOneBasedByteIndex firstPayloadByteOffsetInFirstPayloadBeat;
+    DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat;
 } RdmaRecvPacketMeta deriving(Bits, FShow);
 
 typedef struct {
