@@ -77,6 +77,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         let ds = DataStream{
             data: swapEndianByte(beatPayload.data),
             byteNum: fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)),
+            startByteIdx: 0,
             isFirst: beat.sop,
             isLast: beat.eop
         };
@@ -144,6 +145,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         let ds = DataStream{
             data: swapEndianByte(beatPayload.data),
             byteNum: unpack(zeroExtend(byteNum)),
+            startByteIdx: 0,
             isFirst: beat.sop,
             isLast: beat.eop
         };
@@ -209,6 +211,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         let ds = DataStream{
             data: swapEndianByte(beatPayload.data),
             byteNum: unpack(zeroExtend(byteNum)),
+            startByteIdx: 0,
             isFirst: beat.sop,
             isLast: beat.eop
         };
@@ -252,10 +255,11 @@ endmodule
 
 
 
-typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;
-typedef TSub#(BYTE_NUM_OF_TWO_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT;
-typedef MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT;
+typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;           // 64
+typedef TSub#(BYTE_NUM_OF_TWO_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT;  // 22
+typedef MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT;    // 22
 typedef TMul#(BYTE_WIDTH, BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT;
+typedef TSub#(MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH, DATA_BUS_BYTE_WIDTH) MAC_IP_UDP_HEADER_REMAINDER_BYTE_COUNT_IN_SECOND_BEAT;  // 10
 
 typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;
 typedef TSub#(BYTE_NUM_OF_THREE_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_ETH_IN_THIRD_BEAT;
@@ -294,6 +298,7 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
     FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkFIFOF;
 
     Reg#(RdmaRecvPacketMeta) partialRdmaMetaReg <- mkRegU;
+    Reg#(Bool) payloadStreamOutputIsFirstReg <- mkReg(True);
 
     Integer bthEndPosInSecondBeat = valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - valueOf(SizeOf#(BTH));
 
@@ -319,8 +324,19 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         RdmaExtendHeaderFragmentInSecondBeat extendHeaderFragment = ds.data[bthEndPosInSecondBeat-1 : 0];
         RdmaExtendHeaderBuffer rdmaExtendHeaderBuf = zeroExtendLSB(extendHeaderFragment);
 
-        if (rdmaTotalHeaderLen < valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) && hasPayload) begin
-            rdmaPayloadPipeOutQ.enq(ds);
+        if (rdmaTotalHeaderLen < valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) && hasPayload) begin
+            let payloadDs = ds;
+            payloadDs.isFirst = True;
+            payloadDs.byteNum = ds.byteNum - fromInteger(valueOf(MAC_IP_UDP_HEADER_REMAINDER_BYTE_COUNT_IN_SECOND_BEAT) + rdmaTotalHeaderLen);
+            if (ds.isLast) begin
+                payloadDs.startByteIdx = truncate(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - ds.byteNum);
+                payloadStreamOutputIsFirstReg <= True;
+            end
+            else begin
+                payloadStreamOutputIsFirstReg <= False;
+            end
+            rdmaPayloadPipeOutQ.enq(payloadDs);
+            
         end
 
         let outPacketMeta = RdmaRecvPacketMeta{
@@ -334,7 +350,7 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
 
         partialRdmaMetaReg <= outPacketMeta;
 
-        let rdmaHeaderIsComplete = rdmaTotalHeaderLen <= valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT);
+        let rdmaHeaderIsComplete = rdmaTotalHeaderLen <= valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT);
         if (ds.isLast) begin 
             stateReg <= RdmaHeaderExtractorStateHandleFirstBeat;
         end
@@ -362,7 +378,18 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
     
         // For now, the largest RDMA extend header is 32 bytes, which means if the packet has payload, then some payload must exit in this beat
         if (rdmaMeta.hasPayload) begin
-            rdmaPayloadPipeOutQ.enq(ds);
+            let payloadDs = ds;
+            payloadDs.isFirst = True;
+            payloadDs.byteNum = ds.byteNum - (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - rdmaMeta.firstPayloadByteOffsetInFirstPayloadBeat);
+            if (ds.isLast) begin
+                payloadDs.startByteIdx = truncate(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - ds.byteNum);
+                payloadStreamOutputIsFirstReg <= True;
+            end
+            else begin
+                payloadStreamOutputIsFirstReg <= False;
+            end
+            rdmaPayloadPipeOutQ.enq(payloadDs);
+            
         end
 
         stateReg <= ds.isLast ? RdmaHeaderExtractorStateHandleFirstBeat : RdmaHeaderExtractorStateHandleMoreBeat;
@@ -371,9 +398,14 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
     rule handleMoreBeat if (stateReg == RdmaHeaderExtractorStateHandleMoreBeat);
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
+        ds.isFirst = payloadStreamOutputIsFirstReg;
         rdmaPayloadPipeOutQ.enq(ds);
         if (ds.isLast) begin
             stateReg <= RdmaHeaderExtractorStateHandleFirstBeat;
+            payloadStreamOutputIsFirstReg <= True;
+        end
+        else begin
+            payloadStreamOutputIsFirstReg <= False;
         end
     endrule
 

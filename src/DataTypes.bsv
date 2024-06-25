@@ -104,8 +104,10 @@ typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5 (bus 256b), 6 (bus 
 typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9 (bus 256b), 10 (bus 512b)
 typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6 (bus 256b), 7 (bus 512b)
 
-typedef ByteEnBitNum DataBusOneBasedByteIndex; // 6 (bus 256b), 7 (bus 512b)
-
+typedef ByteEnBitNum DataBusOneBasedByteIndex;          // 6 (bus 256b), 7 (bus 512b)
+typedef ByteEnBitNum DataBusSignedShiftOffset;          // 6 (bus 256b), 7 (bus 512b)
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) DataBusShiftOffset; // 5 (bus 256b), 6 (bus 512b)
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ByteIndexInBeat; // 5 (bus 256b), 6 (bus 512b)
 
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;
@@ -216,10 +218,12 @@ typedef Client#(PermCheckReq, Bool) PermCheckClt;
 //     RETRY_REASON_TIMEOUT
 // } RetryReason deriving(Bits, Eq, FShow);
 
-// DATA are left aligned
+// DATA are right aligned for first and only beat, and are left aligned for middle and last beat
+// startByteIdx is valid when isFirst = True, and inother case, startByteIdx must be 0
 typedef struct {
     DATA               data;
     ByteEnBitNum       byteNum;
+    ByteIndexInBeat    startByteIdx;
     Bool               isFirst;
     Bool               isLast;
 } DataStream deriving(Bits, Bounded, Eq, FShow);

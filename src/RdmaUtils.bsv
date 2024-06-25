@@ -191,3 +191,7 @@ module mkQueuedServer#(String name)(QueuedServer#(t_req, t_resp)) provisos (
     let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal);
     return t;
 endmodule
+
+function tData getAbsValue(tData a) provisos(Arith#(tData), Bitwise#(tData));
+    return msb(a) == 0 ? a : (~a) + 1;
+endfunction

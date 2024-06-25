@@ -96,7 +96,7 @@ typedef 14 ETH_HDR_BYTE_WIDTH;                 // 14 bytes
 typedef TMul#(IP_IHL_VAL,4) IP_HDR_BYTE_WIDTH; // 20 bytes
 typedef 8  UDP_HDR_BYTE_WIDTH;                 // 8 bytes
 typedef TAdd#(IP_HDR_BYTE_WIDTH, UDP_HDR_BYTE_WIDTH) IP_UDP_HDR_BYTE_WIDTH;
-typedef TAdd#(ETH_HDR_BYTE_WIDTH, IP_UDP_HDR_BYTE_WIDTH) MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH;
+typedef TAdd#(ETH_HDR_BYTE_WIDTH, IP_UDP_HDR_BYTE_WIDTH) MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH;  // 42 bytes
 
 typedef TDiv#(ETH_HDR_BYTE_WIDTH,2) ETH_HDR_WORD_WIDTH; // 7 words
 typedef 10 IP_HDR_WORD_WIDTH;  // 10 words

@@ -127,6 +127,7 @@ module mkTestInputPacketClassifier(Empty);
         packetGen.rdmaPayloadPipeIn.enq(DataStream{
             data: -1,
             byteNum: -1,
+            startByteIdx: 0,
             isFirst: True,
             isLast: True
         });
