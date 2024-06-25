@@ -116,7 +116,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         let macAddrMatch = False;
         if (networkSettingsReg matches tagged Valid .netSettings) begin
             Bool unicastMatch = netSettings.macAddr == ethHeader.dstMacAddr;
-            Bool broadcastMatch = netSettings.macAddr == -1;
+            Bool broadcastMatch = ethHeader.dstMacAddr == -1;
             macAddrMatch = unicastMatch || broadcastMatch;
             if (!macAddrMatch) begin
                 $display(

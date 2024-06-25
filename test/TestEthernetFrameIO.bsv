@@ -4,6 +4,8 @@ import Vector :: *;
 import BuildVector :: *;
 import PAClib :: *; 
 
+import PrimUtils :: *;
+
 import Utils4Test :: *;
 import EthernetTypes :: *;
 import DataTypes :: *;
@@ -21,15 +23,18 @@ module mkTestInputPacketClassifier(Empty);
     let packetClassifier <- mkInputPacketClassifier;
 
     mkConnection(packetGen.ethernetPacketPipeOut, packetClassifier.ethRawPacketPipeIn);
+    mkConnection(packetClassifier.rdmaRawPacketPipeOut ,packetCon.ethPipeIn);
 
     Integer     normalPacketUdpPortForTest = 1234;
-    IpAddr      ipAddrForTest = unpack('h11223344);
-    EthMacAddr  macUnicastAddrForTest = unpack('hFFFFFFFFFFFF);
-    EthMacAddr  macBroadcastAddrForTest = unpack('h123456789ABC);
+    IpAddr      ipAddrForTestSendNode = unpack('h11223344);
+    IpAddr      ipAddrForTestRecvNode = unpack('h55667788);
+    EthMacAddr  macUnicastAddrForTestSendNode = unpack('h123456789ABC);
+    EthMacAddr  macUnicastAddrForTestRecvNode = unpack('hDDEEFFAABBCC);
+    EthMacAddr  macBroadcastAddrForTest = unpack('hFFFFFFFFFFFF);
 
 
     
-    let macAddrVec = vec(macUnicastAddrForTest, macBroadcastAddrForTest, macUnicastAddrForTest, macBroadcastAddrForTest);
+    let macAddrVec = vec(macUnicastAddrForTestRecvNode, macBroadcastAddrForTest, macUnicastAddrForTestRecvNode, macBroadcastAddrForTest);
     Vector#(9, RdmaTransAndOpcode) rdmaOpcodeVec = vec(
         unpack(fromInteger(valueOf(RC_SEND_FIRST))),                          // 12
         unpack(fromInteger(valueOf(RC_SEND_LAST_WITH_IMMEDIATE))),            // 16
@@ -85,17 +90,23 @@ module mkTestInputPacketClassifier(Empty);
         );
         
         macIpUdpMeta.dstMacAddr = macAddr;
-        macIpUdpMeta.dstIpAddr = ipAddrForTest;
+        macIpUdpMeta.dstIpAddr = ipAddrForTestRecvNode;
 
-        let localNetworkSettings = LocalNetworkSettings{
-            macAddr: macAddr,
-            ipAddr: ipAddrForTest,
+        let localNetworkSettingsForSendNode = LocalNetworkSettings{
+            macAddr: macUnicastAddrForTestSendNode,
+            ipAddr: ipAddrForTestSendNode,
             gatewayAddr: unpack(0),
             netMask: unpack(0)
         };
+        packetGen.setMacAndIp(localNetworkSettingsForSendNode);
 
-        packetGen.setMacAndIp(localNetworkSettings);
-        packetClassifier.setMacAndIp(localNetworkSettings);
+        let localNetworkSettingsForRecvNode = LocalNetworkSettings{
+            macAddr: macUnicastAddrForTestRecvNode,
+            ipAddr: ipAddrForTestRecvNode,
+            gatewayAddr: unpack(0),
+            netMask: unpack(0)
+        };
+        packetClassifier.setMacAndIp(localNetworkSettingsForRecvNode);
 
         if (isRdmaPacket) begin
             macIpUdpMeta.dstPort = fromInteger(valueOf(UDP_PORT_RDMA));
@@ -143,12 +154,26 @@ module mkTestInputPacketClassifier(Empty);
     endrule
 
     rule getPacketClassifierOutput;
-        if (packetClassifier.rdmaRawPacketPipeOut.notEmpty) begin
-            packetClassifier.rdmaRawPacketPipeOut.deq;
-        end
-        if (packetClassifier.rdmaMacIpUdpMetaPipeOut.notEmpty) begin
-            packetClassifier.rdmaMacIpUdpMetaPipeOut.deq;
-        end
+        let expected = rdmaPacketCheckerExpectedQ.first;
+        rdmaPacketCheckerExpectedQ.deq;
+        let got = packetClassifier.rdmaMacIpUdpMetaPipeOut.first;
+        packetClassifier.rdmaMacIpUdpMetaPipeOut.deq;
+        
+        immAssert(
+            got.srcMacAddr == macUnicastAddrForTestSendNode && 
+            got.ipDscp == expected.ipDscp && 
+            got.ipEcn == expected.ipEcn &&
+            got.srcIpAddr == ipAddrForTestSendNode &&
+            got.srcPort == expected.srcPort,
+            "mkTestInputPacketClassifier getPacketClassifierOutput check failed",
+            $format(
+                ", got=", fshow(got),
+                ", expected=", fshow(expected),
+                ", macUnicastAddrForTestSendNode=", fshow(macUnicastAddrForTestSendNode),
+                ", ipAddrForTestSendNode=", fshow(ipAddrForTestSendNode)
+            )
+        );
+
     endrule
 
 endmodule
