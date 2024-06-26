@@ -128,7 +128,7 @@ typedef struct {
     EthHeader ethHeader;
     IpHeader  ipHeader;
     UdpHeader udpHeader;
-} TotalHeader deriving(Bits, FShow, Eq, Bounded);
+} MacIpUdpHeader deriving(Bits, FShow, Eq, Bounded);
 
 
 ///// ARP Protocol

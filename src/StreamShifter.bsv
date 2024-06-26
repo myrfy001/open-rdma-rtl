@@ -77,9 +77,9 @@ module mkBiDirectionStreamShifter(StreamShifter);
             leftShiftPipeQ.enq(shiftEntry);
         end
         // $display(
-        //     "time=%0t:", $time, " decideDirection",
-        //     ", offset=", fshow(offset),
-        //     ", ds=", fshow(ds)
+        //     "time=%0t: ", $time, toGreen("decideDirection"),
+        //     toBlue(", offset="), fshow(offset),
+        //     toBlue(", ds="), fshow(ds)
         // );
     endrule
     
@@ -101,16 +101,16 @@ module mkBiDirectionStreamShifter(StreamShifter);
             pipelineEntry.ds.startByteIdx = pipelineEntry.ds.startByteIdx + pipelineEntry.offset;
             streamPipeOutQ.enq(pipelineEntry.ds);
             // $display(
-            //     "time=%0t:", $time, " shiftLeftIdle forward single beat data",
-            //     ", pipelineEntry=", fshow(pipelineEntry)
+            //     "time=%0t: ", $time, toGreen("shiftLeftIdle forward single beat data"),
+            //     toBlue(", pipelineEntry="), fshow(pipelineEntry)
             // );
         end
         else begin
             leftShiftStateReg <= BiDirectionStreamShifterLeftShiftStateOutputBeat;
         end
         // $display(
-        //     "time=%0t:", $time, " shiftLeftIdle",
-        //     ", pipelineEntry=", fshow(pipelineEntry)
+        //     "time=%0t: ", $time, toGreen("shiftLeftIdle"),
+        //     toBlue(", pipelineEntry="), fshow(pipelineEntry)
         // );
     endrule
 
@@ -174,9 +174,9 @@ module mkBiDirectionStreamShifter(StreamShifter);
 
         // $display(
         //     "time=%0t:", $time, " shiftLeftOptput",
-        //     ", pipelineEntry=", fshow(pipelineEntry),
-        //     ", leftShiftPrevDataReg=", fshow(leftShiftPrevDataReg),
-        //     ", outDs=", fshow(outDs)
+        //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
+        //     toBlue(", leftShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
+        //     toBlue(", outDs="), fshow(outDs)
         // );
 
     endrule
@@ -210,8 +210,8 @@ module mkBiDirectionStreamShifter(StreamShifter);
         end
         // $display(
         //     "time=%0t:", $time, " shiftLeftOptputExtra",
-        //     ", leftShiftPrevDataReg=", fshow(leftShiftPrevDataReg),
-        //     ", outDs=", fshow(outDs)
+        //     toBlue(", leftShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
+        //     toBlue(", outDs="), fshow(outDs)
         // );
     endrule
 
@@ -272,12 +272,12 @@ module mkBiDirectionStreamShifter(StreamShifter);
         if ((pipelineEntry.ds.isLast && !inputBeatCanFitInOutputBeatForNonOnlyBeat) || (isOnlyBeat && !inputBeatCanFitInOutputBeatForOnlyBeat)) begin
             rightShiftStateReg <= BiDirectionStreamShifterRightShiftStateOutputExtraBeat;
         end
-        $display(
-            "time=%0t:", $time, " shiftRightOptput",
-            ", pipelineEntry=", fshow(pipelineEntry),
-            ", rightShiftPrevDataReg=", fshow(leftShiftPrevDataReg),
-            ", outDs=", fshow(outDs)
-        );
+        // $display(
+        //     "time=%0t: ", $time, toGreen("shiftRightOptput"),
+        //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
+        //     toBlue(", rightShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
+        //     toBlue(", outDs="), fshow(outDs)
+        // );
     endrule
 
 
@@ -299,11 +299,11 @@ module mkBiDirectionStreamShifter(StreamShifter);
         streamPipeOutQ.enq(outDs);
 
         rightShiftStateReg <= BiDirectionStreamShifterRightShiftStateOutputBeat;
-        $display(
-            "time=%0t:", $time, " shiftRightOptputExtra",
-            ", rightShiftPrevDataReg=", fshow(rightShiftPrevDataReg),
-            ", outDs=", fshow(outDs)
-        );
+        // $display(
+        //     "time=%0t: ", $time, toGreen("shiftRightOptputExtra"),
+        //     toBlue(", rightShiftPrevDataReg="), fshow(rightShiftPrevDataReg),
+        //     toBlue(", outDs="), fshow(outDs)
+        // );
     endrule
 
     interface offsetPipeIn  = toPipeIn(offsetPipeInQ);

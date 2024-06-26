@@ -181,7 +181,7 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
                 raReg <= ra;
                 waReg <= wa;
                 errorOccuredReg <= True;
-                $display("time=%t", $time, "Error, expect all ones");
+                $display("time=%t", $time, toRed("Error, expect all ones"));
             end 
             else if (!expectedOne && expectZeroNotMatch) begin
                 readZeroErrorCntReg <= readZeroErrorCntReg + 1;
@@ -189,7 +189,7 @@ module mkTestSdpBramWrapperConflictReadWriteTest(TestSdpBramWrapperConflictReadW
                 raReg <= ra;
                 waReg <= wa;
                 errorOccuredReg <= True;
-                $display("time=%t", $time, "Error, expect all zeros");
+                $display("time=%t", $time, toRed("Error, expect all zeros"));
             end
         end
 
@@ -405,14 +405,14 @@ module mkTestAcxBram72kSdpConflictRW(TestAcxBram72kSdpConflictRW);
             lastErrorReg <= {pack(lsb(ra) == 1), resp};
             raReg <= ra;
             errorOccuredReg <= !errorOccuredReg;
-            $display("time=%t", $time, "Error, expect all ones");
+            $display("time=%t", $time, toRed("Error, expect all ones"));
         end 
         else if ((lsb(ra) == 0) && expectZeroNotMatch) begin
             readZeroErrorCntReg <= readZeroErrorCntReg + 1;
             lastErrorReg <= {pack(lsb(ra) == 1), resp};
             raReg <= ra;
             errorOccuredReg <= !errorOccuredReg;
-            $display("time=%t", $time, "Error, expect all zeros");
+            $display("time=%t", $time, toRed("Error, expect all zeros"));
         end
         else begin
             correctCntReg <= correctCntReg + 1;

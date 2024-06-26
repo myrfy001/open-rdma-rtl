@@ -1,6 +1,7 @@
 import FIFOF :: *;
 import PAClib :: *;
 import ConnectableF :: *;
+import Printf :: *;
 
 typedef 2 TWO;
 typedef 4 FOUR;
@@ -359,3 +360,15 @@ module mkFixPriorityTwoInputArbiterNoOutputBufferPipeOut#(PipeOut#(tData) highPr
         end
     endmethod
 endmodule
+
+function String toGreen(String s);
+    return sprintf("\033[32m%s\033[0m", s);
+endfunction
+
+function String toRed(String s);
+    return sprintf("\033[31m%s\033[0m", s);
+endfunction
+
+function String toBlue(String s);
+    return sprintf("\033[96m%s\033[0m", s);
+endfunction

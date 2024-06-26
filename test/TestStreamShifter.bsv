@@ -103,8 +103,8 @@ module mkTestBiDirectionStreamShifter(Empty);
             checkerExpectedResultQ.enq(ds);
             dutInputQ.enq(ds);
             // $display(
-            //     "time=%0t:", $time, " genRandomInputStream",
-            //     ", ds=", fshow(ds)
+            //     "time=%0t: ", $time, toGreen("genRandomInputStream"),
+            //     toBlue(", ds="), fshow(ds)
             // );
 
             if (isLast) begin

@@ -7,6 +7,7 @@ import GetPut :: *;
 import RdmaHeaders :: *;
 import Settings :: *;
 
+typedef 3 BIT_BYTE_CONVERT_SHIFT_NUM;
 typedef 8 BYTE_WIDTH;
 typedef 16 WORD_WIDTH;
 typedef Bit#(BYTE_WIDTH) Byte;
@@ -252,7 +253,7 @@ typedef Bit#(RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH) RdmaBthAndEthTotalLength;
 typedef struct {
     BTH bth;
     RdmaExtendHeaderBuffer rdmaExtendHeaderBuf;
-} RdmaBthAndExtendHeader deriving(Bits, FShow);
+} RdmaBthAndExtendHeader deriving(Bits, Eq, FShow);
 
 typedef struct {
     RdmaBthAndExtendHeader header;

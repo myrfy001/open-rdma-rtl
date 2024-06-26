@@ -173,7 +173,7 @@ typedef struct {
     Bool ackReq;
     ReservedZero#(7) resv7;
     PSN psn;
-} BTH deriving(Bits, Bounded, FShow);
+} BTH deriving(Bits, Eq, Bounded, FShow);
 
 typedef SizeOf#(BTH)        BTH_WIDTH;
 typedef TDiv#(BTH_WIDTH, 8) BTH_BYTE_WIDTH;

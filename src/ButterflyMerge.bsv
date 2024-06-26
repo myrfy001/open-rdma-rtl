@@ -176,7 +176,7 @@ module mkFourChannelButterflyMerge#(
 
             $display(
                 "time=%0t, ", $time,
-                "doFirstStageToSecondStageReq[%0d], ", idx,
+                toGreen("doFirstStageToSecondStageReq[%0d], "), idx,
                 "firstStageUpdateResult=", fshow(firstStageUpdateResult)
             );
         endrule
