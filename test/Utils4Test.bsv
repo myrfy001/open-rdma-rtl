@@ -180,6 +180,31 @@ module mkSynthesizableRng32#(Bit#(32) seed)(Get#(Bit#(32)));
     return toGet(fi);
 endmodule
 
+module mkSynthesizableRng512#(Bit#(32) seed)(Get#(Bit#(512)));
+    Vector#(16, LFSR#(Bit#(32))) lfsrVec <- replicateM(mkLFSR_32);
+
+    FIFOF#(Bit#(512)) fi <- mkFIFOF;
+    Reg#(Bool) starting <- mkReg(True) ;
+
+    rule start (starting);
+        starting <= False;
+        for (Integer idx = 0; idx < 16; idx = idx + 1) begin
+            lfsrVec[idx].seed(seed + fromInteger(idx));
+        end
+    endrule
+    
+    rule run (!starting);
+        Bit#(512) out = 0;
+        for (Integer idx = 0; idx < 16; idx = idx + 1) begin
+            out[(idx+1)*32-1: idx*32] = lfsrVec[idx].value;
+            lfsrVec[idx].next;
+        end
+        fi.enq(out);
+    endrule: run
+
+    return toGet(fi);
+endmodule
+
 interface FixedLengthDateStreamRandomGen;
     interface PipeIn#(Length) reqPipeIn;
     interface PipeOut#(DataStream) streamPipeOut;
@@ -215,8 +240,8 @@ module mkFixedLengthDateStreamRandomGen(FixedLengthDateStreamRandomGen);
         ByteEnBitNum byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
         if (len <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
-            tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(len)) * fromInteger(valueOf(BYTE_WIDTH));
-            data = data << tmpShiftCnt;
+            tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(len)) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+            data = (data << tmpShiftCnt);
             isLast = True;
             if (isFirst) begin
                 ByteEnBitNum busWidth = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));

@@ -3,6 +3,7 @@ import FIFOF :: *;
 import Vector :: *;
 import BuildVector :: *;
 import PAClib :: *; 
+import GetPut :: *;
 
 import PrimUtils :: *;
 
@@ -15,16 +16,16 @@ import EthernetFrameIO :: *;
 import StreamShifter :: *;
 
 typedef enum {
-    TestInputPacketClassifierStateGenReq = 0,
-    TestInputPacketClassifierStateCheckPacketClassifierOutput = 1,
-    TestInputPacketClassifierStateCheckRdmaHeaderExtractorOutput = 2
-} TestInputPacketClassifierState deriving(Bits, FShow, Eq);
+    TestEthernetFrameIoStateGenReq = 0,
+    TestEthernetFrameIoStateCheckPacketClassifierOutput = 1,
+    TestEthernetFrameIoStateCheckRdmaHeaderExtractorOutput = 2
+} TestEthernetFrameIoState deriving(Bits, FShow, Eq);
 
 (* doc = "testcase" *)
-module mkTestInputPacketClassifier(Empty);
+module mkTestEthernetFrameIO(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(1000000);
 
-    Reg#(TestInputPacketClassifierState) stateReg <- mkReg(TestInputPacketClassifierStateGenReq);
+    Reg#(TestEthernetFrameIoState) stateReg <- mkReg(TestEthernetFrameIoStateGenReq);
 
     let packetGen <- mkEthernetPacketGenerator;
     let packetCon <- mkRdmaHeaderExtractor;
@@ -71,8 +72,6 @@ module mkTestInputPacketClassifier(Empty);
     FIFOF#(RdmaRecvPacketMeta) rdmaHeaderExtractorMetaExpectedQ <- mkFIFOF;
     FIFOF#(DataStream) rdmaHeaderExtractorPayloadExpectedQ <- mkFIFOF;
 
-    FIFOF#(Tuple2#(RdmaBthAndEthTotalLength, PktLen)) payloadGenReqQ <- mkFIFOF;
-
     let payloadStreamGen <- mkFixedLengthDateStreamRandomGen;
     let txStreamShifter <- mkBiDirectionStreamShifter;
     mkConnection(payloadStreamGen.streamPipeOut, txStreamShifter.streamPipeIn);
@@ -82,7 +81,7 @@ module mkTestInputPacketClassifier(Empty);
 
     Reg#(RdmaRecvPacketMeta) curRecvPacketMetaDataReg <- mkRegU;
 
-    rule genRandomPacketHeader if (stateReg == TestInputPacketClassifierStateGenReq);
+    rule genRandomPacketHeader if (stateReg == TestEthernetFrameIoStateGenReq);
         
         ThinMacIpUdpMetaDataForSend macIpUdpMeta = unpack(0);
 
@@ -175,10 +174,10 @@ module mkTestInputPacketClassifier(Empty);
                 firstPayloadByteOneBasedOffsetInFirstPayloadBeat: ?
             };
             rdmaHeaderExtractorMetaExpectedQ.enq(infoForChecker);
-            stateReg <= TestInputPacketClassifierStateCheckPacketClassifierOutput;
+            stateReg <= TestEthernetFrameIoStateCheckPacketClassifierOutput;
 
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkTestInputPacketClassifier genRandomPacketHeader"),
+            //     "time=%0t:", $time, toGreen(" mkTestEthernetFrameIO genRandomPacketHeader"),
             //     toBlue(", macIpUdpMeta="), fshow(macIpUdpMeta),
             //     toBlue(", rdmaPayloadLen="), fshow(rdmaPayloadLen),
             //     toBlue(", rdmaPacketMeta="), fshow(rdmaPacketMeta)
@@ -194,7 +193,7 @@ module mkTestInputPacketClassifier(Empty);
 
     
 
-    rule checkPacketClassifierOutput if (stateReg == TestInputPacketClassifierStateCheckPacketClassifierOutput);
+    rule checkPacketClassifierOutput if (stateReg == TestEthernetFrameIoStateCheckPacketClassifierOutput);
         let expected = rdmaMacIpUspMetadataCheckerExpectedQ.first;
         rdmaMacIpUspMetadataCheckerExpectedQ.deq;
         let got = packetClassifier.rdmaMacIpUdpMetaPipeOut.first;
@@ -206,7 +205,7 @@ module mkTestInputPacketClassifier(Empty);
             got.ipEcn == expected.ipEcn &&
             got.srcIpAddr == ipAddrForTestSendNode &&
             got.srcPort == expected.srcPort,
-            "mkTestInputPacketClassifier getPacketClassifierOutput check failed",
+            "mkTestEthernetFrameIO getPacketClassifierOutput check failed",
             $format(
                 ", got=", fshow(got),
                 ", expected=", fshow(expected),
@@ -215,11 +214,11 @@ module mkTestInputPacketClassifier(Empty);
             )
         );
 
-        stateReg <= TestInputPacketClassifierStateCheckRdmaHeaderExtractorOutput;
+        stateReg <= TestEthernetFrameIoStateCheckRdmaHeaderExtractorOutput;
         // $display("============Finish checkPacketClassifierOutput==============");
     endrule
 
-    rule checkRdmaHeaderExtractorOutput if (stateReg == TestInputPacketClassifierStateCheckRdmaHeaderExtractorOutput);
+    rule checkRdmaHeaderExtractorOutput if (stateReg == TestEthernetFrameIoStateCheckRdmaHeaderExtractorOutput);
         if (packetCon.rdmaPacketMetaPipeOut.notEmpty && rdmaHeaderExtractorMetaExpectedQ.notEmpty) begin
             let expected = rdmaHeaderExtractorMetaExpectedQ.first;
             rdmaHeaderExtractorMetaExpectedQ.deq;
@@ -232,7 +231,7 @@ module mkTestInputPacketClassifier(Empty);
             // Note, the rdmaExtendHeaderBuf may contain garbage data at it's lower bits.
             immAssert(
                 (pack(got.header) >> shiftInvalidExtHeaderBufferBitNum) == (pack(expected.header) >> shiftInvalidExtHeaderBufferBitNum),
-                "mkTestInputPacketClassifier checkRdmaHeaderExtractorOutput meta check failed",
+                "mkTestEthernetFrameIO checkRdmaHeaderExtractorOutput meta check failed",
                 $format(
                     ", got=", fshow(got),
                     ", expected=", fshow(expected)
@@ -242,7 +241,7 @@ module mkTestInputPacketClassifier(Empty);
             curRecvPacketMetaDataReg <= got;
 
             if (!got.hasPayload) begin
-                stateReg <= TestInputPacketClassifierStateGenReq;
+                stateReg <= TestEthernetFrameIoStateGenReq;
                 // $display("============Finish checkRdmaHeaderExtractorOutput  no payload==============");
             end
 
@@ -269,7 +268,7 @@ module mkTestInputPacketClassifier(Empty);
             
             immAssert(
                 got == expected,
-                "mkTestInputPacketClassifier checkRdmaHeaderExtractorOutput payload check failed",
+                "mkTestEthernetFrameIO checkRdmaHeaderExtractorOutput payload check failed",
                 $format(
                     ", got=", fshow(got),
                     ", expected=", fshow(expected)
@@ -278,7 +277,7 @@ module mkTestInputPacketClassifier(Empty);
   
 
             if (got.isLast) begin
-                stateReg <= TestInputPacketClassifierStateGenReq;
+                stateReg <= TestEthernetFrameIoStateGenReq;
                 // $display("============Finish checkRdmaHeaderExtractorOutput with payload==============");
                 // $display("PASS");
             end
@@ -293,4 +292,103 @@ module mkTestInputPacketClassifier(Empty);
             $finish;
         end
     endrule
+endmodule
+
+interface TestEthernetFrameIoTiming;
+    method Bit#(512) getOutput;
+endinterface
+
+(* synthesize *)
+(* doc = "testcase" *)
+module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
+    
+    let packetGen <- mkEthernetPacketGenerator;
+    let packetCon <- mkRdmaHeaderExtractor;
+    let packetClassifier <- mkInputPacketClassifier;
+
+    mkConnection(packetGen.ethernetPacketPipeOut, packetClassifier.ethRawPacketPipeIn);
+    mkConnection(packetClassifier.rdmaRawPacketPipeOut, packetCon.ethPipeIn);
+
+    let txStreamShifter <- mkBiDirectionStreamShifter;
+    mkConnection(txStreamShifter.streamPipeOut, packetGen.rdmaPayloadPipeIn);
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource3 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource4 <- mkSynthesizableRng512('hAAAAAAAA);
+
+    Reg#(Bit#(32)) cntReg <- mkReg(0);
+    Reg#(Bit#(512)) relayReg <- mkReg(0);
+
+    Reg#(Bit#(512)) outReg1 <- mkRegU;
+    Reg#(Bit#(256)) outReg2 <- mkRegU;
+    Reg#(Bit#(128)) outReg3 <- mkRegU;
+
+    Reg#(ThinMacIpUdpMetaDataForRecv) tmpReg1 <- mkRegU;
+    Reg#(DataStream) tmpReg2 <- mkRegU;
+    Reg#(RdmaRecvPacketMeta) tmpReg3 <- mkRegU;
+    Reg#(DataStream) tmpReg4 <- mkRegU;
+
+    rule t;
+        cntReg <= cntReg + 1;
+        relayReg <= (relayReg << 3) | zeroExtend(cntReg);
+    endrule
+
+    rule injectInput1;
+        let localNetworkSettingsForSendNode = unpack(truncate(relayReg));
+        let localNetworkSettingsForRecvNode = unpack(truncate(relayReg));
+        let payloadStream = unpack(truncate(relayReg));
+
+        packetGen.setMacAndIp(localNetworkSettingsForSendNode);
+        packetClassifier.setMacAndIp(localNetworkSettingsForRecvNode);
+        txStreamShifter.streamPipeIn.enq(payloadStream);
+    endrule
+
+    rule injectInput2;
+        let rdmaPacketMeta = unpack(truncate(relayReg));
+        packetGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
+    endrule
+
+
+    rule injectInput3;
+        let signedShiftOffset = unpack(truncate(relayReg));
+        txStreamShifter.offsetPipeIn.enq(signedShiftOffset);
+    endrule
+
+
+    rule injectInput4;
+        ThinMacIpUdpMetaDataForSend macIpUdpMeta = unpack(truncate(relayReg));
+        packetGen.macIpUdpMetaPipeIn.enq(macIpUdpMeta);
+    endrule
+
+    rule deq1;
+        tmpReg1 <= packetClassifier.rdmaMacIpUdpMetaPipeOut.first;
+        packetClassifier.rdmaMacIpUdpMetaPipeOut.deq;
+    endrule
+
+    rule deq2;
+        tmpReg2 <= packetClassifier.otherRawPacketPipeOut.first;
+        packetClassifier.otherRawPacketPipeOut.deq;
+    endrule
+
+    rule deq3;
+        tmpReg3 <= packetCon.rdmaPacketMetaPipeOut.first;
+        packetCon.rdmaPacketMetaPipeOut.deq;
+    endrule
+
+    rule deq4;
+        tmpReg4 <= packetCon.rdmaPayloadPipeOut.first;
+        packetCon.rdmaPayloadPipeOut.deq;
+    endrule
+
+    rule merge;
+        outReg1 <= zeroExtend(pack(tmpReg1)) ^
+                  zeroExtend(pack(tmpReg2))  ^ 
+                  zeroExtend(pack(tmpReg3))     ^
+                  zeroExtend(pack(tmpReg4));
+
+        outReg2 <= outReg1[255:0] ^ outReg1[511:256];
+        outReg3 <= outReg2[127:0] ^ outReg2[255:128];
+    endrule
+
+    method getOutput = outReg1;
 endmodule

@@ -32,11 +32,12 @@ truncate -s 0 $TEST_LOG
 # # TESTCASE=mkTestFourChannelButterflyMergeTimingTest
 # TESTCASE=mkTestFourChannelButterflyMergeSingleBeatTest
 
-FILE=`ls TestEthernetFrameIO.bsv`
-TESTCASE=mkTestInputPacketClassifier
+# FILE=`ls TestEthernetFrameIO.bsv`
+# TESTCASE=mkTestEthernetFrameIO
+# TESTCASE=mkTestEthernetFrameIoTiming
 
-# FILE=`ls TestStreamShifter.bsv`
-# TESTCASE=mkTestBiDirectionStreamShifter
+FILE=`ls TestStreamShifter.bsv`
+TESTCASE=mkTestBiDirectionStreamShifter
 
 
 # FILE=`ls TestNapWrapper.bsv`
