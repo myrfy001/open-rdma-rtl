@@ -31,6 +31,19 @@ typedef struct {
     DataBusShiftOffset offset;
 } BiDirectionStreamShifterPipelineEntry deriving(FShow, Eq, Bits);
 
+typedef struct {
+    ByteEnBitNum       byteNum;
+    ByteIndexInBeat    startByteIdx;
+    Bool               isFirst;
+    Bool               isLast;
+} DataStreamMeta deriving(FShow, Eq, Bits);
+
+typedef struct {
+    Tuple2#(DATA, DATA) concatData;
+    DataBusShiftOffset offset;
+    DataStreamMeta  meta;
+} ShiftIntermediateData deriving(FShow, Eq, Bits);
+
 
 // ========== IMPORTANT! =======================
 // Must ensure the first beat is RIGHT aligned.
@@ -44,12 +57,64 @@ module mkBiDirectionStreamShifter(StreamShifter);
     FIFOF#(BiDirectionStreamShifterPipelineEntry) leftShiftPipeQ <- mkFIFOF;
     FIFOF#(BiDirectionStreamShifterPipelineEntry) rightShiftPipeQ <- mkFIFOF;
 
+    FIFOF#(ShiftIntermediateData) doLeftShiftPipeQ <- mkFIFOF;
+    FIFOF#(DataStream) leftShiftResultQ <- mkFIFOF;
+    FIFOF#(ShiftIntermediateData) doRightShiftPipeQ <- mkFIFOF;
+    FIFOF#(DataStream) rightShiftResultQ <- mkFIFOF;
+
+    FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);
+
     Reg#(BiDirectionStreamShifterPipelineEntry) leftShiftPrevDataReg <- mkRegU;
     Reg#(BiDirectionStreamShifterLeftShiftState) leftShiftStateReg <- mkReg(BiDirectionStreamShifterLeftShiftStateIdle);
 
     Reg#(BiDirectionStreamShifterPipelineEntry) rightShiftPrevDataReg <- mkRegU;
     Reg#(BiDirectionStreamShifterRightShiftState) rightShiftStateReg <- mkReg(BiDirectionStreamShifterRightShiftStateOutputBeat);
 
+    DATA zeroData = unpack(0);
+
+    rule doLeftShift;
+        let req = doLeftShiftPipeQ.first;
+        doLeftShiftPipeQ.deq;
+        DATA outputData = truncateLSB(pack(req.concatData) << {req.offset, 3'h0});  // 3'h0 to convert byte offset to bit offset
+        leftShiftResultQ.enq(DataStream{
+            data: outputData,
+            byteNum: req.meta.byteNum,
+            startByteIdx: req.meta.startByteIdx,
+            isFirst: req.meta.isFirst,
+            isLast: req.meta.isLast
+        });
+    endrule
+
+    rule doRightShift;
+        let req = doRightShiftPipeQ.first;
+        doRightShiftPipeQ.deq;
+        DATA outputData = truncate(pack(req.concatData) >> {req.offset, 3'h0});  // 3'h0 to convert byte offset to bit offset
+        rightShiftResultQ.enq(DataStream{
+            data: outputData,
+            byteNum: req.meta.byteNum,
+            startByteIdx: req.meta.startByteIdx,
+            isFirst: req.meta.isFirst,
+            isLast: req.meta.isLast
+        });
+    endrule
+
+    rule doFinalOutput;
+        let isShiftRight = keepOrderQ.first;
+        if (isShiftRight) begin
+            streamPipeOutQ.enq(rightShiftResultQ.first);
+            rightShiftResultQ.deq;
+            if (rightShiftResultQ.first.isLast) begin
+                keepOrderQ.deq;
+            end
+        end
+        else begin
+            streamPipeOutQ.enq(leftShiftResultQ.first);
+            leftShiftResultQ.deq;
+            if (leftShiftResultQ.first.isLast) begin
+                keepOrderQ.deq;
+            end
+        end
+    endrule
 
     rule decideDirection;
         let offset = offsetPipeInQ.first;
@@ -69,6 +134,10 @@ module mkBiDirectionStreamShifter(StreamShifter);
             offset: truncate(absOffset)
         };
 
+        if (ds.isFirst) begin
+            keepOrderQ.enq(isShiftRight);
+        end
+
         if (isShiftRight) begin
             rightShiftPipeQ.enq(shiftEntry);
         end
@@ -83,11 +152,11 @@ module mkBiDirectionStreamShifter(StreamShifter);
         // );
     endrule
     
-    (* conflict_free = "shiftLeftIdle, \
-                        shiftLeftOptput, \
-                        shiftLeftOptputExtra, \
-                        shiftRightOptput, \
-                        shiftRightOptputExtra" *)
+    // (* conflict_free = "shiftLeftIdle, \
+    //                     shiftLeftOptput, \
+    //                     shiftLeftOptputExtra, \
+    //                     shiftRightOptput, \
+    //                     shiftRightOptputExtra" *)
     rule shiftLeftIdle if (leftShiftStateReg == BiDirectionStreamShifterLeftShiftStateIdle);
         let pipelineEntry = leftShiftPipeQ.first;
         leftShiftPipeQ.deq;
@@ -97,9 +166,17 @@ module mkBiDirectionStreamShifter(StreamShifter);
 
         if (pipelineEntry.ds.isLast) begin
             // only have one beat, no need to concat other beat
-            pipelineEntry.ds.data = pipelineEntry.ds.data << {pipelineEntry.offset, 3'h0};
-            pipelineEntry.ds.startByteIdx = pipelineEntry.ds.startByteIdx + pipelineEntry.offset;
-            streamPipeOutQ.enq(pipelineEntry.ds);
+            let interShiftData = ShiftIntermediateData{
+                concatData: tuple2(pipelineEntry.ds.data, zeroData),
+                offset: pipelineEntry.offset,
+                meta: DataStreamMeta{
+                    byteNum: pipelineEntry.ds.byteNum,
+                    startByteIdx: pipelineEntry.ds.startByteIdx + pipelineEntry.offset,
+                    isFirst: pipelineEntry.ds.isFirst,
+                    isLast: pipelineEntry.ds.isLast
+                }
+            };
+            doLeftShiftPipeQ.enq(interShiftData);
             // $display(
             //     "time=%0t: ", $time, toGreen("shiftLeftIdle forward single beat data"),
             //     toBlue(", pipelineEntry="), fshow(pipelineEntry)
@@ -117,8 +194,6 @@ module mkBiDirectionStreamShifter(StreamShifter);
     rule shiftLeftOptput if (leftShiftStateReg == BiDirectionStreamShifterLeftShiftStateOutputBeat);
         let pipelineEntry = leftShiftPipeQ.first;
         leftShiftPipeQ.deq;
-
-        DATA outputData = truncateLSB({leftShiftPrevDataReg.ds.data, pipelineEntry.ds.data} << {leftShiftPrevDataReg.offset, 3'h0});
 
         ByteEnBitNum byteNum = leftShiftPrevDataReg.ds.byteNum;
         let inputBeatCanFitInOutputBeat = (pipelineEntry.ds.byteNum <= unpack(zeroExtend(leftShiftPrevDataReg.offset)));
@@ -154,14 +229,18 @@ module mkBiDirectionStreamShifter(StreamShifter);
 
 
         let startByteIdx = isFirst ? ( inputBeatCanFitInOutputBeat ? pipelineEntry.offset - truncate(pipelineEntry.ds.byteNum) : 0 ) : 0;
- 
-        let outDs = DataStream {
-            data: outputData,
-            byteNum: byteNum,
-            startByteIdx: startByteIdx, 
-            isFirst: isFirst,
-            isLast: isLast
+
+        let interShiftData = ShiftIntermediateData{
+            concatData: tuple2(leftShiftPrevDataReg.ds.data, pipelineEntry.ds.data),
+            offset: leftShiftPrevDataReg.offset,
+            meta: DataStreamMeta{
+                byteNum: byteNum,
+                startByteIdx: startByteIdx,
+                isFirst: isFirst,
+                isLast: isLast
+            }
         };
+        doLeftShiftPipeQ.enq(interShiftData);
 
         if (pipelineEntry.ds.isLast && !isLast) begin
             leftShiftStateReg <= BiDirectionStreamShifterLeftShiftStateOutputExtraBeat;
@@ -169,33 +248,36 @@ module mkBiDirectionStreamShifter(StreamShifter);
         else if (isLast) begin
             leftShiftStateReg <= BiDirectionStreamShifterLeftShiftStateIdle;
         end
-        streamPipeOutQ.enq(outDs);
+        
         leftShiftPrevDataReg <= pipelineEntry;
 
         // $display(
         //     "time=%0t:", $time, " shiftLeftOptput",
         //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
         //     toBlue(", leftShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
-        //     toBlue(", outDs="), fshow(outDs)
+        //     toBlue(", interShiftData="), fshow(interShiftData)
         // );
 
     endrule
 
     rule shiftLeftOptputExtra if (leftShiftStateReg == BiDirectionStreamShifterLeftShiftStateOutputExtraBeat);
-        DATA outputData = truncateLSB(leftShiftPrevDataReg.ds.data << {leftShiftPrevDataReg.offset, 3'h0});
-        let outDs = DataStream {
-            data: outputData,
-            byteNum: leftShiftPrevDataReg.ds.byteNum - zeroExtend(leftShiftPrevDataReg.offset),
-            startByteIdx: 0,
-            isFirst: False,
-            isLast: True
+
+        let interShiftData = ShiftIntermediateData{
+            concatData: tuple2(leftShiftPrevDataReg.ds.data, zeroData),
+            offset: leftShiftPrevDataReg.offset,
+            meta: DataStreamMeta{
+                byteNum: leftShiftPrevDataReg.ds.byteNum - zeroExtend(leftShiftPrevDataReg.offset),
+                startByteIdx: 0,
+                isFirst: False,
+                isLast: True
+            }
         };
-        streamPipeOutQ.enq(outDs);
+        doLeftShiftPipeQ.enq(interShiftData);
+
 
         if (leftShiftPipeQ.notEmpty) begin 
             let pipelineEntry = leftShiftPipeQ.first;
             leftShiftPrevDataReg <= pipelineEntry;
-
             if (pipelineEntry.ds.isFirst && pipelineEntry.ds.isLast) begin
                 // only have one beat, no need to concat other beat
                 leftShiftStateReg <= BiDirectionStreamShifterLeftShiftStateIdle;
@@ -211,7 +293,7 @@ module mkBiDirectionStreamShifter(StreamShifter);
         // $display(
         //     "time=%0t:", $time, " shiftLeftOptputExtra",
         //     toBlue(", leftShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
-        //     toBlue(", outDs="), fshow(outDs)
+        //     toBlue(", interShiftData="), fshow(interShiftData)
         // );
     endrule
 
@@ -219,11 +301,7 @@ module mkBiDirectionStreamShifter(StreamShifter);
     rule shiftRightOptput if (rightShiftStateReg == BiDirectionStreamShifterRightShiftStateOutputBeat);
         let pipelineEntry = rightShiftPipeQ.first;
         rightShiftPipeQ.deq;
-        rightShiftPrevDataReg <= pipelineEntry;
-        DATA outputData = pipelineEntry.ds.isFirst ?
-             pipelineEntry.ds.data >> {pipelineEntry.offset, 3'h0} : 
-             truncate({rightShiftPrevDataReg.ds.data, pipelineEntry.ds.data} >> {pipelineEntry.offset, 3'h0});
-        
+        rightShiftPrevDataReg <= pipelineEntry;     
 
         let inputBeatCanFitInOutputBeatForNonOnlyBeat = (
             pipelineEntry.ds.byteNum + unpack(zeroExtend(pipelineEntry.offset)) <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)));
@@ -260,14 +338,17 @@ module mkBiDirectionStreamShifter(StreamShifter);
         end
         let startByteIdx = shiftWillChangeByteNum ? 0 : pipelineEntry.ds.startByteIdx - zeroExtend(pipelineEntry.offset);
 
-        let outDs = DataStream {
-            data: outputData,
-            byteNum: byteNum,
-            startByteIdx: startByteIdx,
-            isFirst: isFirst,
-            isLast: isLast
+        let interShiftData = ShiftIntermediateData{
+            concatData: pipelineEntry.ds.isFirst ? tuple2(zeroData, pipelineEntry.ds.data) : tuple2(rightShiftPrevDataReg.ds.data, pipelineEntry.ds.data),
+            offset: pipelineEntry.offset,
+            meta: DataStreamMeta{
+                byteNum: byteNum,
+                startByteIdx: startByteIdx,
+                isFirst: isFirst,
+                isLast: isLast
+            }
         };
-        streamPipeOutQ.enq(outDs);
+        doRightShiftPipeQ.enq(interShiftData);
 
         if ((pipelineEntry.ds.isLast && !inputBeatCanFitInOutputBeatForNonOnlyBeat) || (isOnlyBeat && !inputBeatCanFitInOutputBeatForOnlyBeat)) begin
             rightShiftStateReg <= BiDirectionStreamShifterRightShiftStateOutputExtraBeat;
@@ -276,33 +357,35 @@ module mkBiDirectionStreamShifter(StreamShifter);
         //     "time=%0t: ", $time, toGreen("shiftRightOptput"),
         //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
         //     toBlue(", rightShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
-        //     toBlue(", outDs="), fshow(outDs)
+        //     toBlue(", interShiftData="), fshow(interShiftData)
         // );
     endrule
 
 
     rule shiftRightOptputExtra if (rightShiftStateReg == BiDirectionStreamShifterRightShiftStateOutputExtraBeat);
-        DATA zeroData = unpack(0);
-        DATA outputData = truncate({rightShiftPrevDataReg.ds.data, zeroData} >> {rightShiftPrevDataReg.offset, 3'h0});
 
         ByteEnBitNum byteNum = rightShiftPrevDataReg.ds.isFirst ? (
             zeroExtend(rightShiftPrevDataReg.offset) - zeroExtend(rightShiftPrevDataReg.ds.startByteIdx)
         ) : ( zeroExtend(rightShiftPrevDataReg.offset) - (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - rightShiftPrevDataReg.ds.byteNum));
 
-        let outDs = DataStream {
-            data: outputData,
-            byteNum: byteNum,
-            startByteIdx: 0,
-            isFirst: False,
-            isLast: True
+        let interShiftData = ShiftIntermediateData{
+            concatData: tuple2(rightShiftPrevDataReg.ds.data, zeroData),
+            offset: rightShiftPrevDataReg.offset,
+            meta: DataStreamMeta{
+                byteNum: byteNum,
+                startByteIdx: 0,
+                isFirst: False,
+                isLast: True
+            }
         };
-        streamPipeOutQ.enq(outDs);
+        doRightShiftPipeQ.enq(interShiftData);
+
 
         rightShiftStateReg <= BiDirectionStreamShifterRightShiftStateOutputBeat;
         // $display(
         //     "time=%0t: ", $time, toGreen("shiftRightOptputExtra"),
         //     toBlue(", rightShiftPrevDataReg="), fshow(rightShiftPrevDataReg),
-        //     toBlue(", outDs="), fshow(outDs)
+        //     toBlue(", interShiftData="), fshow(interShiftData)
         // );
     endrule
 
