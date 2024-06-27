@@ -58,8 +58,10 @@ module mkBiDirectionStreamShifter(StreamShifter);
     FIFOF#(BiDirectionStreamShifterPipelineEntry) rightShiftPipeQ <- mkFIFOF;
 
     FIFOF#(ShiftIntermediateData) doLeftShiftPipeQ <- mkFIFOF;
+    FIFOF#(ShiftIntermediateData) doLeftShiftPipeQ2 <- mkFIFOF;
     FIFOF#(DataStream) leftShiftResultQ <- mkFIFOF;
     FIFOF#(ShiftIntermediateData) doRightShiftPipeQ <- mkFIFOF;
+    FIFOF#(ShiftIntermediateData) doRightShiftPipeQ2 <- mkFIFOF;
     FIFOF#(DataStream) rightShiftResultQ <- mkFIFOF;
 
     FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);
@@ -72,10 +74,19 @@ module mkBiDirectionStreamShifter(StreamShifter);
 
     DATA zeroData = unpack(0);
 
-    rule doLeftShift;
+    rule doLeftShift1;
         let req = doLeftShiftPipeQ.first;
         doLeftShiftPipeQ.deq;
-        DATA outputData = truncateLSB(pack(req.concatData) << {req.offset, 3'h0});  // 3'h0 to convert byte offset to bit offset
+        // only shift by higher 2 bits
+        req.concatData = unpack(pack(req.concatData) << {req.offset[4:3], 3'h0, 3'h0});  // last 3'h0 to convert byte offset to bit offset
+        doLeftShiftPipeQ2.enq(req);
+    endrule
+
+    rule doLeftShift2;
+        let req = doLeftShiftPipeQ2.first;
+        doLeftShiftPipeQ2.deq;
+        // only shift by lower 3 bits
+        DATA outputData = truncateLSB(pack(req.concatData) << {req.offset[2:0], 3'h0});  // 3'h0 to convert byte offset to bit offset
         leftShiftResultQ.enq(DataStream{
             data: outputData,
             byteNum: req.meta.byteNum,
@@ -88,7 +99,16 @@ module mkBiDirectionStreamShifter(StreamShifter);
     rule doRightShift;
         let req = doRightShiftPipeQ.first;
         doRightShiftPipeQ.deq;
-        DATA outputData = truncate(pack(req.concatData) >> {req.offset, 3'h0});  // 3'h0 to convert byte offset to bit offset
+        // only shift by higher 2 bits
+        req.concatData = unpack(pack(req.concatData) >> {req.offset[4:3], 3'h0, 3'h0});  // last 3'h0 to convert byte offset to bit offset
+        doRightShiftPipeQ2.enq(req);
+    endrule
+
+    rule doRightShift2;
+        let req = doRightShiftPipeQ2.first;
+        doRightShiftPipeQ2.deq;
+        // only shift by lower 3 bits
+        DATA outputData = truncate(pack(req.concatData) >> {req.offset[2:0], 3'h0});  // 3'h0 to convert byte offset to bit offset
         rightShiftResultQ.enq(DataStream{
             data: outputData,
             byteNum: req.meta.byteNum,
