@@ -36,12 +36,16 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestEthernetFrameIO
 # TESTCASE=mkTestEthernetFrameIoTiming
 
-FILE=`ls TestStreamShifter.bsv`
-TESTCASE=mkTestBiDirectionStreamShifter
+# FILE=`ls TestStreamShifter.bsv`
+# TESTCASE=mkTestBiDirectionStreamShifter
 
 
 # FILE=`ls TestNapWrapper.bsv`
 # TESTCASE=mkTestFourChannelButterflyMergeSingleBeatTest
+
+
+FILE=`ls TestAddressChunker.bsv`
+TESTCASE=mkTestAddressChunker
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
 

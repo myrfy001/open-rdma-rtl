@@ -23,10 +23,14 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestButterflyMerge.bsv
 # TOPMODULE ?= mkTestFourChannelButterflyMergeTimingTest
 
+# TARGETFILE ?= ../test/TestNapWrapper.bsv
+# TOPMODULE ?= mkTestEthernetNapLoopBack
 
-TARGETFILE ?= ../test/TestNapWrapper.bsv
-TOPMODULE ?= mkTestEthernetNapLoopBack
+# TARGETFILE ?= ../test/TestEthernetFrameIO.bsv
+# TOPMODULE ?= mkTestEthernetFrameIoTiming
 
+TARGETFILE ?= ../test/TestAddressChunker.bsv
+TOPMODULE ?= mkTestAddressChunkerTiming
 
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000
