@@ -98,9 +98,7 @@ module mkTestEthernetFrameIO(Empty);
         let rdmaExtendHeaderBuf = extendHeaderBufferRandPipeOut.first;
         extendHeaderBufferRandPipeOut.deq;
 
-        RdmaBthAndEthTotalLength bthAndEthTotalLength = fromInteger(
-            calcHeaderLenByTransTypeAndRdmaOpCode(transAndOpecode.trans, transAndOpecode.opcode)
-        );
+        RdmaBthAndEthTotalLength bthAndEthTotalLength = fromInteger(valueOf(RDMA_FIXED_HEADER_BYTE_NUM));
 
         let hasPayload = rdmaOpCodeHasPayload(transAndOpecode.opcode);
         
@@ -170,8 +168,7 @@ module mkTestEthernetFrameIO(Empty);
             packetGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
             let infoForChecker = RdmaRecvPacketMeta{
                 header: rdmaBthAndExtendHeader,
-                hasPayload: hasPayload,
-                firstPayloadByteOneBasedOffsetInFirstPayloadBeat: ?
+                hasPayload: hasPayload
             };
             rdmaHeaderExtractorMetaExpectedQ.enq(infoForChecker);
             stateReg <= TestEthernetFrameIoStateCheckPacketClassifierOutput;
@@ -257,14 +254,15 @@ module mkTestEthernetFrameIO(Empty);
             rdmaHeaderExtractorPayloadExpectedQ.deq;
 
             if (got.isFirst) begin
-                // for the first beat, received datastream may have garbage data
-                BusBitNum shiftInvalidExtHeaderBufferBitNum = (
-                    fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(curRecvPacketMetaDataReg.firstPayloadByteOneBasedOffsetInFirstPayloadBeat)
-                ) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
-
-                got.data = got.data << shiftInvalidExtHeaderBufferBitNum;
-                expected.data = expected.data << shiftInvalidExtHeaderBufferBitNum;
+                // since the payload is directly aligned to receive side's address, the valid bytes can be calculated from
+                // start address and payload len, so no need to mark now many byte is valid in DataStream struct.
+                expected.byteNum = 'h20;
+                got.byteNum = 'h20;
             end
+
+            // For received side, don't care those value. The same as above, we can calculate from address and length
+            expected.startByteIdx=0;
+            got.startByteIdx = 0;
             
             immAssert(
                 got == expected,

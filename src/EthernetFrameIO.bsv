@@ -295,16 +295,14 @@ module mkInputPacketClassifier(InputPacketClassifier);
     interface otherRawPacketPipeOut     = toPipeOut(otherRawPacketOutQ);
 endmodule
 
-
-
-typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;           // 64
 typedef TSub#(BYTE_NUM_OF_TWO_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT;  // 22
 typedef MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT;    // 22
 typedef TMul#(BYTE_WIDTH, BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT;
 typedef TSub#(MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH, DATA_BUS_BYTE_WIDTH) MAC_IP_UDP_HEADER_REMAINDER_BYTE_COUNT_IN_SECOND_BEAT;  // 10
 
-typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;
-typedef TSub#(BYTE_NUM_OF_THREE_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_ETH_IN_THIRD_BEAT;
+typedef TSub#(BYTE_NUM_OF_THREE_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_ETH_IN_THIRD_BEAT; 
+
+typedef TSub#(BYTE_NUM_OF_TWO_BEATS, TAdd#(UDP_HEADER_OFFSET_IN_SECOND_BEAT, UDP_HDR_BYTE_WIDTH)) RDMA_FIXED_HEADER_BYTE_NUM; // 54
 
 
 // The above BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT and BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT can also be defined and calculated by
@@ -364,53 +362,33 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
 
         BTH bth = unpack(ds.data[valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - 1 : bthEndBitOneBasedPosInSecondBeat]);
         let hasPayload = rdmaOpCodeHasPayload(bth.opcode);
-        let rdmaTotalHeaderLen = calcHeaderLenByTransTypeAndRdmaOpCode(bth.trans, bth.opcode);
-
-        DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) - rdmaTotalHeaderLen);
-        ByteIndexInBeat firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue = truncate(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
-        firstPayloadByteOneBasedOffsetInFirstPayloadBeat = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue);
 
         RdmaExtendHeaderFragmentInSecondBeat extendHeaderFragment = ds.data[bthEndBitOneBasedPosInSecondBeat-1 : 0];
         RdmaExtendHeaderBuffer rdmaExtendHeaderBuf = zeroExtendLSB(extendHeaderFragment);
 
-        let payloadDs = ds;
-        let outputPayloadInThisBeat = rdmaTotalHeaderLen < valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT) && hasPayload;
-        if (outputPayloadInThisBeat) begin
-            payloadDs.isFirst = True;
-            payloadDs.byteNum = ds.byteNum - fromInteger(valueOf(MAC_IP_UDP_HEADER_REMAINDER_BYTE_COUNT_IN_SECOND_BEAT) + rdmaTotalHeaderLen);
-            if (ds.isLast) begin
-                payloadDs.startByteIdx = truncate(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - ds.byteNum);
-                payloadStreamOutputIsFirstReg <= True;
-            end
-            else begin
-                payloadStreamOutputIsFirstReg <= False;
-            end
-            rdmaPayloadPipeOutQ.enq(payloadDs);
-        end
 
         let outPacketMeta = RdmaRecvPacketMeta{
             header: RdmaBthAndExtendHeader {
                 bth: bth,
                 rdmaExtendHeaderBuf: rdmaExtendHeaderBuf
             },
-            hasPayload: hasPayload,
-            firstPayloadByteOneBasedOffsetInFirstPayloadBeat: firstPayloadByteOneBasedOffsetInFirstPayloadBeat
+            hasPayload: hasPayload
         };
 
         partialRdmaMetaReg <= outPacketMeta;
 
-        let rdmaHeaderIsComplete = rdmaTotalHeaderLen <= valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT);
-        if (ds.isLast) begin 
+        if (ds.isLast) begin
+            // this is defensive code, shoud not enter this branch. but if it does, goto handle first packet state.
+            immFail(
+                "The second beat must not be last beat.",
+                $format("ds=", fshow(ds))
+            );
             stateReg <= RdmaHeaderExtractorStateHandleFirstBeat;
         end
         else begin
-            stateReg <= rdmaHeaderIsComplete ? RdmaHeaderExtractorStateHandleMoreBeat : RdmaHeaderExtractorStateHandleThirdBeat;
+            stateReg <= RdmaHeaderExtractorStateHandleThirdBeat;
         end
 
-        if (rdmaHeaderIsComplete) begin
-            // if the whole RDMA header fit in the second beat, then output packet meta now.
-            rdmaPacketMetaPipeOutQ.enq(outPacketMeta);
-        end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaHeaderExtractor handleSecondBeat"),
         //     toBlue(", ds="), fshow(ds),
@@ -419,8 +397,6 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         //     toBlue(", outPacketMeta="), fshow(outPacketMeta),
         //     toBlue(", payloadDs="), outputPayloadInThisBeat ? fshow(payloadDs) : $format("No Payload In This beat")
         // );
-
-        
     endrule
 
     rule handleThirdBeat if (stateReg == RdmaHeaderExtractorStateHandleThirdBeat);
@@ -431,24 +407,8 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         RdmaExtendHeaderFragmentInSecondBeat rdmaExtendHeaderSecondBeatFragment = truncateLSB(rdmaMeta.header.rdmaExtendHeaderBuf);
         rdmaMeta.header.rdmaExtendHeaderBuf = truncateLSB({rdmaExtendHeaderSecondBeatFragment, ds.data});
 
-        // The third must contain the whole rdma header.
         rdmaPacketMetaPipeOutQ.enq(rdmaMeta);
     
-        // For now, the largest RDMA extend header is 32 bytes, which means if the packet has payload, then some payload must exit in this beat
-        let payloadDs = ds;
-        if (rdmaMeta.hasPayload) begin
-            payloadDs.isFirst = True;
-            payloadDs.byteNum = ds.byteNum - (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - rdmaMeta.firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
-            if (ds.isLast) begin
-                payloadDs.startByteIdx = truncate(fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - ds.byteNum);
-                payloadStreamOutputIsFirstReg <= True;
-            end
-            else begin
-                payloadStreamOutputIsFirstReg <= False;
-            end
-            rdmaPayloadPipeOutQ.enq(payloadDs);
-            
-        end
 
         stateReg <= ds.isLast ? RdmaHeaderExtractorStateHandleFirstBeat : RdmaHeaderExtractorStateHandleMoreBeat;
 
@@ -730,52 +690,20 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         let isEop = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        let mod = truncate(ethernetFrameLeftByteCounterReg);
 
+        immAssert(
+            !isEop,
+            "The second beat should not be eop",
+            $format("ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
+        );
+
+        let mod = 0;
         let flags = unpack(0);
         flags.crcInsert = True;
 
         let macIpUdpHeader = firstBeatToSecondBeatPipelineReg.macIpUdpHeader;
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(DATA_BUS_WIDTH));
-
-        let wholeBthAndEthContainedInThisBeat = rdmaMeta.bthAndEthTotalLength <= fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT));
-        let hasExtraSpaceForPayloadInThisBeat = rdmaMeta.bthAndEthTotalLength < fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT));
-        if (hasExtraSpaceForPayloadInThisBeat && rdmaMeta.hasPayload) begin
-            let payload = rdmaPayloadPipeInQ.first;
-            rdmaPayloadPipeInQ.deq;
-
-            // To use the bit OR operation to merge two part of data, the lower part of data and the higher part of payload in this beat should be 0
-            RdmaBthAndEthTotalLength tmpMinusResult = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength;
-            DataBusOneBasedByteIndex firstPayloadByteOneBasedIndexInThisBeat = truncate(tmpMinusResult);
-
-            BusBitNum tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPayloadByteOneBasedIndexInThisBeat)) * fromInteger(valueOf(BYTE_WIDTH));
-            immAssert(
-                (data << tmpShiftCnt) == 0,
-                "The lower part of data should be zero",
-                $format(
-                    "Got data = ", fshow(data), 
-                    ", firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat),
-                    ", rdmaMeta=",fshow(rdmaMeta)
-                )
-            );
-
-            tmpShiftCnt = zeroExtend(firstPayloadByteOneBasedIndexInThisBeat) * fromInteger(valueOf(BYTE_WIDTH));
-            immAssert(
-                (payload.data >> tmpShiftCnt) == 0,
-                "The higher part of payload should be zero",
-                $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
-            );
-
-            immAssert(
-                payload.byteNum <= truncate(fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength),
-                "payload has too many valid byte in this beat",
-                $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
-            );
-
-
-            data = data | payload.data;
-        end
 
         let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
 
@@ -788,10 +716,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         secondBeatToThirdBeatPipelineReg <= outPipelineEntry;
 
         if (isEop) begin
+            // this is defensive code, shoud not enter this branch. but if it does, goto handle first packet state.
+            immFail(
+                "The second beat must not be last beat.",
+                $format("rdmaMeta=", fshow(rdmaMeta))
+            );
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
-        end
-        else if (wholeBthAndEthContainedInThisBeat) begin
-            statusReg <= EthernetPacketGeneratorStateGenMoreBeat;
         end
         else begin
             statusReg <= EthernetPacketGeneratorStateGenThirdBeat;
@@ -820,38 +750,6 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS) * valueOf(BYTE_WIDTH));
 
-        let hasExtraSpaceForPayloadInThisBeat = rdmaMeta.bthAndEthTotalLength < fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT) + valueOf(DATA_BUS_BYTE_WIDTH));
-        if (hasExtraSpaceForPayloadInThisBeat && rdmaMeta.hasPayload) begin
-            let payload = rdmaPayloadPipeInQ.first;
-            rdmaPayloadPipeInQ.deq;
-
-            // To use the bit OR operation to merge two part of data, the lower part of data and the higher part of payload in this beat should be 0
-            RdmaBthAndEthTotalLength tmpMinusResult = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength;
-            DataBusOneBasedByteIndex firstPayloadByteOneBasedIndexInThisBeat = truncate(tmpMinusResult);
-
-            BusBitNum tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPayloadByteOneBasedIndexInThisBeat)) * fromInteger(valueOf(BYTE_WIDTH));
-            immAssert(
-                (data << tmpShiftCnt) == 0,
-                "The lower part of data should be zero",
-                $format("Got data = ", fshow(data), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
-            );
-
-            tmpShiftCnt = zeroExtend(firstPayloadByteOneBasedIndexInThisBeat-1) * fromInteger(valueOf(BYTE_WIDTH));
-            immAssert(
-                (payload.data >> tmpShiftCnt) == 0,
-                "The higher part of payload should be zero",
-                $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
-            );
-
-            immAssert(
-                payload.byteNum <= truncate(fromInteger(valueOf(MAX_BYTE_NUM_FOR_BTH_AND_ETH_IN_SECOND_BEAT)) - rdmaMeta.bthAndEthTotalLength),
-                "payload has too many valid byte in this beat",
-                $format("Got payload = ", fshow(payload), "firstPayloadByteOneBasedIndexInThisBeat = ", fshow(firstPayloadByteOneBasedIndexInThisBeat))
-            );
-
-
-            data = data | payload.data;
-        end
 
         let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
 

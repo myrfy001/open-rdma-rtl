@@ -110,11 +110,15 @@ typedef ByteEnBitNum DataBusSignedShiftOffset;          // 6 (bus 256b), 7 (bus 
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) DataBusShiftOffset; // 5 (bus 256b), 6 (bus 512b)
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ByteIndexInBeat; // 5 (bus 256b), 6 (bus 512b)
 
+typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;            // 64
+typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;          // 96
+
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;
 typedef Bit#(QP_CAP_CNT_WIDTH) ScatterGatherElemCnt;
 
 typedef Bit#(MAX_PMTU_WIDTH)       ResiduePMTU;
+typedef Bit#(TAdd#(1, MAX_PMTU_WIDTH)) ByteNumPMTU;
 typedef Bit#(TOTAL_FRAG_NUM_WIDTH) TotalFragNum;
 typedef Bit#(PMTU_FRAG_NUM_WIDTH)  PktFragNum;
 typedef Bit#(PKT_NUM_WIDTH)        PktNum;
@@ -221,6 +225,16 @@ typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
 // DATA are right aligned for first and only beat, and are left aligned for middle and last beat
 // startByteIdx is valid when isFirst = True, and inother case, startByteIdx must be 0
+// For the recv side, currently the received payload is already aligned to the receiver side address,
+// so no shift is need at received side, in this case, both byteNum and startByteIdx is useless, since 
+// the valid bytes in first and last beat can be calculated from RDMA RETH's address and length.
+// But for the send side, it need to shift data to match recv side address, so byteNum and startByteIdx
+// is needed. startByteIdx is need only for "ONLY beat" datastream when doing right shift.
+// for example, if a datastream has only one beat, and it's valid byte has something like:
+// 00000XXXXXX000
+// since it has some invalid byte at it's lower bits, when doing right shift, if the shift is small, it won't 
+// need another beat, but if shift is large, it may need a second beat to hold the overflow bits. so only when doing 
+// right shift with only beat, the startByteIdx is necessary.
 typedef struct {
     DATA               data;
     ByteEnBitNum       byteNum;
@@ -258,7 +272,6 @@ typedef struct {
 typedef struct {
     RdmaBthAndExtendHeader header;
     Bool hasPayload;
-    DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat;
 } RdmaRecvPacketMeta deriving(Bits, FShow);
 
 typedef struct {

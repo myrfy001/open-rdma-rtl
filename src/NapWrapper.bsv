@@ -242,6 +242,10 @@ module mkAcxNapEthernetWrapper#(
 endmodule
 
 
+// Common ==================
+typedef 8 AXI_AXLEN_WIDTH;
+typedef Bit#(AXI_AXLEN_WIDTH) AxiAxlen;
+
 
 // AW channel ==============
 typedef 8 NAP_AXI_AWID_WIDTH;
@@ -250,7 +254,7 @@ typedef Bit#(NAP_AXI_AWID_WIDTH) NapAxiAwid;
 typedef 42 NAP_AXI_AWADDR_WIDTH;
 typedef Bit#(NAP_AXI_AWADDR_WIDTH) NapAxiAwaddr;
 
-typedef 8 NAP_AXI_AWLEN_WIDTH;
+typedef AXI_AXLEN_WIDTH NAP_AXI_AWLEN_WIDTH;
 typedef Bit#(NAP_AXI_AWLEN_WIDTH) NapAxiAwlen;
 
 typedef 3 NAP_AXI_AWSIZE_WIDTH;
@@ -283,7 +287,7 @@ typedef Bit#(NAP_AXI_ARID_WIDTH) NapAxiArid;
 typedef 42 NAP_AXI_ARADDR_WIDTH;
 typedef Bit#(NAP_AXI_ARADDR_WIDTH) NapAxiAraddr;
 
-typedef 8 NAP_AXI_ARLEN_WIDTH;
+typedef AXI_AXLEN_WIDTH NAP_AXI_ARLEN_WIDTH;
 typedef Bit#(NAP_AXI_ARLEN_WIDTH) NapAxiArlen;
 
 typedef 3 NAP_AXI_ARSIZE_WIDTH;
