@@ -18,7 +18,7 @@ import ConnectableF::*;
 
 (* doc = "testcase" *)
 module mkTestAddressChunker(Empty);
-    Reg#(Bit#(32)) quitCounterReg <- mkReg(1000000);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
     AddressTrunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressTrunker(
         alignAddrByPMTU,
         devideLengthByPMTU,
@@ -34,8 +34,10 @@ module mkTestAddressChunker(Empty);
 
     Reg#(AddressChunkReq#(ADDR, Length, PMTU)) curCheckingReqReg <- mkRegU;
     Reg#(Length) totalLenSumReg <- mkRegU;
+    Reg#(Bool) canGenReqReg <- mkReg(True);
 
-    rule reqGen;
+    rule reqGen if (canGenReqReg);
+        canGenReqReg <= False;
         PMTU pmtu = unpack(truncate(pack(pmtuRandPipeOut.first)));
         pmtuRandPipeOut.deq;
 
@@ -66,7 +68,7 @@ module mkTestAddressChunker(Empty);
 
     endrule
 
-    rule checkResp;
+    rule checkResp if (!canGenReqReg);
         let chunk = dut.responsePipeOut.first;
         dut.responsePipeOut.deq;
 
@@ -116,8 +118,8 @@ module mkTestAddressChunker(Empty);
         end
 
         immAssert(
-            chunk.len <= pamuInByteNum,
-            "resp chunk len must not greater than req chunk size",
+            chunk.len <= pamuInByteNum && chunk.len != 0,
+            "resp chunk len must not greater than req chunk size, and must not be zero",
             $format("Got chunk=", fshow(chunk), ", pamuInByteNum=", fshow(pamuInByteNum))
         );
 
@@ -158,6 +160,7 @@ module mkTestAddressChunker(Empty);
 
         if (chunk.isLast) begin
             quitCounterReg <= quitCounterReg - 1;
+            canGenReqReg <= True;
             if (quitCounterReg % 100000 == 0) begin
                 $display("quitCounterReg=%d",quitCounterReg);
             end

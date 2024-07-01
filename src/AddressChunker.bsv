@@ -84,7 +84,7 @@ module mkAddressTrunker#(
     FIFOF#(AddressChunkRespMeta#(tLen)) respMetaQ <- mkFIFOF;
 
     // Pipeline FIFOs
-    FIFOF#(Tuple7#(AddressChunkReq#(tAddr, tLen, tChunk), tLen, Bool, Bool, tInternalMathOp, tInternalMathOp, tAddr)) preCalcPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple6#(AddressChunkReq#(tAddr, tLen, tChunk), tLen, Tuple5#(Bool, Bool, Bool, Bool, Bool), tInternalMathOp, tInternalMathOp, tAddr)) preCalcPipelineQ <- mkFIFOF;
 
 
     Reg#(Bool) busyReg <- mkReg(False);
@@ -106,41 +106,74 @@ module mkAddressTrunker#(
         tInternalMathOp lenRemainder = unpack(truncate(pack(lenRemainderTmp)));
         tInternalMathOp addrRemainder = unpack(truncate(pack(addrRemainderTmp)));
         
-        let zeroBasedChunkNum = devidedLen;
+        tLen zeroBasedChunkNum = ?;
         
         tInternalMathOp tmpSumResult = lenRemainder + addrRemainder;
 
-        let needAnotherBurst = isAddrAndLengthLowerPartSumOverflow(unpack(zeroExtend(pack(tmpSumResult))), req.chunk);
 
-        Bool isOnlyChunk = isZeroR(pack(zeroBasedChunkNum)) && !needAnotherBurst;
-
-
-
+        let lenRemainderIsZero = isZeroR(pack(lenRemainder));
+        let addrRemainderIsZero = isZeroR(pack(addrRemainder));
+        let devidedLenIsZero = isZeroR(pack(devidedLen));
+        let devidedLenIsOne = isOneR(pack(devidedLen));
+        let isAddrAndLengthLowerPartSumOverflowResult = isAddrAndLengthLowerPartSumOverflow(unpack(zeroExtend(pack(tmpSumResult))), req.chunk);
         
         let nextAddr = alignedAddr + unpack(zeroExtend(pack(chunkSize)));  // should we extract it to a function to reduce add bits?
 
-        let pipeLineEntry = tuple7(req, zeroBasedChunkNum, needAnotherBurst, isOnlyChunk, chunkSize, addrRemainder, nextAddr);
+        let pipeLineEntry = tuple6(req, devidedLen, tuple5(lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne), chunkSize, addrRemainder, nextAddr);
         preCalcPipelineQ.enq(pipeLineEntry);
         
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkAddressTrunker preCalculate"),
         //     toBlue(", req="), fshow(req),
-        //     toBlue(", remainingChunkNum="), fshow(remainingChunkNum),
-        //     toBlue(", isOnlyChunk="), fshow(isOnlyChunk),
+        //     toBlue(", devidedLen="), fshow(devidedLen),
         //     toBlue(", chunkSize="), fshow(chunkSize),
         //     toBlue(", addrRemainder="), fshow(addrRemainder),
-        //     toBlue(", nextAddr="), fshow(nextAddr),
-        //     toBlue(", outMeta="), fshow(outMeta)
+        //     toBlue(", nextAddr="), fshow(nextAddr)
         // );
     endrule
 
     rule doFirstBeat if (!busyReg);
 
-        let {req, zeroBasedChunkNum, needAnotherBurst, isOnlyChunk, chunkSize, addrRemainder, nextAddr} = preCalcPipelineQ.first;
+
+        let {req, devidedLen, boolTuple, chunkSize, addrRemainder, nextAddr} = preCalcPipelineQ.first;
+        let {lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne} = boolTuple;
         preCalcPipelineQ.deq;
 
-        
+        tLen zeroBasedChunkNum = ?;
+        let isOnlyChunk = False;
+
+        if (addrRemainderIsZero && lenRemainderIsZero) begin
+            zeroBasedChunkNum = devidedLen - 1;
+            if (devidedLenIsOne) begin
+                isOnlyChunk = True;
+            end
+        end
+        else if (addrRemainderIsZero && !lenRemainderIsZero) begin
+            zeroBasedChunkNum = devidedLen;
+            if (devidedLenIsZero) begin
+                isOnlyChunk = True;
+            end
+        end
+        else if (!addrRemainderIsZero && lenRemainderIsZero) begin
+            zeroBasedChunkNum = devidedLen;
+            if (devidedLenIsZero) begin
+                isOnlyChunk = True;
+            end
+        end
+        else begin
+            if (isAddrAndLengthLowerPartSumOverflowResult) begin
+                zeroBasedChunkNum = devidedLen + 1;
+            end
+            else begin
+                zeroBasedChunkNum = devidedLen;
+                if (devidedLenIsZero) begin
+                    isOnlyChunk = True;
+                end
+            end
+        end
+
+
         chunkSizeReg <= chunkSize;
         nextAddrReg <= nextAddr;
         busyReg <= !isOnlyChunk;
@@ -149,14 +182,6 @@ module mkAddressTrunker#(
         let isFirst = True;
         let isLast = isOnlyChunk;
 
-
-
-
-
-        if (needAnotherBurst) begin
-            zeroBasedChunkNum = zeroBasedChunkNum + 1;
-        end
-
         let outMeta = AddressChunkRespMeta{
             zeroBasedChunkNum: zeroBasedChunkNum
         };
@@ -164,10 +189,6 @@ module mkAddressTrunker#(
         let remainingChunkNum = zeroBasedChunkNum;
 
         remainingChunkNumReg <= remainingChunkNum;
-
-
-
-
 
 
 
@@ -294,23 +315,23 @@ function Bool isAddrAndLengthLowerPartSumOverflowPMTU(Length len, PMTU pmtu);
     return case (pmtu)
         IBV_MTU_256 : begin
             // 8 = log2(256)
-            (len[8] == 1);
+            (len[8] == 1 && !isZeroR(len[7 : 0]));
         end
         IBV_MTU_512 : begin
             // 9 = log2(512)
-            (len[9] == 1);
+            (len[9] == 1 && !isZeroR(len[8 : 0]));
         end
         IBV_MTU_1024: begin
             // 10 = log2(1024)
-            (len[10] == 1);
+            (len[10] == 1 && !isZeroR(len[9 : 0]));
         end
         IBV_MTU_2048: begin
             // 11 = log2(2048)
-            (len[11] == 1);
+            (len[11] == 1 && !isZeroR(len[10 : 0]));
         end
         IBV_MTU_4096: begin
             // 12 = log2(4096)
-            (len[12] == 1);
+            (len[12] == 1 && !isZeroR(len[11 : 0]));
         end
     endcase;
 endfunction
