@@ -83,7 +83,7 @@ module mkPayloadGen(PayloadGen);
             chunk: dontCareValue
         };
 
-        burstChunker.requestPipeIn.enq(chunkReq);
+        // burstChunker.requestPipeIn.enq(chunkReq);
     endrule
 
     rule chunkRespToAxiBurst;

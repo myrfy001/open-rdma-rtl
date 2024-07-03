@@ -46,23 +46,23 @@ typedef struct {
 } AddressChunkResp#(type tAddr, type tLen) deriving(Bits, FShow);
 
 typedef struct {
-    tLen        zeroBasedChunkNum;
-} AddressChunkRespMeta#(type tLen) deriving(Bits, FShow);
+    tLen                                    zeroBasedChunkNum;
+    AddressChunkReq#(tAddr, tLen, tChunk)   req;
+    tLen                                    devidedLen;
+    Bit#(TAdd#(1, tMaxChunkSizeWidth))      chunkSize;
+    Bit#(TAdd#(1, tMaxChunkSizeWidth))      addrRemainder;
+    tAddr                                   nextAddr;
+    Bool                                    isOnlyChunk;
+} AddressChunkMeta#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth) deriving(Bits, FShow);
 
 interface AddressChunker#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
-    interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunk)) requestPipeIn;
+    interface PipeIn#(AddressChunkMeta#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) requestPipeIn;
     interface PipeOut#(AddressChunkResp#(tAddr, tLen)) responsePipeOut;
-    interface PipeOut#(AddressChunkRespMeta#(tLen)) metaPipeOut;
 endinterface
 
 
 
-module mkAddressChunker#(
-        function Tuple2#(tAddr, tAddr) alignAddrByChunk(tAddr addr, tChunk chunk),
-        function Tuple2#(tLen, tLen) divideLenByChunk(tLen len, tChunk chunk),
-        function Bool isAddrAndLengthLowerPartSumOverflow(tLen len, tChunk chunk),
-        function tLen getChunkSize(tChunk chunk)
-    )(AddressChunker#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
+module mkAddressChunker(AddressChunker#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tLen, szLen),
         Bits#(tChunk, szChunk),
@@ -79,13 +79,8 @@ module mkAddressChunker#(
         FShow#(AddressChunker::AddressChunkReq#(tAddr, tLen, tChunk))
     );
 
-    FIFOF#(AddressChunkReq#(tAddr, tLen, tChunk)) reqQ <- mkFIFOF;
+    FIFOF#(AddressChunkMeta#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) reqQ <- mkFIFOF;
     FIFOF#(AddressChunkResp#(tAddr, tLen)) respQ <- mkFIFOF;
-    FIFOF#(AddressChunkRespMeta#(tLen)) respMetaQ <- mkFIFOF;
-
-    // Pipeline FIFOs
-    FIFOF#(Tuple6#(AddressChunkReq#(tAddr, tLen, tChunk), tLen, Tuple5#(Bool, Bool, Bool, Bool, Bool), tInternalMathOp, tInternalMathOp, tAddr)) preCalcPipelineQ <- mkFIFOF;
-
 
     Reg#(Bool) busyReg <- mkReg(False);
     
@@ -94,106 +89,27 @@ module mkAddressChunker#(
     Reg#(tLen) remainingLenReg <- mkRegU;
     Reg#(tInternalMathOp) chunkSizeReg <- mkRegU;
 
-    rule preCalculate;
-
-        let req = reqQ.first;
-        reqQ.deq;
-
-        let {devidedLen, lenRemainderTmp} = divideLenByChunk(req.len, req.chunk);
-        let {alignedAddr, addrRemainderTmp} = alignAddrByChunk(req.startAddr, req.chunk);
-        tInternalMathOp chunkSize = unpack(truncate(pack(getChunkSize(req.chunk))));
-
-        tInternalMathOp lenRemainder = unpack(truncate(pack(lenRemainderTmp)));
-        tInternalMathOp addrRemainder = unpack(truncate(pack(addrRemainderTmp)));
-        
-        tLen zeroBasedChunkNum = ?;
-        
-        tInternalMathOp tmpSumResult = lenRemainder + addrRemainder;
-
-
-        let lenRemainderIsZero = isZeroR(pack(lenRemainder));
-        let addrRemainderIsZero = isZeroR(pack(addrRemainder));
-        let devidedLenIsZero = isZeroR(pack(devidedLen));
-        let devidedLenIsOne = isOneR(pack(devidedLen));
-        let isAddrAndLengthLowerPartSumOverflowResult = isAddrAndLengthLowerPartSumOverflow(unpack(zeroExtend(pack(tmpSumResult))), req.chunk);
-        
-        let nextAddr = alignedAddr + unpack(zeroExtend(pack(chunkSize)));  // should we extract it to a function to reduce add bits?
-
-        let pipeLineEntry = tuple6(req, devidedLen, tuple5(lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne), chunkSize, addrRemainder, nextAddr);
-        preCalcPipelineQ.enq(pipeLineEntry);
-        
-
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkAddressChunker preCalculate"),
-        //     toBlue(", req="), fshow(req),
-        //     toBlue(", devidedLen="), fshow(devidedLen),
-        //     toBlue(", chunkSize="), fshow(chunkSize),
-        //     toBlue(", addrRemainder="), fshow(addrRemainder),
-        //     toBlue(", nextAddr="), fshow(nextAddr)
-        // );
-    endrule
-
     rule doFirstBeat if (!busyReg);
 
 
-        let {req, devidedLen, boolTuple, chunkSize, addrRemainder, nextAddr} = preCalcPipelineQ.first;
-        let {lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne} = boolTuple;
-        preCalcPipelineQ.deq;
+        let chunkMeta = reqQ.first;
+        reqQ.deq;
 
-        tLen zeroBasedChunkNum = ?;
-        let isOnlyChunk = False;
-
-        if (addrRemainderIsZero && lenRemainderIsZero) begin
-            zeroBasedChunkNum = devidedLen - 1;
-            if (devidedLenIsOne) begin
-                isOnlyChunk = True;
-            end
-        end
-        else if (addrRemainderIsZero && !lenRemainderIsZero) begin
-            zeroBasedChunkNum = devidedLen;
-            if (devidedLenIsZero) begin
-                isOnlyChunk = True;
-            end
-        end
-        else if (!addrRemainderIsZero && lenRemainderIsZero) begin
-            zeroBasedChunkNum = devidedLen;
-            if (devidedLenIsZero) begin
-                isOnlyChunk = True;
-            end
-        end
-        else begin
-            if (isAddrAndLengthLowerPartSumOverflowResult) begin
-                zeroBasedChunkNum = devidedLen + 1;
-            end
-            else begin
-                zeroBasedChunkNum = devidedLen;
-                if (devidedLenIsZero) begin
-                    isOnlyChunk = True;
-                end
-            end
-        end
-
-
-        chunkSizeReg <= chunkSize;
-        nextAddrReg <= nextAddr;
-        busyReg <= !isOnlyChunk;
-        remainingLenReg <= req.len - unpack(zeroExtend((chunkSize - truncate(pack(addrRemainder)))));
+        chunkSizeReg <= chunkMeta.chunkSize;
+        nextAddrReg <= chunkMeta.nextAddr;
+        busyReg <= !chunkMeta.isOnlyChunk;
+        remainingLenReg <= chunkMeta.req.len - unpack(zeroExtend((chunkMeta.chunkSize - chunkMeta.addrRemainder)));
 
         let isFirst = True;
-        let isLast = isOnlyChunk;
+        let isLast = chunkMeta.isOnlyChunk;
 
-        let outMeta = AddressChunkRespMeta{
-            zeroBasedChunkNum: zeroBasedChunkNum
-        };
 
-        let remainingChunkNum = zeroBasedChunkNum;
+        let remainingChunkNum = chunkMeta.zeroBasedChunkNum;
 
         remainingChunkNumReg <= remainingChunkNum;
 
-
-
-        tAddr startAddr = req.startAddr;
-        tLen len = isOnlyChunk ? req.len : unpack(zeroExtend(pack(chunkSize - addrRemainder)));
+        tAddr startAddr = chunkMeta.req.startAddr;
+        tLen len = chunkMeta.isOnlyChunk ? chunkMeta.req.len : unpack(zeroExtend(pack(chunkMeta.chunkSize - chunkMeta.addrRemainder)));
 
         let outEntry = AddressChunkResp {
             startAddr: startAddr,
@@ -202,7 +118,6 @@ module mkAddressChunker#(
             isLast: isLast
         };
 
-        respMetaQ.enq(outMeta);
         respQ.enq(outEntry);
 
         // $display(
@@ -255,23 +170,22 @@ module mkAddressChunker#(
     
     interface requestPipeIn = toPipeIn(reqQ);
     interface responsePipeOut = toPipeOut(respQ);
-    interface metaPipeOut = toPipeOut(respMetaQ);
 endmodule
 
 
 
-interface AddressChunkTotalNumCalculator#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
+interface AddressChunkMetaCalculator#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
     interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunk)) requestPipeIn;
-    interface PipeOut#(AddressChunkRespMeta#(tLen)) metaPipeOut;
+    interface PipeOut#(AddressChunkMeta#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) metaPipeOut;
 endinterface
 
 
-module mkAddressChunkTotalNumCalculator#(
+module mkAddressChunkMetaCalculator#(
         function Tuple2#(tAddr, tAddr) alignAddrByChunk(tAddr addr, tChunk chunk),
         function Tuple2#(tLen, tLen) divideLenByChunk(tLen len, tChunk chunk),
         function Bool isAddrAndLengthLowerPartSumOverflow(tLen len, tChunk chunk),
         function tLen getChunkSize(tChunk chunk)
-    )(AddressChunkTotalNumCalculator#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
+    )(AddressChunkMetaCalculator#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tLen, szLen),
         Bits#(tChunk, szChunk),
@@ -289,7 +203,7 @@ module mkAddressChunkTotalNumCalculator#(
     );
 
     FIFOF#(AddressChunkReq#(tAddr, tLen, tChunk)) reqQ <- mkFIFOF;
-    FIFOF#(AddressChunkRespMeta#(tLen)) respMetaQ <- mkFIFOF;
+    FIFOF#(AddressChunkMeta#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) respMetaQ <- mkFIFOF;
 
     // Pipeline FIFOs
     FIFOF#(Tuple6#(AddressChunkReq#(tAddr, tLen, tChunk), tLen, Tuple5#(Bool, Bool, Bool, Bool, Bool), tInternalMathOp, tInternalMathOp, tAddr)) preCalcPipelineQ <- mkFIFOF;
@@ -318,11 +232,18 @@ module mkAddressChunkTotalNumCalculator#(
         
         let nextAddr = alignedAddr + unpack(zeroExtend(pack(chunkSize)));  // should we extract it to a function to reduce add bits?
 
-        let pipeLineEntry = tuple6(devidedLen, tuple5(lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne));
+        let pipeLineEntry = tuple6(
+            req,
+            devidedLen, 
+            tuple5(lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne),
+            chunkSize,
+            addrRemainder,
+            nextAddr
+        );
         preCalcPipelineQ.enq(pipeLineEntry);
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkAddressChunkTotalNumCalculator preCalculate"),
+        //     "time=%0t:", $time, toGreen(" mkAddressChunkMetaCalculator preCalculate"),
         //     toBlue(", req="), fshow(req),
         //     toBlue(", devidedLen="), fshow(devidedLen),
         //     toBlue(", chunkSize="), fshow(chunkSize),
@@ -333,7 +254,7 @@ module mkAddressChunkTotalNumCalculator#(
 
     rule outputMeta;
 
-        let {devidedLen, boolTuple} = preCalcPipelineQ.first;
+        let {req, devidedLen, boolTuple, chunkSize, addrRemainder, nextAddr} = preCalcPipelineQ.first;
         let {lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne} = boolTuple;
         preCalcPipelineQ.deq;
 
@@ -371,14 +292,20 @@ module mkAddressChunkTotalNumCalculator#(
         end
 
 
-        let outMeta = AddressChunkRespMeta{
-            zeroBasedChunkNum: zeroBasedChunkNum
+        let outMeta = AddressChunkMeta{
+            zeroBasedChunkNum: zeroBasedChunkNum,
+            req: req,
+            devidedLen: devidedLen,
+            chunkSize: chunkSize,
+            addrRemainder: addrRemainder,
+            nextAddr: nextAddr,
+            isOnlyChunk: isOnlyChunk
         };
 
         respMetaQ.enq(outMeta);
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkAddressChunkTotalNumCalculator outputMeta"),
+        //     "time=%0t:", $time, toGreen(" mkAddressChunkMetaCalculator outputMeta"),
         //     toBlue(", isOnlyChunk="), fshow(isOnlyChunk),
         // );
 

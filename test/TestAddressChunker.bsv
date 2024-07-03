@@ -19,22 +19,29 @@ import ConnectableF::*;
 (* doc = "testcase" *)
 module mkTestAddressChunker(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
-    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressChunker(
+
+
+    AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunkerMetaCalculator <- mkAddressChunkMetaCalculator(
         alignAddrByPMTU,
         devideLengthByPMTU,
         isAddrAndLengthLowerPartSumOverflowPMTU,
         getChunkSizeForPMTU
     );
 
+    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunker <- mkAddressChunker;
+
     PipeOut#(Length) pmtuRandPipeOut <- mkRandomLenPipeOut(1, 5);
     PipeOut#(Length) lengthRandPipeOut <- mkRandomLenPipeOut(1, 1024 * 16);
     PipeOut#(ADDR) addrRandPipeOut <- mkGenericRandomPipeOut;
 
-    FIFOF#(AddressChunkReq#(ADDR, Length, PMTU)) expectedQ <- mkFIFOF;
+    FIFOF#(AddressChunkReq#(ADDR, Length, PMTU)) originReqForCheckerQ <- mkFIFOF;
+    FIFOF#(AddressChunkMeta#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH))) chunkMetaForCheckerQ <- mkFIFOF;
 
     Reg#(AddressChunkReq#(ADDR, Length, PMTU)) curCheckingReqReg <- mkRegU;
     Reg#(Length) totalLenSumReg <- mkRegU;
     Reg#(Bool) canGenReqReg <- mkReg(True);
+
+
 
     rule reqGen if (canGenReqReg);
         canGenReqReg <= False;
@@ -62,27 +69,33 @@ module mkTestAddressChunker(Empty);
                 chunk: pmtu 
             };
 
-            dut.requestPipeIn.enq(req);
-            expectedQ.enq(req);
+            dutAddrChunkerMetaCalculator.requestPipeIn.enq(req);
+            originReqForCheckerQ.enq(req);
         end
+    endrule
 
+    rule forwardChunkMeta;
+        let meta = dutAddrChunkerMetaCalculator.metaPipeOut.first;
+        dutAddrChunkerMetaCalculator.metaPipeOut.deq;
+        dutAddrChunker.requestPipeIn.enq(meta);
+        chunkMetaForCheckerQ.enq(meta);
     endrule
 
     rule checkResp if (!canGenReqReg);
-        let chunk = dut.responsePipeOut.first;
-        dut.responsePipeOut.deq;
+        let chunk = dutAddrChunker.responsePipeOut.first;
+        dutAddrChunker.responsePipeOut.deq;
 
         let meta = ?;
 
         let expectedReq = curCheckingReqReg;
         let totalLenSum = totalLenSumReg;
         if (chunk.isFirst) begin
-            expectedReq = expectedQ.first;
+            expectedReq = originReqForCheckerQ.first;
             curCheckingReqReg <= expectedReq;
-            expectedQ.deq;
+            originReqForCheckerQ.deq;
 
-            meta = dut.metaPipeOut.first;
-            dut.metaPipeOut.deq;
+            meta = chunkMetaForCheckerQ.first;
+            chunkMetaForCheckerQ.deq;
             totalLenSum = chunk.len;
         end
         else begin
@@ -195,12 +208,16 @@ endinterface
 (* doc = "testcase" *)
 module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
     
-    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressChunker(
+    AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunkerMetaCalculator <- mkAddressChunkMetaCalculator(
         alignAddrByPMTU,
         devideLengthByPMTU,
         isAddrAndLengthLowerPartSumOverflowPMTU,
         getChunkSizeForPMTU
     );
+
+    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunker <- mkAddressChunker;
+
+    mkConnection(dutAddrChunkerMetaCalculator.metaPipeOut, dutAddrChunker.requestPipeIn);
 
     Reg#(PMTU) chunkSizeReg <- mkRegU;
     Reg#(ADDR) addrReg <- mkReg(0);
@@ -215,7 +232,7 @@ module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
     endrule
 
     rule injectInput1;
-        dut.requestPipeIn.enq(
+        dutAddrChunkerMetaCalculator.requestPipeIn.enq(
             AddressChunkReq{
                 startAddr: addrReg,
                 len: lengthReg,
@@ -226,12 +243,10 @@ module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
 
     
     rule merge;
-        let t1 = dut.responsePipeOut.first;
-        dut.responsePipeOut.deq;
-        let t2 = dut.metaPipeOut.first;
-        dut.metaPipeOut.deq;
+        let t1 = dutAddrChunker.responsePipeOut.first;
+        dutAddrChunker.responsePipeOut.deq;
 
-        outReg <= unpack(pack(t1) ^ zeroExtend(pack(t2)));
+        outReg <= unpack(pack(t1));
     endrule
 
     method getOutput = zeroExtend(pack(outReg));
