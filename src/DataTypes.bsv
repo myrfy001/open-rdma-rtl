@@ -224,7 +224,7 @@ typedef Client#(PermCheckReq, Bool) PermCheckClt;
 // } RetryReason deriving(Bits, Eq, FShow);
 
 // DATA are right aligned for first and only beat, and are left aligned for middle and last beat
-// startByteIdx is valid when isFirst = True, and inother case, startByteIdx must be 0
+// startByteIdx is valid when isFirst = True, and in other case, startByteIdx must be 0
 // For the recv side, currently the received payload is already aligned to the receiver side address,
 // so no shift is need at received side, in this case, both byteNum and startByteIdx is useless, since 
 // the valid bytes in first and last beat can be calculated from RDMA RETH's address and length.

@@ -306,7 +306,7 @@ module mkAddressChunkMetaCalculator#(
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkAddressChunkMetaCalculator outputMeta"),
-        //     toBlue(", isOnlyChunk="), fshow(isOnlyChunk),
+        //     toBlue(", outMeta="), fshow(outMeta)
         // );
 
     endrule
@@ -422,9 +422,7 @@ endfunction
 
 // since the pcie burst is a const value, so no need to return value dynamically. Only need a placeholder to satify function signature.
 typedef Bit#(0) PcieAddressChunkTypeDontCarePlaceHolder; 
-
 typedef TLog#(PCIE_NAP_MAX_BYTE_IN_BURST) PCIE_BURST_ALIGN_BIT_NUM;   // 9
-
 
 function Tuple2#(ADDR, ADDR) alignAddrForPcieBurst(ADDR addr, PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
     Bit#(PCIE_BURST_ALIGN_BIT_NUM) zeroPadding = 0;
@@ -433,7 +431,6 @@ function Tuple2#(ADDR, ADDR) alignAddrForPcieBurst(ADDR addr, PcieAddressChunkTy
     return tuple2(alignedAddr, addrRemainder);
 endfunction
 
-
 function Tuple2#(Length, Length) devideLengthForPcieBurst(Length len, PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
     Bit#(PCIE_BURST_ALIGN_BIT_NUM) zeroPadding = 0;
     Length dividedLen = {zeroPadding, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : valueOf(PCIE_BURST_ALIGN_BIT_NUM)]};
@@ -441,13 +438,39 @@ function Tuple2#(Length, Length) devideLengthForPcieBurst(Length len, PcieAddres
     return tuple2(dividedLen, divideRemainder);
 endfunction
 
-
 function Bool isAddrAndLengthLowerPartSumOverflowForPcieBurst(Length len, PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
     Bit#(PCIE_BURST_ALIGN_BIT_NUM) lowerBits = len[valueOf(PCIE_BURST_ALIGN_BIT_NUM)-1 : 0];
     return len[valueOf(PCIE_BURST_ALIGN_BIT_NUM)] == 1 && !isZeroR(lowerBits);
 endfunction
 
-
 function Length getChunkSizeForPcieBurst(PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
     return fromInteger(valueOf(PCIE_NAP_MAX_BYTE_IN_BURST));
+endfunction
+
+
+// since the beat size is a const value, so no need to return value dynamically. Only need a placeholder to satify function signature.
+typedef Bit#(0) BeatAddressChunkTypeDontCarePlaceHolder; 
+typedef TLog#(NOC_DATA_BUS_BYTE_WIDTH) BEAT_ALIGN_BIT_NUM;   // 5
+
+function Tuple2#(ADDR, ADDR) alignAddrForBeat(ADDR addr, BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+    Bit#(BEAT_ALIGN_BIT_NUM) zeroPadding = 0;
+    ADDR alignedAddr = unpack({addr[valueOf(ADDR_WIDTH)-1 : valueOf(BEAT_ALIGN_BIT_NUM)], zeroPadding});
+    ADDR addrRemainder = unpack({zeroPadding, addr[valueOf(BEAT_ALIGN_BIT_NUM) - 1 : 0]});
+    return tuple2(alignedAddr, addrRemainder);
+endfunction
+
+function Tuple2#(Length, Length) devideLengthForBeat(Length len, BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+    Bit#(BEAT_ALIGN_BIT_NUM) zeroPadding = 0;
+    Length dividedLen = {zeroPadding, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : valueOf(BEAT_ALIGN_BIT_NUM)]};
+    Length divideRemainder = {zeroPadding, len[valueOf(BEAT_ALIGN_BIT_NUM) - 1 : 0]};
+    return tuple2(dividedLen, divideRemainder);
+endfunction
+
+function Bool isAddrAndLengthLowerPartSumOverflowForBeat(Length len, BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+    Bit#(BEAT_ALIGN_BIT_NUM) lowerBits = len[valueOf(BEAT_ALIGN_BIT_NUM)-1 : 0];
+    return len[valueOf(BEAT_ALIGN_BIT_NUM)] == 1 && !isZeroR(lowerBits);
+endfunction
+
+function Length getChunkSizeForBeat(BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+    return fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
 endfunction

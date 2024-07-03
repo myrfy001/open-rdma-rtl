@@ -20,8 +20,15 @@ import ConnectableF::*;
 (* doc = "testcase" *)
 module mkTestPayloadGen(Empty);
     PayloadGen dut <- mkPayloadGen;
-    rule test;
-        $display("%d", valueOf(SizeOf#(TypeQP)));
+
+    Reg#(Bool) stopReg <- mkReg(True);
+    rule test if (stopReg);
+        stopReg <= False;
+        let req = PayloadGenReq{
+            addr: 1,
+            len: 4096*4
+        };
+        dut.reqPipeIn.enq(req);
     endrule
 endmodule
 

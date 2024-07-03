@@ -890,6 +890,18 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
         end
     endrule
 
+    rule sendRespB;
+        if (breadyWire && bQ.notEmpty) begin
+            bQ.deq;
+        end
+    endrule
+
+    rule sendRespR;
+        if (rreadyWire && rQ.notEmpty) begin
+            rQ.deq;
+        end
+    endrule
+
     Reg#(AxiMmNapBeatAw) curReqAwReg <- mkRegU;
     Reg#(NapAxiAwlen) writeLenCounterReg <- mkRegU;
     Reg#(Bool) isInBurstWritingReg <- mkReg(False);
@@ -1022,8 +1034,6 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
             end
         end
         else begin
-
-
             readLenCounterReg <= readLenCounter - 1;
             let isLast = readLenCounter == 0;
             if (isLast) begin
@@ -1040,6 +1050,7 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
                 datain: 0
             };
             hostMem.portB.request.put(bramReq);
+            inFlightReadRespQ.enq(tuple2(isLast, curReqArReg));
         end
     endrule
     

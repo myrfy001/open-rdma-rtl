@@ -61,17 +61,41 @@ module mkPayloadGen(PayloadGen);
     FIFOF#(PayloadGenReq) reqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadStreamPipeOutQ <- mkFIFOF;
 
+    AddressChunkMetaCalculator#(
+            ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
+            TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
+        ) rawReqToBurstChunkMetaCalc <- mkAddressChunkMetaCalculator(
+            alignAddrForPcieBurst,
+            devideLengthForPcieBurst,
+            isAddrAndLengthLowerPartSumOverflowForPcieBurst,
+            getChunkSizeForPcieBurst
+        );
     AddressChunker#(
-        ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
-        TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
-    ) burstChunker <- mkAddressChunker(
-        alignAddrForPcieBurst,
-        devideLengthForPcieBurst,
-        isAddrAndLengthLowerPartSumOverflowForPcieBurst,
-        getChunkSizeForPcieBurst
-    );
+            ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
+            TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
+        ) rawReqToBurstChunker <- mkAddressChunker;
+    AddressChunkMetaCalculator#(
+            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder,
+            TAdd#(1, BEAT_ALIGN_BIT_NUM)
+        ) burstToBeatChunkMetaCalc <- mkAddressChunkMetaCalculator(
+            alignAddrForBeat,
+            devideLengthForBeat,
+            isAddrAndLengthLowerPartSumOverflowForBeat,
+            getChunkSizeForBeat
+        );
+    AddressChunker#(
+            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder,
+            TAdd#(1, BEAT_ALIGN_BIT_NUM)
+        ) burstToBeatChunker <- mkAddressChunker;
 
     AcxNapSlaveWrapper dmaReadSlaveNap <- mkAcxNapSlaveWrapper;
+
+    FIFOF#(AddressChunkResp#(ADDR, Length)) chunkedBurstMetaQ <- mkFIFOF;
+
+    Reg#(Bool) outputIsFirstReg <- mkReg(True);
+
+    mkConnection(rawReqToBurstChunkMetaCalc.metaPipeOut, rawReqToBurstChunker.requestPipeIn);
+
 
     rule handleInReq;
         let req = reqPipeInQ.first;
@@ -83,27 +107,77 @@ module mkPayloadGen(PayloadGen);
             chunk: dontCareValue
         };
 
-        // burstChunker.requestPipeIn.enq(chunkReq);
+        rawReqToBurstChunkMetaCalc.requestPipeIn.enq(chunkReq);
     endrule
 
-    rule chunkRespToAxiBurst;
-        // let chunkResp = burstChunker.
+    rule getBurstChunRespAndIssueBeatChunkMetaCalculateReq;
+        let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
+        rawReqToBurstChunker.responsePipeOut.deq;
+
+        let chunkReq = AddressChunkReq{
+            startAddr: burstAddrBoundry.startAddr,
+            len: burstAddrBoundry.len,
+            chunk: dontCareValue
+        };
+
+        burstToBeatChunkMetaCalc.requestPipeIn.enq(chunkReq);
+        chunkedBurstMetaQ.enq(burstAddrBoundry);
     endrule
 
-    rule t;
+    rule getBeatChunkMetaCalculateRespAndIssueAxiRead;
+        let burstToBeatChunkMeta = burstToBeatChunkMetaCalc.metaPipeOut.first;
+        burstToBeatChunkMetaCalc.metaPipeOut.deq;
 
         let ar = AxiMmNapBeatAr {
             arid: 0,
-            araddr: ?,
-            arlen: ?,
-            arsize: ?,
-            arburst: ?,
+            araddr: truncate(burstToBeatChunkMeta.req.startAddr),
+            arlen: unpack(truncate(burstToBeatChunkMeta.zeroBasedChunkNum)),
+            arsize: unpack(pack(NapAxiSize32B)),
+            arburst: unpack(pack(NapAxiBurstIncr)),
             arlock: False,
-            arqos: ?
+            arqos: 0
         };
 
-
         dmaReadSlaveNap.sendReadAddr(ar);
+        burstToBeatChunker.requestPipeIn.enq(burstToBeatChunkMeta);
+    endrule
+
+    rule gatherAxiReadResp;
+        let axiReadResp <- dmaReadSlaveNap.recvReadResp;
+        let burstMeta = chunkedBurstMetaQ.first;
+        let beatMeta = burstToBeatChunker.responsePipeOut.first;
+        burstToBeatChunker.responsePipeOut.deq;
+
+        Bool isLast = False;
+        if (axiReadResp.rlast) begin
+            chunkedBurstMetaQ.deq;
+            if (burstMeta.isLast) begin
+                isLast = True;
+            end
+        end
+
+        outputIsFirstReg <= isLast;
+
+        Bool isFirst = outputIsFirstReg;
+
+        ByteEnBitNum    startByteIdx = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        ByteIndexInBeat startAddrByteOffsetInBeat = truncate(burstMeta.startAddr);
+        ByteEnBitNum    byteNum = truncate(beatMeta.len);
+
+        // TODO: maybe we can split this calculate into previous beat and this beat
+        startByteIdx = isFirst ? startByteIdx - zeroExtend(startAddrByteOffsetInBeat) - byteNum : 0;
+
+        let ds = DataStream {
+            data: axiReadResp.rdata,
+            byteNum: byteNum,
+            startByteIdx: truncate(startByteIdx),
+            isFirst: isFirst,
+            isLast: isLast
+        };
+        ds = reverseStream(ds);
+
+        $display(fshow(ds));
+        // payloadStreamPipeOutQ.enq(ds);
     endrule
 
 
