@@ -49,7 +49,7 @@ typedef struct {
     tLen        zeroBasedChunkNum;
 } AddressChunkRespMeta#(type tLen) deriving(Bits, FShow);
 
-interface AddressTrunker#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
+interface AddressChunker#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
     interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunk)) requestPipeIn;
     interface PipeOut#(AddressChunkResp#(tAddr, tLen)) responsePipeOut;
     interface PipeOut#(AddressChunkRespMeta#(tLen)) metaPipeOut;
@@ -57,12 +57,12 @@ endinterface
 
 
 
-module mkAddressTrunker#(
+module mkAddressChunker#(
         function Tuple2#(tAddr, tAddr) alignAddrByChunk(tAddr addr, tChunk chunk),
         function Tuple2#(tLen, tLen) divideLenByChunk(tLen len, tChunk chunk),
         function Bool isAddrAndLengthLowerPartSumOverflow(tLen len, tChunk chunk),
         function tLen getChunkSize(tChunk chunk)
-    )(AddressTrunker#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
+    )(AddressChunker#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tLen, szLen),
         Bits#(tChunk, szChunk),
@@ -124,7 +124,7 @@ module mkAddressTrunker#(
         
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkAddressTrunker preCalculate"),
+        //     "time=%0t:", $time, toGreen(" mkAddressChunker preCalculate"),
         //     toBlue(", req="), fshow(req),
         //     toBlue(", devidedLen="), fshow(devidedLen),
         //     toBlue(", chunkSize="), fshow(chunkSize),
@@ -206,7 +206,7 @@ module mkAddressTrunker#(
         respQ.enq(outEntry);
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkAddressTrunker doFirstBeat"),
+        //     "time=%0t:", $time, toGreen(" mkAddressChunker doFirstBeat"),
         //     toBlue(", req="), fshow(req),
         //     toBlue(", remainingChunkNum="), fshow(remainingChunkNum),
         //     toBlue(", isOnlyChunk="), fshow(isOnlyChunk),
@@ -243,7 +243,7 @@ module mkAddressTrunker#(
         respQ.enq(outEntry);
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkAddressTrunker doOtherBeat"),
+        //     "time=%0t:", $time, toGreen(" mkAddressChunker doOtherBeat"),
         //     toBlue(", remainingChunkNumReg="), fshow(remainingChunkNumReg),
         //     toBlue(", nextAddrReg="), fshow(nextAddrReg),
         //     toBlue(", newNextAddr="), fshow(newNextAddr),
@@ -257,6 +257,137 @@ module mkAddressTrunker#(
     interface responsePipeOut = toPipeOut(respQ);
     interface metaPipeOut = toPipeOut(respMetaQ);
 endmodule
+
+
+
+interface AddressChunkTotalNumCalculator#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
+    interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunk)) requestPipeIn;
+    interface PipeOut#(AddressChunkRespMeta#(tLen)) metaPipeOut;
+endinterface
+
+
+module mkAddressChunkTotalNumCalculator#(
+        function Tuple2#(tAddr, tAddr) alignAddrByChunk(tAddr addr, tChunk chunk),
+        function Tuple2#(tLen, tLen) divideLenByChunk(tLen len, tChunk chunk),
+        function Bool isAddrAndLengthLowerPartSumOverflow(tLen len, tChunk chunk),
+        function tLen getChunkSize(tChunk chunk)
+    )(AddressChunkTotalNumCalculator#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tLen, szLen),
+        Bits#(tChunk, szChunk),
+        Bitwise#(tAddr),
+        Bitwise#(tLen),
+        Arith#(tLen),
+        Add#(b__, szLen, szAddr),
+        Ord#(tLen),
+        Arith#(tAddr), 
+        Alias#(Bit#(TAdd#(1, tMaxChunkSizeWidth)), tInternalMathOp),
+        Bits#(tInternalMathOp, szInternalMathOp),
+        Add#(a__, szInternalMathOp, szAddr),
+        Add#(c__, szInternalMathOp, szLen),
+        FShow#(AddressChunker::AddressChunkReq#(tAddr, tLen, tChunk))
+    );
+
+    FIFOF#(AddressChunkReq#(tAddr, tLen, tChunk)) reqQ <- mkFIFOF;
+    FIFOF#(AddressChunkRespMeta#(tLen)) respMetaQ <- mkFIFOF;
+
+    // Pipeline FIFOs
+    FIFOF#(Tuple6#(AddressChunkReq#(tAddr, tLen, tChunk), tLen, Tuple5#(Bool, Bool, Bool, Bool, Bool), tInternalMathOp, tInternalMathOp, tAddr)) preCalcPipelineQ <- mkFIFOF;
+
+    rule preCalculate;
+
+        let req = reqQ.first;
+        reqQ.deq;
+
+        let {devidedLen, lenRemainderTmp} = divideLenByChunk(req.len, req.chunk);
+        let {alignedAddr, addrRemainderTmp} = alignAddrByChunk(req.startAddr, req.chunk);
+        tInternalMathOp chunkSize = unpack(truncate(pack(getChunkSize(req.chunk))));
+
+        tInternalMathOp lenRemainder = unpack(truncate(pack(lenRemainderTmp)));
+        tInternalMathOp addrRemainder = unpack(truncate(pack(addrRemainderTmp)));
+        
+        tLen zeroBasedChunkNum = ?;
+        
+        tInternalMathOp tmpSumResult = lenRemainder + addrRemainder;
+
+        let lenRemainderIsZero = isZeroR(pack(lenRemainder));
+        let addrRemainderIsZero = isZeroR(pack(addrRemainder));
+        let devidedLenIsZero = isZeroR(pack(devidedLen));
+        let devidedLenIsOne = isOneR(pack(devidedLen));
+        let isAddrAndLengthLowerPartSumOverflowResult = isAddrAndLengthLowerPartSumOverflow(unpack(zeroExtend(pack(tmpSumResult))), req.chunk);
+        
+        let nextAddr = alignedAddr + unpack(zeroExtend(pack(chunkSize)));  // should we extract it to a function to reduce add bits?
+
+        let pipeLineEntry = tuple6(devidedLen, tuple5(lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne));
+        preCalcPipelineQ.enq(pipeLineEntry);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAddressChunkTotalNumCalculator preCalculate"),
+        //     toBlue(", req="), fshow(req),
+        //     toBlue(", devidedLen="), fshow(devidedLen),
+        //     toBlue(", chunkSize="), fshow(chunkSize),
+        //     toBlue(", addrRemainder="), fshow(addrRemainder),
+        //     toBlue(", nextAddr="), fshow(nextAddr)
+        // );
+    endrule
+
+    rule outputMeta;
+
+        let {devidedLen, boolTuple} = preCalcPipelineQ.first;
+        let {lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne} = boolTuple;
+        preCalcPipelineQ.deq;
+
+        tLen zeroBasedChunkNum = ?;
+        let isOnlyChunk = False;
+
+        if (addrRemainderIsZero && lenRemainderIsZero) begin
+            zeroBasedChunkNum = devidedLen - 1;
+            if (devidedLenIsOne) begin
+                isOnlyChunk = True;
+            end
+        end
+        else if (addrRemainderIsZero && !lenRemainderIsZero) begin
+            zeroBasedChunkNum = devidedLen;
+            if (devidedLenIsZero) begin
+                isOnlyChunk = True;
+            end
+        end
+        else if (!addrRemainderIsZero && lenRemainderIsZero) begin
+            zeroBasedChunkNum = devidedLen;
+            if (devidedLenIsZero) begin
+                isOnlyChunk = True;
+            end
+        end
+        else begin
+            if (isAddrAndLengthLowerPartSumOverflowResult) begin
+                zeroBasedChunkNum = devidedLen + 1;
+            end
+            else begin
+                zeroBasedChunkNum = devidedLen;
+                if (devidedLenIsZero) begin
+                    isOnlyChunk = True;
+                end
+            end
+        end
+
+
+        let outMeta = AddressChunkRespMeta{
+            zeroBasedChunkNum: zeroBasedChunkNum
+        };
+
+        respMetaQ.enq(outMeta);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAddressChunkTotalNumCalculator outputMeta"),
+        //     toBlue(", isOnlyChunk="), fshow(isOnlyChunk),
+        // );
+
+    endrule
+
+    interface requestPipeIn = toPipeIn(reqQ);
+    interface metaPipeOut = toPipeOut(respMetaQ);
+endmodule
+
 
 
 function Tuple2#(ADDR, ADDR) alignAddrByPMTU(ADDR addr, PMTU pmtu);
@@ -361,3 +492,35 @@ function Length getChunkSizeForPMTU(PMTU pmtu);
     endcase;
 endfunction
 
+
+// since the pcie burst is a const value, so no need to return value dynamically. Only need a placeholder to satify function signature.
+typedef Bit#(0) PcieAddressChunkTypeDontCarePlaceHolder; 
+
+typedef TLog#(PCIE_NAP_MAX_BYTE_IN_BURST) PCIE_BURST_ALIGN_BIT_NUM;   // 9
+
+
+function Tuple2#(ADDR, ADDR) alignAddrForPcieBurst(ADDR addr, PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
+    Bit#(PCIE_BURST_ALIGN_BIT_NUM) zeroPadding = 0;
+    ADDR alignedAddr = unpack({addr[valueOf(ADDR_WIDTH)-1 : valueOf(PCIE_BURST_ALIGN_BIT_NUM)], zeroPadding});
+    ADDR addrRemainder = unpack({zeroPadding, addr[valueOf(PCIE_BURST_ALIGN_BIT_NUM) - 1 : 0]});
+    return tuple2(alignedAddr, addrRemainder);
+endfunction
+
+
+function Tuple2#(Length, Length) devideLengthForPcieBurst(Length len, PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
+    Bit#(PCIE_BURST_ALIGN_BIT_NUM) zeroPadding = 0;
+    Length dividedLen = {zeroPadding, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : valueOf(PCIE_BURST_ALIGN_BIT_NUM)]};
+    Length divideRemainder = {zeroPadding, len[valueOf(PCIE_BURST_ALIGN_BIT_NUM) - 1 : 0]};
+    return tuple2(dividedLen, divideRemainder);
+endfunction
+
+
+function Bool isAddrAndLengthLowerPartSumOverflowForPcieBurst(Length len, PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
+    Bit#(PCIE_BURST_ALIGN_BIT_NUM) lowerBits = len[valueOf(PCIE_BURST_ALIGN_BIT_NUM)-1 : 0];
+    return len[valueOf(PCIE_BURST_ALIGN_BIT_NUM)] == 1 && !isZeroR(lowerBits);
+endfunction
+
+
+function Length getChunkSizeForPcieBurst(PcieAddressChunkTypeDontCarePlaceHolder _dontcare);
+    return fromInteger(valueOf(PCIE_NAP_MAX_BYTE_IN_BURST));
+endfunction

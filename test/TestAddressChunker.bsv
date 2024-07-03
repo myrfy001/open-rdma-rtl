@@ -19,7 +19,7 @@ import ConnectableF::*;
 (* doc = "testcase" *)
 module mkTestAddressChunker(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
-    AddressTrunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressTrunker(
+    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressChunker(
         alignAddrByPMTU,
         devideLengthByPMTU,
         isAddrAndLengthLowerPartSumOverflowPMTU,
@@ -135,6 +135,16 @@ module mkTestAddressChunker(Empty);
             ) 
         );
 
+        if (!chunk.isFirst) begin
+            immAssert(
+                addrRemainderTmp == 0,
+                "address not aligned",
+                $format(
+                    ", addrRemainderTmp=", fshow(addrRemainderTmp)
+                ) 
+            );
+        end
+
         if (!chunk.isFirst && !chunk.isLast) begin
             immAssert(
                 chunk.len == pamuInByteNum,
@@ -185,7 +195,7 @@ endinterface
 (* doc = "testcase" *)
 module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
     
-    AddressTrunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressTrunker(
+    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dut <- mkAddressChunker(
         alignAddrByPMTU,
         devideLengthByPMTU,
         isAddrAndLengthLowerPartSumOverflowPMTU,

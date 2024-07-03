@@ -4,16 +4,18 @@ import RegFile :: *;
 import FIFOF :: *;
 import Vector :: *;
 import Reserved :: *;
+import BRAM :: *;
 
 import DataTypes :: *;
 import PrimUtils :: *;
+
 
 
 typedef 4 VERTICAL_NAP_NODE_ID_WIDTH;
 typedef 293 VERTICAL_NAP_DATA_WIDTH;
 
 typedef 256 NOC_DATA_BUS_BIT_WIDTH;
-typedef TDiv#(NOC_DATA_BUS_BIT_WIDTH, BYTE_WIDTH) NOC_DATA_BUS_BYTE_WIDTH;
+typedef TDiv#(NOC_DATA_BUS_BIT_WIDTH, BYTE_WIDTH) NOC_DATA_BUS_BYTE_WIDTH;   // 32
 typedef Bit#(NOC_DATA_BUS_BIT_WIDTH) NocData;
 
 typedef Bit#(VERTICAL_NAP_NODE_ID_WIDTH) VerticalNapsrcOrDstNodeId;
@@ -93,8 +95,8 @@ typedef struct {
 } EthernetNapSendOtherBeat deriving(Bits, FShow, Eq);
 
 
-
-interface ACX_NAP_ETHERNET_WRAPPER;
+(* always_ready, always_enabled*)
+interface ACX_NAP_ETHERNET_BVI_WRAPPER;
     
     // input port
     method Action tx_valid(Bool val);
@@ -117,7 +119,7 @@ import "BVI" ACX_NAP_ETHERNET =
 module mkAcxNapEthernetWrapperInner#(
         Bit#(5) tx_eiu_channel,
         Bit#(5) rx_eiu_channel
-    )(ACX_NAP_ETHERNET_WRAPPER);
+    )(ACX_NAP_ETHERNET_BVI_WRAPPER);
 
     let clk <- exposeCurrentClock;
     let rst <- exposeCurrentReset;
@@ -166,7 +168,7 @@ endmodule
 module mkAcxNapEthernetPrimitiveWrapper#(
         Bit#(5) tx_eiu_channel,
         Bit#(5) rx_eiu_channel
-    )(ACX_NAP_ETHERNET_WRAPPER);
+    )(ACX_NAP_ETHERNET_BVI_WRAPPER);
 
     let inst <- mkAcxNapEthernetWrapperInner(tx_eiu_channel, rx_eiu_channel);
     return inst;
@@ -365,7 +367,8 @@ typedef struct {
 } AxiMmNapBeatR deriving(Bits, FShow);
 
 
-interface ACX_NAP_AXI_MASTER_WRAPPER;
+(* always_ready, always_enabled*)
+interface ACX_NAP_AXI_MASTER_BVI_WRAPPER;
     
     // aw channel ===========
     // output port
@@ -423,7 +426,7 @@ endinterface
 
 
 import "BVI" ACX_NAP_AXI_MASTER =
-module mkAcxNapAxiMasterWrapperInner(ACX_NAP_AXI_MASTER_WRAPPER);
+module mkAcxNapAxiMasterWrapperInner(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
 
     let clk <- exposeCurrentClock;
     let rst <- exposeCurrentReset;
@@ -499,7 +502,7 @@ module mkAcxNapAxiMasterWrapperInner(ACX_NAP_AXI_MASTER_WRAPPER);
     
     schedule (awready, wready, bid, bresp, bvalid, arready, 
                 rid, rdata, rresp, rlast, rvalid
-            ) C (
+            ) CF (
                 awready, wready, bid, bresp, bvalid, arready,
                 rid, rdata, rresp, rlast, rvalid);
 
@@ -507,14 +510,14 @@ module mkAcxNapAxiMasterWrapperInner(ACX_NAP_AXI_MASTER_WRAPPER);
                 awqos, awvalid, wdata, wstrb, wlast, wvalid, 
                 bready, arid, araddr, arlen, arsize, arburst, 
                 arlock, arqos, arvalid, rready
-            ) SB (
+            ) CF (
                 awready, wready, bid, bresp, bvalid, arready,
                 rid, rdata, rresp, rlast, rvalid);
 endmodule
 
 
 
-module mkAcxNapAxiMasterPrimitiveWrapper(ACX_NAP_AXI_MASTER_WRAPPER);
+module mkAcxNapAxiMasterPrimitiveWrapper(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
     let inst <- mkAcxNapAxiMasterWrapperInner;
     return inst;
 endmodule
@@ -530,6 +533,7 @@ interface AcxNapMasterWrapper;
     method Action sendReadResp(AxiMmNapBeatR beat);
 endinterface
 
+(* synthesize *)
 module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
 
     FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
@@ -656,8 +660,8 @@ module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
 endmodule
 
 
-
-interface ACX_NAP_AXI_SLAVE_WRAPPER;
+(* always_ready, always_enabled*)
+interface ACX_NAP_AXI_SLAVE_BVI_WRAPPER;
     
     // aw channel ===========
     // input port
@@ -715,7 +719,7 @@ endinterface
 
 
 import "BVI" ACX_NAP_AXI_SLAVE =
-module mkAcxNapAxiSlaveWrapperInner(ACX_NAP_AXI_SLAVE_WRAPPER);
+module mkAcxNapAxiSlaveWrapperInner(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
 
     let clk <- exposeCurrentClock;
     let rst <- exposeCurrentReset;
@@ -793,15 +797,340 @@ module mkAcxNapAxiSlaveWrapperInner(ACX_NAP_AXI_SLAVE_WRAPPER);
                 arlock, arqos, arvalid, rready, bresp, bvalid,
                 awready, wready, bvalid, arready, rid, rdata,
                 rresp, rlast, rvalid, bid);
-
-
 endmodule
 
-module mkAcxNapAxiSlavePrimitiveWrapper(ACX_NAP_AXI_SLAVE_WRAPPER);
-    let inst <- mkAcxNapAxiSlaveWrapperInner;
+
+
+
+typedef 28 MOCK_HOST_ADDR_WIDTH;
+typedef Bit#(MOCK_HOST_ADDR_WIDTH) MockHostAddr;
+typedef TDiv#(MOCK_HOST_ADDR_WIDTH, NOC_DATA_BUS_BYTE_WIDTH) MOCK_HOST_INTERNAL_STORAGE_ADDR_WIDTH;
+typedef Bit#(MOCK_HOST_INTERNAL_STORAGE_ADDR_WIDTH) MockHostInternalStorageAddr;
+
+module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
+    BRAM_Configure cfg = defaultValue;
+    cfg.allowWriteResponseBypass = False;
+    cfg.memorySize = 0;
+    BRAM2PortBE#(MockHostInternalStorageAddr, NocData, NOC_DATA_BUS_BYTE_WIDTH) hostMem <- mkBRAM2ServerBE(cfg);
+
+    FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatB)   bQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatAr) arQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatR)   rQ   <- mkUGFIFOF;
+
+    Wire#(NapAxiAwid)       awidWire <- mkBypassWire;
+    Wire#(NapAxiAwaddr)     awaddrWire <- mkBypassWire;
+    Wire#(NapAxiAwlen)      awlenWire <- mkBypassWire;
+    Wire#(NapAxiAwsize)     awsizeWire <- mkBypassWire;
+    Wire#(NapAxiAwburst)    awburstWire <- mkBypassWire;
+    Wire#(Bool)             awlockWire <- mkBypassWire;
+    Wire#(NapAxiAwqos)      awqosWire <- mkBypassWire;
+    Wire#(Bool)             awvalidWire <- mkBypassWire;
+
+    Wire#(NapAxiWdata)  wdataWire   <- mkBypassWire;
+    Wire#(NapAxiWstrb)  wstrbWire   <- mkBypassWire;
+    Wire#(Bool)         wlastWire   <- mkBypassWire;
+    Wire#(Bool)         wvalidWire  <- mkBypassWire;
+
+    Wire#(Bool)             breadyWire <- mkBypassWire;
+
+    Wire#(NapAxiArid)       aridWire <- mkBypassWire;
+    Wire#(NapAxiAraddr)     araddrWire <- mkBypassWire;
+    Wire#(NapAxiArlen)      arlenWire <- mkBypassWire;
+    Wire#(NapAxiArsize)     arsizeWire <- mkBypassWire;
+    Wire#(NapAxiArburst)    arburstWire <- mkBypassWire;
+    Wire#(Bool)             arlockWire <- mkBypassWire;
+    Wire#(NapAxiArqos)      arqosWire <- mkBypassWire;
+    Wire#(Bool)             arvalidWire <- mkBypassWire;
+
+    Wire#(Bool)             rreadyWire <- mkBypassWire;
+    
+
+
+
+    rule recvReqAw;
+        if (awvalidWire && awQ.notFull) begin
+            let entry = AxiMmNapBeatAw {
+                awid    : awidWire,
+                awaddr  : awaddrWire,
+                awlen   : awlenWire,
+                awsize  : awsizeWire,
+                awburst : awburstWire,
+                awlock  : awlockWire,
+                awqos   : awqosWire
+            };
+            awQ.enq(entry);
+        end
+    endrule
+
+    rule recvReqW;
+        if (wvalidWire && wQ.notFull) begin
+            let entry = AxiMmNapBeatW {
+                wdata: wdataWire,
+                wstrb: wstrbWire,
+                wlast: wlastWire
+            };
+            wQ.enq(entry);
+        end
+    endrule
+
+    rule recvReqAr;
+        if (arvalidWire && arQ.notFull) begin
+            let entry = AxiMmNapBeatAr {
+                arid    : aridWire,
+                araddr  : araddrWire,
+                arlen   : arlenWire,
+                arsize  : arsizeWire,
+                arburst : arburstWire,
+                arlock  : arlockWire,
+                arqos   : arqosWire
+            };
+            arQ.enq(entry);
+        end
+    endrule
+
+    Reg#(AxiMmNapBeatAw) curReqAwReg <- mkRegU;
+    Reg#(NapAxiAwlen) writeLenCounterReg <- mkRegU;
+    Reg#(Bool) isInBurstWritingReg <- mkReg(False);
+    Reg#(MockHostInternalStorageAddr) burstWriteAddrReg <- mkRegU;
+
+    Reg#(AxiMmNapBeatAr) curReqArReg <- mkRegU;
+    Reg#(NapAxiAwlen) readLenCounterReg <- mkRegU;
+    Reg#(Bool) isInBurstReadingReg <- mkReg(False);
+    Reg#(MockHostInternalStorageAddr) burstReadAddrReg <- mkRegU;
+
+    FIFOF#(Tuple2#(Bool, AxiMmNapBeatAr)) inFlightReadRespQ <- mkFIFOF;
+
+
+    rule handleWriteReq; 
+        let writeLenCounter = writeLenCounterReg;
+
+        if (!isInBurstWritingReg) begin
+            if (awQ.notEmpty && wQ.notEmpty && bQ.notFull) begin
+                let aw = awQ.first;
+                awQ.deq;
+                let w = wQ.first;
+                wQ.deq;
+
+                curReqAwReg <= aw;
+                writeLenCounter = aw.awlen;
+                writeLenCounterReg <= writeLenCounter - 1;
+                if (writeLenCounter != 0) begin
+                    isInBurstWritingReg <= True;
+                    immAssert(
+                        !w.wlast,
+                        "data should not assert wlast in this beat",
+                        $format("aw=", fshow(aw), "w=", fshow(w))
+                    );
+                end
+                else begin
+                    immAssert(
+                        w.wlast,
+                        "data should assert wlast in this beat",
+                        $format("aw=", fshow(aw), "w=", fshow(w))
+                    );
+                    let bEntry = AxiMmNapBeatB{
+                        bid: aw.awid,
+                        bresp: 0
+                    };
+                    bQ.enq(bEntry);
+                end
+
+                burstWriteAddrReg <= truncateLSB(aw.awaddr);
+
+                let bramReq = BRAMRequestBE{
+                    writeen: unpack(pack(w.wstrb)),
+                    responseOnWrite: False,
+                    address: truncateLSB(aw.awaddr),
+                    datain: w.wdata
+                };
+                hostMem.portA.request.put(bramReq);
+
+            end
+        end
+        else begin
+            if (wQ.notEmpty && bQ.notFull) begin
+                let w = wQ.first;
+                wQ.deq;
+
+                writeLenCounterReg <= writeLenCounter - 1;
+                if (writeLenCounter != 0) begin
+                    isInBurstWritingReg <= True;
+                    immAssert(
+                        !w.wlast,
+                        "data should not assert wlast in this beat",
+                        $format("aw=", fshow(curReqAwReg), "w=", fshow(w))
+                    );
+                end
+                else begin
+                    isInBurstWritingReg <= False;
+                    immAssert(
+                        w.wlast,
+                        "data should assert wlast in this beat",
+                        $format("aw=", fshow(curReqAwReg), "w=", fshow(w))
+                    );
+
+                    let bEntry = AxiMmNapBeatB{
+                        bid: curReqAwReg.awid,
+                        bresp: 0
+                    };
+                    bQ.enq(bEntry);
+                end
+
+                let curAddr = burstWriteAddrReg + 1;
+                burstWriteAddrReg <= curAddr;
+
+                let bramReq = BRAMRequestBE{
+                    writeen: unpack(pack(w.wstrb)),
+                    responseOnWrite: False,
+                    address: curAddr,
+                    datain: w.wdata
+                };
+                hostMem.portA.request.put(bramReq);
+            end
+        end
+    endrule
+
+
+    rule handleReadReq;
+        let readLenCounter = readLenCounterReg;
+
+        if (!isInBurstReadingReg) begin
+            if (arQ.notEmpty) begin
+                let ar = arQ.first;
+                arQ.deq;
+               
+                curReqArReg <= ar;
+                readLenCounter = ar.arlen;
+                readLenCounterReg <= readLenCounter - 1;
+                let isLast = readLenCounter == 0;
+                if (readLenCounter != 0) begin
+                    isInBurstReadingReg <= True;
+                end
+
+                burstReadAddrReg <= truncateLSB(ar.araddr);
+
+                let bramReq = BRAMRequestBE{
+                    writeen: 0,
+                    responseOnWrite: False,
+                    address: truncateLSB(ar.araddr),
+                    datain: 0
+                };
+                hostMem.portB.request.put(bramReq);
+                inFlightReadRespQ.enq(tuple2(isLast, ar));
+            end
+        end
+        else begin
+
+
+            readLenCounterReg <= readLenCounter - 1;
+            let isLast = readLenCounter == 0;
+            if (isLast) begin
+                isInBurstReadingReg <= False;
+            end
+
+            let curAddr = burstReadAddrReg + 1;
+            burstReadAddrReg <= curAddr;
+
+            let bramReq = BRAMRequestBE{
+                writeen: 0,
+                responseOnWrite: False,
+                address: curAddr,
+                datain: 0
+            };
+            hostMem.portB.request.put(bramReq);
+        end
+    endrule
+    
+    rule sendReadResp;
+        if (rQ.notFull) begin
+            let {isLast, ar} = inFlightReadRespQ.first;
+            inFlightReadRespQ.deq;
+
+            let resp <- hostMem.portB.response.get;
+            let rEntry = AxiMmNapBeatR {
+                rid: ar.arid,
+                rdata: resp,
+                rresp: 0,
+                rlast: isLast
+            };
+            rQ.enq(rEntry);
+        end
+    endrule
+
+
+
+
+    // aw channel ===========
+    // input port
+    method awid         = awidWire._write;
+    method awaddr       = awaddrWire._write;
+    method awlen        = awlenWire._write;
+    method awsize       = awsizeWire._write;
+    method awburst      = awburstWire._write;
+    method awlock       = awlockWire._write;
+    method awqos        = awqosWire._write;
+    method awvalid      = awvalidWire._write;
+    // output port
+    method awready      = awQ.notFull;
+
+    // w channel ===========
+    // input port
+    method wdata    = wdataWire._write;
+    method wstrb    = wstrbWire._write;
+    method wlast    = wlastWire._write;
+    method wvalid   = wvalidWire._write;
+    // output port
+    method wready   = wQ.notFull;
+
+    // b channel ===========
+    // input port
+    method bready   = breadyWire._write;
+    // output port 
+    method bid      = bQ.first.bid;
+    method bresp    = bQ.first.bresp;
+    method bvalid   = bQ.notEmpty;
+
+    // ar channel ===========
+    // input port
+    method arid         = aridWire._write;
+    method araddr       = araddrWire._write;
+    method arlen        = arlenWire._write;
+    method arsize       = arsizeWire._write;
+    method arburst      = arburstWire._write;
+    method arlock       = arlockWire._write;
+    method arqos        = arqosWire._write;
+    method arvalid      = arvalidWire._write;
+    // output port
+    method arready      = arQ.notFull;
+
+
+    // r channel ===========
+    // input port
+    method rready = rreadyWire._write;
+    // output port
+    method rid      = rQ.first.rid;
+    method rdata    = rQ.first.rdata;
+    method rresp    = rQ.first.rresp;
+    method rlast    = rQ.first.rlast;
+    method rvalid   = rQ.notEmpty;
+   
+endmodule
+
+
+module mkAcxNapAxiSlavePrimitiveWrapper(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
+    ACX_NAP_AXI_SLAVE_BVI_WRAPPER inst;
+
+    if (genVerilog) begin
+        inst <- mkAcxNapAxiSlaveWrapperInner;
+    end
+    else begin
+        inst <-mkAcxNapAxiSlaveWrapperInnerBluesim;
+    end
+
     return inst;
 endmodule
-
 
 
 interface AcxNapSlaveWrapper;
@@ -814,6 +1143,7 @@ interface AcxNapSlaveWrapper;
     method ActionValue#(AxiMmNapBeatR) recvReadResp;
 endinterface
 
+(* synthesize *)
 module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
 
     FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
