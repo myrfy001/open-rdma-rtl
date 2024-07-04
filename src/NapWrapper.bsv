@@ -802,10 +802,13 @@ endmodule
 
 
 
-typedef 28 MOCK_HOST_ADDR_WIDTH;
+typedef 26 MOCK_HOST_ADDR_WIDTH;
 typedef Bit#(MOCK_HOST_ADDR_WIDTH) MockHostAddr;
-typedef TDiv#(MOCK_HOST_ADDR_WIDTH, NOC_DATA_BUS_BYTE_WIDTH) MOCK_HOST_INTERNAL_STORAGE_ADDR_WIDTH;
+typedef TLog#(NOC_DATA_BUS_BYTE_WIDTH) NOC_DATA_BUS_BYTE_NUM_WIDTH;
+typedef TSub#(MOCK_HOST_ADDR_WIDTH, NOC_DATA_BUS_BYTE_NUM_WIDTH) MOCK_HOST_INTERNAL_STORAGE_ADDR_WIDTH;
 typedef Bit#(MOCK_HOST_INTERNAL_STORAGE_ADDR_WIDTH) MockHostInternalStorageAddr;
+
+typedef BRAMRequestBE#(MockHostInternalStorageAddr, NocData, NOC_DATA_BUS_BYTE_WIDTH) MockHostBramRequest;
 
 module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
     BRAM_Configure cfg = defaultValue;
@@ -949,16 +952,22 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
                     bQ.enq(bEntry);
                 end
 
-                burstWriteAddrReg <= truncateLSB(aw.awaddr);
+                MockHostInternalStorageAddr curAddr = truncate(aw.awaddr >> valueOf(NOC_DATA_BUS_BYTE_NUM_WIDTH));
+                burstWriteAddrReg <= curAddr;
 
-                let bramReq = BRAMRequestBE{
+                MockHostBramRequest bramReq = BRAMRequestBE{
                     writeen: unpack(pack(w.wstrb)),
                     responseOnWrite: False,
-                    address: truncateLSB(aw.awaddr),
+                    address: curAddr,
                     datain: w.wdata
                 };
                 hostMem.portA.request.put(bramReq);
-
+                // $display("aw=", fshow(aw), ", w=", fshow(w));
+                // $display(
+                //     "1 write bramReq curAddr=", fshow(bramReq.address),
+                //     "writeen=", fshow(bramReq.writeen),
+                //     "datain=", fshow(bramReq.datain)
+                // );
             end
         end
         else begin
@@ -993,15 +1002,22 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
                 let curAddr = burstWriteAddrReg + 1;
                 burstWriteAddrReg <= curAddr;
 
-                let bramReq = BRAMRequestBE{
+                MockHostBramRequest bramReq = BRAMRequestBE{
                     writeen: unpack(pack(w.wstrb)),
                     responseOnWrite: False,
                     address: curAddr,
                     datain: w.wdata
                 };
                 hostMem.portA.request.put(bramReq);
+                // $display("aw=", fshow(curReqAwReg), ", w=", fshow(w));
+                // $display(
+                //     "2 write bramReq curAddr=", fshow(bramReq.address),
+                //     "writeen=", fshow(bramReq.writeen),
+                //     "datain=", fshow(bramReq.datain)
+                // );
             end
         end
+        
     endrule
 
 
@@ -1021,16 +1037,19 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
                     isInBurstReadingReg <= True;
                 end
 
-                burstReadAddrReg <= truncateLSB(ar.araddr);
+                MockHostInternalStorageAddr curAddr = truncate(ar.araddr >> valueOf(NOC_DATA_BUS_BYTE_NUM_WIDTH));
 
-                let bramReq = BRAMRequestBE{
+                burstReadAddrReg <= curAddr;
+
+                MockHostBramRequest bramReq = BRAMRequestBE{
                     writeen: 0,
                     responseOnWrite: False,
-                    address: truncateLSB(ar.araddr),
+                    address: curAddr,
                     datain: 0
                 };
                 hostMem.portB.request.put(bramReq);
                 inFlightReadRespQ.enq(tuple2(isLast, ar));
+                // $display("read bramReq curAddr=", fshow(bramReq.address));
             end
         end
         else begin
@@ -1043,7 +1062,7 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
             let curAddr = burstReadAddrReg + 1;
             burstReadAddrReg <= curAddr;
 
-            let bramReq = BRAMRequestBE{
+            MockHostBramRequest bramReq = BRAMRequestBE{
                 writeen: 0,
                 responseOnWrite: False,
                 address: curAddr,
@@ -1051,6 +1070,7 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
             };
             hostMem.portB.request.put(bramReq);
             inFlightReadRespQ.enq(tuple2(isLast, curReqArReg));
+            // $display("read bramReq curAddr=", fshow(bramReq.address));
         end
     endrule
     
@@ -1067,6 +1087,8 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
                 rlast: isLast
             };
             rQ.enq(rEntry);
+
+            // $display("ar=", fshow(ar), ", resp=", fshow(resp));
         end
     endrule
 

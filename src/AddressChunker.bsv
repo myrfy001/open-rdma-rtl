@@ -224,6 +224,8 @@ module mkAddressChunkMetaCalculator#(
         
         tInternalMathOp tmpSumResult = lenRemainder + addrRemainder;
 
+        // TODO: Use (( addr + ( len - 1 )) / batch_size ) - ( addr / batch_size )
+        // to simpilify calculate logic.
         let lenRemainderIsZero = isZeroR(pack(lenRemainder));
         let addrRemainderIsZero = isZeroR(pack(addrRemainder));
         let devidedLenIsZero = isZeroR(pack(devidedLen));
