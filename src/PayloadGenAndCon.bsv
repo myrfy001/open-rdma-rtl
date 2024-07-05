@@ -100,9 +100,6 @@ module mkPayloadGen#(AcxNapSlaveWrapper dmaReadSlaveNap)(PayloadGen);
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
 
-    FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;
-    FIFOF#(DataStream) payloadConStreamPipeInQ <- mkFIFOF;
-
     AddressChunkMetaCalculator#(
             ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
             TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
@@ -268,7 +265,7 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
     
 
     FIFOF#(AddressChunkResp#(ADDR, Length)) chunkedBurstMetaQ <- mkFIFOF;
-    FIFOF#(DataStreamEn) dataStreamEnPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(DataStreamEn, ByteIndexInBeat)) dataStreamEnPreCalcPipelineQ <- mkFIFOF;
     FIFOF#(AddressChunkResp#(ADDR, Length)) inflightAxiWriteBurstMetaQ <- mkFIFOF; 
 
     mkConnection(rawReqToBurstChunkMetaCalc.metaPipeOut, rawReqToBurstChunker.requestPipeIn);
@@ -324,18 +321,12 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
     endrule
 
 
-    rule prepareWriteStreamByteEn;
+    rule preCalcWriteStreamByteEn;
         let ds = payloadConStreamPipeInQ.first;
         payloadConStreamPipeInQ.deq;
         ByteEn allOneByteEn = -1;
         ByteEn allZeroByteEn = 0;
         ByteEn byteEn = truncate({allOneByteEn, allZeroByteEn} >> ds.byteNum);
-        byteEn = byteEn >> ds.startByteIdx;
-
-        if (ds.isFirst) begin
-            // since only first beat in the stream is right aligned
-            byteEn = swapEndianBit(byteEn);
-        end
 
         let dsEn = DataStreamEn {
             data: ds.data,
@@ -343,15 +334,25 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
             isFirst: ds.isFirst,
             isLast: ds.isLast
         };
-        dataStreamEnPipelineQ.enq(dsEn);
+        dataStreamEnPreCalcPipelineQ.enq(tuple2(dsEn, ds.startByteIdx));
     endrule
 
     rule sendAxiWriteBeat;
         let beatInfo = burstToBeatChunker.responsePipeOut.first;
         burstToBeatChunker.responsePipeOut.deq;
 
-        let dsEn = dataStreamEnPipelineQ.first;
-        dataStreamEnPipelineQ.deq;
+        let {dsEn, startByteIdx} = dataStreamEnPreCalcPipelineQ.first;
+        dataStreamEnPreCalcPipelineQ.deq;
+
+        // Note: the following lines complete the byteEN generation. Those lines of code should 
+        // be placed in the `rule preCalcWriteStreamByteEn`, but the shift timing is worse.
+        // to fix timing, split the byteEn generation into this rule and `rule preCalcWriteStreamByteEn`
+        dsEn.byteEn = dsEn.byteEn >> startByteIdx;
+        if (dsEn.isFirst) begin
+            // since only first beat in the stream is right aligned
+            dsEn.byteEn = swapEndianBit(dsEn.byteEn);
+        end
+
 
         dsEn = reverseStreamEnAndData(dsEn);
 

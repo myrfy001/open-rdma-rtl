@@ -145,3 +145,66 @@ module mkTestPayloadGenAndCon(Empty);
     endrule
 endmodule
 
+
+
+interface TestPayloadGenAndConTiming;
+    method Bool getOutput;
+endinterface
+
+
+(* doc = "testcase" *)
+module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
+
+    PayloadGenAndCon dut <- mkPayloadGenAndCon;
+    ForceKeepWideSignals#(DataStream) signalKeeperForGen <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bool) signalKeeperForCon <- mkForceKeepWideSignals; 
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+    Reg#(Bool) outReg <- mkRegU;
+
+    rule genWriteReq;
+        
+        let randData512 <- randSource1.get;
+
+        Length rdmaPayloadLen = truncate(randData512 >> 2);
+        ADDR rdmaPayloadStartAddr = truncate(randData512 >> 12);
+
+        let conReq = PayloadConReq{
+            addr: rdmaPayloadStartAddr,
+            len: rdmaPayloadLen
+        };
+        dut.conReqPipeIn.enq(conReq);
+
+
+        let genReq = PayloadGenReq{
+            addr: rdmaPayloadStartAddr,
+            len: rdmaPayloadLen
+        };
+        dut.genReqPipeIn.enq(genReq);
+
+    endrule
+
+    rule genWriteData;
+        let randData512 <- randSource2.get;
+        dut.payloadConStreamPipeIn.enq(unpack(truncate(randData512)));
+    endrule
+
+    rule getConResult;
+        let writeFinishResp = dut.conRespPipeOut.first;
+        dut.conRespPipeOut.deq;
+        signalKeeperForCon.bitsPipeIn.enq(writeFinishResp);
+    endrule
+
+    rule getGenResult;
+        let ds = dut.payloadGenStreamPipeOut.first;
+        dut.payloadGenStreamPipeOut.deq;
+        signalKeeperForGen.bitsPipeIn.enq(ds);
+    endrule
+
+    rule gatherKeptSignals;
+        outReg <= signalKeeperForCon.out && signalKeeperForGen.out;
+    endrule
+
+    method getOutput = outReg;
+endmodule
+
