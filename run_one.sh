@@ -50,7 +50,7 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestPayloadGenAndCon.bsv`
 # TESTCASE=mkTestPayloadGenAndCon
 
-FILE=`ls TestPacketGenAndCon.bsv`
+FILE=`ls TestPacketGenAndParse.bsv`
 TESTCASE=mkTestPacketGen
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG

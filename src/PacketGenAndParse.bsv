@@ -656,10 +656,36 @@ module mkPacketGen(PacketGen);
     endrule
 
 
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
-        ethernetPacketGen.setLocalNetworkSettings(networkSettings);
-    endmethod
+    method setLocalNetworkSettings = ethernetPacketGen.setLocalNetworkSettings; 
 
     interface wqePipeIn = toPipeIn(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
 endmodule
+
+
+interface PacketParse;
+    interface PipeIn#(EthernetNapBeatEntry) ethernetFramePipeIn;
+    interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
+    interface PipeOut#(DataStream) rdmaPayloadPipeOut;
+    interface PipeOut#(DataStream) otherRawPacketPipeOut;
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+endinterface
+
+
+module mkPacketParse(PacketParse);
+
+    InputPacketClassifier inputPacketClassifier <- mkInputPacketClassifier;
+    RdmaHeaderExtractor rdmaHeaderExtractor <- mkRdmaHeaderExtractor;
+
+    mkConnection(inputPacketClassifier.rdmaRawPacketPipeOut, rdmaHeaderExtractor.ethPipeIn);
+
+    interface ethernetFramePipeIn = inputPacketClassifier.ethRawPacketPipeIn;
+    interface rdmaMacIpUdpMetaPipeOut = inputPacketClassifier.rdmaMacIpUdpMetaPipeOut;
+    interface rdmaPacketMetaPipeOut = rdmaHeaderExtractor.rdmaPacketMetaPipeOut;
+    interface rdmaPayloadPipeOut = rdmaHeaderExtractor.rdmaPayloadPipeOut;
+    interface otherRawPacketPipeOut = inputPacketClassifier.otherRawPacketPipeOut;
+
+    method setLocalNetworkSettings = inputPacketClassifier.setLocalNetworkSettings; 
+endmodule
+

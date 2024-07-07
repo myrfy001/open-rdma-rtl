@@ -18,7 +18,7 @@ import ConnectableF::*;
 import NapWrapper :: *;
 import StreamShifter :: *;
 import EthernetTypes :: *;
-import PacketGenAndCon :: *;
+import PacketGenAndParse :: *;
 
 
 module mkTestPacketGen(Empty);

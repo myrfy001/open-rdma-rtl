@@ -8,6 +8,16 @@ import RdmaHeaders :: *;
 import Settings :: *;
 import EthernetTypes :: *;
 
+typedef 1 NUMERIC_TYPE_ONE;
+typedef 2 NUMERIC_TYPE_TWO;
+typedef 3 NUMERIC_TYPE_THREE;
+typedef 4 NUMERIC_TYPE_FOUR;
+typedef 5 NUMERIC_TYPE_FIVE;
+typedef 6 NUMERIC_TYPE_SIX;
+
+
+
+
 typedef 3 BIT_BYTE_CONVERT_SHIFT_NUM;
 typedef 8 BYTE_WIDTH;
 typedef 16 WORD_WIDTH;
@@ -673,31 +683,28 @@ typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
 
 typedef 8 QPC_QUERY_RESP_MAX_DELAY;
 
-// TODO: Now, put all context data into one big COMMON entry. Maybe one day we should
-// split context data into common, sq only and rq only. A big BRAM is not friendly to P&R 
 typedef struct {
     QPN  qpn;
-} ReadReqCommonQPC deriving(Bits, Eq, FShow);
+} ReadReqQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
     QPN  qpn;
-    Maybe#(EntryCommonQPC)  ent;
-} WriteReqCommonQPC deriving(Bits, Eq, FShow);
+    Maybe#(EntryQPC)  ent;
+} WriteReqQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
-    // Bool                            isError;            // 1 bit
     KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH) bits = 24-11 = 13 bits
     HandlerPD                       pdHandler;          // 24 bits
     TypeQP                          qpType;             // 4 bits
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
     PMTU                            pmtu;               // 3 bits
     QPN                             peerQPN;            // 24 bits
-} EntryCommonQPC deriving(Bits, Eq, FShow);
+} EntryQPC deriving(Bits, Eq, FShow);
 
 
 // typedef struct {
 //     RdmaPktMetaData                 metadata;
-//     EntryCommonQPC                  qpc;
+//     EntryQPC                  qpc;
 // } RdmaPktMetaDataAndQPC deriving(Bits, FShow);
 
 // typedef struct {
