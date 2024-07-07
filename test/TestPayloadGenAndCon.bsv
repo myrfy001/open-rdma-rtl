@@ -153,6 +153,7 @@ endinterface
 
 
 (* doc = "testcase" *)
+(* synthesize *)
 module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
 
     PayloadGenAndCon dut <- mkPayloadGenAndCon;

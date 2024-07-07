@@ -47,8 +47,11 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestAddressChunker.bsv`
 # TESTCASE=mkTestAddressChunker
 
-FILE=`ls TestPayloadGenAndCon.bsv`
-TESTCASE=mkTestPayloadGenAndCon
+# FILE=`ls TestPayloadGenAndCon.bsv`
+# TESTCASE=mkTestPayloadGenAndCon
+
+FILE=`ls TestPacketGenAndCon.bsv`
+TESTCASE=mkTestPacketGen
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
 

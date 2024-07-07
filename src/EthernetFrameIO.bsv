@@ -22,7 +22,7 @@ interface InputPacketClassifier;
     interface PipeOut#(DataStream) rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
-    method Action setMacAndIp(LocalNetworkSettings networkSettings);
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
 
 
@@ -285,7 +285,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
 
-    method Action setMacAndIp(LocalNetworkSettings networkSettings);
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
         networkSettingsReg <= tagged Valid networkSettings;
     endmethod
 
@@ -302,8 +302,8 @@ typedef TSub#(MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH, DATA_BUS_BYTE_WIDTH) MAC_IP_UDP_H
 
 typedef TSub#(BYTE_NUM_OF_THREE_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) MAX_BYTE_NUM_FOR_ETH_IN_THIRD_BEAT; 
 
-typedef TSub#(BYTE_NUM_OF_TWO_BEATS, TAdd#(UDP_HEADER_OFFSET_IN_SECOND_BEAT, UDP_HDR_BYTE_WIDTH)) RDMA_FIXED_HEADER_BYTE_NUM; // 54
-
+typedef TSub#(BYTE_NUM_OF_THREE_BEATS, MAC_IP_UDP_TOTAL_HDR_BYTE_WIDTH) RDMA_FIXED_HEADER_BYTE_NUM; // 54
+typedef Bit#(TMul#(BYTE_WIDTH, RDMA_FIXED_HEADER_BYTE_NUM)) RdmaFixedHeaderBuffer;
 
 // The above BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT and BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT can also be defined and calculated by
 // the following method:
@@ -503,7 +503,7 @@ interface EthernetPacketGenerator;
     interface PipeIn#(DataStream) rdmaPayloadPipeIn;
     interface PipeOut#(EthernetNapBeatEntry) ethernetPacketPipeOut;
 
-    method Action setMacAndIp(LocalNetworkSettings networkSettings);
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
 
 typedef enum {
@@ -750,7 +750,6 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS) * valueOf(BYTE_WIDTH));
 
-
         let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
 
         ethernetPacketPipeOutQ.enq(outBeat);
@@ -808,7 +807,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         
     endrule
 
-    method Action setMacAndIp(LocalNetworkSettings networkSettings);
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
         networkSettingsReg <= tagged Valid networkSettings;
     endmethod
 

@@ -111,7 +111,7 @@ module mkTestEthernetFrameIO(Empty);
             gatewayAddr: unpack(0),
             netMask: unpack(0)
         };
-        packetGen.setMacAndIp(localNetworkSettingsForSendNode);
+        packetGen.setLocalNetworkSettings(localNetworkSettingsForSendNode);
 
         let localNetworkSettingsForRecvNode = LocalNetworkSettings{
             macAddr: macUnicastAddrForTestRecvNode,
@@ -119,7 +119,7 @@ module mkTestEthernetFrameIO(Empty);
             gatewayAddr: unpack(0),
             netMask: unpack(0)
         };
-        packetClassifier.setMacAndIp(localNetworkSettingsForRecvNode);
+        packetClassifier.setLocalNetworkSettings(localNetworkSettingsForRecvNode);
 
         if (isRdmaPacket) begin
             macIpUdpMeta.dstPort = fromInteger(valueOf(UDP_PORT_RDMA));
@@ -153,7 +153,6 @@ module mkTestEthernetFrameIO(Empty);
             };
             let rdmaPacketMeta = RdmaSendPacketMeta{
                 header: rdmaBthAndExtendHeader,
-                bthAndEthTotalLength: bthAndEthTotalLength,
                 hasPayload: hasPayload
             };
             if (hasPayload) begin
@@ -336,8 +335,8 @@ module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
         let localNetworkSettingsForRecvNode = unpack(truncate(relayReg));
         let payloadStream = unpack(truncate(relayReg));
 
-        packetGen.setMacAndIp(localNetworkSettingsForSendNode);
-        packetClassifier.setMacAndIp(localNetworkSettingsForRecvNode);
+        packetGen.setLocalNetworkSettings(localNetworkSettingsForSendNode);
+        packetClassifier.setLocalNetworkSettings(localNetworkSettingsForRecvNode);
         txStreamShifter.streamPipeIn.enq(payloadStream);
     endrule
 

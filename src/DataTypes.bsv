@@ -6,6 +6,7 @@ import GetPut :: *;
 
 import RdmaHeaders :: *;
 import Settings :: *;
+import EthernetTypes :: *;
 
 typedef 3 BIT_BYTE_CONVERT_SHIFT_NUM;
 typedef 8 BYTE_WIDTH;
@@ -252,10 +253,10 @@ typedef struct {
 } DataStreamEn deriving(Bits, FShow);
 
 // This buffer should be able to contain the largest extend header combinations.
-// For now, the largest one is 32 Byte;
-typedef 256 RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH;
+// For now, the largest one is 36 Byte;
+typedef 288 RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH;
 typedef Bit#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) RdmaExtendHeaderBuffer;
-typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;        // 32
+typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;        // 36
 typedef TAdd#(1, TLog#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH)) RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH;          // 6
 typedef Bit#(RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH) RdmaExtendHeaderLength;
 
@@ -276,7 +277,6 @@ typedef struct {
 
 typedef struct {
     RdmaBthAndExtendHeader header;
-    RdmaBthAndEthTotalLength bthAndEthTotalLength;
     Bool hasPayload;
 } RdmaSendPacketMeta deriving(Bits, FShow);
 
@@ -623,61 +623,6 @@ instance Flags#(WorkReqSendFlag);
 endinstance
 
 typedef struct {
-    // WorkReqID id;        // TODO: remove it
-    WorkReqOpCode opcode;
-    FlagsType#(WorkReqSendFlag) flags;
-    ADDR raddr;
-    RKEY rkey;
-    Length len;
-    ADDR laddr;
-    LKEY lkey;
-    QPN sqpn; // For WR dispatching
-    Bool solicited; // Relevant only for the Send and RDMA Write with immediate data
-    Maybe#(Long) comp;
-    Maybe#(Long) swap;
-    Maybe#(IMM) immDt;
-    Maybe#(RKEY) rkey2Inv;
-    Maybe#(QPN) srqn; // for XRC
-    Maybe#(QPN) dqpn; // for UD
-    Maybe#(QKEY) qkey; // for UD
-} WorkReq deriving(Bits);
-
-instance FShow#(WorkReq);
-    function Fmt fshow(WorkReq wr);
-        return $format(
-            "WorkReq { opcode=", fshow(wr.opcode), ", flags=", fshow(wr.flags),
-            ", raddr=%h, rkey=%h, len=%0d, laddr=%h, lkey=%h, sqpn=%h",
-            wr.raddr, wr.rkey, wr.len, wr.laddr, wr.lkey, wr.sqpn,
-            ", solicited=", fshow(wr.solicited), ", comp=", fshow(wr.comp), ", swap=", fshow(wr.swap),
-            ", immDt=", fshow(wr.immDt), ", rkey2Inv=", fshow(wr.rkey2Inv), ", srqn=", fshow(wr.srqn),
-            ", dqpn=", fshow(wr.dqpn), ", qkey=", fshow(wr.qkey), " }"
-        );
-    endfunction
-endinstance
-
-typedef struct {
-    WorkReq wr;
-    Maybe#(PSN) startPSN;
-    Maybe#(PSN) endPSN;
-    Maybe#(PktNum) pktNum;
-    Maybe#(Bool) isOnlyReqPkt;
-} PendingWorkReq deriving(Bits);
-
-instance FShow#(PendingWorkReq);
-    function Fmt fshow(PendingWorkReq pwr);
-        let pktNumFmt = case (pwr.pktNum) matches
-            tagged Valid .pn: $format("tagged Valid %0d", pn);
-            tagged Invalid  : $format("tagged Invalid PktNum");
-        endcase;
-        return $format(
-            "PendingWorkReq { wr=", fshow(pwr.wr),
-            ", startPSN=", fshow(pwr.startPSN), ", endPSN=", fshow(pwr.endPSN),
-            ", pktNum=", pktNumFmt, ", isOnlyReqPkt=", fshow(pwr.isOnlyReqPkt), " }"
-        );
-    endfunction
-endinstance
-
-typedef struct {
     // WorkReqID id;  // TODO: remove it
     Length len;
     ADDR laddr;
@@ -685,112 +630,6 @@ typedef struct {
     QPN sqpn; // For RR dispatching
 } RecvReq deriving(Bits, FShow);
 
-// WorkComp related
-
-typedef enum {
-    IBV_WC_SEND               = 0,
-    IBV_WC_RDMA_WRITE         = 1,
-    IBV_WC_RDMA_READ          = 2,
-    IBV_WC_COMP_SWAP          = 3,
-    IBV_WC_FETCH_ADD          = 4,
-    IBV_WC_BIND_MW            = 5,
-    IBV_WC_LOCAL_INV          = 6,
-    IBV_WC_TSO                = 7,
-    // consumers can test if a completion is a receive by testing (opcode & IBV_WC_RECV)
-    IBV_WC_RECV               = 128, // 1 << 7
-    IBV_WC_RECV_RDMA_WITH_IMM = 129,
-    IBV_WC_TM_ADD             = 130,
-    IBV_WC_TM_DEL             = 131,
-    IBV_WC_TM_SYNC            = 132,
-    IBV_WC_TM_RECV            = 133,
-    IBV_WC_TM_NO_TAG          = 134,
-    IBV_WC_DRIVER1            = 135,
-    IBV_WC_DRIVER2            = 136,
-    IBV_WC_DRIVER3            = 137
-} WorkCompOpCode deriving(Bits, Eq, FShow);
-
-typedef enum {
-    IBV_WC_SUCCESS            = 0,
-    IBV_WC_LOC_LEN_ERR        = 1,
-    IBV_WC_LOC_QP_OP_ERR      = 2,
-    IBV_WC_LOC_EEC_OP_ERR     = 3,
-    IBV_WC_LOC_PROT_ERR       = 4,
-    IBV_WC_WR_FLUSH_ERR       = 5,
-    IBV_WC_MW_BIND_ERR        = 6,
-    IBV_WC_BAD_RESP_ERR       = 7,
-    IBV_WC_LOC_ACCESS_ERR     = 8,
-    IBV_WC_REM_INV_REQ_ERR    = 9,
-    IBV_WC_REM_ACCESS_ERR     = 10,
-    IBV_WC_REM_OP_ERR         = 11,
-    IBV_WC_RETRY_EXC_ERR      = 12,
-    IBV_WC_RNR_RETRY_EXC_ERR  = 13,
-    IBV_WC_LOC_RDD_VIOL_ERR   = 14,
-    IBV_WC_REM_INV_RD_REQ_ERR = 15,
-    IBV_WC_REM_ABORT_ERR      = 16,
-    IBV_WC_INV_EECN_ERR       = 17,
-    IBV_WC_INV_EEC_STATE_ERR  = 18,
-    IBV_WC_FATAL_ERR          = 19,
-    IBV_WC_RESP_TIMEOUT_ERR   = 20,
-    IBV_WC_GENERAL_ERR        = 21,
-    IBV_WC_TM_ERR             = 22,
-    IBV_WC_TM_RNDV_INCOMPLETE = 23
-} WorkCompStatus deriving(Bits, Eq, FShow);
-
-typedef enum {
-    IBV_WC_NO_FLAGS      =  0, // Not defined in rdma-core
-    IBV_WC_GRH           =  1,
-    IBV_WC_WITH_IMM      =  2,
-    IBV_WC_IP_CSUM_OK    =  4,
-    IBV_WC_WITH_INV      =  8,
-    IBV_WC_TM_SYNC_REQ   = 16,
-    IBV_WC_TM_MATCH      = 32,
-    IBV_WC_TM_DATA_VALID = 64
-} WorkCompFlags deriving(Bits, Eq, FShow);
-
-instance Flags#(WorkCompFlags);
-    function Bool isOneHotOrZero(WorkCompFlags inputVal) = 1 >= countOnes(pack(inputVal));
-endinstance
-
-typedef struct {
-    // WorkReqID id;        // TODO: remove it
-    WorkCompOpCode opcode;
-    WorkCompFlags flags; // TODO: support multiple flags
-    WorkCompStatus status;
-    Length len;
-    PKEY pkey;
-    QPN qpn;
-    // QPN dqpn;
-    // QPN sqpn;
-    Maybe#(IMM) immDt;
-    Maybe#(RKEY) rkey2Inv;
-} WorkComp deriving(Bits, FShow);
-
-typedef enum {
-    WC_REQ_TYPE_FULL_ACK,
-    WC_REQ_TYPE_PARTIAL_ACK,
-    WC_REQ_TYPE_NO_WC,
-    WC_REQ_TYPE_UNKNOWN
-} WorkCompReqType deriving(Bits, Eq, FShow);
-
-typedef struct {
-    // Maybe#(WorkReqID) rrID;   // TODO: remove it
-    Length len;
-    // QPN sqpn;
-    PSN reqPSN;
-    Bool isZeroDmaLen;
-    WorkCompStatus wcStatus;
-    RdmaOpCode reqOpCode;
-    Maybe#(IMM) immDt;
-    Maybe#(RKEY) rkey2Inv;
-} WorkCompGenReqRQ deriving(Bits, FShow);
-
-typedef struct {
-    WorkReq wr;
-    Bool wcWaitDmaResp;
-    WorkCompReqType wcReqType;
-    PSN triggerPSN;
-    WorkCompStatus wcStatus;
-} WorkCompGenReqSQ deriving(Bits, FShow);
 
 // Async event related
 
@@ -959,37 +798,6 @@ typedef struct {
     Bool isQpPsnContinous;
 } ExpectedPsnContextEntry deriving(Bits, FShow);
 
-
-typedef Bit#(32)  AddrIPv4;
-typedef Bit#(128) AddrIPv6;
-typedef Bit#(48)  MAC;
-
-typedef union tagged {
-    AddrIPv4 IPv4;
-    AddrIPv6 IPv6;
-} IP deriving(Bits, Bounded);
-
-instance FShow#(IP);
-    function Fmt fshow(IP ipAddr);
-        case (ipAddr) matches
-            tagged IPv4 .ipv4: begin
-                return $format(
-                    "ipv4=%0d.%0d.%0d.%0d",
-                    ipv4[31 : 24], ipv4[23: 16], ipv4[15 : 8], ipv4[7 : 0]
-                );
-            end
-            tagged IPv6 .ipv6: begin
-                return $format(
-                    "ipv6=%h:%h:%h:%h:%h:%h:%h:%h",
-                    ipv6[127 : 112], ipv6[111: 96], ipv6[95 : 80], ipv6[79 : 64],
-                    ipv6[63 : 48], ipv6[47: 32], ipv6[31 : 16], ipv6[15 : 0]
-                );
-            end
-        endcase
-    endfunction
-endinstance
-
-
 typedef struct {
     IndexQP    qpnIdx;
     PSN        newIncomingPSN;
@@ -1007,8 +815,8 @@ typedef 6 RECV_PACKET_SRC_MAC_IP_BUFFER_INDEX_WIDTH;
 typedef Bit#(RECV_PACKET_SRC_MAC_IP_BUFFER_INDEX_WIDTH) RecvPacketSrcMacIpBufferIdx; 
 
 typedef struct {
-    IP ip;
-    MAC macAddr;
+    IpAddr ip;
+    EthMacAddr macAddr;
 } RecvPacketSrcMacIpBufferEntry deriving(Bits, FShow);
 
 typedef struct {

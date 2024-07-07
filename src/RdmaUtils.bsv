@@ -12,6 +12,23 @@ import PAClib :: *;
 import PrimUtils :: *;
 import Settings :: *;
 
+function Maybe#(TransType) qpType2TransType(TypeQP qpt);
+    return case (qpt)
+        IBV_QPT_RC        : tagged Valid TRANS_TYPE_RC;
+        IBV_QPT_UC        : tagged Valid TRANS_TYPE_UC;
+        IBV_QPT_UD        : tagged Valid TRANS_TYPE_UD;
+        IBV_QPT_XRC_RECV  ,
+        IBV_QPT_XRC_SEND  : tagged Valid TRANS_TYPE_XRC;
+        default           : tagged Invalid;
+    endcase;
+endfunction
+
+function Bool containWorkReqFlag(
+    FlagsType#(WorkReqSendFlag) flags, WorkReqSendFlag flag
+);
+    return containEnum(flags, flag);
+    // return !isZero(pack(flags & enum2Flag(flag)));
+endfunction
 
 
 function Bit#(width) swapEndianByte(Bit#(width) data) provisos(Mul#(8, byteNum, width));
