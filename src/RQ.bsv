@@ -34,12 +34,12 @@ endinterface
 module mkRQ(RQ);
     PacketParse packetParser <- mkPacketParse;
 
-    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ);
-    FIFOF#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSizedFIFOF(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ);
+    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
+    FIFOF#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSizedFIFOF(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
     mkConnection(packetParser.rdmaMacIpUdpMetaPipeOut, toPipeIn(peerMetaStorage));
 
-    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst")
+    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst");
 
     // Pipeline Queues
 
@@ -54,9 +54,11 @@ module mkRQ(RQ);
 
     endrule
 
-    rule getQpcQueryResp;
-    endrule
+    // rule getQpcQueryResp;
+    // endrule
     
+
+    interface qpcQueryClt = qpcQueryCltInst.clt; 
 
     interface ethernetFramePipeIn = packetParser.ethernetFramePipeIn;
     interface otherRawPacketPipeOut = packetParser.otherRawPacketPipeOut;

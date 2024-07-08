@@ -67,50 +67,6 @@ endmodule
 
 
 
-interface Server2Client#(type tReq, type tResp);
-    interface Server#(tReq, tResp) srv;
-    interface Client#(tReq, tResp) clt;
-endinterface
-
-module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
-        Bits#(tReq, szReq),
-        Bits#(tResp, szResp)
-    );
-
-    Wire#(tReq) reqWire <- mkWire;
-    Wire#(tResp) respWire <- mkWire;
-
-    interface Server srv;
-        interface Put request;
-            method Action put(tReq req);
-                reqWire <= req;
-            endmethod
-        endinterface
-
-        interface Get response;
-            method ActionValue#(tResp) get;
-                return respWire;
-            endmethod
-        endinterface
-    endinterface
-
-    interface Client clt;
-        interface Put response;
-            method Action put(tResp resp);
-                respWire <= resp;
-            endmethod
-        endinterface
-
-        interface Get request;
-            method ActionValue#(tReq) get;
-                return reqWire;
-            endmethod
-        endinterface
-    endinterface
-
-endmodule
-
-
 interface QpContextTwoWayQuery;
     interface Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
     interface Server#(WriteReqQPC, Bool) updateSrv;
