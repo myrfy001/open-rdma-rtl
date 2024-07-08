@@ -1,15 +1,16 @@
 import ClientServer :: *;
-import BRAM :: *;
+import GetPut :: *;
+import RegFile :: *;
 import FIFOF :: *;
+import Connectable :: *;
 
 import DataTypes :: *;
 import RdmaUtils :: *;
-import Headers :: *;
+import RdmaHeaders :: *;
 
 import Vector :: *;
 
 import Settings :: *;
-import MetaData :: *;
 import PrimUtils :: *;
 
 import Arbitration :: *;
@@ -34,13 +35,13 @@ module mkQpContext(QpContext);
         IndexQP idx = getIndexQP(req.qpn);
         KeyQP key   = getKeyQP(req.qpn);
         let qpcEntryMaybe = qpcEntryCommonStorage.sub(idx);
-        keyPipeQ.enq(tuple2(key, qpcEntryMaybe));
+        pipeQ.enq(tuple2(key, qpcEntryMaybe));
         $display("read BRAM idx=", fshow(idx), "qpcEntryMaybe=", fshow(qpcEntryMaybe));
     endrule
 
     rule handleReadResp;
-        let {key, qpcEntryMaybe} = keyPipeQ.first;
-        keyPipeQ.deq;
+        let {key, qpcEntryMaybe} = pipeQ.first;
+        pipeQ.deq;
 
         if (qpcEntryMaybe matches tagged Valid .resp &&& resp.qpnKeyPart == key) begin
             qpcQuerySrvInst.putResp(tagged Valid resp);
@@ -71,19 +72,24 @@ interface Server2Client#(type tReq, type tResp);
     interface Client#(tReq, tResp) clt;
 endinterface
 
-module mkServer2Client(Server2Client#(tReq, tResp)) provisos (
+module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
         Bits#(tReq, szReq),
         Bits#(tResp, szResp)
     );
 
+    Wire#(tReq) reqWire <- mkWire;
+    Wire#(tResp) respWire <- mkWire;
+
     interface Server srv;
         interface Put request;
             method Action put(tReq req);
+                reqWire <= req;
             endmethod
         endinterface
 
-        interface Gut response;
+        interface Get response;
             method ActionValue#(tResp) get;
+                return respWire;
             endmethod
         endinterface
     endinterface
@@ -91,11 +97,13 @@ module mkServer2Client(Server2Client#(tReq, tResp)) provisos (
     interface Client clt;
         interface Put response;
             method Action put(tResp resp);
+                respWire <= resp;
             endmethod
         endinterface
 
-        interface Gut request;
+        interface Get request;
             method ActionValue#(tReq) get;
+                return reqWire;
             endmethod
         endinterface
     endinterface
@@ -104,7 +112,7 @@ endmodule
 
 
 interface QpContextTwoWayQuery;
-    interface Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrv;
+    interface Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
     interface Server#(WriteReqQPC, Bool) updateSrv;
 endinterface
 
@@ -119,19 +127,76 @@ module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
 
     QpContext qpContext <- mkQpContext;
 
-    Vector#(NUMERIC_TYPE_TWO, RingbufDmaH2cClt) dmaAccessH2cCltVec = newVector;
+    Vector#(NUMERIC_TYPE_TWO, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, Client#(ReadReqQPC, Maybe#(EntryQPC))) queryCltVecInst = newVector;
+
+    querySrvVecInst[0] = srvToCltConvertVec[0].srv;
+    querySrvVecInst[1] = srvToCltConvertVec[1].srv;
+
+    queryCltVecInst[0] = srvToCltConvertVec[0].clt;
+    queryCltVecInst[1] = srvToCltConvertVec[1].clt;
+    
 
     let arbitratedClient <- mkClientArbiter(
         "QpContextTwoWayQuery",
         False,
         2,
-        dmaAccessH2cCltVec,
+        queryCltVecInst,
         alwaysTrue,
         alwaysTrue
     );
 
+    mkConnection(arbitratedClient, qpContext.querySrv);
+
+    interface querySrvVec = querySrvVecInst;
+    interface updateSrv = qpContext.updateSrv;
+endmodule
+
+
+
+interface QpContextFourWayQuery;
+    interface Vector#(NUMERIC_TYPE_FOUR, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
+    interface Server#(WriteReqQPC, Bool) updateSrv;
+endinterface
+
+(* synthesize *)
+module mkQpContextFourWayQuery(QpContextFourWayQuery);
     
 
-    interface querySrv = qpcQuerySrvInst.srv;
-    interface updateSrv = qpContext.updateSrv;
+    Vector#(NUMERIC_TYPE_TWO, QpContextTwoWayQuery) twoWayQpContextVec <- replicateM(mkQpContextTwoWayQuery);
+
+    Vector#(NUMERIC_TYPE_FOUR, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_FOUR, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
+    Vector#(NUMERIC_TYPE_FOUR, Client#(ReadReqQPC, Maybe#(EntryQPC))) queryCltVecInst = newVector;
+
+    querySrvVecInst[0] = srvToCltConvertVec[0].srv;
+    querySrvVecInst[1] = srvToCltConvertVec[1].srv;
+    querySrvVecInst[2] = srvToCltConvertVec[2].srv;
+    querySrvVecInst[3] = srvToCltConvertVec[3].srv;
+    
+    mkConnection(srvToCltConvertVec[0].clt, twoWayQpContextVec[0].querySrvVec[0]);
+    mkConnection(srvToCltConvertVec[1].clt, twoWayQpContextVec[0].querySrvVec[1]);
+    mkConnection(srvToCltConvertVec[2].clt, twoWayQpContextVec[1].querySrvVec[0]);
+    mkConnection(srvToCltConvertVec[3].clt, twoWayQpContextVec[1].querySrvVec[1]);
+
+    interface querySrvVec = querySrvVecInst;
+
+    interface Server updateSrv;
+        interface Put request;
+            method Action put(WriteReqQPC req);
+                twoWayQpContextVec[0].updateSrv.request.put(req);
+                twoWayQpContextVec[1].updateSrv.request.put(req);
+            endmethod
+        endinterface
+
+        interface Get response;
+            method ActionValue#(Bool) get;
+                let resp <- twoWayQpContextVec[0].updateSrv.response.get;
+                let _ <- twoWayQpContextVec[1].updateSrv.response.get;
+                // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
+                return resp;
+            endmethod
+        endinterface
+    endinterface
 endmodule

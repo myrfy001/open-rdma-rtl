@@ -18,7 +18,7 @@ import StreamShifter :: *;
 typedef enum {
     TestEthernetFrameIoStateGenReq = 0,
     TestEthernetFrameIoStateCheckPacketClassifierOutput = 1,
-    TestEthernetFrameIoStateCheckRdmaHeaderExtractorOutput = 2
+    TestEthernetFrameIoStateCheckRdmaMetaAndPayloadExtractorOutput = 2
 } TestEthernetFrameIoState deriving(Bits, FShow, Eq);
 
 (* doc = "testcase" *)
@@ -28,7 +28,7 @@ module mkTestEthernetFrameIO(Empty);
     Reg#(TestEthernetFrameIoState) stateReg <- mkReg(TestEthernetFrameIoStateGenReq);
 
     let packetGen <- mkEthernetPacketGenerator;
-    let packetCon <- mkRdmaHeaderExtractor;
+    let packetCon <- mkRdmaMetaAndPayloadExtractor;
     let packetClassifier <- mkInputPacketClassifier;
 
 
@@ -210,11 +210,11 @@ module mkTestEthernetFrameIO(Empty);
             )
         );
 
-        stateReg <= TestEthernetFrameIoStateCheckRdmaHeaderExtractorOutput;
+        stateReg <= TestEthernetFrameIoStateCheckRdmaMetaAndPayloadExtractorOutput;
         // $display("============Finish checkPacketClassifierOutput==============");
     endrule
 
-    rule checkRdmaHeaderExtractorOutput if (stateReg == TestEthernetFrameIoStateCheckRdmaHeaderExtractorOutput);
+    rule checkRdmaMetaAndPayloadExtractorOutput if (stateReg == TestEthernetFrameIoStateCheckRdmaMetaAndPayloadExtractorOutput);
         if (packetCon.rdmaPacketMetaPipeOut.notEmpty && rdmaHeaderExtractorMetaExpectedQ.notEmpty) begin
             let expected = rdmaHeaderExtractorMetaExpectedQ.first;
             rdmaHeaderExtractorMetaExpectedQ.deq;
@@ -227,7 +227,7 @@ module mkTestEthernetFrameIO(Empty);
             // Note, the rdmaExtendHeaderBuf may contain garbage data at it's lower bits.
             immAssert(
                 (pack(got.header) >> shiftInvalidExtHeaderBufferBitNum) == (pack(expected.header) >> shiftInvalidExtHeaderBufferBitNum),
-                "mkTestEthernetFrameIO checkRdmaHeaderExtractorOutput meta check failed",
+                "mkTestEthernetFrameIO checkRdmaMetaAndPayloadExtractorOutput meta check failed",
                 $format(
                     ", got=", fshow(got),
                     ", expected=", fshow(expected)
@@ -238,7 +238,7 @@ module mkTestEthernetFrameIO(Empty);
 
             if (!got.hasPayload) begin
                 stateReg <= TestEthernetFrameIoStateGenReq;
-                // $display("============Finish checkRdmaHeaderExtractorOutput  no payload==============");
+                // $display("============Finish checkRdmaMetaAndPayloadExtractorOutput  no payload==============");
             end
 
             quitCounterReg <= quitCounterReg - 1;
@@ -265,7 +265,7 @@ module mkTestEthernetFrameIO(Empty);
             
             immAssert(
                 got == expected,
-                "mkTestEthernetFrameIO checkRdmaHeaderExtractorOutput payload check failed",
+                "mkTestEthernetFrameIO checkRdmaMetaAndPayloadExtractorOutput payload check failed",
                 $format(
                     ", got=", fshow(got),
                     ", expected=", fshow(expected)
@@ -274,8 +274,11 @@ module mkTestEthernetFrameIO(Empty);
   
 
             if (got.isLast) begin
+                // TODO: maybe we should also check this pipeOut's value. for now, we simple ignore it.
+                packetCon.rdmaPacketTailMetaPipeOut.deq;
+
                 stateReg <= TestEthernetFrameIoStateGenReq;
-                // $display("============Finish checkRdmaHeaderExtractorOutput with payload==============");
+                // $display("============Finish checkRdmaMetaAndPayloadExtractorOutput with payload==============");
                 // $display("PASS");
             end
         end
@@ -300,7 +303,7 @@ endinterface
 module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
     
     let packetGen <- mkEthernetPacketGenerator;
-    let packetCon <- mkRdmaHeaderExtractor;
+    let packetCon <- mkRdmaMetaAndPayloadExtractor;
     let packetClassifier <- mkInputPacketClassifier;
 
     mkConnection(packetGen.ethernetPacketPipeOut, packetClassifier.ethRawPacketPipeIn);

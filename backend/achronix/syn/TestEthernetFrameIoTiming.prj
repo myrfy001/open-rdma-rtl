@@ -17,7 +17,7 @@ add_file -constraint "../ioring/mkTestEthNapLoopback_ioring.sdc"
 add_file -verilog "../../verilog/mkBiDirectionStreamShifter.v"
 add_file -verilog "../../verilog/mkEthernetPacketGenerator.v"
 add_file -verilog "../../verilog/mkInputPacketClassifier.v"
-add_file -verilog "../../verilog/mkRdmaHeaderExtractor.v"
+add_file -verilog "../../verilog/mkRdmaMetaAndPayloadExtractor.v"
 add_file -verilog "../../verilog/mkTestEthernetFrameIoTiming.v"
 add_file -verilog "../../../test/verilog/top_mkTestEthernetFrameIoTiming.v"
 

@@ -315,45 +315,49 @@ typedef Bit#(TMul#(BYTE_WIDTH, RDMA_FIXED_HEADER_BYTE_NUM)) RdmaFixedHeaderBuffe
 
 typedef Bit#(TSub#(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT, SizeOf#(BTH))) RdmaExtendHeaderFragmentInSecondBeat;
 
-interface RdmaHeaderExtractor;
+interface RdmaMetaAndPayloadExtractor;
     interface PipeIn#(DataStream) ethPipeIn;
     interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
+    interface PipeOut#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOut;
     interface PipeOut#(DataStream) rdmaPayloadPipeOut;
 endinterface
 
 typedef enum {
-    RdmaHeaderExtractorStateHandleFirstBeat = 0,
-    RdmaHeaderExtractorStateHandleSecondBeat = 1,
-    RdmaHeaderExtractorStateHandleThirdBeat = 2,
-    RdmaHeaderExtractorStateHandleMoreBeat = 3
-} RdmaHeaderExtractorState deriving(Bits, FShow, Eq);
+    RdmaMetaAndPayloadExtractorStateHandleFirstBeat = 0,
+    RdmaMetaAndPayloadExtractorStateHandleSecondBeat = 1,
+    RdmaMetaAndPayloadExtractorStateHandleThirdBeat = 2,
+    RdmaMetaAndPayloadExtractorStateHandleMoreBeat = 3
+} RdmaMetaAndPayloadExtractorState deriving(Bits, FShow, Eq);
 
 (*synthesize*)
-module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
+module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
-    Reg#(RdmaHeaderExtractorState) stateReg <- mkReg(RdmaHeaderExtractorStateHandleFirstBeat);
+    Reg#(RdmaMetaAndPayloadExtractorState) stateReg <- mkReg(RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
 
     FIFOF#(DataStream) ethPipeInQ                   <- mkFIFOF;
     FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkFIFOF;
+    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkFIFOF;
     FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkFIFOF;
 
     Reg#(RdmaRecvPacketMeta) partialRdmaMetaReg <- mkRegU;
     Reg#(Bool) payloadStreamOutputIsFirstReg <- mkReg(True);
 
+    Reg#(PktFragNum) beatCntReg <- mkReg(1);
+
     Integer bthEndBitOneBasedPosInSecondBeat = valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - valueOf(SizeOf#(BTH));
 
-    rule handleFirstBeat if (stateReg == RdmaHeaderExtractorStateHandleFirstBeat);
+    rule handleFirstBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
         // first beat is totally ETH and IP header, skip them
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
-        stateReg <= RdmaHeaderExtractorStateHandleSecondBeat;
+        stateReg <= RdmaMetaAndPayloadExtractorStateHandleSecondBeat;
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaHeaderExtractor handleFirstBeat"),
+        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleFirstBeat"),
         //     toBlue(", ds="), fshow(ds)
         // );
     endrule
 
-    rule handleSecondBeat if (stateReg == RdmaHeaderExtractorStateHandleSecondBeat);
+    rule handleSecondBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleSecondBeat);
         // second beat has some part of IP header, total UDP header, total BTH header, and maybe some RDMA extended header or payload
         // we only interested in the BTH and following part.
 
@@ -383,14 +387,14 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
                 "The second beat must not be last beat.",
                 $format("ds=", fshow(ds))
             );
-            stateReg <= RdmaHeaderExtractorStateHandleFirstBeat;
+            stateReg <= RdmaMetaAndPayloadExtractorStateHandleFirstBeat;
         end
         else begin
-            stateReg <= RdmaHeaderExtractorStateHandleThirdBeat;
+            stateReg <= RdmaMetaAndPayloadExtractorStateHandleThirdBeat;
         end
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaHeaderExtractor handleSecondBeat"),
+        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleSecondBeat"),
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", rdmaTotalHeaderLen=0x%x"), rdmaTotalHeaderLen,
         //     toBlue(", rdmaHeaderIsComplete="), fshow(rdmaHeaderIsComplete),
@@ -399,7 +403,7 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         // );
     endrule
 
-    rule handleThirdBeat if (stateReg == RdmaHeaderExtractorStateHandleThirdBeat);
+    rule handleThirdBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleThirdBeat);
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
 
@@ -410,37 +414,44 @@ module mkRdmaHeaderExtractor(RdmaHeaderExtractor);
         rdmaPacketMetaPipeOutQ.enq(rdmaMeta);
     
 
-        stateReg <= ds.isLast ? RdmaHeaderExtractorStateHandleFirstBeat : RdmaHeaderExtractorStateHandleMoreBeat;
+        stateReg <= ds.isLast ? RdmaMetaAndPayloadExtractorStateHandleFirstBeat : RdmaMetaAndPayloadExtractorStateHandleMoreBeat;
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaHeaderExtractor handleThirdBeat"),
+        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleThirdBeat"),
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", payloadDs="), rdmaMeta.hasPayload ? fshow(payloadDs) : $format("No Payload"),
         //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
         // );
     endrule
 
-    rule handleMoreBeat if (stateReg == RdmaHeaderExtractorStateHandleMoreBeat);
+    rule handleMoreBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleMoreBeat);
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
         ds.isFirst = payloadStreamOutputIsFirstReg;
         rdmaPayloadPipeOutQ.enq(ds);
+
         if (ds.isLast) begin
-            stateReg <= RdmaHeaderExtractorStateHandleFirstBeat;
+            stateReg <= RdmaMetaAndPayloadExtractorStateHandleFirstBeat;
             payloadStreamOutputIsFirstReg <= True;
+            beatCntReg <= 1;
+            rdmaPacketTailMetaPipeOutQ.enq(RdmaRecvPacketTailMeta{
+                beatCnt: beatCntReg
+            });
         end
         else begin
             payloadStreamOutputIsFirstReg <= False;
+            beatCntReg <= beatCntReg + 1;
         end
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaHeaderExtractor handleMoreBeat"),
+        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleMoreBeat"),
         //     toBlue(", ds="), fshow(ds)
         // );
     endrule
 
-    interface ethPipeIn             = toPipeIn(ethPipeInQ);
-    interface rdmaPacketMetaPipeOut = toPipeOut(rdmaPacketMetaPipeOutQ);
-    interface rdmaPayloadPipeOut    = toPipeOut(rdmaPayloadPipeOutQ);
+    interface ethPipeIn                     = toPipeIn(ethPipeInQ);
+    interface rdmaPacketMetaPipeOut         = toPipeOut(rdmaPacketMetaPipeOutQ);
+    interface rdmaPacketTailMetaPipeOut     = toPipeOut(rdmaPacketTailMetaPipeOutQ);
+    interface rdmaPayloadPipeOut            = toPipeOut(rdmaPayloadPipeOutQ);
 endmodule
 
 

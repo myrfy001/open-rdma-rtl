@@ -17,7 +17,7 @@ import EthernetTypes :: *;
 import PayloadGenAndCon :: *;
 import EthernetFrameIO :: *;
 import StreamShifter :: *;
-
+import QPContext :: *;
 
 typedef union tagged {
     IMM  Imm;
@@ -491,11 +491,11 @@ module mkPacketGen(PacketGen);
         };
         genPacketHeaderPipelineQ.enq(pipelineEntryOut);
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq"),
-            toBlue(", wqe="), fshow(wqe),
-            toBlue(", hasPayload="), fshow(hasPayload)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq"),
+        //     toBlue(", wqe="), fshow(wqe),
+        //     toBlue(", hasPayload="), fshow(hasPayload)
+        // );
     endrule
 
     rule genPacketHeader;
@@ -597,11 +597,11 @@ module mkPacketGen(PacketGen);
         ethernetPacketGen.macIpUdpMetaPipeIn.enq(macIpUdpMeta);
 
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeader"),
-            toBlue(", bthMaybe="), fshow(bthMaybe),
-            toBlue(", extendHeaderBufferMaybe="), fshow(extendHeaderBufferMaybe)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeader"),
+        //     toBlue(", bthMaybe="), fshow(bthMaybe),
+        //     toBlue(", extendHeaderBufferMaybe="), fshow(extendHeaderBufferMaybe)
+        // );
 
 
         // let pipelineEntryOut = GenEthernetPacketPipelineEntry{
@@ -649,10 +649,10 @@ module mkPacketGen(PacketGen);
         perPacketPayloadDataStreamQ.enq(ds);
 
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkPacketGen reSplitStream"),
-            toBlue(", ds="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPacketGen reSplitStream"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
 
@@ -676,7 +676,7 @@ endinterface
 module mkPacketParse(PacketParse);
 
     InputPacketClassifier inputPacketClassifier <- mkInputPacketClassifier;
-    RdmaHeaderExtractor rdmaHeaderExtractor <- mkRdmaHeaderExtractor;
+    RdmaMetaAndPayloadExtractor rdmaHeaderExtractor <- mkRdmaMetaAndPayloadExtractor;
 
     mkConnection(inputPacketClassifier.rdmaRawPacketPipeOut, rdmaHeaderExtractor.ethPipeIn);
 

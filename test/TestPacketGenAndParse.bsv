@@ -22,6 +22,10 @@ import PacketGenAndParse :: *;
 
 
 module mkTestPacketGen(Empty);
+    // TODO: This Testcase is too simple now. should add more checkers.
+
+    Reg#(Bit#(32)) exitCounterReg <- mkReg(10000);
+
     let dut <- mkPacketGen;
 
     Reg#(Bool) isInitedReg <- mkReg(False);
@@ -69,6 +73,13 @@ module mkTestPacketGen(Empty);
     rule getResponse;
         let ds = dut.packetPipeOut.first;
         dut.packetPipeOut.deq;
-        $display(fshow(ds));
+        if (ds.eop) begin
+            exitCounterReg <= exitCounterReg - 1;
+            if (exitCounterReg == 0) begin
+                $display("PASS");
+                $finish;
+            end
+        end
+        // $display(fshow(ds));
     endrule
 endmodule

@@ -286,6 +286,10 @@ typedef struct {
 } RdmaRecvPacketMeta deriving(Bits, FShow);
 
 typedef struct {
+    PktFragNum beatCnt;
+} RdmaRecvPacketTailMeta deriving(Bits, FShow);
+
+typedef struct {
     RdmaBthAndExtendHeader header;
     Bool hasPayload;
 } RdmaSendPacketMeta deriving(Bits, FShow);

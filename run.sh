@@ -26,7 +26,7 @@ make -j8 TESTFILE=TestEthernetFrameIO.bsv TOPMODULE=mkTestEthernetFrameIO 2>&1 |
 
 make -j8 TESTFILE=TestFullyPipelinedUpdateBram.bsv TOPMODULE=mkTestFullyPipelinedUpdateBram 2>&1 | tee -a $ALL_LOG
 
-make -j8 TESTFILE=TestPacketGenAndCon.bsv TOPMODULE=mkTestPacketGenAndCon 2>&1 | tee -a $ALL_LOG
+make -j8 TESTFILE=TestPacketGenAndParse.bsv TOPMODULE=mkTestPacketGen 2>&1 | tee -a $ALL_LOG
 
 make -j8 TESTFILE=TestPayloadGenAndCon.bsv TOPMODULE=mkTestPayloadGenAndCon 2>&1 | tee -a $ALL_LOG
 
@@ -36,8 +36,8 @@ make -j8 TESTFILE=TestStreamShifter.bsv TOPMODULE=mkTestBiDirectionStreamShifter
 
 
 
-make -j8 -f Makefile.test all TESTDIR=$TEST_DIR LOGDIR=$LOG_DIR
-cat $LOG_DIR/*.log | tee $ALL_LOG
+# make -j8 -f Makefile.test all TESTDIR=$TEST_DIR LOGDIR=$LOG_DIR
+# cat $LOG_DIR/*.log | tee $ALL_LOG
 
 FAIL_KEYWORKS='Error\|ImmAssert\|ImmFail'
 grep -w $FAIL_KEYWORKS $LOG_DIR/*.log | cat
