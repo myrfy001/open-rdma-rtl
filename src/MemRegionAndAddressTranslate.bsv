@@ -220,8 +220,26 @@ module mkMemRegionTableEightWayQuery(MemRegionTableEightWayQuery);
 endmodule
 
 
+    module mkBypassMemRegionTableForTest(MemRegionTable);
+        QueuedServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServer("mkMemRegionTable querySrvInst");
+        QueuedServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
+    
+        rule handleQueryReq;
+            let req <- querySrvInst.getReq;
+            let resp = tagged Valid unpack(0);
+            querySrvInst.putResp(resp);
+        endrule
+    
 
-
+    
+        rule handleModifyReq;
+            let req <- modifySrvInst.getReq;
+            immFail("not supported. this module is only for simple test", $format(""));
+        endrule
+    
+        interface querySrv = querySrvInst.srv;
+        interface modifySrv = modifySrvInst.srv;
+    endmodule
 
 
 
@@ -254,11 +272,10 @@ module mkAddressTranslate(AddressTranslate);
 
     rule handleTranslateReq;
         let req <- translateSrvInst.getReq;
-        let mr = req.mrEntry;
         let va = req.addrToTrans;
 
-        let pageNumberOffset = getPageNumber(va) - getPageNumber(mr.baseVA);
-        PTEIndex pteIdx = mr.pgtOffset + truncate(pageNumberOffset);
+        let pageNumberOffset = getPageNumber(va) - getPageNumber(req.baseVA);
+        PTEIndex pteIdx = req.pgtOffset + truncate(pageNumberOffset);
         pageTableStorage.read.request.put(pteIdx);
 
         offsetInputQ.enq(getPageOffset(va));
@@ -384,4 +401,26 @@ module mkAddressTranslateEightWayQuery(AddressTranslateEightWayQuery);
             endmethod
         endinterface
     endinterface
+endmodule
+
+
+module mkBypassAddressTranslateForTest(AddressTranslate);
+    QueuedServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServer("translateSrvInst");
+    QueuedServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
+
+    rule handleTranslateReq;
+        let req <- translateSrvInst.getReq;
+        let va = req.addrToTrans;
+        let pa = va;
+        translateSrvInst.putResp(pa);
+    endrule
+
+    rule handleModifyReq;
+        let req <- modifySrvInst.getReq;
+        immFail("not supported. this module is only for simple test", $format(""));
+    endrule
+
+
+    interface translateSrv = translateSrvInst.srv;
+    interface modifySrv = modifySrvInst.srv;
 endmodule

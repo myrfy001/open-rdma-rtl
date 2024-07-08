@@ -17,6 +17,7 @@ import ClientServer :: *;
 import ConnectableF::*;
 import NapWrapper :: *;
 import StreamShifter :: *;
+import MemRegionAndAddressTranslate :: *;
 
 
 typedef enum {
@@ -31,6 +32,9 @@ module mkTestPayloadGenAndCon(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(1000000);
 
     PayloadGenAndCon dut <- mkPayloadGenAndCon;
+
+    let fakeAddrTranslator <- mkBypassAddressTranslateForTest;
+    mkConnection(dut.addrTranslateClt, fakeAddrTranslator.translateSrv);
 
     let payloadStreamGen <- mkFixedLengthDateStreamRandomGen;
     let writeStreamShifter <- mkBiDirectionStreamShifter;
@@ -76,7 +80,9 @@ module mkTestPayloadGenAndCon(Empty);
 
         let genReq = PayloadGenReq{
             addr: rdmaPayloadStartAddr,
-            len: rdmaPayloadLen
+            len: rdmaPayloadLen,
+            baseVA: dontCareValue,    // since we use a fake addr translator in test.
+            pgtOffset: dontCareValue  // since we use a fake addr translator in test.
         };
         payloadGenReqQ.enq(genReq);
 
@@ -163,6 +169,9 @@ module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
     Reg#(Bool) outReg <- mkRegU;
 
+    let fakeAddrTranslator <- mkBypassAddressTranslateForTest;
+    mkConnection(dut.addrTranslateClt, fakeAddrTranslator.translateSrv);
+
     rule genWriteReq;
         
         let randData512 <- randSource1.get;
@@ -179,7 +188,9 @@ module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
 
         let genReq = PayloadGenReq{
             addr: rdmaPayloadStartAddr,
-            len: rdmaPayloadLen
+            len: rdmaPayloadLen,
+            baseVA: dontCareValue,    // since we use a fake addr translator in test.
+            pgtOffset: dontCareValue  // since we use a fake addr tr
         };
         dut.genReqPipeIn.enq(genReq);
 

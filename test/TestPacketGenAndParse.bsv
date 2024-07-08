@@ -19,6 +19,7 @@ import NapWrapper :: *;
 import StreamShifter :: *;
 import EthernetTypes :: *;
 import PacketGenAndParse :: *;
+import MemRegionAndAddressTranslate :: *;
 
 
 module mkTestPacketGen(Empty);
@@ -26,7 +27,14 @@ module mkTestPacketGen(Empty);
 
     Reg#(Bit#(32)) exitCounterReg <- mkReg(10000);
 
-    let dut <- mkPacketGen;
+    PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon;
+    let fakeAddrTranslator <- mkBypassAddressTranslateForTest;
+    mkConnection(payloadGenAndCon.addrTranslateClt, fakeAddrTranslator.translateSrv);
+
+    let dut <- mkPacketGen(payloadGenAndCon);
+
+    let fakeMrTable <- mkBypassMemRegionTableForTest;
+    mkConnection(dut.mrTableQueryClt, fakeMrTable.querySrv);
 
     Reg#(Bool) isInitedReg <- mkReg(False);
 
@@ -78,6 +86,9 @@ module mkTestPacketGen(Empty);
             if (exitCounterReg == 0) begin
                 $display("PASS");
                 $finish;
+            end
+            if (exitCounterReg % 1000 == 0) begin
+                $display(exitCounterReg);
             end
         end
         // $display(fshow(ds));

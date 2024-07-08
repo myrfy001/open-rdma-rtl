@@ -196,7 +196,8 @@ typedef struct {
 } PgtModifyResp deriving(Bits, FShow);
 
 typedef struct {
-    MemRegionTableEntry mrEntry;
+    PTEIndex pgtOffset;
+    ADDR baseVA;
     ADDR addrToTrans;
 } PgtAddrTranslateReq deriving(Bits, FShow);
 
@@ -412,38 +413,6 @@ typedef enum {
     // DMA_SRC_SQ_CANCEL
 } DmaReqSrcType deriving(Bits, Eq, FShow); // TODO: remove it
 
-// typedef struct {
-//     DmaReadMetaData dmaReadMetaData;
-//     // DmaReadReq dmaReadReq;
-//     // Bool segment;
-//     Bool          addPadding;
-//     PMTU          pmtu;
-// } PayloadGenReq deriving(Bits, FShow);
-
-// typedef struct {
-//     // Bool segment;
-//     Bool addPadding;
-//     Bool isRespErr;
-// } PayloadGenResp deriving(Bits, FShow);
-
-// typedef union tagged {
-//     // void DiscardPayload;
-//     DmaWriteMetaData DiscardPayloadInfo;
-//     struct {
-//         DmaWriteMetaData atomicRespDmaWriteMetaData;
-//         Long atomicRespPayload;
-//     } AtomicRespInfoAndPayload;
-//     DmaWriteMetaData WriteReqInfo;
-// } PayloadConInfo deriving(Bits, FShow);
-
-// typedef struct {
-//     PktFragNum fragNum;
-//     PayloadConInfo consumeInfo;
-// } PayloadConReq deriving(Bits, FShow);
-
-// typedef struct {
-//     DmaWriteResp dmaWriteResp;
-// } PayloadConResp deriving(Bits, FShow);
 
 typedef struct {
     DmaReqSrcType initiator;

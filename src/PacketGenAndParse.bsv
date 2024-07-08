@@ -400,16 +400,18 @@ typedef struct {
 typedef struct {
     WorkQueueElem wqe;
     Bool hasPayload;
-} GenEthernetPacketPipelineEntry deriving (Bits, FShow);
+} SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry deriving (Bits, FShow);
 
 interface PacketGen;
     interface PipeIn#(WorkQueueElem) wqePipeIn;
     interface PipeOut#(EthernetNapBeatEntry) packetPipeOut;
+
+    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
+
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
-
-module mkPacketGen(PacketGen);
+module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
     FIFOF#(WorkQueueElem) wqePipeInQ <- mkFIFOF;
     // FIFOF#(DataStream) packetPipeOutQ <- mkFIFOF;
 
@@ -439,8 +441,6 @@ module mkPacketGen(PacketGen);
         ) packetToBeatChunker <- mkAddressChunker;
     mkConnection(packetToBeatChunkMetaCalc.metaPipeOut, packetToBeatChunker.requestPipeIn);
 
-
-    PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon;
     StreamShifter payloadStreamShifter <- mkBiDirectionStreamShifter;
 
     mkConnection(payloadGenAndCon.payloadGenStreamPipeOut, payloadStreamShifter.streamPipeIn);
@@ -452,17 +452,47 @@ module mkPacketGen(PacketGen);
 
     Reg#(PSN) psnReg <- mkRegU;
 
-    
+    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
 
     // Pipeline Queues
+    FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkFIFOF;
     FIFOF#(GenPacketHeaderPipelineEntry) genPacketHeaderPipelineQ <- mkFIFOF;
-    // FIFOF#(GenEthernetPacketPipelineEntry) genEthernetPacketPipelineQ <- mkFIFOF;
     
-    rule sendChunkByRemoteAddrReqAndPayloadGenReq;
+    
+    rule queryMrTable;
         let wqe = wqePipeInQ.first;
         wqePipeInQ.deq;
-
         Bool hasPayload = workReqNeedPayloadGen(wqe.opcode);
+
+        if (hasPayload) begin
+            let mrTableQueryReq = MrTableQueryReq{
+                idx: key2IndexMR(wqe.lkey)
+            };
+            mrTableQueryCltInst.putReq(mrTableQueryReq);
+        end
+        
+
+        let pipelineEntryOut = SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry{
+            wqe: wqe,
+            hasPayload: hasPayload
+        };
+        sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.enq(pipelineEntryOut);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPacketGen queryMrTable"),
+        //     toBlue(", wqe="), fshow(wqe),
+        //     toBlue(", hasPayload="), fshow(hasPayload)
+        // );
+    endrule
+
+    rule sendChunkByRemoteAddrReqAndPayloadGenReq;
+        let pipelineEntryIn = sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.first;
+        sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.deq;
+
+        let wqe = pipelineEntryIn.wqe;
+        let hasPayload = pipelineEntryIn.hasPayload;
+
+        
         if (hasPayload) begin
             let remoteAddrChunkReq = AddressChunkReq{
                 startAddr: wqe.raddr,
@@ -471,9 +501,22 @@ module mkPacketGen(PacketGen);
             };
             wqeToPacketChunkMetaCalc.requestPipeIn.enq(remoteAddrChunkReq);
 
+
+            let mrTableMaybe <- mrTableQueryCltInst.getResp;
+            immAssert(
+                isValid(mrTableMaybe),
+                "mrTable must be valid here.",
+                $format("wqe=", fshow(wqe))
+            );
+
+            // TODO: if we have enough resource on FPGA, we should check mrTable is valid on hardware, discard and report the WQE to software if not.
+            let mrTable = fromMaybe(?, mrTableMaybe);
+
             let payloadGenReq = PayloadGenReq{
                 addr:  wqe.laddr,
-                len: wqe.len
+                len: wqe.len,
+                baseVA: mrTable.baseVA,
+                pgtOffset: mrTable.pgtOffset
             };
             payloadGenAndCon.genReqPipeIn.enq(payloadGenReq);
 
@@ -483,7 +526,6 @@ module mkPacketGen(PacketGen);
             payloadStreamShifter.offsetPipeIn.enq(localToRemoteAlignShiftOffset);
         end
 
-        
 
         let pipelineEntryOut = GenPacketHeaderPipelineEntry{
             wqe: wqe,
@@ -660,6 +702,7 @@ module mkPacketGen(PacketGen);
 
     interface wqePipeIn = toPipeIn(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
+    interface mrTableQueryClt = mrTableQueryCltInst.clt;
 endmodule
 
 

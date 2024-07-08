@@ -97,14 +97,14 @@ module mkSizedQueuedClient#(String name, Integer reqDepth, Integer respDepth, Qu
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType);
     FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType);
 
-    rule debug;
-        if (!reqQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " reqQ");
-        end
-        if (!respQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
-        end
-    endrule
+    // rule debug;
+    //     if (!reqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " reqQ");
+    //     end
+    //     if (!respQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
+    //     end
+    // endrule
 
     interface Client clt;
         interface Get request;
@@ -255,3 +255,9 @@ module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
     endinterface
 
 endmodule
+
+function IndexMR key2IndexMR(Bit#(nSz) key) provisos(
+    Add#(KEY_WIDTH, 0, nSz)
+);
+    return unpack(truncateLSB(key));
+endfunction
