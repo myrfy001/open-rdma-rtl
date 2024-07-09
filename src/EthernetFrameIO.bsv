@@ -350,7 +350,17 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         // first beat is totally ETH and IP header, skip them
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
-        stateReg <= RdmaMetaAndPayloadExtractorStateHandleSecondBeat;
+
+        if (ds.isLast) begin
+            // this is defensive code, shoud not enter this branch. but if it does, stay in handle first packet state.
+            immFail(
+                "The first beat must not be last beat.",
+                $format("ds=", fshow(ds))
+            );
+        end
+        else begin
+            stateReg <= RdmaMetaAndPayloadExtractorStateHandleSecondBeat;
+        end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleFirstBeat"),
         //     toBlue(", ds="), fshow(ds)

@@ -28,8 +28,10 @@ module mkTestPacketGen(Empty);
     Reg#(Bit#(32)) exitCounterReg <- mkReg(10000);
 
     PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon;
-    let fakeAddrTranslator <- mkBypassAddressTranslateForTest;
-    mkConnection(payloadGenAndCon.addrTranslateClt, fakeAddrTranslator.translateSrv);
+    let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
+    let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
+    mkConnection(payloadGenAndCon.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
+    mkConnection(payloadGenAndCon.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
 
     let dut <- mkPacketGen(payloadGenAndCon);
 

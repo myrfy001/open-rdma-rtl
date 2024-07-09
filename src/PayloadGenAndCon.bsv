@@ -25,6 +25,8 @@ typedef struct {
 typedef struct {
     ADDR   addr;
     Length len;
+    PTEIndex pgtOffset;
+    ADDR baseVA;
 } PayloadConReq deriving(Bits, FShow);
 
 
@@ -36,6 +38,7 @@ interface PayloadGen;
 endinterface
 
 interface PayloadCon;
+    interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
     interface PipeIn#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
 
@@ -45,10 +48,11 @@ endinterface
 
 
 interface PayloadGenAndCon;
-    interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
+    interface Client#(PgtAddrTranslateReq, ADDR) genAddrTranslateClt;
     interface PipeIn#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(DataStream) payloadGenStreamPipeOut;
 
+    interface Client#(PgtAddrTranslateReq, ADDR) conAddrTranslateClt;
     interface PipeIn#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
     interface PipeIn#(DataStream) payloadConStreamPipeIn;
@@ -61,10 +65,11 @@ module mkPayloadGenAndCon(PayloadGenAndCon);
     PayloadGen payloadGen <- mkPayloadGen(dmaReadWriteSlaveNap);
     PayloadCon payloadCon <- mkPayloadCon(dmaReadWriteSlaveNap);
 
-    interface addrTranslateClt = payloadGen.addrTranslateClt;
+    interface genAddrTranslateClt = payloadGen.addrTranslateClt;
     interface genReqPipeIn = payloadGen.genReqPipeIn;
     interface payloadGenStreamPipeOut = payloadGen.payloadGenStreamPipeOut;
 
+    interface conAddrTranslateClt = payloadCon.addrTranslateClt;
     interface conReqPipeIn = payloadCon.conReqPipeIn;
     interface conRespPipeOut = payloadCon.conRespPipeOut;
     interface payloadConStreamPipeIn = payloadCon.payloadConStreamPipeIn;
@@ -75,7 +80,7 @@ module mkPayloadGen#(AcxNapSlaveWrapper dmaReadSlaveNap)(PayloadGen);
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
 
-    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("addrTranslateCltInst");
+    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadGen addrTranslateCltInst");
 
 
     AddressChunkMetaCalculator#(
@@ -254,6 +259,8 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
     FIFOF#(DataStream) payloadConStreamPipeInQ <- mkFIFOF;
     FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;
 
+    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadCon addrTranslateCltInst");
+
     AddressChunkMetaCalculator#(
             ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
             TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
@@ -284,6 +291,7 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
     
 
     FIFOF#(AddressChunkResp#(ADDR, Length)) chunkedBurstMetaQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ <- mkFIFOF;
     FIFOF#(Tuple2#(DataStreamEn, ByteIndexInBeat)) dataStreamEnPreCalcPipelineQ <- mkFIFOF;
     FIFOF#(AddressChunkResp#(ADDR, Length)) inflightAxiWriteBurstMetaQ <- mkFIFOF; 
 
@@ -302,32 +310,48 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
         };
 
         rawReqToBurstChunkMetaCalc.requestPipeIn.enq(chunkReq);
+        getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.enq(
+            tuple2(req.pgtOffset, req.baseVA));
     endrule
 
     rule getBurstChunRespAndIssueBeatChunkMetaCalculateReq;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
+        let {pgtOffset, baseVA} = getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.first;
+        if (burstAddrBoundry.isLast) begin
+            getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.deq;
+        end
+
         let chunkReq = AddressChunkReq{
             startAddr: burstAddrBoundry.startAddr,
             len: burstAddrBoundry.len,
             chunk: dontCareValue
         };
-
         burstToBeatChunkMetaCalc.requestPipeIn.enq(chunkReq);
+
+        let addrTranslateReq = PgtAddrTranslateReq {
+            pgtOffset: pgtOffset,
+            baseVA: baseVA,
+            addrToTrans: burstAddrBoundry.startAddr
+        };
+        addrTranslateCltInst.putReq(addrTranslateReq);
+
         chunkedBurstMetaQ.enq(burstAddrBoundry);
     endrule
 
-    rule getBeatChunkMetaCalculateRespAndIssueAxiRead;
+    rule getBeatChunkMetaCalculateRespAndIssueAxiWrite;
         let burstToBeatChunkMeta = burstToBeatChunkMetaCalc.metaPipeOut.first;
         burstToBeatChunkMetaCalc.metaPipeOut.deq;
 
         let burstAddrBoundry = chunkedBurstMetaQ.first;
         chunkedBurstMetaQ.deq;
 
+        let translatedAddr <- addrTranslateCltInst.getResp;
+
         let awReq = AxiMmNapBeatAw {
             awid: 0,
-            awaddr: truncate(burstAddrBoundry.startAddr),
+            awaddr: truncate(translatedAddr),
             awlen: unpack(truncate(burstToBeatChunkMeta.zeroBasedChunkNum)),
             awsize: unpack(pack(NapAxiSize32B)),
             awburst: unpack(pack(NapAxiBurstIncr)),
@@ -408,6 +432,7 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
         end
     endrule
 
+    interface addrTranslateClt = addrTranslateCltInst.clt;
     interface conReqPipeIn = toPipeIn(conReqPipeInQ);
     interface conRespPipeOut = toPipeOut(conRespPipeOutQ);
     interface payloadConStreamPipeIn = toPipeIn(payloadConStreamPipeInQ);

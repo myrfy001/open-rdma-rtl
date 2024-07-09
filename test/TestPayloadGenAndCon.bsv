@@ -33,8 +33,10 @@ module mkTestPayloadGenAndCon(Empty);
 
     PayloadGenAndCon dut <- mkPayloadGenAndCon;
 
-    let fakeAddrTranslator <- mkBypassAddressTranslateForTest;
-    mkConnection(dut.addrTranslateClt, fakeAddrTranslator.translateSrv);
+    let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
+    let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
+    mkConnection(dut.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
+    mkConnection(dut.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
 
     let payloadStreamGen <- mkFixedLengthDateStreamRandomGen;
     let writeStreamShifter <- mkBiDirectionStreamShifter;
@@ -73,7 +75,9 @@ module mkTestPayloadGenAndCon(Empty);
 
         let conReq = PayloadConReq{
             addr: rdmaPayloadStartAddr,
-            len: rdmaPayloadLen
+            len: rdmaPayloadLen,
+            baseVA: dontCareValue,    // since we use a fake addr translator in test.
+            pgtOffset: dontCareValue  // since we use a fake addr translator in test.
         };
         dut.conReqPipeIn.enq(conReq);
 
@@ -169,8 +173,10 @@ module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
     Reg#(Bool) outReg <- mkRegU;
 
-    let fakeAddrTranslator <- mkBypassAddressTranslateForTest;
-    mkConnection(dut.addrTranslateClt, fakeAddrTranslator.translateSrv);
+    let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
+    let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
+    mkConnection(dut.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
+    mkConnection(dut.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
 
     rule genWriteReq;
         
@@ -181,7 +187,9 @@ module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
 
         let conReq = PayloadConReq{
             addr: rdmaPayloadStartAddr,
-            len: rdmaPayloadLen
+            len: rdmaPayloadLen,
+            baseVA: dontCareValue,    // since we use a fake addr translator in test.
+            pgtOffset: dontCareValue  // since we use a fake addr translator in test.
         };
         dut.conReqPipeIn.enq(conReq);
 

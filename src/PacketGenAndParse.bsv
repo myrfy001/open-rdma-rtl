@@ -466,7 +466,7 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
 
         if (hasPayload) begin
             let mrTableQueryReq = MrTableQueryReq{
-                idx: key2IndexMR(wqe.lkey)
+                idx: lkey2IndexMR(wqe.lkey)
             };
             mrTableQueryCltInst.putReq(mrTableQueryReq);
         end
@@ -710,6 +710,7 @@ interface PacketParse;
     interface PipeIn#(EthernetNapBeatEntry) ethernetFramePipeIn;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
+    interface PipeOut#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOut;
     interface PipeOut#(DataStream) rdmaPayloadPipeOut;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
@@ -726,6 +727,7 @@ module mkPacketParse(PacketParse);
     interface ethernetFramePipeIn = inputPacketClassifier.ethRawPacketPipeIn;
     interface rdmaMacIpUdpMetaPipeOut = inputPacketClassifier.rdmaMacIpUdpMetaPipeOut;
     interface rdmaPacketMetaPipeOut = rdmaHeaderExtractor.rdmaPacketMetaPipeOut;
+    interface rdmaPacketTailMetaPipeOut = rdmaHeaderExtractor.rdmaPacketTailMetaPipeOut;
     interface rdmaPayloadPipeOut = rdmaHeaderExtractor.rdmaPayloadPipeOut;
     interface otherRawPacketPipeOut = inputPacketClassifier.otherRawPacketPipeOut;
 

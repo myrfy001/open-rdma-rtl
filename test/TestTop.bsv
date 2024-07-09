@@ -25,7 +25,6 @@ import PacketGenAndParse :: *;
 
 
 module mkTestTop(Empty);
-    let dutA <- mkQpContextFourWayQuery;
-    let dutB <- mkMemRegionTableEightWayQuery;
-    let dutC <- mkAddressTranslateEightWayQuery;
+    PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon; 
+    let dutD <- mkRQ(payloadGenAndCon);
 endmodule

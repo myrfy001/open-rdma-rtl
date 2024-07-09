@@ -1,3 +1,5 @@
+import RdmaHeaders :: *;
+
 /////////////// Link Layer
 typedef 48 ETH_MAC_ADDR_WIDTH;
 typedef 16 ETH_TYPE_WIDTH;
@@ -198,35 +200,6 @@ typedef 24 RDMA_PSN_WIDTH;
 // Used to calculate ICRC defined in RoCEv2
 typedef 64 DUMMY_BITS_WIDTH;
 
-typedef Bit#(RDMA_TRANS_WIDTH)  RdmaTransType;
-typedef Bit#(RDMA_OPCODE_WIDTH) RdmaOpCode;
-typedef Bit#(RDMA_MIGREQ_WIDTH) RdmaMigReq;
-typedef Bit#(RDMA_PAD_WIDTH)    RdmaPad;
-typedef Bit#(RDMA_VERSION_WIDTH)RdmaVersion;
-typedef Bit#(RDMA_PKEY_WIDTH)   RdmaPKey;
-typedef Bit#(RDMA_FECN_WIDTH)   RdmaFecn;
-typedef Bit#(RDMA_BECN_WIDTH)   RdmaBecn;
-typedef Bit#(RDMA_RESV6_WIDTH)  RdmaResv6;
-typedef Bit#(RDMA_DQPN_WIDTH)   RdmaDqpn;
-typedef Bit#(RDMA_RESV7_WIDTH)  RdmaResv7;
-typedef Bit#(RDMA_PSN_WIDTH)    RdmaPsn;
-
-typedef struct {
-    RdmaTransType trans;
-    RdmaOpCode    opcode;
-    Bool          solicited;
-    RdmaMigReq    migReq;
-    RdmaPad       padCnt;
-    RdmaVersion   version;
-    RdmaPKey      pkey;
-    RdmaFecn      fecn; // Not used in RoCEv2
-    RdmaBecn      becn; // Not used in RoCEv2
-    RdmaResv6     resv6;
-    RdmaDqpn      dqpn;
-    Bool          ackReq;
-    RdmaResv7     resv7;
-    RdmaPsn       psn;
-} BTH deriving(Bits, Bounded, FShow);
 
 typedef 96 BTH_WIDTH;
 typedef 12 BTH_BYTE_WIDTH;
