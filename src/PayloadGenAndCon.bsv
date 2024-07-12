@@ -35,6 +35,8 @@ interface PayloadGen;
     interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
     interface PipeIn#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(DataStream) payloadGenStreamPipeOut;
+
+    interface AcxNapMasterWrapperReadPipe dmaReadPipe;
 endinterface
 
 interface PayloadCon;
@@ -43,6 +45,8 @@ interface PayloadCon;
     interface PipeOut#(Bool) conRespPipeOut;
 
     interface PipeIn#(DataStream) payloadConStreamPipeIn;
+
+    interface AcxNapMasterWrapperWritePipe dmaWritePipe;
 endinterface
 
 
@@ -56,14 +60,15 @@ interface PayloadGenAndCon;
     interface PipeIn#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
     interface PipeIn#(DataStream) payloadConStreamPipeIn;
+
+    interface AcxNapMasterWrapperPipe axiNapPipeIfc;
 endinterface
 
 
 module mkPayloadGenAndCon(PayloadGenAndCon);
-    AcxNapSlaveWrapper dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapper;
 
-    PayloadGen payloadGen <- mkPayloadGen(dmaReadWriteSlaveNap);
-    PayloadCon payloadCon <- mkPayloadCon(dmaReadWriteSlaveNap);
+    PayloadGen payloadGen <- mkPayloadGen;
+    PayloadCon payloadCon <- mkPayloadCon;
 
     interface genAddrTranslateClt = payloadGen.addrTranslateClt;
     interface genReqPipeIn = payloadGen.genReqPipeIn;
@@ -73,12 +78,21 @@ module mkPayloadGenAndCon(PayloadGenAndCon);
     interface conReqPipeIn = payloadCon.conReqPipeIn;
     interface conRespPipeOut = payloadCon.conRespPipeOut;
     interface payloadConStreamPipeIn = payloadCon.payloadConStreamPipeIn;
+
+    interface AcxNapMasterWrapperPipe axiNapPipeIfc;
+        interface writePipeIfc  = payloadCon.dmaWritePipe;
+        interface readPipeIfc   = payloadGen.dmaReadPipe;
+    endinterface
 endmodule
 
-module mkPayloadGen#(AcxNapSlaveWrapper dmaReadSlaveNap)(PayloadGen);
+module mkPayloadGen(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
+
+    FIFOF#(AxiMmNapBeatAr) dmaReadReqPipeOutQ   <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatR)  dmaReadRespPipeInQ   <- mkFIFOF;
+
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadGen addrTranslateCltInst");
 
@@ -188,7 +202,7 @@ module mkPayloadGen#(AcxNapSlaveWrapper dmaReadSlaveNap)(PayloadGen);
             arqos: 0
         };
 
-        dmaReadSlaveNap.sendReadAddr(ar);
+        dmaReadReqPipeOutQ.enq(ar);
         burstToBeatChunker.requestPipeIn.enq(burstToBeatChunkMeta);
 
         // $display(
@@ -198,7 +212,8 @@ module mkPayloadGen#(AcxNapSlaveWrapper dmaReadSlaveNap)(PayloadGen);
     endrule
 
     rule gatherAxiReadResp;
-        let axiReadResp <- dmaReadSlaveNap.recvReadResp;
+        let axiReadResp = dmaReadRespPipeInQ.first;
+        dmaReadRespPipeInQ.deq;
         let burstMeta = chunkedBurstMetaQ.first;
         let beatMeta = burstToBeatChunker.responsePipeOut.first;
         burstToBeatChunker.responsePipeOut.deq;
@@ -249,15 +264,24 @@ module mkPayloadGen#(AcxNapSlaveWrapper dmaReadSlaveNap)(PayloadGen);
     interface genReqPipeIn = toPipeIn(genReqPipeInQ);
     interface payloadGenStreamPipeOut = toPipeOut(payloadGenStreamPipeOutQ);
 
+    interface AcxNapMasterWrapperReadPipe dmaReadPipe;
+        interface readAddrPipeOut = toPipeOut(dmaReadReqPipeOutQ);
+        interface readRespPipeIn = toPipeIn(dmaReadRespPipeInQ);
+    endinterface
+
 endmodule
 
 
 
-module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
+module mkPayloadCon(PayloadCon);
 
     FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadConStreamPipeInQ <- mkFIFOF;
     FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;
+
+    FIFOF#(AxiMmNapBeatAw) dmaWriteReqAddrPipeOutQ <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatW) dmaWriteReqDataPipeOutQ <- mkFIFOF;
+    FIFOF#(AxiMmNapBeatB) dmaWriteRespPipeInQ <- mkFIFOF;
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadCon addrTranslateCltInst");
 
@@ -358,7 +382,7 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
             awlock: False,
             awqos: 0
         };
-        dmaWriteSlaveNap.sendWriteAddr(awReq);
+        dmaWriteReqAddrPipeOutQ.enq(awReq);
         burstToBeatChunker.requestPipeIn.enq(burstToBeatChunkMeta);
         inflightAxiWriteBurstMetaQ.enq(burstAddrBoundry);
     endrule
@@ -406,7 +430,7 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
             wstrb: dsEn.byteEn,
             wlast: wlast
         };
-        dmaWriteSlaveNap.sendWriteData(wReq);
+        dmaWriteReqDataPipeOutQ.enq(wReq);
 
         if (dsEn.isLast) begin
             immAssert(
@@ -418,7 +442,9 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
     endrule
 
     rule forwardAxiB;
-        let resp <- dmaWriteSlaveNap.recvWriteResp;
+        let resp = dmaWriteRespPipeInQ.first;
+        dmaWriteRespPipeInQ.deq;
+
         let burstMeta = inflightAxiWriteBurstMetaQ.first;
         inflightAxiWriteBurstMetaQ.deq;
 
@@ -436,5 +462,11 @@ module mkPayloadCon#(AcxNapSlaveWrapper dmaWriteSlaveNap)(PayloadCon);
     interface conReqPipeIn = toPipeIn(conReqPipeInQ);
     interface conRespPipeOut = toPipeOut(conRespPipeOutQ);
     interface payloadConStreamPipeIn = toPipeIn(payloadConStreamPipeInQ);
+
+    interface AcxNapMasterWrapperWritePipe dmaWritePipe;
+        interface writeAddrPipeOut = toPipeOut(dmaWriteReqAddrPipeOutQ);
+        interface writeDataPipeOut = toPipeOut(dmaWriteReqDataPipeOutQ);
+        interface writeRespPipeIn  = toPipeIn(dmaWriteRespPipeInQ);
+    endinterface
 
 endmodule

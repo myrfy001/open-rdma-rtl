@@ -206,9 +206,9 @@ module mkInputPacketClassifier(InputPacketClassifier);
         Bit#(TSub#(SizeOf#(EthMacAddr), MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)) partialMacAddr2 = 
             networkSettingsReg.macAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
         let macAddrMatch = (
-            ethPacketMetaExtractPipelineEntry.macAddrUnicastPartialMatch    && 
-            ethPacketMetaExtractPipelineEntry.macAddrBroadcastMatch         &&
-            partialMacAddr1 == partialMacAddr2
+            (
+                ethPacketMetaExtractPipelineEntry.macAddrUnicastPartialMatch && (partialMacAddr1 == partialMacAddr2)
+            ) || ethPacketMetaExtractPipelineEntry.macAddrBroadcastMatch        
         );
 
         if (!macAddrMatch) begin

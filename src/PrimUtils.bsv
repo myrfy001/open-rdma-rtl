@@ -184,6 +184,14 @@ function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
     return f_FIFOF_to_PipeIn(queue);
 endfunction
 
+function PipeOut#(anytype) ugToPipeOut(FIFOF#(anytype) queue);
+    return f_UGFIFOF_to_PipeOut(queue);
+endfunction
+
+function PipeIn#(anytype) ugToPipeIn(FIFOF#(anytype) queue);
+    return f_UGFIFOF_to_PipeIn(queue);
+endfunction
+
 // FlagsType related
 
 typedef struct {

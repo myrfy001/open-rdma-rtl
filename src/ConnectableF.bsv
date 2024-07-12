@@ -13,6 +13,8 @@ export ClientF(..);
 export ServerP(..);
 export ClientP(..);
 export f_FIFOF_to_PipeIn;
+export f_UGFIFOF_to_PipeIn;
+export f_UGFIFOF_to_PipeOut;
 export Connectable;
 
 
@@ -62,9 +64,43 @@ function PipeIn#(tData) f_FIFOF_to_PipeIn(FIFOF#(tData) fifof);
             endinterface);
 endfunction
 
+function PipeIn#(tData) f_UGFIFOF_to_PipeIn(FIFOF#(tData) fifof);
+    return (interface PipeIn;
+               method Action enq (tData data) if (fifof.notFull);
+                  fifof.enq(data);
+               endmethod
+               method Bool notFull;
+                  return fifof.notFull;
+               endmethod
+            endinterface);
+endfunction
+
+function PipeOut #(tData)  f_UGFIFOF_to_PipeOut  (FIFOF #(tData) fifof);
+    return (interface PipeOut;
+               method tData first if (fifof.notEmpty);
+                  return fifof.first;
+               endmethod
+               method Action deq if (fifof.notEmpty);
+                  fifof.deq;
+               endmethod
+               method Bool notEmpty;
+                  return fifof.notEmpty;
+               endmethod
+            endinterface);
+ endfunction
+
 
 instance Connectable#(PipeOut#(t), PipeIn#(t));
     module mkConnection#(PipeOut#(t) fo, PipeIn#(t) fi)(Empty);
+        rule connect;
+            fi.enq(fo.first);
+            fo.deq;
+        endrule
+    endmodule
+endinstance
+
+instance Connectable#(PipeIn#(t), PipeOut#(t));
+    module mkConnection#(PipeIn#(t) fi, PipeOut#(t) fo)(Empty);
         rule connect;
             fi.enq(fo.first);
             fo.deq;

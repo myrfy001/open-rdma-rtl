@@ -4,9 +4,12 @@ import FIFOF :: *;
 import Vector :: *;
 import Reserved :: *;
 import BRAM :: *;
+import PAClib :: *;
 
 import DataTypes :: *;
 import PrimUtils :: *;
+import ConnectableF :: *;
+
 
 
 
@@ -188,10 +191,34 @@ interface AcxNapEthernetWrapper;
     method ActionValue#(VerticalNapBeatEntry) recv;
 endinterface
 
+
 module mkAcxNapEthernetWrapper#(
+    Bit#(5) tx_eiu_channel,
+    Bit#(5) rx_eiu_channel
+)(AcxNapEthernetWrapper);
+
+    let inner <- mkAcxNapEthernetWrapperPipe(tx_eiu_channel, rx_eiu_channel);
+
+    method Action send(VerticalNapBeatEntry beat) if (inner.sendPipeIn.notFull);
+        inner.sendPipeIn.enq(beat);
+    endmethod
+
+    method ActionValue#(VerticalNapBeatEntry) recv if (inner.recvPipeOut.notEmpty);
+        inner.recvPipeOut.deq;
+        return inner.recvPipeOut.first;
+    endmethod
+
+endmodule
+
+interface AcxNapEthernetWrapperPipe;
+    interface PipeIn#(VerticalNapBeatEntry) sendPipeIn;
+    interface PipeOut#(VerticalNapBeatEntry) recvPipeOut;
+endinterface
+
+module mkAcxNapEthernetWrapperPipe#(
         Bit#(5) tx_eiu_channel,
         Bit#(5) rx_eiu_channel
-    )(AcxNapEthernetWrapper);
+    )(AcxNapEthernetWrapperPipe);
 
     FIFOF#(VerticalNapBeatEntry) txQ <- mkUGFIFOF;
     FIFOF#(VerticalNapBeatEntry) rxQ <- mkUGFIFOF;
@@ -230,16 +257,8 @@ module mkAcxNapEthernetWrapper#(
         end
     endrule
 
-
-
-    method Action send(VerticalNapBeatEntry beat) if (txQ.notFull);
-        txQ.enq(beat);
-    endmethod
-
-    method ActionValue#(VerticalNapBeatEntry) recv if (rxQ.notEmpty);
-        rxQ.deq;
-        return rxQ.first;
-    endmethod
+    interface sendPipeIn  = ugToPipeIn(txQ);
+    interface recvPipeOut = ugToPipeOut(rxQ);
 endmodule
 
 
@@ -532,8 +551,57 @@ interface AcxNapMasterWrapper;
     method Action sendReadResp(AxiMmNapBeatR beat);
 endinterface
 
-(* synthesize *)
+
 module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
+    let inner <- mkAcxNapMasterWrapperPipe;
+
+    method ActionValue#(AxiMmNapBeatAw) recvWriteAddr if (inner.writePipeIfc.writeAddrPipeOut.notEmpty);
+        inner.writePipeIfc.writeAddrPipeOut.deq;
+        return inner.writePipeIfc.writeAddrPipeOut.first;
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatW) recvWriteData if (inner.writePipeIfc.writeDataPipeOut.notEmpty);
+        inner.writePipeIfc.writeDataPipeOut.deq;
+        return inner.writePipeIfc.writeDataPipeOut.first;
+    endmethod
+
+    method Action sendWriteResp(AxiMmNapBeatB beat) if (inner.writePipeIfc.writeRespPipeIn.notFull);
+        inner.writePipeIfc.writeRespPipeIn.enq(beat);
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatAr) recvReadAddr if (inner.readPipeIfc.readAddrPipeOut.notEmpty);
+        inner.readPipeIfc.readAddrPipeOut.deq;
+        return inner.readPipeIfc.readAddrPipeOut.first;
+    endmethod
+
+    method Action sendReadResp(AxiMmNapBeatR beat) if (inner.readPipeIfc.readRespPipeIn.notFull);
+        inner.readPipeIfc.readRespPipeIn.enq(beat);
+    endmethod
+
+endmodule
+
+
+
+interface AcxNapMasterWrapperWritePipe;
+    interface PipeOut#(AxiMmNapBeatAw)  writeAddrPipeOut;
+    interface PipeOut#(AxiMmNapBeatW)   writeDataPipeOut;
+    interface PipeIn#(AxiMmNapBeatB)    writeRespPipeIn;
+endinterface
+
+interface AcxNapMasterWrapperReadPipe;
+    interface PipeOut#(AxiMmNapBeatAr)  readAddrPipeOut;
+    interface PipeIn#(AxiMmNapBeatR)    readRespPipeIn;
+endinterface
+
+
+interface AcxNapMasterWrapperPipe;
+    interface AcxNapMasterWrapperWritePipe  writePipeIfc;
+    interface AcxNapMasterWrapperReadPipe   readPipeIfc;
+endinterface
+
+
+(* synthesize *)
+module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
 
     FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
     FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;
@@ -632,29 +700,16 @@ module mkAcxNapMasterWrapper(AcxNapMasterWrapper);
         end
     endrule
 
+    interface AcxNapMasterWrapperWritePipe  writePipeIfc;
+        interface writeAddrPipeOut = ugToPipeOut(awQ);
+        interface writeDataPipeOut = ugToPipeOut(wQ);
+        interface writeRespPipeIn  = ugToPipeIn(bQ);
+    endinterface
 
-    method ActionValue#(AxiMmNapBeatAw) recvWriteAddr if (awQ.notEmpty);
-        awQ.deq;
-        return awQ.first;
-    endmethod
-
-    method ActionValue#(AxiMmNapBeatW) recvWriteData if (wQ.notEmpty);
-        wQ.deq;
-        return wQ.first;
-    endmethod
-
-    method Action sendWriteResp(AxiMmNapBeatB beat) if (bQ.notFull);
-        bQ.enq(beat);
-    endmethod
-
-    method ActionValue#(AxiMmNapBeatAr) recvReadAddr if (arQ.notEmpty);
-        arQ.deq;
-        return arQ.first;
-    endmethod
-
-    method Action sendReadResp(AxiMmNapBeatR beat) if (rQ.notFull);
-        rQ.enq(beat);
-    endmethod
+    interface AcxNapMasterWrapperReadPipe   readPipeIfc;
+        interface readAddrPipeOut = ugToPipeOut(arQ);
+        interface readRespPipeIn  = ugToPipeIn(rQ);
+    endinterface
     
 endmodule
 
@@ -1166,7 +1221,6 @@ endmodule
 
 
 interface AcxNapSlaveWrapper;
-
     method Action sendWriteAddr(AxiMmNapBeatAw beat);
     method Action sendWriteData(AxiMmNapBeatW beat);
     method ActionValue#(AxiMmNapBeatB) recvWriteResp;
@@ -1175,14 +1229,59 @@ interface AcxNapSlaveWrapper;
     method ActionValue#(AxiMmNapBeatR) recvReadResp;
 endinterface
 
-(* synthesize *)
+
 module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
+    let inner <- mkAcxNapSlaveWrapperPipe;
+
+    method Action sendWriteAddr(AxiMmNapBeatAw beat) if (inner.writePipeIfc.writeAddrPipeIn.notFull);
+        inner.writePipeIfc.writeAddrPipeIn.enq(beat);
+    endmethod
+
+    method Action sendWriteData(AxiMmNapBeatW beat) if (inner.writePipeIfc.writeDataPipeIn.notFull);
+        inner.writePipeIfc.writeDataPipeIn.enq(beat);
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatB) recvWriteResp if (inner.writePipeIfc.writeRespPipeOut.notEmpty);
+        inner.writePipeIfc.writeRespPipeOut.deq;
+        return inner.writePipeIfc.writeRespPipeOut.first;
+    endmethod
+
+    method Action sendReadAddr(AxiMmNapBeatAr beat) if (inner.readPipeIfc.readAddrPipeIn.notFull);
+        inner.readPipeIfc.readAddrPipeIn.enq(beat);
+    endmethod
+
+    method ActionValue#(AxiMmNapBeatR) recvReadResp if (inner.readPipeIfc.readRespPipeOut.notEmpty);
+        inner.readPipeIfc.readRespPipeOut.deq;
+        return inner.readPipeIfc.readRespPipeOut.first;
+    endmethod
+endmodule
+
+interface AcxNapSlaveWrapperWritePipe;
+    interface PipeIn#(AxiMmNapBeatAw) writeAddrPipeIn;
+    interface PipeIn#(AxiMmNapBeatW) writeDataPipeIn;
+    interface PipeOut#(AxiMmNapBeatB) writeRespPipeOut;
+endinterface
+
+interface AcxNapSlaveWrapperReadPipe;
+    interface PipeIn#(AxiMmNapBeatAr) readAddrPipeIn;
+    interface PipeOut#(AxiMmNapBeatR) readRespPipeOut;
+endinterface
+
+interface AcxNapSlaveWrapperPipe;
+    interface AcxNapSlaveWrapperWritePipe writePipeIfc;
+    interface AcxNapSlaveWrapperReadPipe readPipeIfc;
+endinterface
+
+(* synthesize *)
+module mkAcxNapSlaveWrapperPipe(AcxNapSlaveWrapperPipe);
 
     FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
     FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;
     FIFOF#(AxiMmNapBeatB)   bQ   <- mkUGFIFOF;
     FIFOF#(AxiMmNapBeatAr) arQ   <- mkUGFIFOF;
     FIFOF#(AxiMmNapBeatR)   rQ   <- mkUGFIFOF;
+
+
     
     let axiSlaveNap <- mkAcxNapAxiSlavePrimitiveWrapper;
 
@@ -1278,27 +1377,15 @@ module mkAcxNapSlaveWrapper(AcxNapSlaveWrapper);
     endrule
 
     
-    
-    method Action sendWriteAddr(AxiMmNapBeatAw beat) if (awQ.notFull);
-        awQ.enq(beat);
-    endmethod
+    interface AcxNapSlaveWrapperWritePipe writePipeIfc;
+        interface writeAddrPipeIn   = ugToPipeIn(awQ);
+        interface writeDataPipeIn   = ugToPipeIn(wQ);
+        interface writeRespPipeOut  = ugToPipeOut(bQ);
+    endinterface
 
-    method Action sendWriteData(AxiMmNapBeatW beat) if (wQ.notFull);
-        wQ.enq(beat);
-    endmethod
-
-    method ActionValue#(AxiMmNapBeatB) recvWriteResp if (bQ.notEmpty);
-        bQ.deq;
-        return bQ.first;
-    endmethod
-
-    method Action sendReadAddr(AxiMmNapBeatAr beat) if (arQ.notFull);
-        arQ.enq(beat);
-    endmethod
-
-    method ActionValue#(AxiMmNapBeatR) recvReadResp if (rQ.notEmpty);
-        rQ.deq;
-        return rQ.first;
-    endmethod
+    interface AcxNapSlaveWrapperReadPipe readPipeIfc;
+        interface readAddrPipeIn    = ugToPipeIn(arQ);
+        interface readRespPipeOut   = ugToPipeOut(rQ);
+    endinterface
     
 endmodule
