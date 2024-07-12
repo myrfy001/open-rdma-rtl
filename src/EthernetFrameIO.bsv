@@ -27,20 +27,23 @@ endinterface
 
 
 typedef 14 IP_HEADER_OFFSET_IN_FIRST_BEAT;
-
 typedef 2 UDP_HEADER_OFFSET_IN_SECOND_BEAT;
+typedef 24 MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH;
 
 
 typedef enum {
-    InputPacketClassifierStateHandleFirstBeat = 0,
-    InputPacketClassifierStateHandleSecondBeat = 1,
-    InputPacketClassifierStateHandleMoreBeat = 2
+    InputPacketClassifierStateNotReady = 0,
+    InputPacketClassifierStateHandleFirstBeat = 1,
+    InputPacketClassifierStateHandleSecondBeat = 2,
+    InputPacketClassifierStateHandleMoreBeat = 3
 } InputPacketClassifierState deriving(Bits, FShow, Eq);
 
 typedef struct {
     Bool mustNotBeRdmaPacket;
     ThinMacIpUdpMetaDataForRecv macIpUdpMeta;
-    Bool isAddrMatch;
+    Bool macAddrUnicastPartialMatch;
+    Bool macAddrBroadcastMatch;
+    EthHeader ethHeader;
 } EthernetPacketMetaExtractPipelineEntry deriving(Bits, FShow, Eq);
 
 typedef struct {
@@ -51,7 +54,7 @@ typedef struct {
 
 (*synthesize*)
 module mkInputPacketClassifier(InputPacketClassifier);
-    Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
+    Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateNotReady);
 
     FIFOF#(EthernetNapBeatEntry) ethRawPacketInQ <- mkFIFOF;
     FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
@@ -63,10 +66,21 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
     Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntry <- mkRegU;
 
-    Reg#(Maybe#(LocalNetworkSettings)) networkSettingsReg <- mkReg(tagged Invalid);
+    Reg#(Bool) networkSettingsIsSetReg <- mkReg(False);
+    Reg#(LocalNetworkSettings) networkSettingsReg <- mkRegU;
 
     // the dst IP filed begins at #30 byte of first beat, so the first beat only has the higher 16 bits
     Reg#(Bit#(16)) partialDstIpAddrHigher16BitsReg <- mkRegU;
+
+    rule notReadyStage if (stateReg == InputPacketClassifierStateNotReady);
+        let beat = ethRawPacketInQ.first;
+        if (networkSettingsIsSetReg && beat.sop) begin
+            stateReg <= InputPacketClassifierStateHandleFirstBeat;
+        end
+        else begin
+            ethRawPacketInQ.deq;
+        end
+    endrule
 
     rule handleFirstBeatStage if (stateReg == InputPacketClassifierStateHandleFirstBeat);
         let beat = ethRawPacketInQ.first;
@@ -82,7 +96,6 @@ module mkInputPacketClassifier(InputPacketClassifier);
             isLast: beat.eop
         };
 
-        waitingForRouteQ.enq(ds);
 
         // Achronix Ethernet NAP make sure that each ethernet frame is at least two beat.
         immAssert(
@@ -113,30 +126,30 @@ module mkInputPacketClassifier(InputPacketClassifier);
             srcPort: ?
         };
 
-        let macAddrMatch = False;
-        if (networkSettingsReg matches tagged Valid .netSettings) begin
-            Bool unicastMatch = netSettings.macAddr == ethHeader.dstMacAddr;
-            Bool broadcastMatch = ethHeader.dstMacAddr == -1;
-            macAddrMatch = unicastMatch || broadcastMatch;
-            if (!macAddrMatch) begin
-                $display(
-                    "time=%0t:", $time, toRed(" mkInputPacketClassifier mac address check failed"),
-                    toBlue(", netSettings="), fshow(netSettings),
-                    toBlue(", ethHeader="), fshow(ethHeader)
-                );
-            end
-        end
+        Bit#(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH) partialMacAddr1 = networkSettingsReg.macAddr[valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)-1:0];
+        Bit#(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH) partialMacAddr2 = ethHeader.dstMacAddr[valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)-1:0];
+
+        Bool macAddrUnicastPartialMatch = partialMacAddr1 == partialMacAddr2;
+        Bool macAddrBroadcastMatch = ethHeader.dstMacAddr == -1;
+        
+        
 
         let outPipelineEntry =  EthernetPacketMetaExtractPipelineEntry{
             mustNotBeRdmaPacket: mustNotBeRdmaPacket,
             macIpUdpMeta: macIpUdpMeta,
-            isAddrMatch: macAddrMatch
+            macAddrUnicastPartialMatch: macAddrUnicastPartialMatch,
+            macAddrBroadcastMatch:macAddrBroadcastMatch,
+            ethHeader: ethHeader
         };
         ethPacketMetaExtractPipelineEntry <= outPipelineEntry;
 
         partialDstIpAddrHigher16BitsReg <= truncateLSB(partialIpHeader.dstIpAddr);
         
-        stateReg <= InputPacketClassifierStateHandleSecondBeat;
+        if (!beat.eop) begin
+            // defensive coding. if packet corrupted, then stay in current state
+            stateReg <= InputPacketClassifierStateHandleSecondBeat;
+            waitingForRouteQ.enq(ds);
+        end
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleFirstBeatStage"),
@@ -174,21 +187,39 @@ module mkInputPacketClassifier(InputPacketClassifier);
         );
 
         IpAddr dstIpAddr = truncateLSB({partialDstIpAddrHigher16BitsReg, pack(ds.data)});
-        Bool ipAddrMatch = False;
-        if (networkSettingsReg matches tagged Valid .netSettings) begin
-            Bool unicastMatch = netSettings.ipAddr == dstIpAddr;
-            ipAddrMatch = unicastMatch;
 
-            if (!ipAddrMatch) begin
-                $display(
-                    "time=%0t:", $time, toRed(" mkInputPacketClassifier IP address check failed"),
-                    toBlue(", netSettings="), fshow(netSettings),
-                    toBlue(", dstIpAddr="), fshow(dstIpAddr)
-                );
-            end
+        Bool unicastMatch = networkSettingsReg.ipAddr == dstIpAddr;
+        Bool ipAddrMatch = unicastMatch;
+
+        if (!ipAddrMatch) begin
+            $display(
+                "time=%0t:", $time, toRed(" mkInputPacketClassifier IP address check failed"),
+                toBlue(", networkSettingsReg="), fshow(networkSettingsReg),
+                toBlue(", dstIpAddr="), fshow(dstIpAddr)
+            );
         end
 
-        let isAddrMatch = ethPacketMetaExtractPipelineEntry.isAddrMatch && ipAddrMatch;
+
+
+        Bit#(TSub#(SizeOf#(EthMacAddr), MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)) partialMacAddr1 = 
+            ethPacketMetaExtractPipelineEntry.ethHeader.dstMacAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
+        Bit#(TSub#(SizeOf#(EthMacAddr), MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)) partialMacAddr2 = 
+            networkSettingsReg.macAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
+        let macAddrMatch = (
+            ethPacketMetaExtractPipelineEntry.macAddrUnicastPartialMatch    && 
+            ethPacketMetaExtractPipelineEntry.macAddrBroadcastMatch         &&
+            partialMacAddr1 == partialMacAddr2
+        );
+
+        if (!macAddrMatch) begin
+            $display(
+                "time=%0t:", $time, toRed(" mkInputPacketClassifier mac address check failed"),
+                toBlue(", networkSettingsReg="), fshow(networkSettingsReg),
+                toBlue(", ethHeader="), fshow(ethPacketMetaExtractPipelineEntry.ethHeader)
+            );
+        end
+
+        let isAddrMatch = macAddrMatch && ipAddrMatch;
 
         UdpHeader udpHeader = unpack(truncateLSB(pack(ds.data) << valueOf(UDP_HEADER_OFFSET_IN_SECOND_BEAT) * valueOf(BYTE_WIDTH)));
 
@@ -286,7 +317,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
-        networkSettingsReg <= tagged Valid networkSettings;
+        networkSettingsReg <= networkSettings;
+        networkSettingsIsSetReg <= True;
     endmethod
 
     interface ethRawPacketPipeIn        = toPipeIn(ethRawPacketInQ);

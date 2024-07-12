@@ -1,6 +1,5 @@
 import GetPut :: *;
 import ClientServer :: *;
-import RegFile :: *;
 import FIFOF :: *;
 import Vector :: *;
 import Reserved :: *;

@@ -20,6 +20,7 @@ import StreamShifter :: *;
 import QPContext :: *;
 import PacketGenAndParse :: *;
 
+typedef Bit#(TAdd#(1, SizeOf#(Length))) TruncatedAddrForMrBoundCheck;
 
 typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
@@ -35,10 +36,9 @@ typedef struct {
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     Bool isMrLowerAddrBoundOk;
-    ADDR mrUpperAddrBound;
-    ADDR reqUpperAddrBound;
     PktFragNum expectedPayloadBeatNum;
     Length packetLen;
+    TruncatedAddrForMrBoundCheck deltaLen;
 } CheckMrTableStep2PipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -48,14 +48,38 @@ typedef struct {
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     Bool isMrLowerAddrBoundOk;
-    ADDR mrUpperAddrBound;
-    ADDR reqUpperAddrBound;
+    PktFragNum expectedPayloadBeatNum;
+    Length packetLen;
+    TruncatedAddrForMrBoundCheck deltaLen;
+} CheckMrTableStep3PipelineEntry deriving(Bits, FShow);
+
+typedef struct {
+    RdmaRecvPacketMeta rdmaPacketMeta;
+    RdmaRecvPacketStatus packetStatus;
+    Bool isNeedQueryMrTable;
+    MemRegionTableEntry mrEntry;
+    EntryQPC qpc;
     PktFragNum expectedPayloadBeatNum;
     Length packetLen;
 } IssuePayloadGenReqOrDiscardPipelineEntry deriving(Bits, FShow);
 
+typedef struct {
+    RdmaRecvPacketMeta rdmaPacketMeta;
+    RdmaRecvPacketStatus packetStatus;
+    Bool isNeedQueryMrTable;
+    MemRegionTableEntry mrEntry;
+    EntryQPC qpc;
+    PktFragNum expectedPayloadBeatNum;
+    Length packetLen;
+} HandleConRespPipelineEntry deriving(Bits, FShow);
+
+
+
+
+
 interface RQ;
     interface Client#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
+    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
     interface PipeIn#(EthernetNapBeatEntry) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
@@ -81,7 +105,9 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
     // Pipeline Queues
     FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkFIFOF;
     FIFOF#(CheckMrTableStep2PipelineEntry) checkMrTableStep2PipeQ <- mkFIFOF;
+    FIFOF#(CheckMrTableStep3PipelineEntry) checkMrTableStep3PipeQ <- mkFIFOF;
     FIFOF#(IssuePayloadGenReqOrDiscardPipelineEntry) issuePayloadGenReqOrDiscardPipeQ <- mkFIFOF;
+    FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkFIFOF;
 
     rule sendQpcQueryReqAndSomeSimpleParse;
         let rdmaPacketMeta = packetParser.rdmaPacketMetaPipeOut.first;
@@ -134,16 +160,15 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
         let isAtomicReq          = isAtomicReqRdmaOpCode(bth.opcode);
         let isReadResp           = isReadRespRdmaOpCode(bth.opcode);
         
-        Bool isQpKeyCheckPass                   = False;
-        Bool isQpAccCheckPass                   = False; 
-        Bool isMrKeyCheckPass                   = False;
-        Bool isMrAccCheckPass                   = False; 
-        Bool isMrLowerAddrBoundOk               = False;
-        ADDR mrUpperAddrBound                   = ?;
-        ADDR reqUpperAddrBound                  = ?;
-        MemRegionTableEntry mrEntryUnwraped     = ?;
-        PktFragNum expectedPayloadBeatNum       = ?;
-        Length packetLen                        = ?;
+        Bool                            isQpKeyCheckPass            = False;
+        Bool                            isQpAccCheckPass            = False; 
+        Bool                            isMrKeyCheckPass            = False;
+        Bool                            isMrAccCheckPass            = False; 
+        Bool                            isMrLowerAddrBoundOk        = False;
+        MemRegionTableEntry             mrEntryUnwraped             = ?;
+        PktFragNum                      expectedPayloadBeatNum      = ?;
+        Length                          packetLen                   = ?;
+        TruncatedAddrForMrBoundCheck    deltaLen                    = ?;
 
         let qpcMaybe <- qpcQueryCltInst.getResp;
         if (qpcMaybe matches tagged Valid .qpc) begin
@@ -220,9 +245,29 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
                     endcase
 
                     isMrLowerAddrBoundOk = reth.va >= mrEntry.baseVA;
-                    mrUpperAddrBound = mrEntry.baseVA + zeroExtend(mrEntry.len);
-                    reqUpperAddrBound = reth.va + zeroExtend(packetLen);
-
+                    
+                    // The MR boundary check is a little trick. The straightforward way to check is to compare
+                    //     (req.addr + req.len <= mr.startAddr + mr.len)
+                    //
+                    // But this way has many issues, first, we don't want to do many 64-bit add and compare;
+                    // second, this can't handle overflow, unless we use a 65 bit to do the math.
+                    // So, we use substruct instead of addition, we only care the the requests memory access span.
+                    // The ( req.addr + req.len ) is the access upper memory boundary
+                    // The ( req.addr + req.len - mr.startAddr ) is the span between MR's start address to  
+                    // access request's upper boundary. ** The length of this span must not exceed MR's length **.
+                    // 
+                    // On the other hand, Since the access length is 32 bits, and to handle overflow, 
+                    // we only need to care 33 bits. Like handling a ringbuf's address, we can think those 
+                    // add and sub math is moving a point on a circle, and the substract result is the arc 
+                    // on this circle.
+                    // 
+                    // Last, for the queation ( req.addr + req.len - mr.startAddr ),
+                    // req.len is calucated in this beat, so it can't meet timing. So we have to change the
+                    // operation order to ( (req.addr - mr.startAddr) + req.len ).
+                    // In this beat, only calculate (req.addr - mr.startAddr)
+                    TruncatedAddrForMrBoundCheck shortMrStartVa = truncate(mrEntry.baseVA);
+                    TruncatedAddrForMrBoundCheck shortReqStartVa = truncate(reth.va);
+                    deltaLen = shortReqStartVa - shortMrStartVa;
                 end
             end
         end
@@ -247,10 +292,9 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
             mrEntry                 : mrEntryUnwraped,
             qpc                     : unwrapMaybe(qpcMaybe),
             isMrLowerAddrBoundOk    : isMrLowerAddrBoundOk,
-            mrUpperAddrBound        : mrUpperAddrBound,
-            reqUpperAddrBound       : reqUpperAddrBound,
             expectedPayloadBeatNum  : expectedPayloadBeatNum,
-            packetLen               : packetLen
+            packetLen               : packetLen,
+            deltaLen                : deltaLen
         };
         checkMrTableStep2PipeQ.enq(pipelineEntryOut);
     endrule
@@ -259,17 +303,44 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
     rule checkMrTableStep2;
         let pipelineEntryIn = checkMrTableStep2PipeQ.first;
         checkMrTableStep2PipeQ.deq;
+
+        let deltaLen = pipelineEntryIn.deltaLen;
+        let packetLen = pipelineEntryIn.packetLen;
+
+        deltaLen = deltaLen + zeroExtend(packetLen);
+
+        let pipelineEntryOut = CheckMrTableStep3PipelineEntry{
+            rdmaPacketMeta          : pipelineEntryIn.rdmaPacketMeta,
+            packetStatus            : pipelineEntryIn.packetStatus,
+            isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
+            mrEntry                 : pipelineEntryIn.mrEntry,
+            qpc                     : pipelineEntryIn.qpc,
+            isMrLowerAddrBoundOk    : pipelineEntryIn.isMrLowerAddrBoundOk,
+            expectedPayloadBeatNum  : pipelineEntryIn.expectedPayloadBeatNum,
+            packetLen               : pipelineEntryIn.packetLen,
+            deltaLen                : deltaLen
+        };
+        checkMrTableStep3PipeQ.enq(pipelineEntryOut);
+    endrule
+
+    rule checkMrTableStep3;
+
+        let pipelineEntryIn = checkMrTableStep3PipeQ.first;
+        checkMrTableStep3PipeQ.deq;
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
         let packetStatus = pipelineEntryIn.packetStatus;
         let expectedPayloadBeatNum = pipelineEntryIn.expectedPayloadBeatNum;
+        let isNeedQueryMrTable = pipelineEntryIn.isNeedQueryMrTable;
+        let deltaLen = pipelineEntryIn.deltaLen;
+        let packetLen = pipelineEntryIn.packetLen;
+        let mrEntry = pipelineEntryIn.mrEntry;
+
+        Bool isMrUpperAddrBoundOk = deltaLen <= zeroExtend(mrEntry.len);
 
         Bool isAccessRangeCheckPass = False;
         Bool isPacketBeatCountCheckPass = False;
 
         if (isRecvPacketStatusNormal(packetStatus)) begin
-            let isMrUpperAddrBoundOk = pipelineEntryIn.mrUpperAddrBound >= pipelineEntryIn.reqUpperAddrBound;
-            isAccessRangeCheckPass = pipelineEntryIn.isMrLowerAddrBoundOk && isMrUpperAddrBoundOk;
-
             if (rdmaPacketMeta.hasPayload) begin
                 let packetTailMeta = packetParser.rdmaPacketTailMetaPipeOut.first;
                 packetParser.rdmaPacketTailMetaPipeOut.deq;
@@ -281,6 +352,12 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
             else begin
                 isPacketBeatCountCheckPass = True;
             end
+
+            if (isNeedQueryMrTable) begin
+                // if we reach here, then mrEntry must be a valid value, so we can safely use isMrUpperAddrBoundOk.
+                isAccessRangeCheckPass = pipelineEntryIn.isMrLowerAddrBoundOk && isMrUpperAddrBoundOk;
+            end
+
 
             if (!isAccessRangeCheckPass) begin
                 packetStatus = RdmaRecvPacketStatusMemAccessOutOfBound;
@@ -297,14 +374,13 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
-            isMrLowerAddrBoundOk    : pipelineEntryIn.isMrLowerAddrBoundOk,
-            mrUpperAddrBound        : pipelineEntryIn.mrUpperAddrBound,
-            reqUpperAddrBound       : pipelineEntryIn.reqUpperAddrBound,
             expectedPayloadBeatNum  : pipelineEntryIn.expectedPayloadBeatNum,
-            packetLen               :pipelineEntryIn.packetLen
+            packetLen               : pipelineEntryIn.packetLen
         };
         issuePayloadGenReqOrDiscardPipeQ.enq(pipelineEntryOut);
     endrule
+
+
 
     rule issuePayloadGenReqOrDiscard;
         let pipelineEntryIn = issuePayloadGenReqOrDiscardPipeQ.first;
@@ -328,12 +404,34 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
                 payloadGenAndCon.conReqPipeIn.enq(payloadConReq);
             end
         end
+
+        let pipelineEntryOut = HandleConRespPipelineEntry{
+            rdmaPacketMeta          : pipelineEntryIn.rdmaPacketMeta,
+            packetStatus            : pipelineEntryIn.packetStatus,
+            isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
+            mrEntry                 : pipelineEntryIn.mrEntry,
+            qpc                     : pipelineEntryIn.qpc,
+            expectedPayloadBeatNum  : pipelineEntryIn.expectedPayloadBeatNum,
+            packetLen               : pipelineEntryIn.packetLen
+        };
+        handleConRespPipeQ.enq(pipelineEntryOut);
     endrule
 
     rule handleConResp;
-        let resp = payloadGenAndCon.conRespPipeOut.first;
-        payloadGenAndCon.conRespPipeOut.deq;
-        $display("payload con resp = ", fshow(resp));
+        let pipelineEntryIn = handleConRespPipeQ.first;
+        handleConRespPipeQ.deq;
+        let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
+        let packetStatus = pipelineEntryIn.packetStatus;
+
+        if (rdmaPacketMeta.hasPayload) begin
+            let isDiscard = !isRecvPacketStatusNormal(packetStatus);
+            if (!isDiscard) begin
+                let resp = payloadGenAndCon.conRespPipeOut.first;
+                payloadGenAndCon.conRespPipeOut.deq;
+                peerMetaStorage.deq;
+                $display("payload con resp = ", fshow(resp));
+            end
+        end
     endrule
 
 
@@ -351,7 +449,8 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
         end
     endrule
 
-    interface qpcQueryClt = qpcQueryCltInst.clt; 
+    interface qpcQueryClt = qpcQueryCltInst.clt;
+    interface mrTableQueryClt = mrTableQueryCltInst.clt;
 
     interface ethernetFramePipeIn = packetParser.ethernetFramePipeIn;
     interface otherRawPacketPipeOut = packetParser.otherRawPacketPipeOut;

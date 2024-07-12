@@ -1,6 +1,5 @@
 import ClientServer :: *;
 import GetPut :: *;
-import RegFile :: *;
 import FIFOF :: *;
 import Connectable :: *;
 
@@ -26,22 +25,22 @@ module mkQpContext(QpContext);
     QueuedServer#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServer("qpcQuerySrvInst");
     QueuedServer#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServer("qpcUpdateSrvInst");
 
-    RegFile#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkRegFileFull;
+    AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBram;
 
-    FIFOF#(Tuple2#(KeyQP, Maybe#(EntryQPC))) pipeQ <- mkFIFOF;
+    FIFOF#(Tuple2#(IndexQP, KeyQP)) pipeQ <- mkFIFOF;
 
     rule handleReadReq;
         let req <- qpcQuerySrvInst.getReq;
         IndexQP idx = getIndexQP(req.qpn);
         KeyQP key   = getKeyQP(req.qpn);
-        let qpcEntryMaybe = qpcEntryCommonStorage.sub(idx);
-        pipeQ.enq(tuple2(key, qpcEntryMaybe));
-        $display("read BRAM idx=", fshow(idx), "qpcEntryMaybe=", fshow(qpcEntryMaybe));
+        qpcEntryCommonStorage.putReadReq(idx);
+        pipeQ.enq(tuple2(idx, key));
     endrule
 
     rule handleReadResp;
-        let {key, qpcEntryMaybe} = pipeQ.first;
+        let {idx, key} = pipeQ.first;
         pipeQ.deq;
+        let qpcEntryMaybe <- qpcEntryCommonStorage.getReadResp;
 
         if (qpcEntryMaybe matches tagged Valid .resp &&& resp.qpnKeyPart == key) begin
             qpcQuerySrvInst.putResp(tagged Valid resp);
@@ -49,13 +48,14 @@ module mkQpContext(QpContext);
         else begin
             qpcQuerySrvInst.putResp(tagged Invalid);
         end
+        $display("read BRAM idx=", fshow(idx), "qpcEntryMaybe=", fshow(qpcEntryMaybe));
     endrule
 
     rule handleWriteReq;
         let req <- qpcUpdateSrvInst.getReq;
         IndexQP idx = getIndexQP(req.qpn);
 
-        qpcEntryCommonStorage.upd(idx, req.ent);
+        qpcEntryCommonStorage.write(idx, req.ent);
         qpcUpdateSrvInst.putResp(True);
 
         $display("write BRAM idx=", fshow(idx), "req=", fshow(req.ent));

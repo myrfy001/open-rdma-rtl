@@ -1,4 +1,3 @@
-import RegFile :: *;
 import ClientServer :: *;
 import GetPut :: *;
 import Cntrs :: *;
@@ -36,7 +35,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
 );
 
 
-    Vector#(TExp#(splitCntExp), RegFile#(subAddrType, dataType)) subBramVec <- replicateM(mkRegFileFull);
+    Vector#(TExp#(splitCntExp), AutoInferBram#(subAddrType, dataType)) subBramVec <- replicateM(mkAutoInferBram);
 
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
     FIFOF#(subBlockIdxType) orderKeepQueuePortB <- mkSizedFIFOF(6);
@@ -47,25 +46,25 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     FIFOF#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkFIFOF;
     FIFOF#(Bool)                         bramWriteRespQ <- mkFIFOF;
 
+
     rule handleBramReadReq;
         let cacheAddr = bramReadReqQ.first;
         bramReadReqQ.deq;
 
         subAddrType addr = unpack(truncate(pack(cacheAddr)));
         subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
-        let readRespData = subBramVec[subIdx].sub(addr);
-        bramReadRespQ.enq(readRespData);
-        // orderKeepQueuePortA.enq(subIdx);
+        subBramVec[subIdx].putReadReq(addr);
+        orderKeepQueuePortA.enq(subIdx);
         // $display("send BRAM read req to sub block =", fshow(subIdx), "addr=", fshow(addr));
     endrule
 
-    // rule handleBramReadResp;
-    //     let subIdx = orderKeepQueuePortA.first;
-    //     orderKeepQueuePortA.deq;
-    //     let readRespData <- subBramVec[subIdx].portA.response.get;
-        
-    //     // $display("recv BRAM read resp from sub block=", fshow(subIdx) , ", res=", fshow(readRespData));
-    // endrule
+    rule handleBramReadResp;
+        let subIdx = orderKeepQueuePortA.first;
+        orderKeepQueuePortA.deq;
+        let readRespData <- subBramVec[subIdx].getReadResp;
+        bramReadRespQ.enq(readRespData);
+        // $display("recv BRAM read resp from sub block=", fshow(subIdx) , ", res=", fshow(readRespData));
+    endrule
 
 
     rule handleBramWriteReq;
@@ -74,7 +73,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
         
         subAddrType addr = unpack(truncate(pack(cacheAddr)));
         subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
-        subBramVec[subIdx].upd(addr, writeData);
+        subBramVec[subIdx].write(addr, writeData);
         orderKeepQueuePortB.enq(subIdx);
         bramWriteRespQ.enq(True);
         // $display("send BRAM write req to sub block =", fshow(subIdx), "addr=", fshow(addr));

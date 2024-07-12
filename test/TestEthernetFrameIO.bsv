@@ -312,9 +312,9 @@ module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
     let txStreamShifter <- mkBiDirectionStreamShifter;
     mkConnection(txStreamShifter.streamPipeOut, packetGen.rdmaPayloadPipeIn);
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
-    let randSource2 <- mkSynthesizableRng512('hAAAAAAAA);
-    let randSource3 <- mkSynthesizableRng512('hAAAAAAAA);
-    let randSource4 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+    let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
+    let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
 
     Reg#(Bit#(32)) cntReg <- mkReg(0);
     Reg#(Bit#(512)) relayReg <- mkReg(0);
@@ -334,9 +334,10 @@ module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
     endrule
 
     rule injectInput1;
-        let localNetworkSettingsForSendNode = unpack(truncate(relayReg));
-        let localNetworkSettingsForRecvNode = unpack(truncate(relayReg));
-        let payloadStream = unpack(truncate(relayReg));
+        let randValue1 <- randSource1.get;
+        let localNetworkSettingsForSendNode = unpack(truncate(randValue1));
+        let localNetworkSettingsForRecvNode = unpack(truncate(randValue1 >> 128));
+        let payloadStream = unpack(truncate(randValue1 >> 32));
 
         packetGen.setLocalNetworkSettings(localNetworkSettingsForSendNode);
         packetClassifier.setLocalNetworkSettings(localNetworkSettingsForRecvNode);
@@ -344,19 +345,22 @@ module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
     endrule
 
     rule injectInput2;
-        let rdmaPacketMeta = unpack(truncate(relayReg));
+        let randValue2 <- randSource2.get;
+        let rdmaPacketMeta = unpack(truncate(randValue2));
         packetGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
     endrule
 
 
     rule injectInput3;
-        let signedShiftOffset = unpack(truncate(relayReg));
+        let randValue3 <- randSource3.get;
+        let signedShiftOffset = unpack(truncate(randValue3));
         txStreamShifter.offsetPipeIn.enq(signedShiftOffset);
     endrule
 
 
     rule injectInput4;
-        ThinMacIpUdpMetaDataForSend macIpUdpMeta = unpack(truncate(relayReg));
+        let randValue4 <- randSource4.get;
+        ThinMacIpUdpMetaDataForSend macIpUdpMeta = unpack(truncate(randValue4));
         packetGen.macIpUdpMetaPipeIn.enq(macIpUdpMeta);
     endrule
 

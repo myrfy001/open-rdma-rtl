@@ -60,14 +60,35 @@ function PipeIn#(tData) f_FIFOF_to_PipeIn(FIFOF#(tData) fifof);
                   return fifof.notFull;
                endmethod
             endinterface);
- endfunction
+endfunction
 
 
- instance Connectable#(PipeOut#(t), PipeIn#(t));
+instance Connectable#(PipeOut#(t), PipeIn#(t));
     module mkConnection#(PipeOut#(t) fo, PipeIn#(t) fi)(Empty);
-       rule connect;
-          fi.enq(fo.first);
-           fo.deq;
-       endrule
+        rule connect;
+            fi.enq(fo.first);
+            fo.deq;
+        endrule
     endmodule
- endinstance
+endinstance
+
+// interface PipeIn2PipeOut#(type tData);
+//     interface PipeIn#(tData) pipeIn;
+//     interface PipeOut#(tData) pipeOut;
+// endinterface
+
+// module mkPipelinePipeIn2PipeOut(PipeIn2PipeOut#(tData)) provisos (Bits#(tData, szData));
+
+//     Wire#(tData) dataWire <- mkWire;
+
+//     interface PipeIn#(tData) pipeIn;
+//         method Action enq(tData data);
+//         method Bool notFull;
+//     endinterface
+
+//     interface PipeOut#(tData) pipeOut;
+//         method tData first;
+//         method Action deq;
+//         method Bool notEmpty;
+//     endinterface
+// endmodule

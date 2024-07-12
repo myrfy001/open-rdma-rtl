@@ -2,6 +2,7 @@ import FIFOF :: *;
 import PAClib :: *;
 import ConnectableF :: *;
 import Printf :: *;
+import RegFile :: *;
 
 typedef 2 TWO;
 typedef 4 FOUR;
@@ -372,3 +373,42 @@ endfunction
 function String toBlue(String s);
     return sprintf("\033[96m%s\033[0m", s);
 endfunction
+
+interface AutoInferBram#(type tAddr, type tData);
+    method Action write(tAddr addr, tData data);
+    method Action putReadReq(tAddr addr);
+    method ActionValue#(tData) getReadResp;
+endinterface
+
+module mkAutoInferBram(AutoInferBram#(tAddr, tData)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Bounded#(tAddr)
+    );
+
+    RegFile#(tAddr, tData) storage <- mkRegFileFull;
+    Reg#(tData) tReg <- mkRegU;
+
+    FIFOF#(Bit#(1)) readSignalQ <- mkFIFOF;
+    FIFOF#(tData) outputBufQ <- mkFIFOF;
+    
+    rule bufferReadResp;
+        readSignalQ.deq;
+        outputBufQ.enq(tReg);
+    endrule
+
+    method Action write(tAddr addr, tData data);
+        storage.upd(addr, data);
+    endmethod
+
+    method Action putReadReq(tAddr addr);
+        let resp = storage.sub(addr);
+        tReg <= resp;
+        readSignalQ.enq(0);
+    endmethod
+
+    method ActionValue#(tData) getReadResp;
+        outputBufQ.deq;
+        return outputBufQ.first;
+    endmethod
+endmodule

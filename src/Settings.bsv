@@ -2,22 +2,9 @@
 
 
 // Adjustible settings
-// typedef 250 TARGET_FREQ_MHZ;
-typedef 4 TARGET_CYCLE_NS;
 
 typedef 2 MIN_PKT_NUM_IN_RECV_BUF;
 typedef TMul#(2, MAX_QP_WR) MAX_PENDING_WORK_COMP_NUM;
-
-typedef 250000000 UDP_FREQ;
-typedef 250000000 RDMA_FREQ;
-typedef 250000000 DMAC_FREQ;
-
-typedef 100000000 BOARD_SYS_CLK_FREQ;
-`ifdef IS_DEBUG
-    typedef 5   BOARD_SOFT_RESET_COUNTER_VALUE;
-`else
-    typedef 5000000   BOARD_SOFT_RESET_COUNTER_VALUE;  // 50ms @ BOARD_SYS_CLK_FREQ
-`endif
 
 // RDMA device attributes
 // Must be power of 2
@@ -43,6 +30,7 @@ typedef TDiv#(MAX_QP_WR, 2) MAX_QP_DST_RD_ATOM;
 typedef 0                   MAX_SRQ;
 typedef MAX_QP_WR           MAX_SRQ_WR;
 typedef MAX_SGE             MAX_SRQ_SGE;
+typedef 4                   HARDWARE_QP_CHANNEL_CNT;
 // End must-be-power-of-2
 
 typedef 1 MAX_SEND_SGE;

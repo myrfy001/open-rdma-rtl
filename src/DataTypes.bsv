@@ -84,10 +84,6 @@ typedef TExp#(PAD_WIDTH) FRAG_MIN_VALID_BYTE_NUM; // 4
 typedef TMul#(MIN_PKT_NUM_IN_RECV_BUF, PMTU_MAX_FRAG_NUM)   DATA_STREAM_FRAG_BUF_SIZE;
 typedef TDiv#(DATA_STREAM_FRAG_BUF_SIZE, PMTU_MIN_FRAG_NUM) PKT_META_DATA_BUF_SIZE;
 
-typedef TDiv#(MAX_RNR_WAIT_NS, TARGET_CYCLE_NS) MAX_RNR_WAIT_CYCLES;
-typedef TLog#(MAX_RNR_WAIT_CYCLES)              RNR_WAIT_CYCLE_CNT_WIDTH;
-typedef TDiv#(MAX_TIMEOUT_NS, TARGET_CYCLE_NS)  MAX_TIMEOUT_CYCLES;
-typedef TAdd#(1, TLog#(MAX_TIMEOUT_CYCLES))     TIMEOUT_CYCLE_CNT_WIDTH;
 
 typedef 48                                            PHYSICAL_ADDR_WIDTH; // X86 physical address width
 typedef TLog#(PAGE_SIZE_CAP)                          PAGE_OFFSET_WIDTH;
@@ -143,8 +139,6 @@ typedef Bit#(TIMER_WIDTH)     RnrTimer;
 
 typedef Bit#(TLog#(ATOMIC_ADDR_BYTE_ALIGNMENT)) AtomicAddrByteAlignment;
 
-typedef Bit#(RNR_WAIT_CYCLE_CNT_WIDTH) RnrWaitCycleCnt;
-typedef Bit#(TIMEOUT_CYCLE_CNT_WIDTH)  TimeOutCycleCnt;
 
 typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 

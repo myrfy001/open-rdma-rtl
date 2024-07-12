@@ -395,7 +395,21 @@ endfunction
 typedef struct {
     WorkQueueElem wqe;
     Bool hasPayload;
-} GenPacketHeaderPipelineEntry deriving (Bits, FShow);
+} GenPacketHeaderStep1PipelineEntry deriving (Bits, FShow);
+
+typedef struct {
+    WorkQueueElem wqe;
+    Bool hasPayload;
+    Bool isFirstPacket;
+    Bool isLastPacket;
+    Bool solicited;
+    PSN psn;
+    Bool ackReq;
+    ADDR remoteAddr;
+    Length dlen;
+    UdpLength udpPayloadLen;
+} GenPacketHeaderStep2PipelineEntry deriving (Bits, FShow);
+
 
 typedef struct {
     WorkQueueElem wqe;
@@ -456,7 +470,8 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
 
     // Pipeline Queues
     FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkFIFOF;
-    FIFOF#(GenPacketHeaderPipelineEntry) genPacketHeaderPipelineQ <- mkFIFOF;
+    FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkFIFOF;
+    FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkFIFOF;
     
     
     rule queryMrTable;
@@ -527,11 +542,11 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
         end
 
 
-        let pipelineEntryOut = GenPacketHeaderPipelineEntry{
+        let pipelineEntryOut = GenPacketHeaderStep1PipelineEntry{
             wqe: wqe,
             hasPayload: hasPayload
         };
-        genPacketHeaderPipelineQ.enq(pipelineEntryOut);
+        genPacketHeaderStep1PipelineQ.enq(pipelineEntryOut);
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq"),
@@ -540,21 +555,19 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
         // );
     endrule
 
-    rule genPacketHeader;
-        let pipelineEntryIn = genPacketHeaderPipelineQ.first;
+    rule genPacketHeaderStep1;
+        let pipelineEntryIn = genPacketHeaderStep1PipelineQ.first;
         let wqe = pipelineEntryIn.wqe;
         let hasPayload = pipelineEntryIn.hasPayload;
 
         // if the message doesn't have payload, then it is always a "Only" request
-        Bool isFirst = wqe.isFirst;
-        Bool isLast = wqe.isLast;
+        Bool isFirstPacket = wqe.isFirst;
+        Bool isLastPacket = wqe.isLast;
 
         let psn = psnReg;
 
         let ackReq = containWorkReqFlag(wqe.flags, IBV_SEND_SIGNALED);
         let solicited = containWorkReqFlag(wqe.flags, IBV_SEND_SOLICITED);
-
-        let padCnt = 0;  // since payload is already aligned to remote address, no padding is needed.
 
         let remoteAddr = dontCareValue;
         let dlen = dontCareValue;
@@ -566,11 +579,11 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
             let packetInfo = wqeToPacketChunker.responsePipeOut.first;
             wqeToPacketChunker.responsePipeOut.deq;
         
-            isFirst = isFirst && packetInfo.isFirst;
-            isLast = isLast && packetInfo.isLast;
+            isFirstPacket = isFirstPacket && packetInfo.isFirst;
+            isLastPacket = isLastPacket && packetInfo.isLast;
             
             if (packetInfo.isLast) begin
-                genPacketHeaderPipelineQ.deq;
+                genPacketHeaderStep1PipelineQ.deq;
             end
 
             let packetToBeatChunkReq = AddressChunkReq{
@@ -586,7 +599,7 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
             end
 
             remoteAddr = packetInfo.startAddr;
-            dlen = isFirst ? wqe.totalLen : packetInfo.len;
+            dlen = isFirstPacket ? wqe.totalLen : packetInfo.len;
 
             ByteIndexInBeat paddingByteNumForRemoteAddressAlign = truncate(remoteAddr);
 
@@ -602,10 +615,40 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
             psn = wqe.psn;
         end
 
+        let pipelineEntryOut = GenPacketHeaderStep2PipelineEntry{
+            wqe: wqe,
+            hasPayload: hasPayload,
+            isFirstPacket: isFirstPacket,
+            isLastPacket: isLastPacket,
+            solicited: solicited,
+            psn: psn,
+            ackReq: ackReq,
+            remoteAddr: remoteAddr,
+            dlen: dlen,
+            udpPayloadLen: udpPayloadLen
+        };
+        genPacketHeaderStep2PipelineQ.enq(pipelineEntryOut);
 
-    
-        let bthMaybe <- genRdmaBTH(wqe, isFirst, isLast, solicited, psn, padCnt, ackReq, remoteAddr, dlen);
-        let extendHeaderBufferMaybe <- genRdmaExtendHeader(wqe, isFirst, isLast, remoteAddr, dlen);
+    endrule
+
+    rule genPacketHeaderStep2;
+
+        let pipelineEntryIn = genPacketHeaderStep2PipelineQ.first;
+        genPacketHeaderStep2PipelineQ.deq;
+        let wqe = pipelineEntryIn.wqe;
+        let isFirstPacket = pipelineEntryIn.isFirstPacket;
+        let isLastPacket = pipelineEntryIn.isLastPacket;
+        let solicited = pipelineEntryIn.solicited;
+        let psn = pipelineEntryIn.psn;
+        let ackReq = pipelineEntryIn.ackReq;
+        let remoteAddr = pipelineEntryIn.remoteAddr;
+        let dlen = pipelineEntryIn.dlen;
+        let udpPayloadLen = pipelineEntryIn.udpPayloadLen;
+
+        let padCnt = 0;  // since payload is already aligned to remote address, no padding is needed.
+
+        let bthMaybe <- genRdmaBTH(wqe, isFirstPacket, isLastPacket, solicited, psn, padCnt, ackReq, remoteAddr, dlen);
+        let extendHeaderBufferMaybe <- genRdmaExtendHeader(wqe, isFirstPacket, isLastPacket, remoteAddr, dlen);
 
         if (bthMaybe matches tagged Valid .bth &&& extendHeaderBufferMaybe matches tagged Valid .extendHeaderBuffer) begin
             let rdmaPacketMeta = RdmaSendPacketMeta {
