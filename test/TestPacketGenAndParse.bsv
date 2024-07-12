@@ -28,12 +28,24 @@ module mkTestPacketGen(Empty);
     Reg#(Bit#(32)) exitCounterReg <- mkReg(10000);
 
     PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon;
+    AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
     let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
     let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
     mkConnection(payloadGenAndCon.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
     mkConnection(payloadGenAndCon.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
 
-    let dut <- mkPacketGen(payloadGenAndCon);
+
+    mkConnection(payloadGenAndCon.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
+    mkConnection(payloadGenAndCon.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
+    mkConnection(payloadGenAndCon.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
+    mkConnection(payloadGenAndCon.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
+    mkConnection(payloadGenAndCon.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
+
+
+    let dut <- mkPacketGen;
+
+    mkConnection(dut.genReqPipeOut, payloadGenAndCon.genReqPipeIn);
+    mkConnection(dut.genRespPipeIn, payloadGenAndCon.payloadGenStreamPipeOut);
 
     let fakeMrTable <- mkBypassMemRegionTableForTest;
     mkConnection(dut.mrTableQueryClt, fakeMrTable.querySrv);

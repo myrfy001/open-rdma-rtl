@@ -84,12 +84,15 @@ interface RQ;
     interface PipeIn#(EthernetNapBeatEntry) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+
+    interface PipeOut#(PayloadConReq) payloadConReqPipeOut;
+    interface PipeIn#(Bool) payloadConRespPipeIn;
 endinterface
 
+(* synthesize *)
+module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
 
-module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
     PacketParse packetParser <- mkPacketParse;
-
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
     FIFOF#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSizedFIFOF(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
@@ -97,6 +100,9 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
 
     QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst");
     QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
+
+    FIFOF#(PayloadConReq) conReqPipeOutQ <- mkFIFOF;
+    FIFOF#(Bool) conRespPipeInQ <- mkFIFOF;
 
     // invalid request payload filter related
     FIFOF#(Bool) filterCmdQ <-  mkFIFOF;
@@ -401,7 +407,7 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
                     baseVA: mrEntry.baseVA,    
                     pgtOffset: mrEntry.pgtOffset 
                 };
-                payloadGenAndCon.conReqPipeIn.enq(payloadConReq);
+                conReqPipeOutQ.enq(payloadConReq);
             end
         end
 
@@ -426,8 +432,8 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
         if (rdmaPacketMeta.hasPayload) begin
             let isDiscard = !isRecvPacketStatusNormal(packetStatus);
             if (!isDiscard) begin
-                let resp = payloadGenAndCon.conRespPipeOut.first;
-                payloadGenAndCon.conRespPipeOut.deq;
+                let resp = conRespPipeInQ.first;
+                conRespPipeInQ.deq;
                 peerMetaStorage.deq;
                 $display("payload con resp = ", fshow(resp));
             end
@@ -454,5 +460,11 @@ module mkRQ#(PayloadGenAndCon payloadGenAndCon)(RQ);
 
     interface ethernetFramePipeIn = packetParser.ethernetFramePipeIn;
     interface otherRawPacketPipeOut = packetParser.otherRawPacketPipeOut;
+
+    interface payloadConReqPipeOut = toPipeOut(conReqPipeOutQ);
+    interface payloadConRespPipeIn = toPipeIn(conRespPipeInQ);
+
     method setLocalNetworkSettings = packetParser.setLocalNetworkSettings; 
+
+    
 endmodule

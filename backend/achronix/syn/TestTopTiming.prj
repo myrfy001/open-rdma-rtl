@@ -1,7 +1,7 @@
 #--  Synopsys, Inc.
 #--  Version U-2023.03X-2
-#--  Project file /root/work/backend/achronix/syn/TestEthernetFrameIoTiming.prj
-#--  Written on Wed Jul 10 15:55:15 2024
+#--  Project file /root/work/backend/achronix/syn/TestTopTiming.prj
+#--  Written on Thu Jul 11 12:50:21 2024
 
 
 #project files
@@ -13,17 +13,30 @@ add_file -verilog "../../verilog/RWire.v"
 add_file -verilog "../../verilog/SizedFIFO.v"
 add_file -verilog -vlog_std sysv "../../../src/verilog/reset_processor_v2.sv"
 add_file -verilog "../../verilog/FIFOL1.v"
-add_file -constraint "../ioring/mkTestEthNapLoopback_ioring.sdc"
+add_file -verilog "../../verilog/mkAcxNapSlaveWrapper.v"
+add_file -verilog "../../verilog/mkTestTopTiming.v"
+add_file -verilog "../../../test/verilog/top_mkTestTopTiming.v"
+add_file -verilog "../../verilog/mkAddressTranslate.v"
+add_file -verilog "../../verilog/mkAddressTranslateEightWayQuery.v"
+add_file -verilog "../../verilog/mkAddressTranslateTwoWayQuery.v"
 add_file -verilog "../../verilog/mkBiDirectionStreamShifter.v"
+add_file -verilog "../../verilog/mkMemRegionTable.v"
+add_file -verilog "../../verilog/mkMemRegionTableEightWayQuery.v"
+add_file -verilog "../../verilog/mkMemRegionTableTwoWayQuery.v"
+add_file -verilog "../../verilog/mkQpContext.v"
+add_file -verilog "../../verilog/mkQpContextFourWayQuery.v"
+add_file -verilog "../../verilog/mkQpContextTwoWayQuery.v"
 add_file -verilog "../../verilog/mkEthernetPacketGenerator.v"
-add_file -verilog "../../verilog/mkInputPacketClassifier.v"
+add_file -verilog "../../verilog/RegFile.v"
+add_file -verilog "../../verilog/SizedFIFO0.v"
 add_file -verilog "../../verilog/mkRdmaMetaAndPayloadExtractor.v"
-add_file -verilog "../../verilog/mkTestEthernetFrameIoTiming.v"
-add_file -verilog "../../../test/verilog/top_mkTestEthernetFrameIoTiming.v"
+add_file -verilog "../../verilog/mkInputPacketClassifier.v"
+add_file -verilog "../../../src/verilog/spdram_infer.v"
+add_file -fpga_constraint "../constraints/compile_points.fdc"
 
 
-#implementation: "rev_7"
-impl -add rev_7 -type fpga
+#implementation: "rev_10"
+impl -add rev_10 -type fpga
 
 #
 #implementation attributes
@@ -41,7 +54,7 @@ set_option -speed_grade C1
 set_option -part_companion ""
 
 #compilation/mapping options
-set_option -top_module "top_mkTestEthernetFrameIoTiming"
+set_option -top_module "top_mkTestTopTiming"
 
 # hdl_compiler_options
 set_option -distributed_compile 0
@@ -52,7 +65,7 @@ set_option -rtl_xmr_naming 0
 set_option -use_module_idb 1
 
 # mapper_without_write_options
-set_option -frequency auto
+set_option -frequency 510.000000
 set_option -srs_instrumentation 1
 
 # mapper_options
@@ -106,11 +119,11 @@ set_option -multi_file_compilation_unit 1
 set_option -auto_infer_blackbox 0
 
 #timing report file option
-set_option -reporting_filename "TestEthernetFrameIoTiming.ta"
+set_option -reporting_filename "TestTopTiming.ta"
 
 #automatic place and route (vendor) options
 set_option -write_apr_constraint 1
 
 #set result format/file last
-project -result_file "rev_7/TestEthernetFrameIoTiming.vm"
-impl -active "rev_7"
+project -result_file "rev_10/TestTopTiming.vm"
+impl -active "rev_10"

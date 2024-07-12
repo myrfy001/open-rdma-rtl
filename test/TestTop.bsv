@@ -28,8 +28,7 @@ import Top :: *;
 
 
 module mkTestTop(Empty);
-    PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon; 
-    let dutD <- mkRQ(payloadGenAndCon);
+
 endmodule
 
 interface TestTopTiming;

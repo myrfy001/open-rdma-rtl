@@ -423,11 +423,15 @@ interface PacketGen;
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+
+    interface PipeOut#(PayloadGenReq) genReqPipeOut;
+    interface PipeIn#(DataStream) genRespPipeIn;
 endinterface
 
-module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
+module mkPacketGen(PacketGen);
     FIFOF#(WorkQueueElem) wqePipeInQ <- mkFIFOF;
-    // FIFOF#(DataStream) packetPipeOutQ <- mkFIFOF;
+    FIFOF#(PayloadGenReq) genReqPipeOutQ <- mkFIFOF;
+    FIFOF#(DataStream) genRespPipeInQ <- mkFIFOF;
 
     AddressChunkMetaCalculator#(
             ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)
@@ -457,7 +461,7 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
 
     StreamShifter payloadStreamShifter <- mkBiDirectionStreamShifter;
 
-    mkConnection(payloadGenAndCon.payloadGenStreamPipeOut, payloadStreamShifter.streamPipeIn);
+    mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn);
 
     FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF;
 
@@ -533,7 +537,7 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
                 baseVA: mrTable.baseVA,
                 pgtOffset: mrTable.pgtOffset
             };
-            payloadGenAndCon.genReqPipeIn.enq(payloadGenReq);
+            genReqPipeOutQ.enq(payloadGenReq);
 
             ByteIndexInBeat localAddrOffset = truncate(wqe.laddr);
             ByteIndexInBeat remoteAddrOffset = truncate(wqe.raddr);
@@ -746,6 +750,8 @@ module mkPacketGen#(PayloadGenAndCon payloadGenAndCon)(PacketGen);
     interface wqePipeIn = toPipeIn(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
     interface mrTableQueryClt = mrTableQueryCltInst.clt;
+    interface genReqPipeOut = toPipeOut(genReqPipeOutQ);
+    interface genRespPipeIn = toPipeIn(genRespPipeInQ);
 endmodule
 
 

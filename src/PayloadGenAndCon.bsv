@@ -64,7 +64,7 @@ interface PayloadGenAndCon;
     interface AcxNapMasterWrapperPipe axiNapPipeIfc;
 endinterface
 
-
+(* synthesize *)
 module mkPayloadGenAndCon(PayloadGenAndCon);
 
     PayloadGen payloadGen <- mkPayloadGen;
@@ -85,6 +85,7 @@ module mkPayloadGenAndCon(PayloadGenAndCon);
     endinterface
 endmodule
 
+(* synthesize *)
 module mkPayloadGen(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
@@ -272,7 +273,7 @@ module mkPayloadGen(PayloadGen);
 endmodule
 
 
-
+(* synthesize *)
 module mkPayloadCon(PayloadCon);
 
     FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;

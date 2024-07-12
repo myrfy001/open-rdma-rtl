@@ -32,6 +32,13 @@ module mkTestPayloadGenAndCon(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(1000000);
 
     PayloadGenAndCon dut <- mkPayloadGenAndCon;
+    AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
+
+    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
+    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
+    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
+    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
+    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
 
     let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
     let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
@@ -167,6 +174,14 @@ endinterface
 module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
 
     PayloadGenAndCon dut <- mkPayloadGenAndCon;
+    AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
+
+    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
+    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
+    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
+    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
+    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
+
     ForceKeepWideSignals#(DataStream) signalKeeperForGen <- mkForceKeepWideSignals; 
     ForceKeepWideSignals#(Bool) signalKeeperForCon <- mkForceKeepWideSignals; 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);

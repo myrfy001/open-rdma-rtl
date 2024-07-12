@@ -27,13 +27,19 @@ interface SQ;
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+
+    interface PipeOut#(PayloadGenReq) payloadGenReqPipeOut;
+    interface PipeIn#(DataStream) payloadGenRespPipeIn;
 endinterface
 
-module mkSQ#(PayloadGenAndCon payloadGenAndCon)(SQ);
-    let packetGen <- mkPacketGen(payloadGenAndCon);
-
+(* synthesize *)
+module mkSQ(SQ);
+    let packetGen <- mkPacketGen;
     interface wqePipeIn = packetGen.wqePipeIn;
     interface packetPipeOut = packetGen.packetPipeOut;
     interface mrTableQueryClt = packetGen.mrTableQueryClt;
     method setLocalNetworkSettings = packetGen.setLocalNetworkSettings; 
+
+    interface payloadGenReqPipeOut = packetGen.genReqPipeOut;
+    interface payloadGenRespPipeIn = packetGen.genRespPipeIn;
 endmodule
