@@ -34,7 +34,6 @@ truncate -s 0 $TEST_LOG
 
 # FILE=`ls TestEthernetFrameIO.bsv`
 # TESTCASE=mkTestEthernetFrameIO
-# TESTCASE=mkTestEthernetFrameIoTiming
 
 # FILE=`ls TestStreamShifter.bsv`
 # TESTCASE=mkTestBiDirectionStreamShifter

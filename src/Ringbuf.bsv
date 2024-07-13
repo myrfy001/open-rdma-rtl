@@ -80,12 +80,17 @@ endinstance
 
 typedef RingbufPointer#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) Fix128kBRingBufPointer;
 
+typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) ReadBlockOffset;
 
+typedef struct {
+    ADDR addr;
+    ReadBlockOffset zeroBasedDescReadCnt;
+} RingbufDmaReadReq;
 
-
-
-typedef UserLogicDmaReadClt RingbufDmaH2cClt;
-typedef UserLogicDmaWriteClt RingbufDmaC2hClt;
+typedef struct {
+    ADDR addr;
+    ReadBlockOffset zeroBasedDescReadCnt;
+} RingbufDmaReadResp;
 
 
 interface RingbufH2cMetadata;
@@ -101,9 +106,11 @@ interface RingbufH2c;
     interface PipeOut#(RingbufRawDescriptor) descPipeout;
 endinterface
 
-module mkRingbufH2c(RingbufNumber qIdx, Integer buf_depth, RingbufH2c ifc);
+module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc) provisos (
+        Alias#(Bit#(TSub#(SizeOf#(Fix128kBRingBufPointer), TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))), ReadBlockIndex)
+    );
 
-    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(buf_depth);
+    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(internalBufSize);
     FIFOF#(RingbufRawDescriptor) outputQ <- mkFIFOF;
 
     mkConnection(toGet(bufQ), toPut(outputQ));
@@ -120,13 +127,30 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer buf_depth, RingbufH2c ifc);
     
     rule sendDmaReq if (isWaitingDmaRespReg == False);
 
+
+
+        ReadBlockIndex readBlockIdxOfHead = truncate(headReg >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
+        ReadBlockIndex readBlockIdxOfTailShadow = truncate(tailShadowReg >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
+
+        Bool isHeadAndTailShadowInTheSameReadBlock = readBlockIdxOfHead == readBlockIdxOfTailShadow;
+        Bool needDoDMA = isRingbufNotEmpty(headReg[0], tailShadowReg) && !bufQ.notEmpty;
+
+        ReadBlockOffset tailShadowReadBlockOffset = truncate(tailShadowReg);
+        let zeroBasedMaxDescReadCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK) - 1) - tailShadowReadBlockOffset;
+        ReadBlockOffset spanBetweenHeadAndTailShadow = truncate(headReg) - truncate(tailShadowReg);
+        
+        if (needDoDMA) begin
+            let zeroBasedDescReadCnt = isHeadAndTailShadowInTheSameReadBlock ? spanBetweenHeadAndTailShadow - 1 : zeroBasedMaxDescReadCnt;
+
+        end
+
+
         // generate a temp constant var as mask, use it to align pointer.
         Fix4kBRingBufPointer ringbufReadBlockInnerOffsetMask = 0;
         ringbufReadBlockInnerOffsetMask.idx = ~((1 << valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))) - 1); 
 
         if (isRingbufNotEmpty(headReg[0], tailShadowReg) && !bufQ.notEmpty) begin
             
-
             let readBlockAlignedTailShadow = tailShadowReg + fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
             readBlockAlignedTailShadow.idx = readBlockAlignedTailShadow.idx & ringbufReadBlockInnerOffsetMask.idx;
 

@@ -32,8 +32,11 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestAddressChunker.bsv
 # TOPMODULE ?= mkTestAddressChunkerTiming
 
-TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
-TOPMODULE ?= mkTestPayloadGenAndConTiming
+# TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
+# TOPMODULE ?= mkTestPayloadGenAndConTiming
+
+TARGETFILE ?= ../test/TestTop.bsv
+TOPMODULE ?= mkTestTopTiming
 
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000

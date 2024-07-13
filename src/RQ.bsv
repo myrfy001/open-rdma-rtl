@@ -1,6 +1,7 @@
 import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
+import Clocks :: *;
 
 
 import ConnectableF :: *;
@@ -92,11 +93,11 @@ endinterface
 (* synthesize *)
 module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
 
-    PacketParse packetParser <- mkPacketParse;
-    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
-    FIFOF#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSizedFIFOF(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ));
-    mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
-    mkConnection(packetParser.rdmaMacIpUdpMetaPipeOut, toPipeIn(peerMetaStorage));
+    PacketParse packetParser <- mkPacketParse(clocked_by clkEthNap, reset_by rstEthNap);
+    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ), clocked_by clkEthNap, reset_by rstEthNap);
+    FIFOF#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSizedFIFOF(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ), clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage), clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(packetParser.rdmaMacIpUdpMetaPipeOut, toPipeIn(peerMetaStorage), clocked_by clkEthNap, reset_by rstEthNap);
 
     QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst");
     QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");

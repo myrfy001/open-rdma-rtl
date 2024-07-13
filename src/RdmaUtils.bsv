@@ -7,6 +7,7 @@ import RdmaHeaders :: *;
 import Vector :: *;
 import BRAM :: *;
 import Printf:: *;
+import Clocks :: *;
 
 import PAClib :: *;
 import PrimUtils :: *;
@@ -59,11 +60,44 @@ function DataStreamEn reverseStreamEnOnly(DataStreamEn st);
 endfunction
 
 
+
+module mkSyncFifoToFifoF#(SyncFIFOIfc#(tData) syncFifo)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+    method deq = syncFifo.deq;
+    method enq = syncFifo.enq;
+    method first = syncFifo.first;
+    method notEmpty = syncFifo.notEmpty;
+    method notFull = syncFifo.notFull;
+
+    method Action clear;
+        immFail("not supported", $format(""));
+    endmethod
+endmodule
+
 typedef enum {
     QueuedClientServerQueueTypeNormal = 0,
     QueuedClientServerQueueTypeBypass = 1,
-    QueuedClientServerQueueTypePipeline = 2
+    QueuedClientServerQueueTypePipeline = 2,
+    QueuedClientServerQueueTypeSync = 3
 } QueuedClientServerQueueType deriving(Bits, Eq);
+
+module mkFifofByType#(Integer depth, QueuedClientServerQueueType typ, Clock srcClk, Clock dstClk, Reset srcRst)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+    FIFOF#(tData) q;
+    if (typ == QueuedClientServerQueueTypeNormal) begin
+        q <- mkSizedFIFOF(depth);
+    end
+    else if (typ == QueuedClientServerQueueTypeBypass) begin
+        q <- mkSizedBypassFIFOF(depth);
+    end
+    else if (typ == QueuedClientServerQueueTypePipeline) begin
+        q <- mkLFIFOF;
+    end
+    else if (typ == QueuedClientServerQueueTypeSync) begin
+        SyncFIFOIfc#(tData) syncQ <- mkSyncFIFO(depth, srcClk, srcRst, dstClk);
+        q <- mkSyncFifoToFifoF(syncQ);
+    end
+    return q;
+endmodule
+
 
 interface QueuedClient#(type t_req, type t_resp);
     interface Client#(t_req, t_resp) clt;
@@ -75,27 +109,22 @@ interface QueuedClient#(type t_req, type t_resp);
 endinterface
 
 
-module mkFifofByType#(Integer depth, QueuedClientServerQueueType typ)(FIFOF#(tData)) provisos(Bits#(tData, szData));
-    FIFOF#(tData) q;
-    if (typ == QueuedClientServerQueueTypeNormal) begin
-        q <- mkSizedFIFOF(depth);
-    end
-    else if (typ == QueuedClientServerQueueTypeBypass) begin
-        q <- mkSizedBypassFIFOF(depth);
-    end
-    else if (typ == QueuedClientServerQueueTypePipeline) begin
-        q <- mkLFIFOF;
-    end
-    return q;
-endmodule
-
-module mkSizedQueuedClient#(String name, Integer reqDepth, Integer respDepth, QueuedClientServerQueueType reqType, QueuedClientServerQueueType respType)(QueuedClient#(t_req, t_resp)) provisos (
-    Bits#(t_req, sz_req),
-    Bits#(t_resp, sz_resp)
-);
+module mkSizedQueuedClient#(
+        String name, 
+        Integer reqDepth, 
+        Integer respDepth, 
+        QueuedClientServerQueueType reqType,
+        QueuedClientServerQueueType respType,
+        Clock srcClk,
+        Clock dstClk,
+        Reset srcRst
+    )(QueuedClient#(t_req, t_resp)) provisos (
+        Bits#(t_req, sz_req),
+        Bits#(t_resp, sz_resp)
+    );
     
-    FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType);
-    FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType);
+    FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
+    FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, srcClk, dstClk, srcRst);
 
     // rule debug;
     //     if (!reqQ.notFull) begin
@@ -138,7 +167,9 @@ module mkQueuedClient#(String name)(QueuedClient#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp)
 );
-    let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal);
+    let curClk <- exposeCurrentClock;
+    let curRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst);
     return t;
 endmodule
 
@@ -153,13 +184,21 @@ interface QueuedServer#(type t_req, type t_resp);
     method Bool canPutResp;
 endinterface
 
-module mkSizedQueuedServer#(String name, Integer reqDepth, Integer respDepth, QueuedClientServerQueueType reqType, QueuedClientServerQueueType respType)(QueuedServer#(t_req, t_resp)) provisos (
-    Bits#(t_req, sz_req),
-    Bits#(t_resp, sz_resp)
-);
+module mkSizedQueuedServer#(String name, 
+        Integer reqDepth,
+        Integer respDepth, 
+        QueuedClientServerQueueType reqType, 
+        QueuedClientServerQueueType respType,
+        Clock srcClk,
+        Clock dstClk,
+        Reset srcRst
+    )(QueuedServer#(t_req, t_resp)) provisos (
+        Bits#(t_req, sz_req),
+        Bits#(t_resp, sz_resp)
+    );
 
-    FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType);
-    FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType);
+    FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
+    FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, srcClk, dstClk, srcRst);
 
     rule debug;
         if (!reqQ.notFull) begin
@@ -204,8 +243,9 @@ module mkQueuedServer#(String name)(QueuedServer#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp)
 );
-     
-    let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal);
+    let curClk <- exposeCurrentClock;
+    let curRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst);
     return t;
 endmodule
 

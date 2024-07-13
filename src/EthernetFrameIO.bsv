@@ -205,11 +205,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
             ethPacketMetaExtractPipelineEntry.ethHeader.dstMacAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
         Bit#(TSub#(SizeOf#(EthMacAddr), MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)) partialMacAddr2 = 
             networkSettingsReg.macAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
-        let macAddrMatch = (
-            (
-                ethPacketMetaExtractPipelineEntry.macAddrUnicastPartialMatch && (partialMacAddr1 == partialMacAddr2)
-            ) || ethPacketMetaExtractPipelineEntry.macAddrBroadcastMatch        
-        );
+        let macUnicastMatch = ethPacketMetaExtractPipelineEntry.macAddrUnicastPartialMatch && (partialMacAddr1 == partialMacAddr2);
+        let macAddrMatch = macUnicastMatch || ethPacketMetaExtractPipelineEntry.macAddrBroadcastMatch;
 
         if (!macAddrMatch) begin
             $display(
