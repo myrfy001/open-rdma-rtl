@@ -1,6 +1,5 @@
 import ClientServer :: *;
 import PAClib :: *;
-import PrimUtils :: *;
 import Vector :: *;
 import GetPut :: *;
 
@@ -16,6 +15,8 @@ typedef 5 NUMERIC_TYPE_FIVE;
 typedef 6 NUMERIC_TYPE_SIX;
 typedef 7 NUMERIC_TYPE_SEVEN;
 typedef 8 NUMERIC_TYPE_EIGHT;
+
+typedef NUMERIC_TYPE_TWO QUEUE_DEPTH_2;
 
 
 
@@ -766,3 +767,39 @@ typedef struct {
     QPN qpn;
 } AutoAckGenMetaData deriving(Bits, FShow);
 
+// FlagsType related
+
+typeclass Flags#(type enumType);
+    function Bool isOneHotOrZero(enumType inputVal);
+endtypeclass
+
+instance FShow#(FlagsType#(enumType)) provisos(
+    Bits#(enumType, tSz),
+    FShow#(enumType)
+);
+    function Fmt fshow(FlagsType#(enumType) inputVal);
+        Bit#(tSz) enumBits = pack(inputVal);
+
+        Fmt resultFmt = $format("FlagsType { flags: ", pack(inputVal), " = ");
+        for (Integer idx = 0; idx < valueOf(tSz); idx = idx + 1) begin
+            Bool bitValid = unpack(enumBits[idx]);
+            enumType enumVal = unpack(1 << idx);
+            if (bitValid) begin
+                resultFmt = resultFmt + $format(fshow(enumVal), " | ");
+            end
+        end
+
+        if (enumBits == 0) begin
+            enumType enumVal = unpack(0);
+            resultFmt = resultFmt + $format(fshow(enumVal), " }");
+        end
+        else begin
+            resultFmt = resultFmt + $format("}");
+        end
+        return resultFmt;
+    endfunction
+endinstance
+
+typedef struct {
+    Bit#(SizeOf#(enumType)) flags;
+} FlagsType#(type enumType) deriving(Bits, Bitwise, Eq);

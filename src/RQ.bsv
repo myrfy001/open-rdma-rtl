@@ -87,27 +87,40 @@ interface RQ;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 
     interface PipeOut#(PayloadConReq) payloadConReqPipeOut;
+    interface PipeOut#(DataStream) payloadConStreamPipeOut;
     interface PipeIn#(Bool) payloadConRespPipeIn;
 endinterface
 
 (* synthesize *)
-module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
+module mkRQ#(
+        Clock clkEthNap, 
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv, 
+        Reset rstQpcMrPgtSrv
+    )(RQ);
 
     PacketParse packetParser <- mkPacketParse(clocked_by clkEthNap, reset_by rstEthNap);
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ), clocked_by clkEthNap, reset_by rstEthNap);
-    FIFOF#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSizedFIFOF(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ), clocked_by clkEthNap, reset_by rstEthNap);
+    SyncFIFOIfc#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSyncFIFOToCC(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ), clkEthNap, rstEthNap);
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage), clocked_by clkEthNap, reset_by rstEthNap);
-    mkConnection(packetParser.rdmaMacIpUdpMetaPipeOut, toPipeIn(peerMetaStorage), clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(packetParser.rdmaMacIpUdpMetaPipeOut, toPipeInSync(peerMetaStorage), clocked_by clkEthNap, reset_by rstEthNap);
 
-    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst");
-    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
+    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkSyncQueuedClient("qpcQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
-    FIFOF#(PayloadConReq) conReqPipeOutQ <- mkFIFOF;
-    FIFOF#(Bool) conRespPipeInQ <- mkFIFOF;
+    SyncFIFOIfc#(PayloadConReq) conReqPipeOutQ <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    SyncFIFOIfc#(Bool) conRespPipeInQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_2), clkEthNap, rstEthNap);
 
     // invalid request payload filter related
-    FIFOF#(Bool) filterCmdQ <-  mkFIFOF;
-    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF;
+    SyncFIFOIfc#(Bool) filterCmdSyncQ <-  mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
+
+    // Clock domain convert queues
+    SyncFIFOIfc#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_2), clkEthNap, rstEthNap);
+    SyncFIFOIfc#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_2), clkEthNap, rstEthNap);
+
+    mkConnection(packetParser.rdmaPacketMetaPipeOut, toPipeInSync(rdmaPacketMetaPipeOutSyncQ), clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(packetParser.rdmaPacketTailMetaPipeOut, toPipeInSync(rdmaPacketTailMetaPipeOutSyncQ), clocked_by clkEthNap, reset_by rstEthNap);
 
     // Pipeline Queues
     FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkFIFOF;
@@ -117,8 +130,8 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
     FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkFIFOF;
 
     rule sendQpcQueryReqAndSomeSimpleParse;
-        let rdmaPacketMeta = packetParser.rdmaPacketMetaPipeOut.first;
-        packetParser.rdmaPacketMetaPipeOut.deq;
+        let rdmaPacketMeta = rdmaPacketMetaPipeOutSyncQ.first;
+        rdmaPacketMetaPipeOutSyncQ.deq;
         let bth = rdmaPacketMeta.header.bth;
         let reth = extractPriRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans);
 
@@ -334,6 +347,7 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
 
         let pipelineEntryIn = checkMrTableStep3PipeQ.first;
         checkMrTableStep3PipeQ.deq;
+
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
         let packetStatus = pipelineEntryIn.packetStatus;
         let expectedPayloadBeatNum = pipelineEntryIn.expectedPayloadBeatNum;
@@ -349,8 +363,8 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
 
         if (isRecvPacketStatusNormal(packetStatus)) begin
             if (rdmaPacketMeta.hasPayload) begin
-                let packetTailMeta = packetParser.rdmaPacketTailMetaPipeOut.first;
-                packetParser.rdmaPacketTailMetaPipeOut.deq;
+                let packetTailMeta = rdmaPacketTailMetaPipeOutSyncQ.first;
+                rdmaPacketTailMetaPipeOutSyncQ.deq;
 
                 if (packetTailMeta.beatCnt == expectedPayloadBeatNum) begin
                     isPacketBeatCountCheckPass = True;
@@ -400,7 +414,7 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
 
         if (rdmaPacketMeta.hasPayload) begin
             let isDiscard = !isRecvPacketStatusNormal(packetStatus);
-            filterCmdQ.enq(isDiscard);
+            filterCmdSyncQ.enq(isDiscard);
             if (!isDiscard) begin
                 let payloadConReq = PayloadConReq{
                     addr: reth.va,
@@ -443,7 +457,7 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
 
 
     rule filterDiscardedPayloadStream;
-        let isDiscard = filterCmdQ.first;
+        let isDiscard = filterCmdSyncQ.first;
         let ds = payloadStorage.first;
         payloadStorage.deq;
 
@@ -452,7 +466,7 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
         end
 
         if (ds.isLast) begin
-            filterCmdQ.deq;
+        filterCmdSyncQ.deq;
         end
     endrule
 
@@ -462,8 +476,9 @@ module mkRQ#(Clock clkEthNap, Reset rstEthNap)(RQ);
     interface ethernetFramePipeIn = packetParser.ethernetFramePipeIn;
     interface otherRawPacketPipeOut = packetParser.otherRawPacketPipeOut;
 
-    interface payloadConReqPipeOut = toPipeOut(conReqPipeOutQ);
-    interface payloadConRespPipeIn = toPipeIn(conRespPipeInQ);
+    interface payloadConReqPipeOut      = toPipeOutSync(conReqPipeOutQ);
+    interface payloadConStreamPipeOut   = toPipeOut(filteredDataStreamForConsumeQ);
+    interface payloadConRespPipeIn      = toPipeInSync(conRespPipeInQ);
 
     method setLocalNetworkSettings = packetParser.setLocalNetworkSettings; 
 

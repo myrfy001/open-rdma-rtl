@@ -33,8 +33,15 @@ interface SQ;
 endinterface
 
 (* synthesize *)
-module mkSQ(SQ);
-    let packetGen <- mkPacketGen;
+module mkSQ#(
+        Clock clkEthNap, 
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv, 
+        Reset rstQpcMrPgtSrv
+    )(SQ);
+
+    let packetGen <- mkPacketGen(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    
     interface wqePipeIn = packetGen.wqePipeIn;
     interface packetPipeOut = packetGen.packetPipeOut;
     interface mrTableQueryClt = packetGen.mrTableQueryClt;

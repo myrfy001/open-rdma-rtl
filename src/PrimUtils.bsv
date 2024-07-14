@@ -1,11 +1,15 @@
 import FIFOF :: *;
 import PAClib :: *;
-import ConnectableF :: *;
 import Printf :: *;
 import RegFile :: *;
+import Vector :: *;
+import Clocks :: *;
+import ClientServer :: *;
+import GetPut :: *;
+import SpecialFIFOs :: *;
 
-typedef 2 TWO;
-typedef 4 FOUR;
+import ConnectableF :: *;
+import DataTypes :: *;
 
 function Bool isZero(Bit#(nSz) bits); // provisos(Add#(1, anysize, nSz));
     Bool ret = unpack(|bits);
@@ -174,6 +178,303 @@ function Action immFail(String assertName, Fmt assertFmtMsg);
     endaction
 endfunction
 
+
+
+function Bit#(width) swapEndianByte(Bit#(width) data) provisos(Mul#(8, byteNum, width));
+    Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
+    return pack(reverse(dataVec));
+endfunction
+
+function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
+    Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
+    return pack(reverse(dataVec));
+endfunction
+
+
+function DataStream reverseStream(DataStream st);
+    st.data = swapEndianByte(st.data);
+    return st;
+endfunction
+
+function DataStreamEn reverseStreamEnAndData(DataStreamEn st);
+    st.data = swapEndianByte(st.data);
+    st.byteEn = swapEndianBit(st.byteEn);
+    return st;
+endfunction
+
+function DataStreamEn reverseStreamEnOnly(DataStreamEn st);
+    st.byteEn = swapEndianBit(st.byteEn);
+    return st;
+endfunction
+
+
+
+// module mkSyncFifoToFifoF#(SyncFIFOIfc#(tData) syncFifo)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+//     method deq = syncFifo.deq;
+//     method enq = syncFifo.enq;
+//     method first = syncFifo.first;
+//     method notEmpty = syncFifo.notEmpty;
+//     method notFull = syncFifo.notFull;
+
+//     method Action clear;
+//         immFail("not supported", $format(""));
+//     endmethod
+// endmodule
+
+typedef enum {
+    QueuedClientServerQueueTypeNormal = 0,
+    QueuedClientServerQueueTypeBypass = 1,
+    QueuedClientServerQueueTypePipeline = 2,
+    QueuedClientServerQueueTypeSync = 3
+} QueuedClientServerQueueType deriving(Bits, Eq);
+
+module mkFifofByType#(Integer depth, QueuedClientServerQueueType typ, Clock srcClk, Clock dstClk, Reset srcRst)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+    FIFOF#(tData) q;
+    if (typ == QueuedClientServerQueueTypeNormal) begin
+        q <- mkSizedFIFOF(depth);
+    end
+    else if (typ == QueuedClientServerQueueTypeBypass) begin
+        q <- mkSizedBypassFIFOF(depth);
+    end
+    else if (typ == QueuedClientServerQueueTypePipeline) begin
+        q <- mkLFIFOF;
+    end
+    else if (typ == QueuedClientServerQueueTypeSync) begin
+        SyncFIFOIfc#(tData) syncQ <- mkSyncFIFO(depth, srcClk, srcRst, dstClk);
+        q = f_Sync_FIFOF_to_FIFOF(syncQ);
+    end
+    return q;
+endmodule
+
+
+interface QueuedClient#(type t_req, type t_resp);
+    interface Client#(t_req, t_resp) clt;
+    method Action putReq(t_req req);
+    method Bool canPutReq;
+
+    method ActionValue#(t_resp) getResp();
+    method Bool hasResp;
+endinterface
+
+
+module mkSizedQueuedClient#(
+        String name, 
+        Integer reqDepth, 
+        Integer respDepth, 
+        QueuedClientServerQueueType reqType,
+        QueuedClientServerQueueType respType,
+        Clock srcClk,
+        Clock dstClk,
+        Reset srcRst,
+        Reset dstRst
+    )(QueuedClient#(t_req, t_resp)) provisos (
+        Bits#(t_req, sz_req),
+        Bits#(t_resp, sz_resp)
+    );
+    
+    FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
+    FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, dstClk, srcClk, dstRst);
+
+    // rule debug;
+    //     if (!reqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " reqQ");
+    //     end
+    //     if (!respQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
+    //     end
+    // endrule
+
+    interface Client clt;
+        interface Get request;
+            method ActionValue#(t_req) get();
+                reqQ.deq;
+                return reqQ.first;
+            endmethod
+        endinterface
+        interface Put response;
+            method Action put(t_resp resp);
+                respQ.enq(resp);
+            endmethod
+        endinterface
+    endinterface
+
+    method Action putReq(t_req req);
+        reqQ.enq(req);
+    endmethod
+
+    method Bool canPutReq = reqQ.notFull;
+
+    method ActionValue#(t_resp) getResp();
+        respQ.deq;
+        return respQ.first;
+    endmethod
+
+    method Bool hasResp = respQ.notEmpty;
+endmodule
+
+module mkQueuedClient#(String name)(QueuedClient#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp)
+);
+    let curClk <- exposeCurrentClock;
+    let curRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
+    return t;
+endmodule
+
+module mkSyncQueuedClient#(
+        String name,
+        Clock srvClk,
+        Reset srvRst
+    )(QueuedClient#(t_req, t_resp)) provisos (
+        Bits#(t_req, sz_req),
+        Bits#(t_resp, sz_resp)
+    );
+    let cltClk <- exposeCurrentClock;
+    let cltRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeSync, QueuedClientServerQueueTypeSync, cltClk, srvClk, cltRst, srvRst);
+    return t;
+endmodule
+
+
+interface QueuedServer#(type t_req, type t_resp);
+    interface Server#(t_req, t_resp) srv;
+
+    method ActionValue#(t_req) getReq();
+    method Bool hasReq;
+
+    method Action putResp(t_resp resp);
+    method Bool canPutResp;
+endinterface
+
+module mkSizedQueuedServer#(String name, 
+        Integer reqDepth,
+        Integer respDepth, 
+        QueuedClientServerQueueType reqType, 
+        QueuedClientServerQueueType respType,
+        Clock srcClk,
+        Clock dstClk,
+        Reset srcRst,
+        Reset dstRst
+    )(QueuedServer#(t_req, t_resp)) provisos (
+        Bits#(t_req, sz_req),
+        Bits#(t_resp, sz_resp)
+    );
+
+    FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
+    FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, dstClk, srcClk, dstRst);
+
+    rule debug;
+        if (!reqQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(name) , " reqQ");
+        end
+        if (!respQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(name) , " respQ");
+        end
+    endrule
+
+    interface Server srv;
+        interface Get response;
+            method ActionValue#(t_resp) get();
+                respQ.deq;
+                return respQ.first;
+            endmethod
+        endinterface
+        interface Put request;
+            method Action put(t_req req);
+                reqQ.enq(req);
+            endmethod
+        endinterface
+    endinterface
+
+    method Action putResp(t_resp resp);
+        respQ.enq(resp);
+    endmethod
+
+    method Bool canPutResp = respQ.notFull;
+
+    method ActionValue#(t_req) getReq();
+        reqQ.deq;
+        return reqQ.first;
+    endmethod
+
+    method Bool hasReq = reqQ.notEmpty;
+
+endmodule
+
+
+module mkQueuedServer#(String name)(QueuedServer#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp)
+);
+    let curClk <- exposeCurrentClock;
+    let curRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
+    return t;
+endmodule
+
+module mkSyncQueuedServer#(
+        String name,
+        Clock cltClk,
+        Reset cltRst
+    )(QueuedServer#(t_req, t_resp)) provisos (
+        Bits#(t_req, sz_req),
+        Bits#(t_resp, sz_resp)
+    );
+    let srvClk <- exposeCurrentClock;
+    let srvRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, cltClk, srvClk, cltRst, srvRst);
+    return t;
+endmodule
+
+function tData getAbsValue(tData a) provisos(Arith#(tData), Bitwise#(tData));
+    return msb(a) == 0 ? a : (~a) + 1;
+endfunction
+
+interface Server2Client#(type tReq, type tResp);
+    interface Server#(tReq, tResp) srv;
+    interface Client#(tReq, tResp) clt;
+endinterface
+
+module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
+        Bits#(tReq, szReq),
+        Bits#(tResp, szResp)
+    );
+
+    Wire#(tReq) reqWire <- mkWire;
+    Wire#(tResp) respWire <- mkWire;
+
+    interface Server srv;
+        interface Put request;
+            method Action put(tReq req);
+                reqWire <= req;
+            endmethod
+        endinterface
+
+        interface Get response;
+            method ActionValue#(tResp) get;
+                return respWire;
+            endmethod
+        endinterface
+    endinterface
+
+    interface Client clt;
+        interface Put response;
+            method Action put(tResp resp);
+                respWire <= resp;
+            endmethod
+        endinterface
+
+        interface Get request;
+            method ActionValue#(tReq) get;
+                return reqWire;
+            endmethod
+        endinterface
+    endinterface
+
+endmodule
+
+
 // PipeOut related
 
 function PipeOut#(anytype) toPipeOut(FIFOF#(anytype) queue);
@@ -184,6 +485,14 @@ function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
     return f_FIFOF_to_PipeIn(queue);
 endfunction
 
+function PipeOut#(anytype) toPipeOutSync(SyncFIFOIfc#(anytype) queue);
+    return f_Sync_FIFOF_to_PipeOut(queue);
+endfunction
+
+function PipeIn#(anytype) toPipeInSync(SyncFIFOIfc#(anytype) queue);
+    return f_Sync_FIFOF_to_PipeIn(queue);
+endfunction
+
 function PipeOut#(anytype) ugToPipeOut(FIFOF#(anytype) queue);
     return f_UGFIFOF_to_PipeOut(queue);
 endfunction
@@ -192,42 +501,7 @@ function PipeIn#(anytype) ugToPipeIn(FIFOF#(anytype) queue);
     return f_UGFIFOF_to_PipeIn(queue);
 endfunction
 
-// FlagsType related
 
-typedef struct {
-    Bit#(SizeOf#(enumType)) flags;
-} FlagsType#(type enumType) deriving(Bits, Bitwise, Eq);
-
-instance FShow#(FlagsType#(enumType)) provisos(
-    Bits#(enumType, tSz),
-    FShow#(enumType)
-);
-    function Fmt fshow(FlagsType#(enumType) inputVal);
-        Bit#(tSz) enumBits = pack(inputVal);
-
-        Fmt resultFmt = $format("FlagsType { flags: ", pack(inputVal), " = ");
-        for (Integer idx = 0; idx < valueOf(tSz); idx = idx + 1) begin
-            Bool bitValid = unpack(enumBits[idx]);
-            enumType enumVal = unpack(1 << idx);
-            if (bitValid) begin
-                resultFmt = resultFmt + $format(fshow(enumVal), " | ");
-            end
-        end
-
-        if (isZero(enumBits)) begin
-            enumType enumVal = unpack(0);
-            resultFmt = resultFmt + $format(fshow(enumVal), " }");
-        end
-        else begin
-            resultFmt = resultFmt + $format("}");
-        end
-        return resultFmt;
-    endfunction
-endinstance
-
-typeclass Flags#(type enumType);
-    function Bool isOneHotOrZero(enumType inputVal);
-endtypeclass
 
 function FlagsType#(enumType) enum2Flag(enumType inputVal) provisos(
     Bits#(enumType, tSz),

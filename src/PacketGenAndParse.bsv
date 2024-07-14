@@ -1,6 +1,7 @@
 import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
+import Clocks :: *;
 
 
 import ConnectableF :: *;
@@ -428,10 +429,16 @@ interface PacketGen;
     interface PipeIn#(DataStream) genRespPipeIn;
 endinterface
 
-module mkPacketGen(PacketGen);
-    FIFOF#(WorkQueueElem) wqePipeInQ <- mkFIFOF;
-    FIFOF#(PayloadGenReq) genReqPipeOutQ <- mkFIFOF;
-    FIFOF#(DataStream) genRespPipeInQ <- mkFIFOF;
+module mkPacketGen#(
+        Clock clkEthNap, 
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv, 
+        Reset rstQpcMrPgtSrv
+    )(PacketGen);
+
+    FIFOF#(WorkQueueElem)       wqePipeInQ      <- mkFIFOF;
+    SyncFIFOIfc#(PayloadGenReq) genReqPipeOutQ  <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
 
     AddressChunkMetaCalculator#(
             ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)
@@ -452,25 +459,51 @@ module mkPacketGen(PacketGen);
             alignAddrForBeat,
             devideLengthForBeat,
             isAddrAndLengthLowerPartSumOverflowForBeat,
-            getChunkSizeForBeat
+            getChunkSizeForBeat,
+            clocked_by clkEthNap,
+            reset_by rstEthNap
         );
     AddressChunker#(
             ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder, TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) packetToBeatChunker <- mkAddressChunker;
+        ) packetToBeatChunker <- mkAddressChunker(
+            clocked_by clkEthNap,
+            reset_by rstEthNap
+        );
     mkConnection(packetToBeatChunkMetaCalc.metaPipeOut, packetToBeatChunker.requestPipeIn);
 
-    StreamShifter payloadStreamShifter <- mkBiDirectionStreamShifter;
+    StreamShifter payloadStreamShifter <- mkBiDirectionStreamShifter(clocked_by clkEthNap, reset_by rstEthNap);
 
-    mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn);
+    mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
 
-    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF;
+    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
 
-    EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator;
-    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);
+    EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator(clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
 
     Reg#(PSN) psnReg <- mkRegU;
 
-    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
+    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+
+    
+    // Clock domain convert queues
+    SyncFIFOIfc#(
+            AddressChunkReq#(
+                ADDR, 
+                Length, 
+                BeatAddressChunkTypeDontCarePlaceHolder
+            )
+        )                                       packetToBeatChunkMetaCalcReqSyncQ               <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    SyncFIFOIfc#(DataBusSignedShiftOffset)      payloadStreamShifterOffsetPipeInSyncQ           <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    SyncFIFOIfc#(ThinMacIpUdpMetaDataForSend)   ethernetPacketGenMacIpUdpMetaPipeInSyncQ        <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    SyncFIFOIfc#(RdmaSendPacketMeta)            ethernetPacketGenRdmaPacketMetaPipeInSyncQ      <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+
+
+    mkConnection(toPipeOutSync(packetToBeatChunkMetaCalcReqSyncQ), packetToBeatChunkMetaCalc.requestPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(toPipeOutSync(payloadStreamShifterOffsetPipeInSyncQ), payloadStreamShifter.offsetPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+
+    mkConnection(toPipeOutSync(ethernetPacketGenMacIpUdpMetaPipeInSyncQ), ethernetPacketGen.macIpUdpMetaPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+    mkConnection(toPipeOutSync(ethernetPacketGenRdmaPacketMetaPipeInSyncQ), ethernetPacketGen.rdmaPacketMetaPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        
 
     // Pipeline Queues
     FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkFIFOF;
@@ -542,7 +575,7 @@ module mkPacketGen(PacketGen);
             ByteIndexInBeat localAddrOffset = truncate(wqe.laddr);
             ByteIndexInBeat remoteAddrOffset = truncate(wqe.raddr);
             DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(remoteAddrOffset) - zeroExtend(localAddrOffset);
-            payloadStreamShifter.offsetPipeIn.enq(localToRemoteAlignShiftOffset);
+            payloadStreamShifterOffsetPipeInSyncQ.enq(localToRemoteAlignShiftOffset);
         end
 
 
@@ -595,7 +628,7 @@ module mkPacketGen(PacketGen);
                 len: packetInfo.len,
                 chunk: dontCareValue
             };
-            packetToBeatChunkMetaCalc.requestPipeIn.enq(packetToBeatChunkReq);
+            packetToBeatChunkMetaCalcReqSyncQ.enq(packetToBeatChunkReq);
 
             if (packetInfo.isFirst) begin
                 psn = wqe.psn;
@@ -662,7 +695,7 @@ module mkPacketGen(PacketGen);
                 },
                 hasPayload: pipelineEntryIn.hasPayload
             };
-            ethernetPacketGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
+            ethernetPacketGenRdmaPacketMetaPipeInSyncQ.enq(rdmaPacketMeta);
         end
         else begin
             immFail(
@@ -670,8 +703,6 @@ module mkPacketGen(PacketGen);
                 $format("bthMaybe=", fshow(bthMaybe), ", extendHeaderBufferMaybe=", fshow(extendHeaderBufferMaybe))
             );
         end
-
-        
 
         let macIpUdpMeta = ThinMacIpUdpMetaDataForSend{
             dstMacAddr: wqe.macAddr,
@@ -683,7 +714,7 @@ module mkPacketGen(PacketGen);
             udpPayloadLen: udpPayloadLen,
             ethType: fromInteger(valueOf(ETH_TYPE_IP))
         };
-        ethernetPacketGen.macIpUdpMetaPipeIn.enq(macIpUdpMeta);
+        ethernetPacketGenMacIpUdpMetaPipeInSyncQ.enq(macIpUdpMeta);
 
 
         // $display(
@@ -750,7 +781,7 @@ module mkPacketGen(PacketGen);
     interface wqePipeIn = toPipeIn(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
     interface mrTableQueryClt = mrTableQueryCltInst.clt;
-    interface genReqPipeOut = toPipeOut(genReqPipeOutQ);
+    interface genReqPipeOut = toPipeOutSync(genReqPipeOutQ);
     interface genRespPipeIn = toPipeIn(genRespPipeInQ);
 endmodule
 

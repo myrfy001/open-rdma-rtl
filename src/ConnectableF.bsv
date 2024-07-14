@@ -1,6 +1,9 @@
 import PAClib :: *;
 import FIFOF :: *;
+import Clocks :: *;
+
 import Connectable :: *;
+
 
 // re-export PAAClib's PipeOut
 export PipeOut;
@@ -15,6 +18,10 @@ export ClientP(..);
 export f_FIFOF_to_PipeIn;
 export f_UGFIFOF_to_PipeIn;
 export f_UGFIFOF_to_PipeOut;
+export f_Sync_FIFOF_to_FIFOF;
+export f_Sync_FIFOF_to_PipeIn;
+export f_Sync_FIFOF_to_PipeOut;
+
 export Connectable;
 
 
@@ -88,6 +95,37 @@ function PipeOut #(tData)  f_UGFIFOF_to_PipeOut  (FIFOF #(tData) fifof);
                endmethod
             endinterface);
  endfunction
+
+ function FIFOF#(tData) f_Sync_FIFOF_to_FIFOF(SyncFIFOIfc#(tData) syncFifo);
+    return (interface FIFOF;
+                method enq = syncFifo.enq;
+                method notFull = syncFifo.notFull;
+                method first = syncFifo.first;
+                method deq = syncFifo.deq;
+                method notEmpty = syncFifo.notEmpty;
+
+                method Action clear;
+                    $display("clear not supported on sync fifo converted FIFOF interface");
+                    $finish(1);
+                endmethod
+            endinterface);
+endfunction
+
+ function PipeIn#(tData) f_Sync_FIFOF_to_PipeIn(SyncFIFOIfc#(tData) syncFifo);
+    return (interface PipeIn;
+                method enq = syncFifo.enq;
+                method notFull = syncFifo.notFull;
+            endinterface);
+endfunction
+
+function PipeOut#(tData) f_Sync_FIFOF_to_PipeOut(SyncFIFOIfc#(tData) syncFifo);
+    return (interface PipeOut;      
+                method first = syncFifo.first;
+                method deq = syncFifo.deq;
+                method notEmpty = syncFifo.notEmpty;
+            endinterface);
+endfunction
+
 
 
 instance Connectable#(PipeOut#(t), PipeIn#(t));

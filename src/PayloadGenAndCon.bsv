@@ -65,10 +65,13 @@ interface PayloadGenAndCon;
 endinterface
 
 (* synthesize *)
-module mkPayloadGenAndCon(PayloadGenAndCon);
+module mkPayloadGenAndCon#(
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(PayloadGenAndCon);
 
-    PayloadGen payloadGen <- mkPayloadGen;
-    PayloadCon payloadCon <- mkPayloadCon;
+    PayloadGen payloadGen <- mkPayloadGen(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    PayloadCon payloadCon <- mkPayloadCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
     interface genAddrTranslateClt = payloadGen.addrTranslateClt;
     interface genReqPipeIn = payloadGen.genReqPipeIn;
@@ -86,7 +89,10 @@ module mkPayloadGenAndCon(PayloadGenAndCon);
 endmodule
 
 (* synthesize *)
-module mkPayloadGen(PayloadGen);
+module mkPayloadGen#(
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
@@ -95,7 +101,7 @@ module mkPayloadGen(PayloadGen);
     FIFOF#(AxiMmNapBeatR)  dmaReadRespPipeInQ   <- mkFIFOF;
 
 
-    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadGen addrTranslateCltInst");
+    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadGen addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
 
     AddressChunkMetaCalculator#(
@@ -274,7 +280,10 @@ endmodule
 
 
 (* synthesize *)
-module mkPayloadCon(PayloadCon);
+module mkPayloadCon#(
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(PayloadCon);
 
     FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) payloadConStreamPipeInQ <- mkFIFOF;
@@ -284,7 +293,7 @@ module mkPayloadCon(PayloadCon);
     FIFOF#(AxiMmNapBeatW) dmaWriteReqDataPipeOutQ <- mkFIFOF;
     FIFOF#(AxiMmNapBeatB) dmaWriteRespPipeInQ <- mkFIFOF;
 
-    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadCon addrTranslateCltInst");
+    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadCon addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
     AddressChunkMetaCalculator#(
             ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,

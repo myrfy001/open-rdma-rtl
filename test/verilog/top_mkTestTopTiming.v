@@ -41,6 +41,9 @@ module top_mkTestTopTiming (
     // Ports for pll_eth_ref_900M
     input wire        eth_ref_clk,
     input wire        pll_eth_ref_900M_lock,
+    // Ports for pll_logic_400M
+    input wire        pll_logic_400M_lock,
+    input wire        pll_logic_clk,
     // Ports for pll_noc
     input wire        pll_noc_clk,
     input wire        pll_noc_lock
@@ -68,7 +71,7 @@ module top_mkTestTopTiming (
 
     // Create an main reset, based on reg_clk
     reset_processor_v2 #(
-        .NUM_INPUT_RESETS       (5),    // One reset sources
+        .NUM_INPUT_RESETS       (6),    // One reset sources
         .IN_RST_PIPE_LENGTH     (8),    // Length of input flop pipeline, minimum of 2
                                         // Ignored if SYNC_INPUT_RESETS = 0
         .SYNC_INPUT_RESETS      (1),    // Synchronize input resets
@@ -76,7 +79,7 @@ module top_mkTestTopTiming (
                                         // Ignored if RESET_OVER_CLOCK = 1
         .RESET_OVER_CLOCK       (0)     // Set to route the output reset over the clock network
     ) i_reset_processor_main (
-        .i_rstn_array       ({reset_pipe[$bits(reset_pipe)-1], pll_eth_507M_lock, pll_eth_ff_800M_lock, pll_eth_ref_900M_lock, pll_noc_lock}),
+        .i_rstn_array       ({reset_pipe[$bits(reset_pipe)-1], pll_eth_507M_lock, pll_eth_ff_800M_lock, pll_eth_ref_900M_lock, pll_noc_lock, pll_logic_400M_lock}),
         .i_clk              (clk),
         .o_rstn             (rstn)
     );  
@@ -106,8 +109,12 @@ module top_mkTestTopTiming (
     // );
 
     mkTestTopTiming dutInst(
-        .CLK(clk),
+        .CLK(pll_logic_clk),
         .RST_N(rstn),
+        .CLK_clkEthNap(clk),
+        .RST_N_rstEthNap(rstn),
+        .CLK_clkQpcMrPgtSrv(clk),
+        .RST_N_rstQpcMrPgtSrv(rstn),
         .getOutput(getOutput),
         .RDY_getOutput(RDY_getOutput)
     ) /* synthesis syn_preserve=1 */;
@@ -180,7 +187,7 @@ module top_mkTestTopTiming (
     ) x_snapshot (
         .i_jtag_in(i_jtag_in),
         .o_jtag_out(o_jtag_out),
-        .i_user_clk(clk),
+        .i_user_clk(pll_logic_clk),
         .i_monitor(monitor),
         .i_trigger(), // not used if STANDARD_TRIGGERS = 1
         .o_stimuli(EN_run),

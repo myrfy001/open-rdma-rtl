@@ -4,6 +4,7 @@ import Vector :: *;
 import BuildVector :: *;
 import PAClib :: *; 
 import GetPut :: *;
+import Clocks :: *;
 import Settings :: *;
 
 import PrimUtils :: *;
@@ -35,17 +36,23 @@ interface TestTopTiming;
     method Bool getOutput;
 endinterface
 
-module mkTestTopTiming(TestTopTiming);
-    let dut <- mkBsvTop;
+module mkTestTopTiming#(
+        Clock clkEthNap,
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(TestTopTiming);
 
-    Reg#(Bool) outputReg <- mkRegU;
+    let dut <- mkBsvTop(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
-    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    Reg#(Bool) outputSyncReg <- mkSyncRegToCC(False, clkEthNap, rstEthNap);
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA, clocked_by clkEthNap, reset_by rstEthNap);
     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
     let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
-    let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
+    let randSource4 <- mkSynthesizableRng512('hDDDDDDDD, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, ForceKeepWideSignals#(DataStream)) signalKeeperForRawPacketVec <- replicateM(mkForceKeepWideSignals); 
+    Vector#(HARDWARE_QP_CHANNEL_CNT, ForceKeepWideSignals#(DataStream)) signalKeeperForRawPacketVec <- replicateM(mkForceKeepWideSignals(clocked_by clkEthNap, reset_by rstEthNap)); 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         mkConnection(dut.otherRawPacketPipeOutVec[idx], signalKeeperForRawPacketVec[idx].bitsPipeIn);
     end
@@ -89,7 +96,7 @@ module mkTestTopTiming(TestTopTiming);
         outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[1].out));
         outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[2].out));
         outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[3].out));
-        outputReg <= outputVal;
+        outputSyncReg <= outputVal;
     endrule
 
     rule setNetworkParam;
@@ -98,5 +105,5 @@ module mkTestTopTiming(TestTopTiming);
         dut.setLocalNetworkSettings(networkSettings);
     endrule
 
-    method getOutput = outputReg;
+    method getOutput = outputSyncReg;
 endmodule

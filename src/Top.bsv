@@ -33,65 +33,69 @@ interface BsvTop;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
-module mkBsvTop(BsvTop);
+module mkBsvTop#(
+        Clock clkEthNap,
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(BsvTop);
 
-    Clock clkEthNap <- exposeCurrentClock;
-    Reset rstEthNap <-exposeCurrentReset;
+    // Clock clkEthNap <- exposeCurrentClock;
+    // Reset rstEthNap <- exposeCurrentReset;
 
-    QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery;
-    MemRegionTableEightWayQuery mrTable <- mkMemRegionTableEightWayQuery;
-    AddressTranslateEightWayQuery addrTranslator <- mkAddressTranslateEightWayQuery;
+    // Clock clkQpcMrPgtSrv <- exposeCurrentClock;
+    // Reset rstQpcMrPgtSrv <- exposeCurrentReset;
 
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapEthernetWrapper) ethNapVec = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapSlaveWrapperPipe) dmaReadWriteSlaveNapVec <- replicateM(mkAcxNapSlaveWrapperPipe);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ( clkEthNap,  rstEthNap));
+    QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    MemRegionTableEightWayQuery mrTable <- mkMemRegionTableEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    AddressTranslateEightWayQuery addrTranslator <- mkAddressTranslateEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapEthernetWrapperPipe) ethNapVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapSlaveWrapperPipe) dmaReadWriteSlaveNapVec <- replicateM(mkAcxNapSlaveWrapperPipe(clocked_by clkEthNap, reset_by rstEthNap));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkEthNap,  rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkEthNap,  rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
 
+        // Payload gen and con
         mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);
         mkConnection(sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
 
-        mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn);
-        mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut);
+        mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+
+        // ethernet nap
+        ethNapVec[idx] <- mkAcxNapEthernetWrapperPipe(fromInteger(idx * 2), fromInteger(idx * 2 + 1), clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(sqVec[idx].packetPipeOut, ethNapVec[idx].sendPipeIn);
+        mkConnection(rqVec[idx].ethernetFramePipeIn, ethNapVec[idx].recvPipeOut);
 
 
+        // QPContext, MR Table and PGT
+        mkConnection(rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
-        ethNapVec[idx] <- mkAcxNapEthernetWrapper(fromInteger(idx * 2), fromInteger(idx * 2 + 1));
+        mkConnection(sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
-        mkConnection(rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx]);
+        mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
-        mkConnection(sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2]);
-        mkConnection(rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1]);
+        // RDMA payload DMA NAP
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNapVec[idx].readPipeIfc.readAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNapVec[idx].readPipeIfc.readRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
 
-        mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2]);
-        mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1]);
-
-
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNapVec[idx].readPipeIfc.readAddrPipeIn);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNapVec[idx].readPipeIfc.readRespPipeOut);
-
+    
+        // IO interface 
         wqePipeInVecInst[idx]               = sqVec[idx].wqePipeIn;
         otherRawPacketPipeOutVecInst[idx]   = rqVec[idx].otherRawPacketPipeOut;
-
-        rule forwardEthBeatSend;
-            if (sqVec[idx].packetPipeOut.notEmpty) begin
-                ethNapVec[idx].send(sqVec[idx].packetPipeOut.first);
-                sqVec[idx].packetPipeOut.deq;
-            end
-        endrule   
-        
-        rule forwardEthBeatRecv;
-            let beat <- ethNapVec[idx].recv;
-            rqVec[idx].ethernetFramePipeIn.enq(beat);
-        endrule   
     end
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
