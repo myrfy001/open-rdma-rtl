@@ -55,7 +55,7 @@ module top_mkTestTopTiming (
     
 );
     /********** clock ************************************************************/
-    wire clk = i_eth_clk;
+    wire eth_clk = i_eth_clk;
     
     /********** reset ************************************************************/
     // No reset input to VectorPath card, so generate a self-starting reset from power up
@@ -64,10 +64,13 @@ module top_mkTestTopTiming (
     logic [32 -1:0] reset_pipe = 16'h0;
 
     // Use syn_keep to retain name, so it can assigned to reset over clock
-    logic rstn /* synthesis syn_keep=1 */;
+    logic logic_rstn /* synthesis syn_keep=1 */;
+    logic eth_rstn /* synthesis syn_keep=1 */;
 
-    always @(posedge clk)
+    always @(posedge eth_clk)
         reset_pipe <= {reset_pipe[$bits(reset_pipe)-2 : 0], 1'b1};
+
+    wire [5:0] i_rstn_array = {reset_pipe[$bits(reset_pipe)-1], pll_eth_507M_lock, pll_eth_ff_800M_lock, pll_eth_ref_900M_lock, pll_noc_lock, pll_logic_400M_lock};
 
     // Create an main reset, based on reg_clk
     reset_processor_v2 #(
@@ -78,10 +81,24 @@ module top_mkTestTopTiming (
         .OUT_RST_PIPE_LENGTH    (4),    // Length of reset flop pipeline, minimum of 2
                                         // Ignored if RESET_OVER_CLOCK = 1
         .RESET_OVER_CLOCK       (0)     // Set to route the output reset over the clock network
-    ) i_reset_processor_main (
-        .i_rstn_array       ({reset_pipe[$bits(reset_pipe)-1], pll_eth_507M_lock, pll_eth_ff_800M_lock, pll_eth_ref_900M_lock, pll_noc_lock, pll_logic_400M_lock}),
-        .i_clk              (clk),
-        .o_rstn             (rstn)
+    ) i_reset_processor_logic (
+        .i_rstn_array       (i_rstn_array),
+        .i_clk              (pll_logic_clk),
+        .o_rstn             (logic_rstn)
+    );  
+
+    reset_processor_v2 #(
+        .NUM_INPUT_RESETS       (6),    // One reset sources
+        .IN_RST_PIPE_LENGTH     (8),    // Length of input flop pipeline, minimum of 2
+                                        // Ignored if SYNC_INPUT_RESETS = 0
+        .SYNC_INPUT_RESETS      (1),    // Synchronize input resets
+        .OUT_RST_PIPE_LENGTH    (4),    // Length of reset flop pipeline, minimum of 2
+                                        // Ignored if RESET_OVER_CLOCK = 1
+        .RESET_OVER_CLOCK       (0)     // Set to route the output reset over the clock network
+    ) i_reset_processor_eth (
+        .i_rstn_array       (i_rstn_array),
+        .i_clk              (eth_clk),
+        .o_rstn             (eth_rstn)
     );  
 
 
@@ -94,12 +111,12 @@ module top_mkTestTopTiming (
     //     .ADDR_WIDTH(12),
     //     .DATA_WIDTH(512)
     // ) auto_infer_bram_test (
-    //     .wr_clk(clk),
-    //     .rd_clk(clk),
+    //     .wr_clk(eth_clk),
+    //     .rd_clk(eth_clk),
     //     // Enables
     //     .we(1),
     //     .rd_en(1),
-    //     .rstreg(rstn),
+    //     .rstreg(logic_rstn),
     //     // Address and data
     //     .wr_addr(wr_addr),
     //     .rd_addr(rd_addr),
@@ -110,11 +127,11 @@ module top_mkTestTopTiming (
 
     mkTestTopTiming dutInst(
         .CLK(pll_logic_clk),
-        .RST_N(rstn),
-        .CLK_clkEthNap(clk),
-        .RST_N_rstEthNap(rstn),
-        .CLK_clkQpcMrPgtSrv(clk),
-        .RST_N_rstQpcMrPgtSrv(rstn),
+        .RST_N(logic_rstn),
+        .CLK_clkEthNap(eth_clk),
+        .RST_N_rstEthNap(eth_rstn),
+        .CLK_clkQpcMrPgtSrv(eth_clk),
+        .RST_N_rstQpcMrPgtSrv(eth_rstn),
         .getOutput(getOutput),
         .RDY_getOutput(RDY_getOutput)
     ) /* synthesis syn_preserve=1 */;

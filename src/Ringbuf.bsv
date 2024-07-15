@@ -1,19 +1,29 @@
 import Vector :: *;
-import UserLogicSettings :: *;
-import UserLogicTypes :: *;
+import Settings :: *;
 import DataTypes :: *;
-import Headers :: *;
+import RdmaHeaders :: *;
 import FIFOF :: *;
+import FIFOLevel :: *;
 import Arbitration :: *;
 import PAClib :: *;
 import PrimUtils :: *;
 import ClientServer :: *;
+import Connectable :: *;
 import GetPut :: *;
 import ConfigReg :: * ;
 import Randomizable :: *;
 import PrimUtils :: *;
 import RdmaUtils :: *;
 
+import ConnectableF :: *;
+
+typedef 3 RINGBUF_NUMBER_WIDTH;
+
+typedef 32   USER_LOGIC_DESCRIPTOR_BYTE_WIDTH;
+typedef TMul#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH, BYTE_WIDTH)  USER_LOGIC_DESCRIPTOR_BIT_WIDTH; // 256 bit
+
+typedef Bit#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH)   RingbufRawDescriptor;
+typedef Bit#(RINGBUF_NUMBER_WIDTH)              RingbufNumber;
 
 function Bool isRingbufNotEmpty(RingbufPointer#(sz_rbp) head, RingbufPointer#(sz_rbp) tail);
     return !(head == tail);
@@ -23,9 +33,6 @@ function Bool isRingbufNotFull(RingbufPointer#(sz_rbp) head, RingbufPointer#(sz_
     return !((head.idx == tail.idx) && (head.guard != tail.guard));
 endfunction
 
-function Tuple2#(PageNumber128k, PageOffset128k) getPageNumberAndOffset4k(ADDR addr);
-    return unpack(pack(addr));
-endfunction
 
 typedef struct {
     Bool guard;
@@ -78,36 +85,56 @@ instance Literal#(RingbufPointer#(w));
    endfunction
 endinstance
 
+
+typedef 4096  USER_LOGIC_RING_BUF_4096_DEEP; 
+typedef TLog#(USER_LOGIC_RING_BUF_4096_DEEP)  USER_LOGIC_RING_BUF_4096_DEEP_WIDTH; 
 typedef RingbufPointer#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) Fix128kBRingBufPointer;
 
-typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) ReadBlockOffset;
+typedef 8 RINGBUF_DESC_ENTRY_PER_READ_BLOCK;
+typedef 4 RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK;
+
+
+typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) RingBufReadBlockOffset;
+typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)) RingBufWriteBlockOffset;
 
 typedef struct {
     ADDR addr;
-    ReadBlockOffset zeroBasedDescReadCnt;
-} RingbufDmaReadReq;
+    RingBufReadBlockOffset zeroBasedDescReadCnt;
+} RingbufDmaReadReq deriving(Bits, FShow);
+
+typedef struct {
+    DataStream data;
+} RingbufDmaReadResp deriving(Bits, FShow);
 
 typedef struct {
     ADDR addr;
-    ReadBlockOffset zeroBasedDescReadCnt;
-} RingbufDmaReadResp;
+    RingBufWriteBlockOffset zeroBasedDescWriteCnt;
+} RingbufDmaWriteReq deriving(Bits, FShow);
+
+typedef struct {
+    Bool isSuccess;
+} RingbufDmaWriteResp deriving(Bits, FShow);
 
 
 interface RingbufH2cMetadata;
     interface Reg#(ADDR) addr;
     interface Reg#(Fix128kBRingBufPointer) head;
     interface Reg#(Fix128kBRingBufPointer) tail;
-    interface Reg#(Fix128kBRingBufPointer) tailShadow;
 endinterface
 
 interface RingbufH2c;
     interface RingbufH2cMetadata controlRegs;
-    interface RingbufDmaH2cClt dmaClt;
-    interface PipeOut#(RingbufRawDescriptor) descPipeout;
+    interface PipeOut#(RingbufDmaReadReq) dmaReadReqPipeOut;
+    interface PipeIn#(RingbufDmaReadResp) dmaReadRespPipeIn;
+    interface PipeOut#(RingbufRawDescriptor) descPipeOut;
 endinterface
 
+
+// Important Note: The whole algorithm below based on the fact that the NAP bit width is 256 bits, and
+// is the same as our descriptor size, so when doing aligned memory read, each NAP read beat is a 
+// complete descriptor.
 module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc) provisos (
-        Alias#(Bit#(TSub#(SizeOf#(Fix128kBRingBufPointer), TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))), ReadBlockIndex)
+        Alias#(tReadBlockIndex, Bit#(TSub#(SizeOf#(Fix128kBRingBufPointer), TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))))
     );
 
     FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(internalBufSize);
@@ -115,62 +142,50 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc)
 
     mkConnection(toGet(bufQ), toPut(outputQ));
     
-
     Reg#(ADDR) baseAddrReg <- mkReg(0);
     Reg#(Fix128kBRingBufPointer) headReg[2] <- mkCReg(2, unpack(0));
     Reg#(Fix128kBRingBufPointer) tailReg[2] <- mkCReg(2, unpack(0));
     Reg#(Fix128kBRingBufPointer) tailShadowReg <- mkConfigReg(unpack(0));
-    FIFOF#(UserLogicDmaH2cReq) dmaReqQ <- mkFIFOF;
-    FIFOF#(UserLogicDmaH2cResp) dmaRespQ <- mkFIFOF;
+    FIFOF#(RingbufDmaReadReq) dmaReqQ <- mkFIFOF;
+    FIFOF#(RingbufDmaReadResp) dmaRespQ <- mkFIFOF;
 
     Reg#(Bool) isWaitingDmaRespReg <- mkReg(False);
     
     rule sendDmaReq if (isWaitingDmaRespReg == False);
 
-
-
-        ReadBlockIndex readBlockIdxOfHead = truncate(headReg >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
-        ReadBlockIndex readBlockIdxOfTailShadow = truncate(tailShadowReg >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
+        tReadBlockIndex readBlockIdxOfHead = truncate(pack(headReg[0]) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
+        tReadBlockIndex readBlockIdxOfTailShadow = truncate(pack(tailShadowReg) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
 
         Bool isHeadAndTailShadowInTheSameReadBlock = readBlockIdxOfHead == readBlockIdxOfTailShadow;
         Bool needDoDMA = isRingbufNotEmpty(headReg[0], tailShadowReg) && !bufQ.notEmpty;
 
-        ReadBlockOffset tailShadowReadBlockOffset = truncate(tailShadowReg);
-        let zeroBasedMaxDescReadCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK) - 1) - tailShadowReadBlockOffset;
-        ReadBlockOffset spanBetweenHeadAndTailShadow = truncate(headReg) - truncate(tailShadowReg);
+        RingBufReadBlockOffset tailShadowRingBufReadBlockOffset = truncate(pack(tailShadowReg));
+        let zeroBasedMaxDescReadCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK) - 1) - tailShadowRingBufReadBlockOffset;
+        RingBufReadBlockOffset spanBetweenHeadAndTailShadow = truncate(pack(headReg[0])) - truncate(pack(tailShadowReg));
+
+        Fix128kBRingBufPointer nextReadBlockAlignedPointer = unpack(pack(tailShadowReg) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
+        nextReadBlockAlignedPointer = nextReadBlockAlignedPointer + 1;
+        nextReadBlockAlignedPointer = unpack(pack(nextReadBlockAlignedPointer) << valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
         
+        ADDR dmaReadStartAddr = baseAddrReg + (zeroExtend(pack(tailShadowReg.idx)) << valueOf(DATA_BUS_BYTE_NUM_WIDTH));
+
         if (needDoDMA) begin
-            let zeroBasedDescReadCnt = isHeadAndTailShadowInTheSameReadBlock ? spanBetweenHeadAndTailShadow - 1 : zeroBasedMaxDescReadCnt;
 
-        end
-
-
-        // generate a temp constant var as mask, use it to align pointer.
-        Fix4kBRingBufPointer ringbufReadBlockInnerOffsetMask = 0;
-        ringbufReadBlockInnerOffsetMask.idx = ~((1 << valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))) - 1); 
-
-        if (isRingbufNotEmpty(headReg[0], tailShadowReg) && !bufQ.notEmpty) begin
-            
-            let readBlockAlignedTailShadow = tailShadowReg + fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
-            readBlockAlignedTailShadow.idx = readBlockAlignedTailShadow.idx & ringbufReadBlockInnerOffsetMask.idx;
-
-            let availableEntryCnt = headReg[0] - tailShadowReg;
-            let avaliableSlotInReadBlock = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) - pack(tailShadowReg.idx)[valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))-1:0];
-            
-            Fix4kBRingBufPointer newTailShadow;
-            if (pack(availableEntryCnt) > avaliableSlotInReadBlock) begin
-                newTailShadow = readBlockAlignedTailShadow;
-            end 
-            else begin
+            RingBufReadBlockOffset zeroBasedDescReadCnt = ?;
+            Fix128kBRingBufPointer newTailShadow = ?;
+            if (isHeadAndTailShadowInTheSameReadBlock) begin
+                zeroBasedDescReadCnt = spanBetweenHeadAndTailShadow - 1;
                 newTailShadow = headReg[0];
             end
-
-            dmaReqQ.enq(UserLogicDmaH2cReq{
-                    addr: curReadBlockStartAddr,
-                    len: fromInteger(valueOf(RINGBUF_BLOCK_READ_LEN))
+            else begin
+                zeroBasedDescReadCnt = zeroBasedMaxDescReadCnt;
+                newTailShadow = nextReadBlockAlignedPointer;
+            end
+            
+            dmaReqQ.enq(RingbufDmaReadReq{
+                    addr: dmaReadStartAddr,
+                    zeroBasedDescReadCnt: zeroBasedDescReadCnt
             });
-            // $display("h2c ringbuf send new dma request");
-            tailPosInReadBlockReg <= truncate(pack(tailReg[0]));
 
             tailShadowReg <= newTailShadow;
             isWaitingDmaRespReg <= True;
@@ -179,131 +194,169 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc)
 
 
     rule recvDmaResp if (isWaitingDmaRespReg == True);
-        let {desc, isLast} = splitedDescQ.first;
-        splitedDescQ.deq;
+        let readRespDs = dmaRespQ.first;
+        dmaRespQ.deq;
 
-        if (tailPosInReadBlockReg > 0) begin
-            // skip already consumed descriptors in previous block read.
-            tailPosInReadBlockReg <= tailPosInReadBlockReg - 1;
-            // $display("skip already handled...tailPosInReadBlockReg=", tailPosInReadBlockReg);
-        end 
-        else begin
-            let newTail = tailReg[0];
-            if (tailReg[0] != tailShadowReg) begin
-                // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
-                t_elem t = unpack(pack(desc));
-                // $display("Ringbuf H2c enqueue descriptor, qIdx=", fshow(qIdx), fshow(t));
-                fifoCntrl.fillBuf(t);
-                newTail = tailReg[0] + 1;
-                tailReg[0] <= newTail;
-                // $display("tail incr...old tailReg=%h, new=%x", tailReg[0], newTail);
-            end 
-            else begin
-                // $display("skip invalid...tailReg=%h", tailReg[0]);
-            end
+        bufQ.enq(unpack(readRespDs.data.data));
+        let newTail = tailReg[0] + 1;
+        tailReg[0] <= newTail;
 
-            if (isLast) begin
-                // $display("current read block finished.");
-                isWaitingDmaRespReg <= False;
-                immAssert(
-                    newTail == tailShadowReg,
-                    "shadowTail assertion @ mkRingbufH2cMetadata",
-                    $format(
-                        "newTail=%h should == shadowTail=%h, ",
-                        newTail, tailShadowReg
-                    )
-                );
-            end
+        if (readRespDs.data.isLast) begin
+            // $display("current read block finished.");
+            isWaitingDmaRespReg <= False;
+            immAssert(
+                newTail == tailShadowReg,
+                "shadowTail assertion @ mkRingbufH2cMetadata",
+                $format(
+                    "newTail=%h should == shadowTail=%h, ",
+                    newTail, tailShadowReg
+                )
+            );
         end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRingbufH2c recvDmaResp"),
+        //     toBlue(", qIdx="), fshow(qIdx),
+        //     toBlue(", old tailReg="), fshow(tailReg[0]),
+        //     toBlue(", new tailReg="), fshow(newTail),
+        //     toBlue(", desc="), fshow(readRespDs)
+        // );
     endrule
 
-    interface RingbufH2cMetadata metadata;
+    interface RingbufH2cMetadata controlRegs;
         interface addr = baseAddrReg;
         interface head = headReg[1];
         interface tail = tailReg[1];
-        interface tailShadow = tailShadowReg;
     endinterface
-    interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);
-    interface descPipeout = toPipeOut(outputQ);
+
+    interface dmaReadReqPipeOut = toPipeOut(dmaReqQ);
+    interface dmaReadRespPipeIn = toPipeIn(dmaRespQ);
+
+    interface descPipeOut = toPipeOut(outputQ);
 endmodule
 
 
 
 interface RingbufC2hMetadata;
     interface Reg#(ADDR) addr;
-    interface Reg#(Fix4kBRingBufPointer) head;
-    interface Reg#(Fix4kBRingBufPointer) tail;
-    interface Reg#(Fix4kBRingBufPointer) headShadow;
+    interface Reg#(Fix128kBRingBufPointer) head;
+    interface Reg#(Fix128kBRingBufPointer) tail;
 endinterface
 
-interface RingbufC2hController;
-    interface RingbufC2hMetadata metadata;
-    interface RingbufDmaC2hClt dmaClt;
+interface RingbufC2h;
+    interface RingbufC2hMetadata controlRegs;
+    interface PipeOut#(RingbufDmaWriteReq) dmaWriteReqPipeOut;
+    interface PipeOut#(DataStream) dmaWriteDataPipeOut;
+    interface PipeIn#(RingbufRawDescriptor) descPipeIn;
 endinterface
 
 
 // TODO: For C2H, doesn't support batch descriptor writeback now. 
-module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, RingbufC2hController ifc)
-    provisos(
-        Bits#(t_elem, sz_elem),
-        Bits#(RingbufRawDescriptor, sz_elem)
+module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
+        Alias#(Bit#(TSub#(SizeOf#(Fix128kBRingBufPointer), TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK))), tWriteBlockIndex)
     );
 
-    Reg#(ADDR) baseAddrReg <- mkReg(0);
-    Reg#(Fix4kBRingBufPointer) headReg[2] <- mkCReg(2, unpack(0));
-    Reg#(Fix4kBRingBufPointer) tailReg[2] <- mkCReg(2, unpack(0));
-    Reg#(Fix4kBRingBufPointer) headShadowReg <- mkConfigReg(unpack(0));
-    FIFOF#(UserLogicDmaC2hReq) dmaReqQ <- mkFIFOF;
-    FIFOF#(UserLogicDmaC2hResp) dmaRespQ <- mkFIFOF;
+    FIFOCountIfc#(RingbufRawDescriptor, NUMERIC_TYPE_EIGHT)    bufQ    <- mkFIFOCount;
+    FIFOF#(RingbufRawDescriptor)                            inputQ  <- mkFIFOF;
+    mkConnection(toGet(inputQ), toPut(bufQ));
 
+    Reg#(ADDR)                      baseAddrReg     <- mkReg(0);
+    Reg#(Fix128kBRingBufPointer)    headReg[2]      <- mkCReg(2, unpack(0));
+    Reg#(Fix128kBRingBufPointer)    tailReg[2]      <- mkCReg(2, unpack(0));
+    Reg#(Fix128kBRingBufPointer)    headShadowReg   <- mkConfigReg(unpack(0));
+    FIFOF#(RingbufDmaWriteReq)      dmaWriteAddrQ   <- mkFIFOF;
+    FIFOF#(DataStream)              dmaWriteDataQ   <- mkFIFOF;
 
-    Reg#(RingbufReadBlockInnerOffset) headPosInReadBlockReg <- mkReg(0);
+    Reg#(Bit#(NUMERIC_TYPE_TWO))       batchDelayCounterReg        <- mkReg(0);
+    Reg#(Bool)                          isSendingDescBodyReg        <- mkReg(False);
+    Reg#(RingBufWriteBlockOffset)       zeroBasedDescWriteCntReg    <- mkRegU;
 
-    
-    rule sendDmaReq;
-
-        if (isRingbufNotFull(headShadowReg, tailReg[0]) && fifoCntrl.notEmpty) begin
-
-            let {curWriteBlockStartAddrPgn, _} = getPageNumberAndOffset4k(baseAddrReg);
-
-            PageOffset4k curWriteBlockStartAddrOff = zeroExtend(
-                headShadowReg.idx
-            ) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
-
-            ADDR curWriteStartAddr = unpack({pack(curWriteBlockStartAddrPgn), pack(curWriteBlockStartAddrOff)});
-
-            DataStream ds;
-            ds.isLast = True;
-            ds.isFirst = True;
-            ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
-            ds.data = unpack(zeroExtend(pack(fifoCntrl.first)));
-            fifoCntrl.deq;
-
-            dmaReqQ.enq(UserLogicDmaC2hReq{
-                    addr: curWriteStartAddr,
-                    len: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
-                    dataStream: dataStream2DataStreamEnRightAlign(ds)
-            });
-
-
-            headShadowReg <= headShadowReg + 1;
+    rule handleBatchDelay;
+        if (!bufQ.notEmpty) begin
+            batchDelayCounterReg <= 0;
+        end
+        else begin
+            if (batchDelayCounterReg != -1) begin
+                batchDelayCounterReg <= batchDelayCounterReg + 1;
+            end
         end
     endrule
+    
+    rule prepareDmaWrite if (!isSendingDescBodyReg);
+        tWriteBlockIndex writeBlockIdxOfHeadShadow = truncate(pack(headShadowReg) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)));
+        tWriteBlockIndex writeBlockIdxOfTail = truncate(pack(tailReg[0]) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)));
+        Bool isHeadShadowAndTailInTheSameReadBlock = writeBlockIdxOfHeadShadow == writeBlockIdxOfTail;
+        Bool isBatchDelayCounterFired = batchDelayCounterReg == -1;
+        Fix128kBRingBufPointer freeSlotCnt = tailReg[0] - headShadowReg;
+        Fix128kBRingBufPointer zeroBasedFreeSlotCnt = freeSlotCnt - 1;
+        
+        Fix128kBRingBufPointer availableDescToWrite = unpack(zeroExtend(pack(bufQ.count)));
+        availableDescToWrite = pack(availableDescToWrite) > pack(freeSlotCnt) ? freeSlotCnt : availableDescToWrite;
+        Fix128kBRingBufPointer zeroBasefAvailableDescToWrite = availableDescToWrite - 1;
 
-    rule recvDmaResp;
-        dmaRespQ.deq;
-        let resp = dmaRespQ.first;
-        // $display("recvDmaResp @ Q=%d -- head = %x, tail = %x, head_shadow = %x", qIdx, headReg[0], tailReg[0], headShadowReg);
-        let newHead = headReg[0] + 1;
-        headReg[0] <= newHead;
-        // $display("head incr...old headReg=%h, new=%x", headReg[0], newHead);
+        RingBufWriteBlockOffset headShadowRingBufReadBlockOffset = truncate(pack(headShadowReg));
+        let zeroBasedMaxDescWriteCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK) - 1) - headShadowRingBufReadBlockOffset;
+
+        RingBufWriteBlockOffset zeroBasedDescWriteCnt = isHeadShadowAndTailInTheSameReadBlock ? truncate(pack(zeroBasefAvailableDescToWrite)) : zeroBasedMaxDescWriteCnt;
+        
+        Bool needDoDMA = isBatchDelayCounterFired && bufQ.notEmpty && (pack(freeSlotCnt) > 0);
+
+
+        if (needDoDMA) begin
+            ADDR dmaWriteStartAddr = baseAddrReg + (zeroExtend(pack(headShadowReg.idx)) << valueOf(DATA_BUS_BYTE_NUM_WIDTH));
+            dmaWriteAddrQ.enq(RingbufDmaWriteReq{
+                addr: dmaWriteStartAddr,
+                zeroBasedDescWriteCnt: zeroBasedDescWriteCnt
+            });
+            zeroBasedDescWriteCntReg <= zeroBasedDescWriteCnt;
+            isSendingDescBodyReg <= False;
+        end
+
     endrule
 
-    interface RingbufC2hMetadata metadata;
+    rule doDmaWrite if (isSendingDescBodyReg);
+        Bool isLast = False;
+
+        let newHeadShadow = headShadowReg + 1;
+
+        
+        if (isZeroR(zeroBasedDescWriteCntReg)) begin
+            isSendingDescBodyReg <= True;
+            isLast = True;
+            headReg[0] <= newHeadShadow;
+        end
+
+        DataStream ds;
+        ds.isLast = isLast; 
+        ds.isFirst = ?;       // since AXI interface don't care isFirst Flag.
+        ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
+        ds.data = unpack(pack(bufQ.first));
+        bufQ.deq;
+
+        dmaWriteDataQ.enq(ds);
+        
+        zeroBasedDescWriteCntReg <= zeroBasedDescWriteCntReg - 1;
+        headShadowReg <= newHeadShadow;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRingbufC2h doDmaWrite"),
+        //     toBlue(", qIdx="), fshow(qIdx),
+        //     toBlue(", old headShadowReg="), fshow(headShadowReg[0]),
+        //     toBlue(", new headShadowReg="), fshow(newHeadShadow),
+        //     toBlue(", desc="), fshow(ds)
+        // );
+
+    endrule
+
+
+    interface RingbufC2hMetadata controlRegs;
         interface addr = baseAddrReg;
         interface head = headReg[1];
         interface tail = tailReg[1];
-        interface headShadow = headShadowReg;
     endinterface
-    interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);
+
+    interface dmaWriteReqPipeOut    = toPipeOut(dmaWriteAddrQ);
+    interface dmaWriteDataPipeOut   = toPipeOut(dmaWriteDataQ);
+
+    interface descPipeIn = toPipeIn(inputQ);
 endmodule

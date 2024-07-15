@@ -14,3 +14,6 @@
 # Snapshot JTAG clock: 25MHz
 create_clock -period 40 [get_ports {i_jtag_in[0]}] -name tck
 set_clock_groups -asynchronous -group {tck}
+
+set_clock_groups -asynchronous -group [get_clocks i_eth_clk]
+set_clock_groups -asynchronous -group [get_clocks pll_logic_clk]

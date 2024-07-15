@@ -62,15 +62,10 @@ module mkTestTopTiming#(
         let randBitsPart3 <- randSource3.get;
 
         let wideRandomBits = {{randBitsPart2, randBitsPart3}};
-
-        WorkQueueElem wqe0 = unpack(truncate(wideRandomBits));
-        WorkQueueElem wqe1 = unpack(truncate(wideRandomBits) >> 5);
-        WorkQueueElem wqe2 = unpack(truncate(wideRandomBits) >> 11);
-        WorkQueueElem wqe3 = unpack(truncate(wideRandomBits) >> 17);
-        dut.wqePipeInVec[0].enq(wqe0);
-        dut.wqePipeInVec[1].enq(wqe1);
-        dut.wqePipeInVec[2].enq(wqe2);
-        dut.wqePipeInVec[3].enq(wqe3);
+        for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+            WorkQueueElem wqe = unpack(truncate(wideRandomBits) >> idx * 5);
+            dut.wqePipeInVec[idx].enq(wqe);
+        end
     endrule
 
     rule injectStorage;
@@ -93,9 +88,9 @@ module mkTestTopTiming#(
 
     rule combineOutput;
         Bool outputVal = signalKeeperForRawPacketVec[0].out;
-        outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[1].out));
-        outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[2].out));
-        outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[3].out));
+        for (Integer idx = 1; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+            outputVal = unpack(pack(outputVal) ^ pack(signalKeeperForRawPacketVec[idx].out));
+        end
         outputSyncReg <= outputVal;
     endrule
 

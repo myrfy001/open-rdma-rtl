@@ -1,7 +1,7 @@
 #--  Synopsys, Inc.
 #--  Version U-2023.03X-2
 #--  Project file /root/work/backend/achronix/syn/TestTopTiming.prj
-#--  Written on Sun Jul 14 13:25:31 2024
+#--  Written on Mon Jul 15 01:16:44 2024
 
 
 #project files
@@ -41,6 +41,7 @@ add_file -verilog "../../verilog/SyncFIFO.v"
 add_file -verilog "../../verilog/SyncRegister.v"
 add_file -verilog "../../../src/verilog/SyncHandshake.v"
 add_file -verilog "../../../test/verilog/top_mkTestTopTiming.v"
+add_file -constraint "../ioring/TestTopTiming_ioring.sdc"
 
 
 #implementation: "rev_10"
