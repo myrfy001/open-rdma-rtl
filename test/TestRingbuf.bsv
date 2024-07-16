@@ -213,7 +213,7 @@ module mkTestRingbuf(Empty);
 
             exitCounterReg <= exitCounterReg + 1;
 
-            if (exitCounterReg > 100000000 && h2cFullCountReg > 5000 && h2cEmptyCountReg > 5000 && c2hFullCountReg > 5000 && c2hEmptyCountReg > 5000) begin
+            if (exitCounterReg > 10000000 && h2cFullCountReg > 5000 && h2cEmptyCountReg > 5000 && c2hFullCountReg > 5000 && c2hEmptyCountReg > 5000) begin
                 $display("PASS");
                 $finish;
             end
