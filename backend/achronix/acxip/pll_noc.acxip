@@ -1,5 +1,5 @@
 #ACE 10.0 IP Properties File, generated on:
-#Tue Jun 11 23:49:02 CST 2024
+#Tue Jul 16 14:33:45 CST 2024
 acxip_version=7
 clkout0.clkout.port_name=pll_noc_clk
 clkout0.int_ODN_output_divider=40
@@ -9,13 +9,13 @@ clkout0.is_outer_bypass=No
 clkout0.is_output_connected_to_core=Yes
 clkout0.outer_bypass_clock_source_name=single_ended_rx_clock_from_msio_n
 clkout0.phase_shift=0
-clkout1.clkout.port_name=pll_noc_clkout1
-clkout1.int_ODN_output_divider=40
+clkout1.clkout.port_name=pci_clk
+clkout1.int_ODN_output_divider=8
 clkout1.int_OSN_output_divider=1
-clkout1.int_out_dividers_combined=40
+clkout1.int_out_dividers_combined=8
 clkout1.is_OSN_enabled=No
 clkout1.is_outer_bypass=No
-clkout1.is_output_connected_to_core=Yes
+clkout1.is_output_connected_to_core=No
 clkout1.outer_bypass_clock_source_name=rx_clock_from_refio_p_0
 clkout1.phase_shift=0
 clkout2.clkout.port_name=pll_noc_clkout2
@@ -50,7 +50,7 @@ is_ring_osc_overriding_clkout3=No
 library=Speedster7t
 name=PLL
 output.path_relative_to=ACXIP File
-output_port_count=1
+output_port_count=2
 placement=PLL_NE_1
 pll_lock.port_name=pll_noc_lock
 ref_clock_name=sys_clk

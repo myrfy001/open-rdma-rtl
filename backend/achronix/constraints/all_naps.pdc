@@ -1,0 +1,9 @@
+set_placement -fixed i:dutInst.dut_ethNapVec_0_ethNap_inst s:x_core.NOC[1][2].logic.noc.nap_m
+# set_placement -fixed i:dutInst.dut_ethNapVec_1_ethNap_inst s:x_core.NOC[1][4].logic.noc.nap_m
+# set_placement -fixed i:dutInst.dut_ethNapVec_2_ethNap_inst s:x_core.NOC[1][6].logic.noc.nap_m
+# set_placement -fixed i:dutInst.dut_ethNapVec_3_ethNap_inst s:x_core.NOC[1][8].logic.noc.nap_m
+
+set_placement -fixed i:dutInst.dut_dmaReadWriteSlaveNapVec_0.axiSlaveNap_inst s:x_core.NOC[7][2].logic.noc.nap_s
+# set_placement -fixed i:dutInst.dut_dmaReadWriteSlaveNapVec_1.axiSlaveNap_inst s:x_core.NOC[7][4].logic.noc.nap_s
+# set_placement -fixed i:dutInst.dut_dmaReadWriteSlaveNapVec_2.axiSlaveNap_inst s:x_core.NOC[7][6].logic.noc.nap_s
+# set_placement -fixed i:dutInst.dut_dmaReadWriteSlaveNapVec_3.axiSlaveNap_inst s:x_core.NOC[7][8].logic.noc.nap_s

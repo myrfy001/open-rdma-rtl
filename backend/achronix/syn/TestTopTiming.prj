@@ -1,7 +1,7 @@
 #--  Synopsys, Inc.
 #--  Version U-2023.03X-2
 #--  Project file /root/work/backend/achronix/syn/TestTopTiming.prj
-#--  Written on Mon Jul 15 01:16:44 2024
+#--  Written on Tue Jul 16 13:13:08 2024
 
 
 #project files
@@ -37,11 +37,11 @@ add_file -verilog "../../verilog/mkPayloadGenAndCon.v"
 add_file -verilog "../../verilog/mkRQ.v"
 add_file -verilog "../../verilog/mkPayloadCon.v"
 add_file -verilog "../../verilog/mkPayloadGen.v"
-add_file -verilog "../../verilog/SyncFIFO.v"
 add_file -verilog "../../verilog/SyncRegister.v"
-add_file -verilog "../../../src/verilog/SyncHandshake.v"
 add_file -verilog "../../../test/verilog/top_mkTestTopTiming.v"
 add_file -constraint "../ioring/TestTopTiming_ioring.sdc"
+add_file -verilog "../../../src/verilog/bsv_modules/SyncFIFO.v"
+add_file -verilog "../../../src/verilog/bsv_modules/SyncHandshake.v"
 
 
 #implementation: "rev_10"
@@ -129,7 +129,7 @@ set_option -auto_infer_blackbox 0
 
 #timing report file option
 set_option -reporting_filename "TestTopTiming.ta"
-set_option -fpga_constraint  ../constraints/compile_points.fdc ../../../test/verilog/top_mkTestTopTiming.v
+set_option -fpga_constraint  ../../../test/verilog/top_mkTestTopTiming.v ../constraints/compile_points.fdc
 
 #automatic place and route (vendor) options
 set_option -write_apr_constraint 1

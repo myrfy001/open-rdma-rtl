@@ -3,7 +3,7 @@ import Settings :: *;
 import DataTypes :: *;
 import RdmaHeaders :: *;
 import FIFOF :: *;
-import FIFOLevel :: *;
+import Cntrs :: * ;
 import Arbitration :: *;
 import PAClib :: *;
 import PrimUtils :: *;
@@ -16,6 +16,7 @@ import PrimUtils :: *;
 import RdmaUtils :: *;
 
 import ConnectableF :: *;
+import NapWrapper :: *;
 
 typedef 3 RINGBUF_NUMBER_WIDTH;
 
@@ -77,7 +78,7 @@ endinstance
 instance Literal#(RingbufPointer#(w));
 
    function fromInteger(n) ;
-        return RingbufPointer{ guard: False, idx: fromInteger(n) } ;
+        return unpack(fromInteger(n)) ;
    endfunction
    function inLiteralRange(a, i);
         UInt#(w) idxPart = ?;
@@ -89,6 +90,7 @@ endinstance
 typedef 4096  USER_LOGIC_RING_BUF_4096_DEEP; 
 typedef TLog#(USER_LOGIC_RING_BUF_4096_DEEP)  USER_LOGIC_RING_BUF_4096_DEEP_WIDTH; 
 typedef RingbufPointer#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) Fix128kBRingBufPointer;
+typedef RingbufC2h#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufC2hSlot4096;
 
 typedef 8 RINGBUF_DESC_ENTRY_PER_READ_BLOCK;
 typedef 4 RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK;
@@ -237,39 +239,54 @@ endmodule
 
 
 
-interface RingbufC2hMetadata;
+interface RingbufC2hMetadata#(numeric type szPtrIdx);
     interface Reg#(ADDR) addr;
-    interface Reg#(Fix128kBRingBufPointer) head;
-    interface Reg#(Fix128kBRingBufPointer) tail;
+    interface Reg#(RingbufPointer#(szPtrIdx)) head;
+    interface Reg#(RingbufPointer#(szPtrIdx)) tail;
 endinterface
 
-interface RingbufC2h;
-    interface RingbufC2hMetadata controlRegs;
+interface RingbufC2h#(numeric type szPtrIdx);
+    interface RingbufC2hMetadata#(szPtrIdx) controlRegs;
     interface PipeOut#(RingbufDmaWriteReq) dmaWriteReqPipeOut;
     interface PipeOut#(DataStream) dmaWriteDataPipeOut;
+    interface PipeIn#(Bool) dmaWriteRespPipeIn;
     interface PipeIn#(RingbufRawDescriptor) descPipeIn;
 endinterface
 
 
 // TODO: For C2H, doesn't support batch descriptor writeback now. 
-module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
-        Alias#(Bit#(TSub#(SizeOf#(Fix128kBRingBufPointer), TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK))), tWriteBlockIndex)
+module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
+        NumAlias#(TAdd#(1, szPtrIdx), szPtrWithGuard),
+        Alias#(Bit#(TSub#(szPtrWithGuard, TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK))), tWriteBlockIndex),
+        Alias#(RingbufPointer#(szPtrIdx), tPtrWithGuard),
+        Add#(a__, 2, TAdd#(1, szPtrIdx)),
+        Add#(b__, 4, TAdd#(1, szPtrIdx)),
+        Add#(c__, szPtrIdx, SizeOf#(ADDR))
     );
 
-    FIFOCountIfc#(RingbufRawDescriptor, NUMERIC_TYPE_EIGHT)    bufQ    <- mkFIFOCount;
+    Count#(Bit#(TAdd#(1, TLog#(NUMERIC_TYPE_EIGHT)))) validCounter <- mkCount(0);
+    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT));
     FIFOF#(RingbufRawDescriptor)                            inputQ  <- mkFIFOF;
-    mkConnection(toGet(inputQ), toPut(bufQ));
+
+    rule forwardInput;
+        inputQ.deq;
+        bufQ.enq(inputQ.first);
+        validCounter.incr(1);
+    endrule
 
     Reg#(ADDR)                      baseAddrReg     <- mkReg(0);
-    Reg#(Fix128kBRingBufPointer)    headReg[2]      <- mkCReg(2, unpack(0));
-    Reg#(Fix128kBRingBufPointer)    tailReg[2]      <- mkCReg(2, unpack(0));
-    Reg#(Fix128kBRingBufPointer)    headShadowReg   <- mkConfigReg(unpack(0));
+    Reg#(tPtrWithGuard)    headReg[2]      <- mkCReg(2, unpack(0));
+    Reg#(tPtrWithGuard)    tailReg[2]      <- mkCReg(2, unpack(0));
+    Reg#(tPtrWithGuard)    headShadowReg   <- mkConfigReg(unpack(0));
     FIFOF#(RingbufDmaWriteReq)      dmaWriteAddrQ   <- mkFIFOF;
     FIFOF#(DataStream)              dmaWriteDataQ   <- mkFIFOF;
+    FIFOF#(Bool)                    dmaWriteRespQ   <- mkFIFOF;
+    FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkFIFOF;
 
     Reg#(Bit#(NUMERIC_TYPE_TWO))       batchDelayCounterReg        <- mkReg(0);
     Reg#(Bool)                          isSendingDescBodyReg        <- mkReg(False);
     Reg#(RingBufWriteBlockOffset)       zeroBasedDescWriteCntReg    <- mkRegU;
+    
 
     rule handleBatchDelay;
         if (!bufQ.notEmpty) begin
@@ -287,12 +304,11 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
         tWriteBlockIndex writeBlockIdxOfTail = truncate(pack(tailReg[0]) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)));
         Bool isHeadShadowAndTailInTheSameReadBlock = writeBlockIdxOfHeadShadow == writeBlockIdxOfTail;
         Bool isBatchDelayCounterFired = batchDelayCounterReg == -1;
-        Fix128kBRingBufPointer freeSlotCnt = tailReg[0] - headShadowReg;
-        Fix128kBRingBufPointer zeroBasedFreeSlotCnt = freeSlotCnt - 1;
-        
-        Fix128kBRingBufPointer availableDescToWrite = unpack(zeroExtend(pack(bufQ.count)));
+        tPtrWithGuard freeSlotCnt = fromInteger(valueOf(TExp#(szPtrIdx))) - (tailReg[0] - headShadowReg);
+
+        tPtrWithGuard availableDescToWrite = unpack(zeroExtend(pack(validCounter)));
         availableDescToWrite = pack(availableDescToWrite) > pack(freeSlotCnt) ? freeSlotCnt : availableDescToWrite;
-        Fix128kBRingBufPointer zeroBasefAvailableDescToWrite = availableDescToWrite - 1;
+        tPtrWithGuard zeroBasefAvailableDescToWrite = availableDescToWrite - 1;
 
         RingBufWriteBlockOffset headShadowRingBufReadBlockOffset = truncate(pack(headShadowReg));
         let zeroBasedMaxDescWriteCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK) - 1) - headShadowRingBufReadBlockOffset;
@@ -309,9 +325,14 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
                 zeroBasedDescWriteCnt: zeroBasedDescWriteCnt
             });
             zeroBasedDescWriteCntReg <= zeroBasedDescWriteCnt;
-            isSendingDescBodyReg <= False;
+            isSendingDescBodyReg <= True;
         end
-
+        // $display(
+        //     "needDoDMA=", fshow(needDoDMA),
+        //     ", isBatchDelayCounterFired=",fshow(isBatchDelayCounterFired),
+        //     ", bufQ.notEmpty=", fshow(bufQ.notEmpty),
+        //     ", freeSlotCnt=", fshow(pack(freeSlotCnt))
+        // );
     endrule
 
     rule doDmaWrite if (isSendingDescBodyReg);
@@ -321,9 +342,9 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
 
         
         if (isZeroR(zeroBasedDescWriteCntReg)) begin
-            isSendingDescBodyReg <= True;
+            isSendingDescBodyReg <= False;
             isLast = True;
-            headReg[0] <= newHeadShadow;
+            inFlightWriteReqHeaadUpdateQ.enq(newHeadShadow);
         end
 
         DataStream ds;
@@ -331,7 +352,9 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
         ds.isFirst = ?;       // since AXI interface don't care isFirst Flag.
         ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
         ds.data = unpack(pack(bufQ.first));
+        ds.startByteIdx = 0;
         bufQ.deq;
+        validCounter.decr(1);
 
         dmaWriteDataQ.enq(ds);
         
@@ -341,11 +364,16 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRingbufC2h doDmaWrite"),
         //     toBlue(", qIdx="), fshow(qIdx),
-        //     toBlue(", old headShadowReg="), fshow(headShadowReg[0]),
-        //     toBlue(", new headShadowReg="), fshow(newHeadShadow),
+        //     toBlue(", old headShadowReg="), fshow(pack(headShadowReg)),
+        //     toBlue(", new headShadowReg="), fshow(pack(newHeadShadow)),
         //     toBlue(", desc="), fshow(ds)
         // );
+    endrule
 
+    rule handleWriteResp;
+        dmaWriteRespQ.deq;
+        headReg[0] <= inFlightWriteReqHeaadUpdateQ.first;
+        inFlightWriteReqHeaadUpdateQ.deq;
     endrule
 
 
@@ -357,6 +385,98 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h ifc) provisos(
 
     interface dmaWriteReqPipeOut    = toPipeOut(dmaWriteAddrQ);
     interface dmaWriteDataPipeOut   = toPipeOut(dmaWriteDataQ);
+    interface dmaWriteRespPipeIn    = toPipeIn(dmaWriteRespQ);
 
     interface descPipeIn = toPipeIn(inputQ);
+endmodule
+
+interface RingbufDmaNapWrappr;
+    interface PipeIn#(RingbufDmaReadReq) dmaReadReqPipeIn;
+    interface PipeOut#(RingbufDmaReadResp) dmaReadRespPipeOut;
+    interface PipeOut#(Bool) dmaWriteRespPipeOut;
+    interface PipeIn#(RingbufDmaWriteReq) dmaWriteReqPipeIn;
+    interface PipeIn#(DataStream) dmaWriteDataPipeIn;
+endinterface
+
+module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
+    FIFOF#(RingbufDmaReadReq)   dmaReadReqPipeInQ       <- mkFIFOF;
+    FIFOF#(RingbufDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
+    FIFOF#(RingbufDmaWriteReq)  dmaWriteReqPipeInQ      <- mkFIFOF;
+    FIFOF#(DataStream)          dmaWriteDataPipeInQ     <- mkFIFOF;
+    FIFOF#(Bool)                dmaWriteRespPipeOutQ    <- mkFIFOF;
+
+    AcxNapSlaveWrapperPipe nap <- mkAcxNapSlaveWrapperPipe;
+
+    rule forwardWriteAddr;
+        let req = dmaWriteReqPipeInQ.first;
+        dmaWriteReqPipeInQ.deq;
+
+        let aw = AxiMmNapBeatAw {
+            awid: 0,
+            awaddr: truncate(req.addr),
+            awlen: unpack(zeroExtend(req.zeroBasedDescWriteCnt)),
+            awsize: unpack(pack(NapAxiSize32B)),
+            awburst: unpack(pack(NapAxiBurstIncr)),
+            awlock: False,
+            awqos: 0
+        };
+        nap.writePipeIfc.writeAddrPipeIn.enq(aw);
+    endrule
+
+    rule forwardWriteData;
+        let req = dmaWriteDataPipeInQ.first;
+        dmaWriteDataPipeInQ.deq;
+
+        let w = AxiMmNapBeatW {
+            wdata: unpack(pack(req.data)),
+            wstrb: -1,
+            wlast: req.isLast
+        };
+        nap.writePipeIfc.writeDataPipeIn.enq(w);
+    endrule
+
+    rule forwardWriteResp;
+        let resp = nap.writePipeIfc.writeRespPipeOut.first;
+        nap.writePipeIfc.writeRespPipeOut.deq;
+        dmaWriteRespPipeOutQ.enq(resp.bresp == 0);
+    endrule
+
+    rule forwardReadReq;
+        let req = dmaReadReqPipeInQ.first;
+        dmaReadReqPipeInQ.deq;
+
+        let ar = AxiMmNapBeatAr {
+            arid: 0,
+            araddr: truncate(req.addr),
+            arlen: unpack(zeroExtend(req.zeroBasedDescReadCnt)),
+            arsize: unpack(pack(NapAxiSize32B)),
+            arburst: unpack(pack(NapAxiBurstIncr)),
+            arlock: False,
+            arqos: 0
+        };
+        nap.readPipeIfc.readAddrPipeIn.enq(ar);
+    endrule
+
+    rule forwardReadResp;
+        let resp = nap.readPipeIfc.readRespPipeOut.first;
+        nap.readPipeIfc.readRespPipeOut.deq;
+
+        let ds = RingbufDmaReadResp {
+            data: DataStream {
+                data: resp.rdata,
+                byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                startByteIdx: 0,
+                isFirst: dontCareValue,
+                isLast: resp.rlast
+            }
+        };
+
+        dmaReadRespPipeOutQ.enq(ds);
+    endrule
+
+    interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);
+    interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);
+    interface dmaWriteReqPipeIn = toPipeIn(dmaWriteReqPipeInQ);
+    interface dmaWriteDataPipeIn = toPipeIn(dmaWriteDataPipeInQ);
+    interface dmaWriteRespPipeOut = toPipeOut(dmaWriteRespPipeOutQ);
 endmodule

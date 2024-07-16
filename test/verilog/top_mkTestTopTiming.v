@@ -33,6 +33,9 @@ module top_mkTestTopTiming (
     input wire        ethernet_1_m1_ff_clk_divby2,
     input wire        ethernet_1_ref_clk_divby2,
     // Ports for noc_1
+    // Ports for pci_express_1
+    // Status
+    input wire  [5:0] pci_express_1_status_ltssm_state,
     // Ports for pll_eth_507M
     input wire        i_eth_clk,
     input wire        pll_eth_507M_lock,
