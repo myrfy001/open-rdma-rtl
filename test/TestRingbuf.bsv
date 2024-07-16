@@ -17,7 +17,7 @@ import Ringbuf :: *;
 
 (* doc = "testcase" *)
 module mkTestRingbuf(Empty);
-    Reg#(Long) exitCounterReg <- mkReg(10000000);
+    Reg#(Long) exitCounterReg <- mkReg(0);
 
     let ringbufDmaNapWrappr <- mkRingbufDmaNapWrappr;
 
@@ -31,11 +31,14 @@ module mkTestRingbuf(Empty);
     mkConnection(dutH2C.dmaReadRespPipeIn, ringbufDmaNapWrappr.dmaReadRespPipeOut);
 
 
-    let burstWriteCntRaandVec = vec(0, 0, 0, 1, 2, 3);
+    let burstWriteCntRandHighSpeedVec = vec(0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+    let burstWriteCntRandLowSpeedVec = vec(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
     let burstReadCntRaandVec = vec(0, 1, 3, 0, 2, 0);
-    PipeOut#(Length) c2hWriteCountRandPipeOut <- mkRandomItemFromVec(burstWriteCntRaandVec);
-    PipeOut#(Length) writePointerSyncDelayRandPipeOut <- mkRandomLenPipeOut(3, 99);
-    PipeOut#(Length) readPointerSyncDelayRandPipeOut <- mkRandomLenPipeOut(2, 100);
+    PipeOut#(Length) c2hWriteCountHighSpeedRandPipeOut <- mkRandomItemFromVec(burstWriteCntRandHighSpeedVec);
+    PipeOut#(Length) c2hWriteCountLowSpeedRandPipeOut <- mkRandomItemFromVec(burstWriteCntRandLowSpeedVec);
+
+    PipeOut#(Length) writePointerSyncDelayRandPipeOut <- mkRandomLenPipeOut(2, 5);
+    PipeOut#(Length) readPointerSyncDelayRandPipeOut <- mkRandomLenPipeOut(3, 4);
 
     PipeOut#(Length) h2cReadDelayRandPipeOut <- mkRandomItemFromVec(burstReadCntRaandVec);
 
@@ -65,6 +68,13 @@ module mkTestRingbuf(Empty);
         let newC2hNotFull = isRingbufNotFull(dutC2H.controlRegs.head, dutC2H.controlRegs.tail);
         let newC2hNotEmpty = isRingbufNotEmpty(dutC2H.controlRegs.head, dutC2H.controlRegs.tail);
         
+        // $display(
+        //     "time=%0t:", $time,
+        //     ", newH2cNotFull=", fshow(newH2cNotFull),
+        //     ", newH2cNotEmpty=", fshow(newH2cNotEmpty),
+        //     ", newC2hNotFull=", fshow(newC2hNotFull),
+        //     ", newC2hNotEmpty=", fshow(newC2hNotEmpty)
+        // );
 
         h2cLastNotFullReg <= newH2cNotFull;
         h2cLastNotEmptyReg <= newH2cNotEmpty;
@@ -73,42 +83,42 @@ module mkTestRingbuf(Empty);
 
         if (h2cLastNotFullReg != newH2cNotFull) begin
             h2cFullCountReg <= h2cFullCountReg + 1;
-            $display(
-                "h2cFullCountReg=", fshow(h2cFullCountReg),
-                ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
-                ", c2hFullCountReg=", fshow(c2hFullCountReg),
-                ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
-            );
+            // $display(
+            //     "h2cFullCountReg=", fshow(h2cFullCountReg),
+            //     ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
+            //     ", c2hFullCountReg=", fshow(c2hFullCountReg),
+            //     ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
+            // );
         end
 
         if (h2cLastNotEmptyReg != newH2cNotEmpty) begin
             h2cEmptyCountReg <= h2cEmptyCountReg + 1;
-            $display(
-                "h2cFullCountReg=", fshow(h2cFullCountReg),
-                ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
-                ", c2hFullCountReg=", fshow(c2hFullCountReg),
-                ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
-            );
+            // $display(
+            //     "h2cFullCountReg=", fshow(h2cFullCountReg),
+            //     ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
+            //     ", c2hFullCountReg=", fshow(c2hFullCountReg),
+            //     ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
+            // );
         end
 
         if (c2hLastNotFullReg != newC2hNotFull) begin
             c2hFullCountReg <= c2hFullCountReg + 1;
-            $display(
-                "h2cFullCountReg=", fshow(h2cFullCountReg),
-                ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
-                ", c2hFullCountReg=", fshow(c2hFullCountReg),
-                ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
-            );
+            // $display(
+            //     "h2cFullCountReg=", fshow(h2cFullCountReg),
+            //     ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
+            //     ", c2hFullCountReg=", fshow(c2hFullCountReg),
+            //     ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
+            // );
         end
 
         if (c2hLastNotEmptyReg != newC2hNotEmpty) begin
             c2hEmptyCountReg <= c2hEmptyCountReg + 1;
-            $display(
-                "h2cFullCountReg=", fshow(h2cFullCountReg),
-                ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
-                ", c2hFullCountReg=", fshow(c2hFullCountReg),
-                ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
-            );
+            // $display(
+            //     "h2cFullCountReg=", fshow(h2cFullCountReg),
+            //     ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
+            //     ", c2hFullCountReg=", fshow(c2hFullCountReg),
+            //     ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg)
+            // );
         end
     endrule
 
@@ -126,9 +136,18 @@ module mkTestRingbuf(Empty);
     endrule
 
     rule doInjectC2HWrite if (!isInitReg);
+
+        Bool isGenInHighSpeed = h2cFullCountReg < h2cEmptyCountReg;
+
         if (c2hBatchWriteCounterReg == 0) begin
-            c2hBatchWriteCounterReg <= zeroExtend(c2hWriteCountRandPipeOut.first);
-            c2hWriteCountRandPipeOut.deq;
+            if (isGenInHighSpeed) begin
+                c2hBatchWriteCounterReg <= zeroExtend(c2hWriteCountHighSpeedRandPipeOut.first);
+                c2hWriteCountHighSpeedRandPipeOut.deq;
+            end
+            else begin
+                c2hBatchWriteCounterReg <= zeroExtend(c2hWriteCountLowSpeedRandPipeOut.first);
+                c2hWriteCountLowSpeedRandPipeOut.deq;
+            end
         end
         else begin
             c2hBatchWriteCounterReg <= c2hBatchWriteCounterReg - 1;
@@ -143,6 +162,12 @@ module mkTestRingbuf(Empty);
             dutH2C.controlRegs.head <= dutC2H.controlRegs.head;
             writeSyncDelayCounterReg <= zeroExtend(writePointerSyncDelayRandPipeOut.first);
             writePointerSyncDelayRandPipeOut.deq;
+
+            // $display(
+            //     "time=%0t:", $time,
+            //     " advance H2C head from ", fshow(pack(dutH2C.controlRegs.head)), " to ", fshow(pack(dutC2H.controlRegs.head))
+            // );
+
         end
         else begin
             writeSyncDelayCounterReg <= writeSyncDelayCounterReg - 1;
@@ -152,40 +177,16 @@ module mkTestRingbuf(Empty);
             dutC2H.controlRegs.tail <= dutH2C.controlRegs.tail;
             readSyncDelayCounterReg <= zeroExtend(readPointerSyncDelayRandPipeOut.first);
             readPointerSyncDelayRandPipeOut.deq;
+
+            // $display(
+            //     "time=%0t:", $time,
+            //     " advance C2H tail from ", fshow(pack(dutC2H.controlRegs.tail)), " to ", fshow(pack(dutH2C.controlRegs.tail))
+            // );
+
         end
         else begin
             readSyncDelayCounterReg <= readSyncDelayCounterReg - 1;
         end
-
-        // if (syncDelayCounterReg == 0) begin
-        //     dutH2C.controlRegs.head <= dutC2H.controlRegs.head;
-        //     dutC2H.controlRegs.tail <= dutH2C.controlRegs.tail;
-
-        //     let randVal = pointerSyncDelayRandPipeOut.first;
-        //     pointerSyncDelayRandPipeOut.deq;
-
-        //     // The logic is:
-        //     // we need to test the case when ringbuf is Full or empty, so we should generate some
-        //     // case that the read or write is paused long enough to  make the ringbuf full or empty
-        //     // if the random value is a certain trigger value (with the probablity of 1/100000), the prcess 
-        //     // will be delayed for a long period.
-        //     if (randVal == 20000) begin
-        //         pointerSyncLongDelayCntReg <= pointerSyncLongDelayCntReg + 1;
-        //         syncDelayCounterReg <= 20000;
-        //     end
-        //     else begin
-        //         syncDelayCounterReg <= zeroExtend(randVal[2:0]);
-        //     end
-        // end
-        // else begin
-        //     syncDelayCounterReg <= syncDelayCounterReg - 1;
-        // end
-        // $display(
-        //     "dutC2H.controlRegs.head=", fshow(pack(dutC2H.controlRegs.head)), 
-        //     ", dutH2C.controlRegs.head=", fshow(pack(dutH2C.controlRegs.head)), 
-        //     ", dutH2C.controlRegs.tail=", fshow(pack(dutH2C.controlRegs.head)), 
-        //     ", dutC2H.controlRegs.tail=", fshow(pack(dutC2H.controlRegs.tail))
-        // );
     endrule
 
     rule doReadCheck if (!isInitReg);
@@ -203,19 +204,28 @@ module mkTestRingbuf(Empty);
 
             let expected = {pack(readerSeqReg), pack(readerSeqReg), pack(readerSeqReg), pack(readerSeqReg)};
 
+            let tim <- $time;
             immAssert(
                 pack(readout) == expected,
                 "mkTestRingbuf doReadCheck failed",
-                $format("got=", fshow(readout), ", expected=", fshow(expected))
+                $format("time=%0t: ", tim, "got=", fshow(readout), ", expected=", fshow(expected))
             );
 
-            exitCounterReg <= exitCounterReg - 1;
-            if (exitCounterReg == 0) begin
+            exitCounterReg <= exitCounterReg + 1;
+
+            if (exitCounterReg > 100000000 && h2cFullCountReg > 5000 && h2cEmptyCountReg > 5000 && c2hFullCountReg > 5000 && c2hEmptyCountReg > 5000) begin
                 $display("PASS");
                 $finish;
             end
-            if (exitCounterReg % 10000 == 0) begin
-                $display(exitCounterReg);
+
+            if (exitCounterReg % 100000 == 0) begin
+                 $display(
+                    "h2cFullCountReg=", fshow(h2cFullCountReg),
+                    ", h2cEmptyCountReg=", fshow(h2cEmptyCountReg),
+                    ", c2hFullCountReg=", fshow(c2hFullCountReg),
+                    ", c2hEmptyCountReg=", fshow(c2hEmptyCountReg),
+                    ", exitCounterReg=", fshow(exitCounterReg)
+                );
             end
         end
     endrule

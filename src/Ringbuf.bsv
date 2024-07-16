@@ -191,7 +191,20 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc)
 
             tailShadowReg <= newTailShadow;
             isWaitingDmaRespReg <= True;
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRingbufH2c sendDmaReq"),
+            //     toBlue(", qIdx="), fshow(qIdx),
+            //     toBlue(", headReg="), fshow(pack(headReg[0])),
+            //     toBlue(", old tailReg="), fshow(pack(tailReg[0])),
+            //     toBlue(", tailShadowReg="), fshow(pack(tailShadowReg)),
+            //     toBlue(", zeroBasedDescReadCnt="), fshow(pack(zeroBasedDescReadCnt)),
+            //     toBlue(", head-tail="), fshow(pack(headReg[0]-tailReg[0])),
+            //     toBlue(", head-tailS="), fshow(pack(headReg[0]-tailShadowReg))
+            // );
         end
+
+        
     endrule
 
 
@@ -219,8 +232,10 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc)
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRingbufH2c recvDmaResp"),
         //     toBlue(", qIdx="), fshow(qIdx),
-        //     toBlue(", old tailReg="), fshow(tailReg[0]),
-        //     toBlue(", new tailReg="), fshow(newTail),
+        //     toBlue(", headReg="), fshow(pack(headReg[0])),
+        //     toBlue(", old tailReg="), fshow(pack(tailReg[0])),
+        //     toBlue(", new tailReg="), fshow(pack(newTail)),
+        //     toBlue(", tailShadowReg="), fshow(pack(tailShadowReg)),
         //     toBlue(", desc="), fshow(readRespDs)
         // );
     endrule
@@ -300,24 +315,16 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     endrule
     
     rule prepareDmaWrite if (!isSendingDescBodyReg);
-        tWriteBlockIndex writeBlockIdxOfHeadShadow = truncate(pack(headShadowReg) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)));
-        tWriteBlockIndex writeBlockIdxOfTail = truncate(pack(tailReg[0]) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)));
-        Bool isHeadShadowAndTailInTheSameReadBlock = writeBlockIdxOfHeadShadow == writeBlockIdxOfTail;
+
         Bool isBatchDelayCounterFired = batchDelayCounterReg == -1;
-        tPtrWithGuard freeSlotCnt = fromInteger(valueOf(TExp#(szPtrIdx))) - (tailReg[0] - headShadowReg);
-
+        tPtrWithGuard freeSlotCnt = fromInteger(valueOf(TExp#(szPtrIdx))) - (headShadowReg - tailReg[0]);
         tPtrWithGuard availableDescToWrite = unpack(zeroExtend(pack(validCounter)));
-        availableDescToWrite = pack(availableDescToWrite) > pack(freeSlotCnt) ? freeSlotCnt : availableDescToWrite;
-        tPtrWithGuard zeroBasefAvailableDescToWrite = availableDescToWrite - 1;
+        RingBufWriteBlockOffset headShadowRingBufWriteBlockOffset = truncate(pack(headShadowReg));
+        tPtrWithGuard maxDescWriteCntIfAlignedToWriteBlock = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)) - unpack(zeroExtend(headShadowRingBufWriteBlockOffset));
 
-        RingBufWriteBlockOffset headShadowRingBufReadBlockOffset = truncate(pack(headShadowReg));
-        let zeroBasedMaxDescWriteCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK) - 1) - headShadowRingBufReadBlockOffset;
+        RingBufWriteBlockOffset zeroBasedDescWriteCnt = truncate(min(min(pack(freeSlotCnt), pack(availableDescToWrite)), pack(maxDescWriteCntIfAlignedToWriteBlock))) - 1;
 
-        RingBufWriteBlockOffset zeroBasedDescWriteCnt = isHeadShadowAndTailInTheSameReadBlock ? truncate(pack(zeroBasefAvailableDescToWrite)) : zeroBasedMaxDescWriteCnt;
-        
         Bool needDoDMA = isBatchDelayCounterFired && bufQ.notEmpty && (pack(freeSlotCnt) > 0);
-
-
         if (needDoDMA) begin
             ADDR dmaWriteStartAddr = baseAddrReg + (zeroExtend(pack(headShadowReg.idx)) << valueOf(DATA_BUS_BYTE_NUM_WIDTH));
             dmaWriteAddrQ.enq(RingbufDmaWriteReq{
@@ -326,13 +333,24 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
             });
             zeroBasedDescWriteCntReg <= zeroBasedDescWriteCnt;
             isSendingDescBodyReg <= True;
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRingbufC2h prepareDmaWrite"),
+            //     "needDoDMA=", fshow(needDoDMA),
+            //     ", isBatchDelayCounterFired=",fshow(isBatchDelayCounterFired),
+            //     ", bufQ.notEmpty=", fshow(bufQ.notEmpty),
+            //     ", freeSlotCnt=", fshow(pack(freeSlotCnt)),
+            //     ", zeroBasedDescWriteCnt=", fshow(pack(zeroBasedDescWriteCnt)),
+            //     ", headReg=", fshow(pack(headReg[0])),
+            //     ", headShadowReg=", fshow(pack(headShadowReg)),
+            //     ", tailReg=", fshow(pack(tailReg[0])),
+            //     ", head-tail=", fshow(pack(headReg[0] - tailReg[0])),
+            //     ", headS-tail=", fshow(pack(headShadowReg - tailReg[0])),
+            //     ", validCounter=", fshow(pack(validCounter)),
+            //     ", availableDescToWrite=", fshow(pack(availableDescToWrite))
+            // );
         end
-        // $display(
-        //     "needDoDMA=", fshow(needDoDMA),
-        //     ", isBatchDelayCounterFired=",fshow(isBatchDelayCounterFired),
-        //     ", bufQ.notEmpty=", fshow(bufQ.notEmpty),
-        //     ", freeSlotCnt=", fshow(pack(freeSlotCnt))
-        // );
+
     endrule
 
     rule doDmaWrite if (isSendingDescBodyReg);
@@ -364,6 +382,8 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRingbufC2h doDmaWrite"),
         //     toBlue(", qIdx="), fshow(qIdx),
+        //     toBlue(", tailReg="), fshow(pack(tailReg[0])),
+        //     toBlue(", headReg="), fshow(pack(headReg[0])),
         //     toBlue(", old headShadowReg="), fshow(pack(headShadowReg)),
         //     toBlue(", new headShadowReg="), fshow(pack(newHeadShadow)),
         //     toBlue(", desc="), fshow(ds)
@@ -372,8 +392,17 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
 
     rule handleWriteResp;
         dmaWriteRespQ.deq;
-        headReg[0] <= inFlightWriteReqHeaadUpdateQ.first;
+        let newHead = inFlightWriteReqHeaadUpdateQ.first;
         inFlightWriteReqHeaadUpdateQ.deq;
+
+        headReg[0] <= newHead;
+        
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRingbufC2h handleWriteResp"),
+        //     toBlue(", qIdx="), fshow(qIdx),
+        //     toBlue(", headReg="), fshow(pack(headReg[0])),
+        //     toBlue(", newHead="), fshow(pack(newHead))
+        // );
     endrule
 
 

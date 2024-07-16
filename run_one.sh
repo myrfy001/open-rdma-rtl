@@ -60,7 +60,7 @@ TESTCASE=mkTestRingbuf
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
 
-
+sed -i "s,\x1B\[[0-9;]*[a-zA-Z],,g" $TEST_LOG
 
 
 FAIL_KEYWORKS='Error\|ImmAssert'
