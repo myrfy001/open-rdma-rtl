@@ -50,7 +50,7 @@ uint32_t isPowerOfTwo(int num) {
   return (num & (num - 1)) == 0;
 }
 
-uint64_t c_createBRAM() {
+uint64_t c_createMockHostRpcChannel() {
 
   char *addr = getenv("MOCK_HOST_SERVER_ADDR");
   char *port = getenv("MOCK_HOST_SERVER_PORT");
@@ -128,8 +128,8 @@ typedef struct {
 typedef struct {
   uint64_t word_addr;
   uint64_t word_width;
-  uint8_t data[64];
-  uint8_t byte_en[8];
+  uint8_t data[32];
+  uint8_t byte_en[4];
 } MemoryIoInfo;
 
 typedef struct {

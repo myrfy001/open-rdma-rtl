@@ -9,6 +9,7 @@ import PAClib :: *;
 import DataTypes :: *;
 import PrimUtils :: *;
 import ConnectableF :: *;
+import MockHost :: *;
 
 
 
@@ -868,7 +869,15 @@ module mkAcxNapAxiSlaveWrapperInnerBluesim(ACX_NAP_AXI_SLAVE_BVI_WRAPPER);
     BRAM_Configure cfg = defaultValue;
     cfg.allowWriteResponseBypass = False;
     cfg.memorySize = 0;
-    BRAM2PortBE#(MockHostInternalStorageAddr, NocData, NOC_DATA_BUS_BYTE_WIDTH) hostMem <- mkBRAM2ServerBE(cfg);
+
+`ifdef USE_MOCK_HOST 
+    MockHostMem#(MockHostInternalStorageAddr, NocData, NOC_DATA_BUS_BYTE_WIDTH) hostMemMockHostBackend <- mkMockHostMem(cfg);
+    let hostMem = hostMemMockHostBackend.hostMem;
+`else
+    BRAM2PortBE#(MockHostInternalStorageAddr, NocData, NOC_DATA_BUS_BYTE_WIDTH) hostMemBramBackend <- mkBRAM2ServerBE(cfg);
+    let hostMem = hostMemBramBackend;
+`endif
+    
 
     FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
     FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;

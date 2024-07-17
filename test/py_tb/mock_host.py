@@ -66,8 +66,8 @@ class CStructMemIoInfo(Structure):
     _fields_ = [
         ("word_addr", c_longlong),
         ("word_width", c_longlong),
-        ("data", c_ubyte * 64),
-        ("byte_en", c_ubyte * 8),
+        ("data", c_ubyte * 32),
+        ("byte_en", c_ubyte * 4),
     ]
 
 
@@ -321,19 +321,30 @@ class NicManager:
     @classmethod
     def connect_two_card(cls, nic_a: MockNicInterface,
                          nic_b: MockNicInterface):
-        def _forward_a():
-            while True:
-                data = nic_a.get_net_ifc_tx_data_from_nic_blocking()
-                nic_b.put_net_ifc_rx_data_to_nic(data)
 
-        def _forward_b():
+        def _forward_a(channel_id):
             while True:
-                data = nic_b.get_net_ifc_tx_data_from_nic_blocking()
-                nic_a.put_net_ifc_rx_data_to_nic(data)
-        forward_thread_a = threading.Thread(target=_forward_a)
-        forward_thread_b = threading.Thread(target=_forward_b)
-        forward_thread_a.start()
-        forward_thread_b.start()
+                data = nic_a.get_net_ifc_tx_data_from_nic_blocking(channel_id)
+                nic_b.put_net_ifc_rx_data_to_nic(channel_id, data)
+
+        def _forward_b(channel_id):
+            while True:
+                data = nic_b.get_net_ifc_tx_data_from_nic_blocking(channel_id)
+                nic_a.put_net_ifc_rx_data_to_nic(channel_id, data)
+
+        forward_thread_a_handles = []
+        forward_thread_b_handles = []
+        for channel_id in range(4):
+            forward_thread_a_handle = threading.Thread(
+                target=_forward_a, args=(channel_id,))
+            forward_thread_b_handle = threading.Thread(
+                target=_forward_b, args=(channel_id,))
+
+            forward_thread_a_handles.append(forward_thread_a_handle)
+            forward_thread_b_handles.append(forward_thread_b_handle)
+
+            forward_thread_a_handle.start()
+            forward_thread_b_handle.start()
 
 
 HOST = '127.0.0.1'

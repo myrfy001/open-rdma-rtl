@@ -23,6 +23,8 @@ WORKDIR = -fdir $(abspath .)
 BSVSRCDIR = -p +:$(abspath ../src) \
 			-p +:$(abspath ../test)
 
+BSV_C_EXT_FILES += \
+	$(abspath ../src)/MockHost.c
 
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)
 MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 \
