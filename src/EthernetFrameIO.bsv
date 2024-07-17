@@ -64,7 +64,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     FIFOF#(DataStream) waitingForRouteQ <- mkFIFOF;
     FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkFIFOF;
 
-    Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntry <- mkRegU;
+    Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntryReg <- mkRegU;
 
     Reg#(Bool) networkSettingsIsSetReg <- mkReg(False);
     Reg#(LocalNetworkSettings) networkSettingsReg <- mkRegU;
@@ -141,15 +141,26 @@ module mkInputPacketClassifier(InputPacketClassifier);
             macAddrBroadcastMatch:macAddrBroadcastMatch,
             ethHeader: ethHeader
         };
-        ethPacketMetaExtractPipelineEntry <= outPipelineEntry;
+        ethPacketMetaExtractPipelineEntryReg <= outPipelineEntry;
 
         partialDstIpAddrHigher16BitsReg <= truncateLSB(partialIpHeader.dstIpAddr);
         
-        if (!beat.eop) begin
-            // defensive coding. if packet corrupted, then stay in current state
-            stateReg <= InputPacketClassifierStateHandleSecondBeat;
-            waitingForRouteQ.enq(ds);
+        waitingForRouteQ.enq(ds);
+
+        if (beat.eop) begin
+            // defensive coding. each if packet corrupted, oly have one beat, then stay in current state, and discard packet.
+            ethPacketMetaQ.enq(EthernetPacketMeta{
+                isRdmaPacket: False,
+                isError: True,
+                isAddrMatch: False
+            });
         end
+        else begin
+            
+            stateReg <= InputPacketClassifierStateHandleSecondBeat;
+        end
+
+        
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleFirstBeatStage"),
@@ -202,17 +213,17 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
 
         Bit#(TSub#(SizeOf#(EthMacAddr), MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)) partialMacAddr1 = 
-            ethPacketMetaExtractPipelineEntry.ethHeader.dstMacAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
+            ethPacketMetaExtractPipelineEntryReg.ethHeader.dstMacAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
         Bit#(TSub#(SizeOf#(EthMacAddr), MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)) partialMacAddr2 = 
             networkSettingsReg.macAddr[valueOf(SizeOf#(EthMacAddr)) - 1: valueOf(MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH)];
-        let macUnicastMatch = ethPacketMetaExtractPipelineEntry.macAddrUnicastPartialMatch && (partialMacAddr1 == partialMacAddr2);
-        let macAddrMatch = macUnicastMatch || ethPacketMetaExtractPipelineEntry.macAddrBroadcastMatch;
+        let macUnicastMatch = ethPacketMetaExtractPipelineEntryReg.macAddrUnicastPartialMatch && (partialMacAddr1 == partialMacAddr2);
+        let macAddrMatch = macUnicastMatch || ethPacketMetaExtractPipelineEntryReg.macAddrBroadcastMatch;
 
         if (!macAddrMatch) begin
             $display(
                 "time=%0t:", $time, toRed(" mkInputPacketClassifier mac address check failed"),
                 toBlue(", networkSettingsReg="), fshow(networkSettingsReg),
-                toBlue(", ethHeader="), fshow(ethPacketMetaExtractPipelineEntry.ethHeader)
+                toBlue(", ethHeader="), fshow(ethPacketMetaExtractPipelineEntryReg.ethHeader)
             );
         end
 
@@ -224,7 +235,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         if (udpHeader.dstPort != fromInteger(valueOf(UDP_PORT_RDMA))) begin
             mustNotBeRdmaPacket = True;
         end
-        mustNotBeRdmaPacket = mustNotBeRdmaPacket || ethPacketMetaExtractPipelineEntry.mustNotBeRdmaPacket;
+        mustNotBeRdmaPacket = mustNotBeRdmaPacket || ethPacketMetaExtractPipelineEntryReg.mustNotBeRdmaPacket;
 
         // This is the final check condition. so if it is not "mustn't be RDMA", then it is RDMA
         Bool isRDMA = !mustNotBeRdmaPacket;
@@ -234,7 +245,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
             isAddrMatch: isAddrMatch
         });
 
-        let macIpUdpMeta = ethPacketMetaExtractPipelineEntry.macIpUdpMeta;
+        let macIpUdpMeta = ethPacketMetaExtractPipelineEntryReg.macIpUdpMeta;
         macIpUdpMeta.srcPort = udpHeader.srcPort;
 
         if (isAddrMatch && isRDMA && !beatPayload.flags.error) begin

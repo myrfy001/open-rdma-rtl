@@ -318,11 +318,12 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
 
         Bool isBatchDelayCounterFired = batchDelayCounterReg == -1;
         tPtrWithGuard freeSlotCnt = fromInteger(valueOf(TExp#(szPtrIdx))) - (headShadowReg - tailReg[0]);
-        tPtrWithGuard availableDescToWrite = unpack(zeroExtend(pack(validCounter)));
+        tPtrWithGuard zeroBasedFreeSlotCnt = fromInteger(valueOf(TExp#(szPtrIdx)) - 1) - (headShadowReg - tailReg[0]);
+        tPtrWithGuard zeroBasedAvailableDescToWrite = unpack(zeroExtend(pack(validCounter-1)));
         RingBufWriteBlockOffset headShadowRingBufWriteBlockOffset = truncate(pack(headShadowReg));
-        tPtrWithGuard maxDescWriteCntIfAlignedToWriteBlock = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK)) - unpack(zeroExtend(headShadowRingBufWriteBlockOffset));
+        tPtrWithGuard zeroBasedMaxDescWriteCntIfAlignedToWriteBlock = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK) - 1) - unpack(zeroExtend(headShadowRingBufWriteBlockOffset));
 
-        RingBufWriteBlockOffset zeroBasedDescWriteCnt = truncate(min(min(pack(freeSlotCnt), pack(availableDescToWrite)), pack(maxDescWriteCntIfAlignedToWriteBlock))) - 1;
+        RingBufWriteBlockOffset zeroBasedDescWriteCnt = truncate(min(min(pack(zeroBasedMaxDescWriteCntIfAlignedToWriteBlock), pack(zeroBasedAvailableDescToWrite)), pack(zeroBasedFreeSlotCnt)));
 
         Bool needDoDMA = isBatchDelayCounterFired && bufQ.notEmpty && (pack(freeSlotCnt) > 0);
         if (needDoDMA) begin
@@ -347,7 +348,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
             //     ", head-tail=", fshow(pack(headReg[0] - tailReg[0])),
             //     ", headS-tail=", fshow(pack(headShadowReg - tailReg[0])),
             //     ", validCounter=", fshow(pack(validCounter)),
-            //     ", availableDescToWrite=", fshow(pack(availableDescToWrite))
+            //     ", zeroBasedAvailableDescToWrite=", fshow(pack(zeroBasedAvailableDescToWrite))
             // );
         end
 
