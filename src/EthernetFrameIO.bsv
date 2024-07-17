@@ -32,10 +32,9 @@ typedef 24 MAC_ADDR_PARTIAL_COMPARE_BIT_WIDTH;
 
 
 typedef enum {
-    InputPacketClassifierStateNotReady = 0,
-    InputPacketClassifierStateHandleFirstBeat = 1,
-    InputPacketClassifierStateHandleSecondBeat = 2,
-    InputPacketClassifierStateHandleMoreBeat = 3
+    InputPacketClassifierStateHandleFirstBeat = 0,
+    InputPacketClassifierStateHandleSecondBeat = 1,
+    InputPacketClassifierStateHandleMoreBeat = 2
 } InputPacketClassifierState deriving(Bits, FShow, Eq);
 
 typedef struct {
@@ -54,54 +53,86 @@ typedef struct {
 
 (*synthesize*)
 module mkInputPacketClassifier(InputPacketClassifier);
-    Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateNotReady);
+    Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
     FIFOF#(EthernetNapBeatEntry) ethRawPacketInQ <- mkFIFOF;
     FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
     FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkFIFOF;
     FIFOF#(DataStream) otherRawPacketOutQ <- mkFIFOF;
 
-    FIFOF#(DataStream) waitingForRouteQ <- mkFIFOF;
+    FIFOF#(DataStream) waitingForRouteQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
     FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkFIFOF;
 
     Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntryReg <- mkRegU;
 
     Reg#(Bool) networkSettingsIsSetReg <- mkReg(False);
     Reg#(LocalNetworkSettings) networkSettingsReg <- mkRegU;
+    Reg#(Bool) canAcceptRawInputPacketReg <- mkReg(False);
 
     // the dst IP filed begins at #30 byte of first beat, so the first beat only has the higher 16 bits
     Reg#(Bit#(16)) partialDstIpAddrHigher16BitsReg <- mkRegU;
 
-    rule notReadyStage if (stateReg == InputPacketClassifierStateNotReady);
+    FIFOF#(Tuple2#(DataStream, EthernetExtraInfo)) ethRawPacketForHandleQ <- mkFIFOF;
+
+    rule discardPacketWhenNetworkSettingsNotReady;
         let beat = ethRawPacketInQ.first;
+        ethRawPacketInQ.deq;
+
         if (networkSettingsIsSetReg && beat.sop) begin
-            stateReg <= InputPacketClassifierStateHandleFirstBeat;
+            canAcceptRawInputPacketReg <= True;
+
+            EthernetNapRecvFirstBeat beatPayload = unpack(beat.data);
+
+            let ds = DataStream{
+                data: swapEndianByte(beatPayload.data),
+                byteNum: fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)),
+                startByteIdx: 0,
+                isFirst: beat.sop,
+                isLast: beat.eop
+            };
+            let beatExtraInfo = pack(beatPayload.extraInfo);
+
+            ethRawPacketForHandleQ.enq(tuple2(ds, beatExtraInfo));
+            waitingForRouteQ.enq(ds);
+        end
+        else if (canAcceptRawInputPacketReg) begin
+
+            EthernetNapRecvOtherBeat beatPayload = unpack(beat.data);
+
+            ByteEnBitNum byteNum =  beat.eop ? (
+                    beatPayload.extraInfo.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : zeroExtend(beatPayload.extraInfo.mod)
+                ) : fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
+
+            let ds = DataStream{
+                data: swapEndianByte(beatPayload.data),
+                byteNum: unpack(zeroExtend(byteNum)),
+                startByteIdx: 0,
+                isFirst: beat.sop,
+                isLast: beat.eop
+            };
+            let beatExtraInfo = pack(beatPayload.extraInfo);
+
+            ethRawPacketForHandleQ.enq(tuple2(ds, beatExtraInfo));
+            waitingForRouteQ.enq(ds);
         end
         else begin
-            ethRawPacketInQ.deq;
+            $display(
+                "time=%0t:", $time, toRed(" mkInputPacketClassifier discardPacketWhenNetworkSettingsNotReady >>>>> DISCARD PACKET <<<<< since network settings not set"),
+                toBlue(", beat="), fshow(beat)
+            );
         end
     endrule
 
     rule handleFirstBeatStage if (stateReg == InputPacketClassifierStateHandleFirstBeat);
-        let beat = ethRawPacketInQ.first;
-        ethRawPacketInQ.deq;
-
-        EthernetNapRecvFirstBeat beatPayload = unpack(beat.data);
-
-        let ds = DataStream{
-            data: swapEndianByte(beatPayload.data),
-            byteNum: fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)),
-            startByteIdx: 0,
-            isFirst: beat.sop,
-            isLast: beat.eop
-        };
+        let {ds, beatExtraInfo} = ethRawPacketForHandleQ.first;
+        ethRawPacketForHandleQ.deq;
 
 
         // Achronix Ethernet NAP make sure that each ethernet frame is at least two beat.
         immAssert(
-            beat.sop && !beat.eop,
+            ds.isFirst && !ds.isLast,
             "mkInputPacketClassifier first beat error",
-            $format("sop should be True and eop should be False in handleFirstBeatStage, beat=", fshow(beat))
+            $format("sop should be True and eop should be False in handleFirstBeatStage, ds=", fshow(ds))
         );
 
         EthHeader ethHeader         = unpack(truncateLSB(pack(ds.data)));
@@ -145,9 +176,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
         partialDstIpAddrHigher16BitsReg <= truncateLSB(partialIpHeader.dstIpAddr);
         
-        waitingForRouteQ.enq(ds);
 
-        if (beat.eop) begin
+        if (ds.isLast) begin
             // defensive coding. each if packet corrupted, oly have one beat, then stay in current state, and discard packet.
             ethPacketMetaQ.enq(EthernetPacketMeta{
                 isRdmaPacket: False,
@@ -156,12 +186,10 @@ module mkInputPacketClassifier(InputPacketClassifier);
             });
         end
         else begin
-            
             stateReg <= InputPacketClassifierStateHandleSecondBeat;
         end
 
         
-
         // $display(
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleFirstBeatStage"),
         //     toBlue(", partialIpHeader="), fshow(partialIpHeader),
@@ -171,30 +199,15 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleSecondBeatStage if (stateReg == InputPacketClassifierStateHandleSecondBeat);
-        let beat = ethRawPacketInQ.first;
-        ethRawPacketInQ.deq;
+        let {ds, beatExtraInfo} = ethRawPacketForHandleQ.first;
+        ethRawPacketForHandleQ.deq;
 
-        EthernetNapRecvOtherBeat beatPayload = unpack(beat.data);
-
-
-        ByteEnBitNum byteNum =  beat.eop ? (
-                beatPayload.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : zeroExtend(beatPayload.mod)
-            ) : fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
-
-        let ds = DataStream{
-            data: swapEndianByte(beatPayload.data),
-            byteNum: unpack(zeroExtend(byteNum)),
-            startByteIdx: 0,
-            isFirst: beat.sop,
-            isLast: beat.eop
-        };
-
-        waitingForRouteQ.enq(ds);
+        EthernetNapRecvOtherBeatExtraInfo decodedExtraInfoForSecondBeat = unpack(beatExtraInfo);
 
         immAssert(
-            !beat.sop,
+            !ds.isFirst,
             "mkInputPacketClassifier second beat error",
-            $format("sop should be False handleSecondBeatStage, beat=", fshow(beat))
+            $format("sop should be False handleSecondBeatStage, ds=", fshow(ds))
         );
 
         IpAddr dstIpAddr = truncateLSB({partialDstIpAddrHigher16BitsReg, pack(ds.data)});
@@ -237,22 +250,24 @@ module mkInputPacketClassifier(InputPacketClassifier);
         end
         mustNotBeRdmaPacket = mustNotBeRdmaPacket || ethPacketMetaExtractPipelineEntryReg.mustNotBeRdmaPacket;
 
+        let isError = decodedExtraInfoForSecondBeat.flags.error;
+
         // This is the final check condition. so if it is not "mustn't be RDMA", then it is RDMA
         Bool isRDMA = !mustNotBeRdmaPacket;
         ethPacketMetaQ.enq(EthernetPacketMeta{
             isRdmaPacket: isRDMA,
-            isError: beatPayload.flags.error,
+            isError: isError,
             isAddrMatch: isAddrMatch
         });
 
         let macIpUdpMeta = ethPacketMetaExtractPipelineEntryReg.macIpUdpMeta;
         macIpUdpMeta.srcPort = udpHeader.srcPort;
 
-        if (isAddrMatch && isRDMA && !beatPayload.flags.error) begin
+        if (isAddrMatch && isRDMA && !isError) begin
             rdmaMacIpUdpMetaOutQ.enq(macIpUdpMeta);
         end
         
-        stateReg <= beat.eop ? InputPacketClassifierStateHandleFirstBeat : InputPacketClassifierStateHandleMoreBeat;
+        stateReg <= ds.isLast ? InputPacketClassifierStateHandleFirstBeat : InputPacketClassifierStateHandleMoreBeat;
         
         // $display(
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleSecondBeatStage"),
@@ -262,30 +277,18 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);
-        let beat = ethRawPacketInQ.first;
-        ethRawPacketInQ.deq;
+        let {ds, beatExtraInfo} = ethRawPacketForHandleQ.first;
+        ethRawPacketForHandleQ.deq;
 
         immAssert(
-            !beat.sop,
+            !ds.isFirst,
             "mkInputPacketClassifier second beat error",
-            $format("sop should be False handleMoreBeatStage, beat=", fshow(beat))
+            $format("sop should be False handleMoreBeatStage, ds=", fshow(ds))
         );
 
-        EthernetNapRecvOtherBeat beatPayload = unpack(beat.data);
-        ByteEnBitNum byteNum =  beat.eop ? (
-                beatPayload.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : zeroExtend(beatPayload.mod)
-            ) : fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
 
-        let ds = DataStream{
-            data: swapEndianByte(beatPayload.data),
-            byteNum: unpack(zeroExtend(byteNum)),
-            startByteIdx: 0,
-            isFirst: beat.sop,
-            isLast: beat.eop
-        };
-
-        waitingForRouteQ.enq(ds);
-        if (beat.eop) begin
+        
+        if (ds.isLast) begin
             stateReg <= InputPacketClassifierStateHandleFirstBeat;
         end
 

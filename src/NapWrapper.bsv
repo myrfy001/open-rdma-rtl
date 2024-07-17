@@ -27,6 +27,9 @@ typedef Bit#(VERTICAL_NAP_DATA_WIDTH) VerticalNapData;
 typedef VERTICAL_NAP_DATA_WIDTH ETHERNET_NAP_DATA_WIDTH;
 typedef Bit#(ETHERNET_NAP_DATA_WIDTH) EthernetNapData;
 
+typedef TSub#(ETHERNET_NAP_DATA_WIDTH, NOC_DATA_BUS_BIT_WIDTH) ETHERNET_NAP_EXTRA_INFO_WIDTH;
+typedef Bit#(ETHERNET_NAP_EXTRA_INFO_WIDTH) EthernetExtraInfo;
+
 typedef 15 ETHERNET_NAP_NODE_ID; // according to UG086, the node ID of EIU is 4'hf
 
 typedef 5 ETH_NAP_MOD_WIDTH;
@@ -53,19 +56,26 @@ typedef struct {
     Bool error;
 } EthernetNapRecvFlags deriving(Bits, FShow, Eq);
 
-
 typedef struct {
     ReservedZero#(2) rsvd2;
     EthernetNapTimestamp timestamp;
     ReservedZero#(ETH_NAP_MOD_WIDTH) rsvd1;
-    NocData data;
+} EthernetNapRecvFirstBeatExtraInfo deriving(Bits, FShow, Eq);
+
+typedef struct {
+    EthernetNapRecvFirstBeatExtraInfo   extraInfo;
+    NocData                             data;
 } EthernetNapRecvFirstBeat deriving(Bits, FShow, Eq);
 
 typedef struct {
     ReservedZero#(2) rsvd1;
     EthernetNapRecvFlags flags;
     EthernetNapMod mod;
-    NocData data;
+} EthernetNapRecvOtherBeatExtraInfo deriving(Bits, FShow, Eq);
+
+typedef struct {
+    EthernetNapRecvOtherBeatExtraInfo   extraInfo;
+    NocData                             data;
 } EthernetNapRecvOtherBeat deriving(Bits, FShow, Eq);
 
 typedef 17 ETH_NAP_TRANSMIT_ID_FLAG_WIDTH;

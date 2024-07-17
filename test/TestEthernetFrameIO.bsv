@@ -60,7 +60,7 @@ module mkTestEthernetFrameIO(Empty);
 
     let trueFalseVec = vec(True, False, True, False);
 
-    PipeOut#(Length) rdmaPayloadLenRandPipeOut <- mkRandomLenPipeOut(1, 1024);//fromInteger(valueOf(MAX_PMTU)));
+    PipeOut#(Length) rdmaPayloadLenRandPipeOut <- mkRandomLenPipeOut(1, 1024); //fromInteger(valueOf(MAX_PMTU)));
     PipeOut#(RdmaTransAndOpcode) transAndOpecodeRandPipeOut <- mkRandomItemFromVec(rdmaOpcodeVec);
     PipeOut#(Bool) isRdmaPacketRandPipeOut <- mkRandomItemFromVec(trueFalseVec);
     PipeOut#(EthMacAddr) macAddrRandPipeOut <- mkRandomItemFromVec(macAddrVec);
