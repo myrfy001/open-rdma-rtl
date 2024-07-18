@@ -80,9 +80,8 @@ class CStructRpcPcieMemoryAccessMessage(Structure):
 
 class CStructRpcNetIfcRxTxPayload(Structure):
     _fields_ = [
-        ("data", c_ubyte * 64),
-        ("byte_en", c_ubyte * 8),
-        ("reserved", c_ubyte),
+        ("data", c_ubyte * 32),
+        ("mod", c_ubyte),
         ("is_fisrt", c_ubyte),
         ("is_last", c_ubyte),
         ("is_valid", c_ubyte),
@@ -209,14 +208,15 @@ def open_shared_mem_to_hw_simulator(mem_size, shared_mem_file=None):
 
 
 class NetworkDataAgent:
+    BEAT_DATA_BYTE_WIDTH = 32
+
     def __init__(self, mock_host):
         self.mock_host = mock_host
         self.tx_data_buf = b""
         self.full_tx_data_list = []
 
     def put_tx_frag(self, frag):
-        bitmask = struct.unpack('<Q', bytes(frag.byte_en))[0]
-        ones = int(math.log2(bitmask + 1))
+        ones = self.BEAT_DATA_BYTE_WIDTH if frag.mod == 0 else frag.mod
         self.tx_data_buf += bytes(frag.data[:ones])
         if frag.is_last:
             self.full_tx_data_list.append(self.tx_data_buf)
@@ -225,40 +225,38 @@ class NetworkDataAgent:
     def put_full_rx_data(self, data):
         remain_size = len(data)
         while remain_size > 0:
-            if remain_size > 64:
-                data_trunk = data[:64]
-                data = data[64:]
+            if remain_size > self.BEAT_DATA_BYTE_WIDTH:
+                data_trunk = data[:self.BEAT_DATA_BYTE_WIDTH]
+                data = data[self.BEAT_DATA_BYTE_WIDTH:]
                 tx_msg = CStructRpcNetIfcRxTxMessage(
                     header=CStructRpcHeader(
                         opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
                     ),
                     payload=CStructRpcNetIfcRxTxPayload(
-                        data=CUbyteArray64(*data_trunk),
-                        byte_en=CUbyteArray8(
-                            *struct.pack("<Q", 0xFFFFFFFFFFFFFFFF)),
+                        data=data_trunk,
+                        mod=self.BEAT_DATA_BYTE_WIDTH,
                         is_last=0,
                         is_valid=1
                     )
                 )
                 self.mock_host.put_net_ifc_rx_data_to_nic(tx_msg.payload)
-                remain_size -= 64
+                remain_size -= self.BEAT_DATA_BYTE_WIDTH
             else:
-                data = data + (b"\0" * (64-remain_size))
+                data = data + (b"\0" * (self.BEAT_DATA_BYTE_WIDTH-remain_size))
                 tx_msg = CStructRpcNetIfcRxTxMessage(
                     header=CStructRpcHeader(
                         opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
                     ),
                     payload=CStructRpcNetIfcRxTxPayload(
-                        data=CUbyteArray64(*data),
-                        byte_en=CUbyteArray8(
-                            *struct.pack("<Q", (1 << remain_size) - 1)),
+                        data=data,
+                        mod=remain_size & 0x1f,
                         is_last=1,
                         is_valid=1
                     )
                 )
                 # TODO: should use `tx_msg.payload` or `tx_msg` ?
                 self.mock_host.put_net_ifc_rx_data_to_nic(tx_msg.payload)
-                remain_size -= 64
+                remain_size -= self.BEAT_DATA_BYTE_WIDTH
 
     def get_full_tx_packet(self):
         if self.full_tx_data_list:
@@ -289,7 +287,7 @@ class MockNicInterface(ABC):
         pass
 
     @abstractmethod
-    def get_net_ifc_tx_data_from_nic_blocking(self):
+    def get_net_ifc_tx_data_from_nic_blocking(self, channel_id):
         """
         Get the transmitted data from the mock NIC interface in a blocking manner.
         """
@@ -297,11 +295,19 @@ class MockNicInterface(ABC):
         pass
 
     @abstractmethod
-    def put_net_ifc_rx_data_to_nic(self, data):
+    def put_net_ifc_rx_data_to_nic(self, channel_id, data):
         """
         Put the received data into the mock NIC interface.
         """
 
+        pass
+
+    @abstractmethod
+    def get_network_tx_channel_ids(self) -> list:
+        pass
+
+    @abstractmethod
+    def get_network_rx_channel_ids(self) -> list:
         pass
 
 
@@ -311,12 +317,24 @@ class NicManager:
 
     @classmethod
     def do_self_loopback(cls, nic: MockNicInterface):
-        def _self_loopback_thread():
+        def _self_loopback_thread(channel_id):
             while True:
-                data = nic.get_net_ifc_tx_data_from_nic_blocking()
-                nic.put_net_ifc_rx_data_to_nic(data)
-        loopback_thread = threading.Thread(target=_self_loopback_thread)
-        loopback_thread.start()
+                tx_channel_ids = nic.get_network_tx_channel_ids()
+                rx_channel_ids = nic.get_network_tx_channel_ids()
+                if len(tx_channel_ids) > channel_id and len(rx_channel_ids):
+                    data = nic.get_net_ifc_tx_data_from_nic_blocking(
+                        tx_channel_ids[channel_id])
+                    nic.put_net_ifc_rx_data_to_nic(
+                        rx_channel_ids[channel_id], data)
+                else:
+                    time.sleep(0.01)
+
+        forward_thread_handles = []
+        for channel_id in range(4):
+            forward_thread_handle = threading.Thread(
+                target=_self_loopback_thread, args=(channel_id,))
+            forward_thread_handles.append(forward_thread_handle)
+            forward_thread_handle.start()
 
     @classmethod
     def connect_two_card(cls, nic_a: MockNicInterface,
@@ -324,13 +342,28 @@ class NicManager:
 
         def _forward_a(channel_id):
             while True:
-                data = nic_a.get_net_ifc_tx_data_from_nic_blocking(channel_id)
-                nic_b.put_net_ifc_rx_data_to_nic(channel_id, data)
+                tx_channel_ids = nic_a.get_network_tx_channel_ids()
+                rx_channel_ids = nic_b.get_network_tx_channel_ids()
+                if len(tx_channel_ids) > channel_id and len(rx_channel_ids):
+                    data = nic_a.get_net_ifc_tx_data_from_nic_blocking(
+                        tx_channel_ids[channel_id])
+                    nic_b.put_net_ifc_rx_data_to_nic(
+                        rx_channel_ids[channel_id], data)
+                else:
+                    time.sleep(0.01)
 
         def _forward_b(channel_id):
             while True:
-                data = nic_b.get_net_ifc_tx_data_from_nic_blocking(channel_id)
-                nic_a.put_net_ifc_rx_data_to_nic(channel_id, data)
+                tx_channel_ids = nic_b.get_network_tx_channel_ids()
+                rx_channel_ids = nic_a.get_network_tx_channel_ids()
+                if len(tx_channel_ids) > channel_id and len(rx_channel_ids):
+
+                    data = nic_b.get_net_ifc_tx_data_from_nic_blocking(
+                        tx_channel_ids[channel_id])
+                    nic_a.put_net_ifc_rx_data_to_nic(
+                        rx_channel_ids[channel_id], data)
+                else:
+                    time.sleep(0.01)
 
         forward_thread_a_handles = []
         forward_thread_b_handles = []
@@ -416,6 +449,12 @@ class EmulatorMockNicAndHost(MockNicInterface):
 
     def stop(self):
         self.bluesim_rpc_server.stop()
+
+    def get_network_tx_channel_ids(self):
+        return list(self.client_id_to_network_tx_channel_mapping.values())
+
+    def get_network_rx_channel_ids(self):
+        return list(self.client_id_to_network_rx_channel_mapping.values())
 
     def _get_next_pcie_tlp_tag(self):
         if self.pcie_tlp_read_tag_counter == 32:

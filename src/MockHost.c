@@ -138,10 +138,8 @@ typedef struct {
 } RpcPcieMemoryAccessMessage;
 
 typedef struct {
-  uint8_t data[64];
-  uint8_t byte_en[8];
-
-  uint8_t reserved; // align to 32 bit
+  uint8_t data[32];
+  uint8_t mod;
   uint8_t is_fisrt;
   uint8_t is_last;
   uint8_t is_valid;

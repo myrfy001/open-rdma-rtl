@@ -37,7 +37,7 @@ typedef struct {
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     Bool isMrLowerAddrBoundOk;
-    PktFragNum expectedPayloadBeatNum;
+    PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
     TruncatedAddrForMrBoundCheck deltaLen;
 } CheckMrTableStep2PipelineEntry deriving(Bits, FShow);
@@ -49,7 +49,7 @@ typedef struct {
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     Bool isMrLowerAddrBoundOk;
-    PktFragNum expectedPayloadBeatNum;
+    PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
     TruncatedAddrForMrBoundCheck deltaLen;
 } CheckMrTableStep3PipelineEntry deriving(Bits, FShow);
@@ -60,7 +60,7 @@ typedef struct {
     Bool isNeedQueryMrTable;
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
-    PktFragNum expectedPayloadBeatNum;
+    PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
 } IssuePayloadGenReqOrDiscardPipelineEntry deriving(Bits, FShow);
 
@@ -70,7 +70,7 @@ typedef struct {
     Bool isNeedQueryMrTable;
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
-    PktFragNum expectedPayloadBeatNum;
+    PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
 } HandleConRespPipelineEntry deriving(Bits, FShow);
 
@@ -161,6 +161,11 @@ module mkRQ#(
             isFirstPacket: isFirstPacket
         };
         checkQpcAndMrTablePipeQ.enq(pipelineEntryOut);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ sendQpcQueryReqAndSomeSimpleParse"),
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
+        );
     endrule
 
     rule checkQpcAndMrTable;
@@ -186,7 +191,7 @@ module mkRQ#(
         Bool                            isMrAccCheckPass            = False; 
         Bool                            isMrLowerAddrBoundOk        = False;
         MemRegionTableEntry             mrEntryUnwraped             = ?;
-        PktFragNum                      expectedPayloadBeatNum      = ?;
+        PktFragNum                      zerobasedExpectedPayloadBeatNum      = ?;
         Length                          packetLen                   = ?;
         TruncatedAddrForMrBoundCheck    deltaLen                    = ?;
 
@@ -236,7 +241,7 @@ module mkRQ#(
             ADDR rethEndAddrForBeatCountCalc = reth.va + zeroExtend(packetLen) - 1;
             Length dividedStartAddr = truncate(reth.va >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
             Length dividedEndAddr = truncate(rethEndAddrForBeatCountCalc >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
-            expectedPayloadBeatNum = truncate(dividedEndAddr - dividedStartAddr);
+            zerobasedExpectedPayloadBeatNum = truncate(dividedEndAddr - dividedStartAddr);
 
             if (isNeedQueryMrTable) begin
                 let mrEntryMaybe <- mrTableQueryCltInst.getResp;
@@ -312,11 +317,16 @@ module mkRQ#(
             mrEntry                 : mrEntryUnwraped,
             qpc                     : unwrapMaybe(qpcMaybe),
             isMrLowerAddrBoundOk    : isMrLowerAddrBoundOk,
-            expectedPayloadBeatNum  : expectedPayloadBeatNum,
+            zerobasedExpectedPayloadBeatNum  : zerobasedExpectedPayloadBeatNum,
             packetLen               : packetLen,
             deltaLen                : deltaLen
         };
         checkMrTableStep2PipeQ.enq(pipelineEntryOut);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ checkQpcAndMrTable"),
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
+        );
     endrule
     
 
@@ -336,11 +346,15 @@ module mkRQ#(
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
             isMrLowerAddrBoundOk    : pipelineEntryIn.isMrLowerAddrBoundOk,
-            expectedPayloadBeatNum  : pipelineEntryIn.expectedPayloadBeatNum,
+            zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen,
             deltaLen                : deltaLen
         };
         checkMrTableStep3PipeQ.enq(pipelineEntryOut);
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ checkMrTableStep2"),
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
+        );
     endrule
 
     rule checkMrTableStep3;
@@ -350,7 +364,7 @@ module mkRQ#(
 
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
         let packetStatus = pipelineEntryIn.packetStatus;
-        let expectedPayloadBeatNum = pipelineEntryIn.expectedPayloadBeatNum;
+        let zerobasedExpectedPayloadBeatNum = pipelineEntryIn.zerobasedExpectedPayloadBeatNum;
         let isNeedQueryMrTable = pipelineEntryIn.isNeedQueryMrTable;
         let deltaLen = pipelineEntryIn.deltaLen;
         let packetLen = pipelineEntryIn.packetLen;
@@ -365,8 +379,7 @@ module mkRQ#(
             if (rdmaPacketMeta.hasPayload) begin
                 let packetTailMeta = rdmaPacketTailMetaPipeOutSyncQ.first;
                 rdmaPacketTailMetaPipeOutSyncQ.deq;
-
-                if (packetTailMeta.beatCnt == expectedPayloadBeatNum) begin
+                if (packetTailMeta.beatCnt - 1 == zerobasedExpectedPayloadBeatNum) begin
                     isPacketBeatCountCheckPass = True;
                 end
             end
@@ -395,10 +408,14 @@ module mkRQ#(
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
-            expectedPayloadBeatNum  : pipelineEntryIn.expectedPayloadBeatNum,
+            zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen
         };
         issuePayloadGenReqOrDiscardPipeQ.enq(pipelineEntryOut);
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ checkMrTableStep3"),
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
+        );
     endrule
 
 
@@ -412,6 +429,7 @@ module mkRQ#(
         let reth = extractPriRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans);
         let mrEntry = pipelineEntryIn.mrEntry;
 
+        Bool discardDebugFlag = True;
         if (rdmaPacketMeta.hasPayload) begin
             let isDiscard = !isRecvPacketStatusNormal(packetStatus);
             filterCmdSyncQ.enq(isDiscard);
@@ -423,7 +441,11 @@ module mkRQ#(
                     pgtOffset: mrEntry.pgtOffset 
                 };
                 conReqPipeOutQ.enq(payloadConReq);
+                discardDebugFlag = False;
             end
+        end
+        else begin
+            discardDebugFlag = False;
         end
 
         let pipelineEntryOut = HandleConRespPipelineEntry{
@@ -432,10 +454,15 @@ module mkRQ#(
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
-            expectedPayloadBeatNum  : pipelineEntryIn.expectedPayloadBeatNum,
+            zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen
         };
         handleConRespPipeQ.enq(pipelineEntryOut);
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ issuePayloadGenReqOrDiscard"),
+            discardDebugFlag ? toRed(" Discard!") : " keeped",
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
+        );
     endrule
 
     rule handleConResp;

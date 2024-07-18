@@ -81,9 +81,9 @@ module top_mkTestTopTiming (
         .IN_RST_PIPE_LENGTH     (8),    // Length of input flop pipeline, minimum of 2
                                         // Ignored if SYNC_INPUT_RESETS = 0
         .SYNC_INPUT_RESETS      (1),    // Synchronize input resets
-        .OUT_RST_PIPE_LENGTH    (4),    // Length of reset flop pipeline, minimum of 2
+        .OUT_RST_PIPE_LENGTH    (6),    // Length of reset flop pipeline, minimum of 2
                                         // Ignored if RESET_OVER_CLOCK = 1
-        .RESET_OVER_CLOCK       (0)     // Set to route the output reset over the clock network
+        .RESET_OVER_CLOCK       (1)     // Set to route the output reset over the clock network
     ) i_reset_processor_logic (
         .i_rstn_array       (i_rstn_array),
         .i_clk              (pll_logic_clk),
@@ -95,9 +95,9 @@ module top_mkTestTopTiming (
         .IN_RST_PIPE_LENGTH     (8),    // Length of input flop pipeline, minimum of 2
                                         // Ignored if SYNC_INPUT_RESETS = 0
         .SYNC_INPUT_RESETS      (1),    // Synchronize input resets
-        .OUT_RST_PIPE_LENGTH    (4),    // Length of reset flop pipeline, minimum of 2
+        .OUT_RST_PIPE_LENGTH    (6),    // Length of reset flop pipeline, minimum of 2
                                         // Ignored if RESET_OVER_CLOCK = 1
-        .RESET_OVER_CLOCK       (0)     // Set to route the output reset over the clock network
+        .RESET_OVER_CLOCK       (1)     // Set to route the output reset over the clock network
     ) i_reset_processor_eth (
         .i_rstn_array       (i_rstn_array),
         .i_clk              (eth_clk),

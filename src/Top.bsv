@@ -60,6 +60,13 @@ module mkBsvTop#(
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
 
+    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatAw)) awRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
+    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatW)) wRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
+    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatB)) bRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
+    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatAr)) arRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
+    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatR)) rRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
+
+
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
 
         // Payload gen and con
@@ -86,6 +93,20 @@ module mkBsvTop#(
         mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
         // RDMA payload DMA NAP
+
+        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, toPipeIn(awRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, toPipeIn(wRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, toPipeOut(bRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readAddrPipeOut, toPipeIn(arRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readRespPipeIn, toPipeOut(rRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
+
+        // mkConnection(toPipeOut(awRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(toPipeOut(wRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(toPipeIn(bRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(toPipeOut(arRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].readPipeIfc.readAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        // mkConnection(toPipeIn(rRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].readPipeIfc.readRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+
+
         mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
         mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
         mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);

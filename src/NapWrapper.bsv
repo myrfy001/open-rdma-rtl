@@ -97,14 +97,23 @@ typedef struct {
     ReservedZero#(2) rsvd2;
     EthernetNapTimestamp timestamp;
     ReservedZero#(ETH_NAP_MOD_WIDTH) rsvd1;
-    NocData data;
+} EthernetNapSendFirstBeatExtraInfo deriving(Bits, FShow, Eq);
+
+typedef struct {
+    EthernetNapSendFirstBeatExtraInfo   extraInfo;
+    NocData                             data;
 } EthernetNapSendFirstBeat deriving(Bits, FShow, Eq);
+
 
 typedef struct {
     ReservedZero#(2) rsvd1;
     EthernetNapSendFlags flags;
     EthernetNapMod mod;
-    NocData data;
+} EthernetNapSendOtherBeatExtraInfo deriving(Bits, FShow, Eq);
+
+typedef struct {
+    EthernetNapSendOtherBeatExtraInfo   extraInfo;
+    NocData                             data;
 } EthernetNapSendOtherBeat deriving(Bits, FShow, Eq);
 
 
@@ -178,12 +187,164 @@ module mkAcxNapEthernetWrapperInner#(
 endmodule
 
 
+
+module mkAcxNapEthernetWrapperInnerBluesim#(
+        Bit#(5) tx_eiu_channel,
+        Bit#(5) rx_eiu_channel
+    )(ACX_NAP_ETHERNET_BVI_WRAPPER);
+
+    FIFOF#(Tuple3#(Bool, Bool, VerticalNapData)) txRelayQ <- mkUGFIFOF;
+    FIFOF#(Tuple3#(Bool, Bool, VerticalNapData)) rxRelayQ <- mkUGFIFOF;
+
+    Wire#(Bool)                         txValidWire     <- mkBypassWire;
+    Wire#(VerticalNapData)              txDataWire      <- mkBypassWire;
+    Wire#(Bool)                         txSopWire       <- mkBypassWire;
+    Wire#(Bool)                         txEopWire       <- mkBypassWire;
+    Wire#(Bool)                         rxReadyWire     <- mkBypassWire;
+
+
+
+`ifdef USE_MOCK_HOST 
+    let mockHostNetworkConnector <- mkMockHostNetworkConnector;
+
+    rule forwardTxPacket;
+        if (txRelayQ.notEmpty) begin
+            let {isSop, isEop, beat} = txRelayQ.first;
+            txRelayQ.deq;
+            let mod = 0;
+            DATA data = ?;
+            if (isSop) begin
+                EthernetNapSendFirstBeat decodedPayload = unpack(beat);
+                data = decodedPayload.data;
+            end
+            else begin
+                EthernetNapSendOtherBeat decodedPayload = unpack(beat);
+                data = decodedPayload.data;
+                mod = decodedPayload.extraInfo.mod;
+            end
+
+            mockHostNetworkConnector.txPut.put(NetIfcAccessAction {
+                isValid : 1,
+                isLast  : zeroExtend(pack(isEop)),
+                isFirst : zeroExtend(pack(isSop)),
+                mod     : zeroExtend(pack(mod)),
+                data    : data
+            });
+        end
+    endrule
+
+    rule forwardRxPacket;
+        if (rxRelayQ.notFull) begin
+            let netIfcAccessAction <- mockHostNetworkConnector.rxGet.get;
+            let isSop = (netIfcAccessAction.isFirst != 0);
+            let isEop = (netIfcAccessAction.isLast != 0);
+
+            if (isSop) begin
+                let outBeat = EthernetNapRecvFirstBeat {
+                    data: netIfcAccessAction.data,
+                    extraInfo: EthernetNapRecvFirstBeatExtraInfo {
+                        rsvd2: unpack(0),
+                        rsvd1: unpack(0),
+                        timestamp: 0
+                    }
+                };
+                rxRelayQ.enq(tuple3(isSop, isEop, unpack(pack(outBeat))));
+            end
+            else begin
+                let outBeat = EthernetNapSendOtherBeat {
+                    data: netIfcAccessAction.data,
+                    extraInfo: EthernetNapSendOtherBeatExtraInfo {
+                        rsvd1: unpack(0),
+                        flags: unpack(0),
+                        mod: truncate(pack(netIfcAccessAction.mod))
+                    }
+                };
+                rxRelayQ.enq(tuple3(isSop, isEop, unpack(pack(outBeat))));
+            end
+        end
+    endrule
+
+`else
+    // rule forwardPacket;
+    //     if (txRelayQ.notEmpty && rxRelayQ.notFull) begin
+    //         let {isSop, isEop, beat} = txRelayQ.first
+    //         txRelayQ.deq;
+
+    //         if (isSop) begin
+    //             EthernetNapSendFirstBeat decodedPayload = unpack(beat);
+    //             let outBeat = EthernetNapRecvFirstBeat {
+    //                 data: decodedPayload.data,
+    //                 extraInfo: EthernetNapRecvFirstBeatExtraInfo {
+    //                     rsvd2: 0,
+    //                     rsvd1: 0,
+    //                     timestamp: 0
+    //                 }
+    //             };
+    //             rxRelayQ.enq(tuple3(isSop, isEop, unpack(outBeat)));
+    //         end
+    //         else begin
+    //             EthernetNapSendOtherBeat decodedPayload = unpack(beat);
+    //             let outBeat = EthernetNapSendOtherBeat {
+    //                 data: decodedPayload.data,
+    //                 extraInfo: EthernetNapSendOtherBeatExtraInfo {
+    //                     rsvd1: 0,
+    //                     flags: unpack(0),
+    //                     mod: decodedPayload.extraInfo.mod
+    //                 }
+    //             };
+    //             rxRelayQ.enq(tuple3(isSop, isEop, unpack(outBeat)));
+    //         end
+    //     end
+    // endrule
+`endif
+
+    rule handleTxInput;
+        if (txValidWire && txRelayQ.notFull) begin
+            txRelayQ.enq(tuple3(txSopWire, txEopWire, txDataWire));
+            // $display("txBeat recv=", fshow(txDataWire), ", txSopWire=", fshow(txSopWire), ", txEopWire=", fshow(txEopWire));
+        end
+    endrule
+
+    rule handleRxInput;
+        if (rxReadyWire && rxRelayQ.notEmpty) begin
+            rxRelayQ.deq;
+        end
+    endrule
+
+    // input port
+    method tx_valid           = txValidWire._write;
+    method tx_data            = txDataWire._write;
+    method tx_sop             = txSopWire._write;
+    method tx_eop             = txEopWire._write;
+    method rx_ready           = rxReadyWire._write;
+
+    // output port
+    method rx_valid                     = rxRelayQ.notEmpty;
+    method rx_src                       = 4'hf;
+    method rx_data                      = tpl_3(rxRelayQ.first);
+    method rx_sop                       = tpl_1(rxRelayQ.first);
+    method rx_eop                       = tpl_2(rxRelayQ.first);
+    method tx_ready                     = txRelayQ.notFull;
+
+
+endmodule
+
+
+
 module mkAcxNapEthernetPrimitiveWrapper#(
         Bit#(5) tx_eiu_channel,
         Bit#(5) rx_eiu_channel
     )(ACX_NAP_ETHERNET_BVI_WRAPPER);
 
-    let inst <- mkAcxNapEthernetWrapperInner(tx_eiu_channel, rx_eiu_channel);
+    ACX_NAP_ETHERNET_BVI_WRAPPER inst;
+
+    if (genVerilog) begin
+        inst <- mkAcxNapEthernetWrapperInner(tx_eiu_channel, rx_eiu_channel);
+    end
+    else begin
+        inst <- mkAcxNapEthernetWrapperInnerBluesim(tx_eiu_channel, rx_eiu_channel);
+    end
+
     return inst;
 endmodule
 
@@ -246,6 +407,7 @@ module mkAcxNapEthernetWrapperPipe#(
         if (txQ.notEmpty) begin
             if (ethNap.tx_ready) begin
                 txQ.deq;
+                // $display("txBeat send=", fshow(txBeat));
             end
         end
     endrule

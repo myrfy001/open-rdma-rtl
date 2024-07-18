@@ -13,12 +13,18 @@ import DataTypes :: *;
 import PrimUtils :: *;
 
 //  Export  section
+export NetIfcAccessAction(..);
 
 // Modules for export
 export mkMockHostMem;
+// export mkMockHostBarAccess;
+export mkMockHostNetworkConnector;
 
 // Interfaces
 export MockHostMem(..);
+// export MockHostBarAccess(..);
+export MockHostNetworkConnector(..);
+
 
 
 // imported C function to handle shared memory
@@ -66,11 +72,11 @@ interface MockHostBarAccess#(type bar_addr_t, type bar_data_t);
 	method Bool ready;
 endinterface
 
-// interface MockHostNetworkConnector;
-// 	interface AxiStream512FifoIn   axiStreamTxUdp;
-// 	interface Get#(AxiStream512)   axiStreamRxUdp;
-// 	method Bool ready;
-// endinterface
+interface MockHostNetworkConnector;
+	interface Put#(NetIfcAccessAction)   txPut;
+	interface Get#(NetIfcAccessAction)   rxGet;
+	method Bool ready;
+endinterface
 
 typedef struct {
 	Bit#(64) pci_tag;
@@ -79,15 +85,80 @@ typedef struct {
 	Bit#(64) value;
 } PcieBarAccessAction deriving(Bits, FShow);
 
+
 typedef struct {
 	Bit#(8) isValid;
 	Bit#(8) isLast;
 	Bit#(8) isFirst;
-	Bit#(8) reserved1;
-	ByteEn byteEn;
+	Bit#(8) mod;
 	DATA data;
 } NetIfcAccessAction deriving(Bits, FShow); 
 
+
+module mkMockHostNetworkConnector (MockHostNetworkConnector);
+
+	Clock srcClock <- exposeCurrentClock;
+    Reset srcReset <- exposeCurrentReset;
+
+    // mem
+	Reg#(Bit#(64))  clientIdReg   <- mkReg(0);
+	Reg#(Bool)      initDoneReg    <- mkReg(False);
+	Reg#(Bit#(64))  memHandleForCmacReg   <- mkReg(0);
+	Reg#(Bool)      initDoneForCamcReg    <- mkReg(False);
+
+	FIFOF#(NetIfcAccessAction) txQ <- mkFIFOF;
+	FIFOF#(NetIfcAccessAction) rxQ <- mkFIFOF;
+
+    rule doInit(!initDoneReg);
+		let ptr <- c_createMockHostRpcChannel;
+		if(ptr == 0) begin
+			$fwrite(stderr, "%0t: mkMockHostNetworkConnector: ERROR: fail to create createNewMockHostRpcChannel\n", $time);
+			$finish;
+		end
+		$display("%0t: mkMockHostNetworkConnector: createNewMockHostRpcChannel, client_id = %h", $time, ptr);
+		clientIdReg <= ptr;
+		initDoneReg <= True;
+		memHandleForCmacReg <= ptr;
+		initDoneForCamcReg <= True;
+	endrule
+
+	rule forwardNetIfcTx if (initDoneForCamcReg);
+
+		if (txQ.notEmpty) begin
+			let beat = txQ.first;
+			txQ.deq;
+
+			// $display("time=%0t: ", $time, "net ifc send beat=", fshow(beat));
+			
+			c_netIfcPutTxData(memHandleForCmacReg, beat);
+		end
+		else begin
+			// $display("time=%0t: ", $time, "net ifc send data=NO_DATA_TO_SEND");
+		end
+
+	endrule
+
+	rule forwardNetIfcRx if (initDoneForCamcReg);
+		let beat <- c_netIfcGetRxData(memHandleForCmacReg);
+		if (beat.isValid != 0) begin
+			rxQ.enq(beat);
+			// $display("time=%0t: ", $time, "net ifc recv beat=", fshow(beat));
+
+			// if (rxQ.notFull) begin
+			// 	rxQ.enq(beat);
+			// 	$display("time=%0t: ", $time, "net ifc recv beat=", fshow(beat));
+			// end 
+			// else begin
+			// 	$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
+			// end
+		end
+	endrule
+
+	method Bool ready = initDoneReg;
+
+	interface rxGet 	= toGet(rxQ);
+	interface txPut 	= toPut(txQ);
+endmodule
 
 // Exported module
 module mkMockHostMem #(BRAM_Configure cfg)(MockHostMem#(addr, data, n)) provisos(
@@ -286,86 +357,7 @@ endmodule
 
 
 
-// module mkMockHostNetworkConnector #(Clock cmacRxTxClk, Reset cmacRxTxRst) (MockHostNetworkConnector);
 
-// 	Clock srcClock <- exposeCurrentClock;
-//     Reset srcReset <- exposeCurrentReset;
-
-//     // mem
-// 	Reg#(Bit#(64))  clientIdReg   <- mkReg(0);
-// 	Reg#(Bool)      initDoneReg    <- mkReg(False);
-// 	Reg#(Bit#(64))  memHandleForCmacReg   <- mkSyncReg(0, srcClock, srcReset, cmacRxTxClk);
-// 	Reg#(Bool)      initDoneForCamcReg    <- mkSyncReg(False, srcClock, srcReset, cmacRxTxClk);
-
-// 	FIFOF#(AxiStream512) udpAxiTxQ <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
-// 	FIFOF#(AxiStream512) udpAxiRxQ <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
-
-//     rule doInit(!initDoneReg);
-// 		let ptr <- c_createMockHostRpcChannel;
-// 		if(ptr == 0) begin
-// 			$fwrite(stderr, "%0t: mkMockHostNetworkConnector: ERROR: fail to create createNewMockHostRpcChannel\n", $time);
-// 			$finish;
-// 		end
-// 		$display("%0t: mkMockHostNetworkConnector: createNewMockHostRpcChannel, client_id = %h", $time, ptr);
-// 		clientIdReg <= ptr;
-// 		initDoneReg <= True;
-// 		memHandleForCmacReg <= ptr;
-// 		initDoneForCamcReg <= True;
-// 	endrule
-
-
-// 	rule forwardNetIfcTx if (initDoneForCamcReg);
-
-// 		if (udpAxiTxQ.notEmpty) begin
-// 			let originTxData = udpAxiTxQ.first;
-// 			udpAxiTxQ.deq;
-
-// 			let req = NetIfcAccessAction {
-// 				isValid: 1,
-// 				isLast: originTxData.tLast ? 1 : 0,
-// 				isFirst: ?,
-// 				reserved1: 0,
-// 				byteEn: originTxData.tKeep,
-// 				data: originTxData.tData
-// 			};
-// 			$display("time=%0t: ", $time, "net ifc send data=", fshow(req));
-			
-// 			c_netIfcPutTxData(memHandleForCmacReg, req);
-// 		end
-// 		else begin
-// 			// $display("time=%0t: ", $time, "net ifc send data=NO_DATA_TO_SEND");
-// 		end
-
-// 	endrule
-
-// 	rule forwardNetIfcRx if (initDoneForCamcReg);
-// 		let rawReq <- c_netIfcGetRxData(memHandleForCmacReg);
-// 		if (rawReq.isValid != 0) begin
-// 			AxiStream512 req = AxiStream512{
-// 				tLast: rawReq.isLast != 0 ? True : False,
-// 				tKeep: rawReq.byteEn,
-// 				tData: rawReq.data,
-// 				tUser: 0
-// 			};
-
-// 			udpAxiRxQ.enq(req);
-// 			$display("time=%0t: ", $time, "net ifc recv data=", fshow(req));
-
-// 			// if (udpAxiRxQ.notFull) begin
-// 			// 	udpAxiRxQ.enq(req);
-// 			// 	$display("time=%0t: ", $time, "net ifc recv data=", fshow(req));
-// 			// end 
-// 			// else begin
-// 			// 	$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
-// 			// end
-// 		end
-// 	endrule
-
-// 	method Bool ready = initDoneReg;
-
-// 	interface axiStreamRxUdp 	= toGet(udpAxiRxQ);
-// 	interface axiStreamTxUdp 	= convertFifoToFifoIn(udpAxiTxQ);
-// endmodule
 
 
 endpackage

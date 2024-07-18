@@ -52,11 +52,11 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestPacketGenAndParse.bsv`
 # TESTCASE=mkTestPacketGen
 
-FILE=`ls TestRingbuf.bsv`
-TESTCASE=mkTestRingbuf
+# FILE=`ls TestRingbuf.bsv`
+# TESTCASE=mkTestRingbuf
 
-# FILE=`ls TestTop.bsv`
-# TESTCASE=mkTestTop
+FILE=`ls TestTop.bsv`
+TESTCASE=mkTestTop
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
 

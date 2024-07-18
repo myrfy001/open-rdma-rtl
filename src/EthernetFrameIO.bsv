@@ -653,14 +653,16 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     IpID defaultIpId = 1;
 
     function EthernetNapBeatEntry genEthernetPacket(NocData data, EthernetNapMod mod, EthernetNapSendFlags flags, Bool isSop, Bool isEop);
-        let beatData = EthernetNapSendOtherBeat{
+        let beatData = EthernetNapSendOtherBeat {
             data: data,
-            mod: mod,
-            flags: flags,
-            rsvd1: unpack(0)
+            extraInfo: EthernetNapSendOtherBeatExtraInfo {
+                mod: mod,
+                flags: flags,
+                rsvd1: unpack(0)
+            }
         };
 
-        let outBeat = EthernetNapBeatEntry{
+        let outBeat = EthernetNapBeatEntry {
             srcOrDstNodeId: ?,    // For Eth nap, the id is hardcoded, so don't care for now.
             data: pack(beatData),
             sop: isSop,
@@ -678,7 +680,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         LocalNetworkSettings localNetSettings = fromMaybe(?, networkSettingsReg);
 
         let udpIpHeader = genUdpIpHeader(macIpUdpMeta, localNetSettings, defaultIpId);
-        let ethHeader = EthHeader{
+        let ethHeader = EthHeader {
             dstMacAddr: macIpUdpMeta.dstMacAddr,
             srcMacAddr: localNetSettings.macAddr,
             ethType: macIpUdpMeta.ethType
@@ -717,9 +719,11 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         let beatData = EthernetNapSendFirstBeat{
             data: swapEndianByte(truncateLSB(pack(pipelineEntry.macIpUdpHeader))),
-            rsvd1: unpack(0),
-            timestamp: 0,
-            rsvd2: unpack(0)
+            extraInfo: EthernetNapSendFirstBeatExtraInfo {
+                rsvd1: unpack(0),
+                timestamp: 0,
+                rsvd2: unpack(0)
+            }
         };
 
         let outBeat = EthernetNapBeatEntry{
@@ -791,6 +795,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             statusReg <= EthernetPacketGeneratorStateGenThirdBeat;
         end
 
+        immAssert(
+            !outBeat.sop,
+            "The second beat's sop should be false",
+            $format("outBeat=", fshow(outBeat))
+        );
+
         // $display(
         //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genSecondBeat"),
         //     toBlue(", outBeat="), fshow(outBeat),
@@ -825,6 +835,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             statusReg <= EthernetPacketGeneratorStateGenMoreBeat;
         end
 
+        immAssert(
+            !outBeat.sop,
+            "The third beat's sop should be false",
+            $format("outBeat=", fshow(outBeat))
+        );
+
         // $display(
         //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genThirdBeat"),
         //     toBlue(", outBeat="), fshow(outBeat),
@@ -851,6 +867,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
 
         ethernetPacketPipeOutQ.enq(outBeat);
+
+        immAssert(
+            !outBeat.sop,
+            "The more beat's sop should be false",
+            $format("outBeat=", fshow(outBeat))
+        );
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genMoreBeat"),
