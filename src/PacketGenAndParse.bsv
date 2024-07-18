@@ -634,6 +634,9 @@ module mkPacketGen#(
                 psn = wqe.psn;
                 psnReg <= psn + 1;
             end
+            else begin
+                psnReg <= psn + 1;
+            end
 
             remoteAddr = packetInfo.startAddr;
             dlen = isFirstPacket ? wqe.totalLen : packetInfo.len;
