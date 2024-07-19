@@ -506,10 +506,22 @@ module mkPacketGen#(
         
 
     // Pipeline Queues
-    FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkFIFOF;
-    FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkFIFOF;
+    FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkSizedFIFOF(4);
+    FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkSizedFIFOF(4);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkFIFOF;
     
+    rule debugRule;
+
+        if (!packetToBeatChunkMetaCalcReqSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: packetToBeatChunkMetaCalcReqSyncQ");
+        if (!payloadStreamShifterOffsetPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: payloadStreamShifterOffsetPipeInSyncQ");
+        if (!ethernetPacketGenMacIpUdpMetaPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: ethernetPacketGenMacIpUdpMetaPipeInSyncQ");
+        if (!ethernetPacketGenRdmaPacketMetaPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: ethernetPacketGenRdmaPacketMetaPipeInSyncQ");
+
+        if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
+        if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
+        if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
+
+    endrule
     
     rule queryMrTable;
         let wqe = wqePipeInQ.first;

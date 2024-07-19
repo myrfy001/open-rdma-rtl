@@ -126,6 +126,15 @@ typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;          // 96
 
 typedef 3 RDMA_PACKET_HEADER_BETA_CNT;
 
+typedef 4 PCIE_BAR_ADDR_BYTE_WIDTH;
+typedef 4 PCIE_BAR_DATA_BYTE_WIDTH;
+typedef TMul#(PCIE_BAR_ADDR_BYTE_WIDTH, BYTE_WIDTH) PCIE_BAR_ADDR_BIT_WIDTH;
+typedef TMul#(PCIE_BAR_DATA_BYTE_WIDTH, BYTE_WIDTH) PCIE_BAR_DATA_BIT_WIDTH;
+typedef Bit#(PCIE_BAR_ADDR_BIT_WIDTH) PcieBarAddr;
+typedef Bit#(PCIE_BAR_DATA_BIT_WIDTH) PcieBarData;
+
+
+
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;
 typedef Bit#(QP_CAP_CNT_WIDTH) ScatterGatherElemCnt;
@@ -153,7 +162,7 @@ typedef Tuple3#(DataStream, Bool, RecvPacketSrcMacIpBufferIdx) RqDataStreamWithE
 typedef PipeOut#(RqDataStreamWithExtraInfo) RqDataStreamWithExtraInfoPipeOut;
 typedef Put#(RqDataStreamWithExtraInfo) RqDataStreamWithExtraInfoPipeIn;
 
-typedef PipeOut#(RecvReq)                     RecvReqBuf;
+
 
 
 typedef Bit#(TLog#(MAX_PTE_ENTRY_CNT)) PTEIndex;
@@ -204,14 +213,6 @@ typedef Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) MrTableQueryClt;
 typedef Client#(PgtAddrTranslateReq, ADDR) PgtQueryClt;
 
 // Common types
-
-typedef Server#(DmaReadReq, DmaReadResp)            DmaReadSrv;
-typedef Server#(DmaWriteReq, DmaWriteResp)    DmaWriteSrv;
-typedef Client#(DmaReadReq, DmaReadResp)            DmaReadClt;
-typedef Client#(DmaWriteReq, DmaWriteResp)    DmaWriteClt;
-
-typedef Server#(PermCheckReq, Bool) PermCheckSrv;
-typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
 
 // DATA are right aligned for first and only beat, and are left aligned for middle and last beat
@@ -275,138 +276,6 @@ typedef struct {
 } RdmaSendPacketMeta deriving(Bits, FShow);
 
 
-// typedef struct {
-//     HeaderByteNum                   headerLen;
-//     HeaderFragNum                   headerFragNum;
-//     ByteEnBitNum                    lastFragValidByteNum;
-//     Bool                            hasPayload;
-//     Bool                            isEmptyHeader;
-//     RecvPacketSrcMacIpBufferIdx     srcMacIpIdx;
-// } HeaderMetaData deriving(Bits, Bounded, Eq);
-
-// typedef struct {
-//     ByteEnBitNum lastFragValidByteNum;
-// } PayloadMetaData deriving(Bits, Bounded, Eq);
-
-// instance FShow#(HeaderMetaData);
-//     function Fmt fshow(HeaderMetaData hmd);
-//         return $format(
-//             "HeaderMetaData { headerLen=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
-//             hmd.headerLen, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
-//         );
-//     endfunction
-// endinstance
-
-// // HeaderData and HeaderByteEn are left aligned
-// typedef struct {
-//     HeaderData                headerData;
-//     HeaderByteNum              headerByteNum;
-//     HeaderMetaData            headerMetaData;
-// } HeaderRDMA deriving(Bits, Bounded, FShow);
-
-// typedef enum {
-//     PKT_ST_VALID,
-//     PKT_ST_LEN_ERR
-//     // PKT_ST_QP_ACC_ERR,
-//     // PKT_ST_DISCARD
-// } PktVeriStatus deriving(Bits, Bounded, Eq, FShow);
-
-// typedef struct {
-//     PktLen pktPayloadLen;
-//     PktFragNum pktFragNum;
-//     Bool isZeroPayloadLen;
-//     HeaderRDMA pktHeader;
-//     Bool pktValid;
-//     PktVeriStatus pktStatus;
-// } RdmaPktMetaData deriving(Bits, Bounded);
-
-// instance FShow#(RdmaPktMetaData);
-//     function Fmt fshow(RdmaPktMetaData rpmd);
-//         return $format(
-//             "RdmaPktMetaData { pktPayloadLen=%0d, pktFragNum=%0d",
-//             rpmd.pktPayloadLen, rpmd.pktFragNum,
-//             ", pktHeader=", fshow(rpmd.pktHeader),
-//             ", pktValid=", fshow(rpmd.pktValid), " }"
-//         );
-//     endfunction
-// endinstance
-
-// DMA related
-
-typedef struct {
-    // Maybe#(WorkReqID) wrID;  // TODO: remove it
-    LKEY lkey;
-    RKEY rkey;
-    Bool localOrRmtKey; // True for local, False for remote
-    ADDR reqAddr;
-    Length totalLen;
-    HandlerPD pdHandler;
-    Bool isZeroDmaLen;
-    FlagsType#(MemAccessTypeFlag) accFlags;
-} PermCheckReq deriving(Bits, FShow);
-
-typedef struct {
-    ADDR startAddr;
-    Length len;
-    IndexMR mrIdx;
-} DmaReadMetaData deriving(Bits, FShow);
-
-typedef struct {
-    ADDR startAddr;
-    PktLen len;
-    IndexMR mrIdx;
-} DmaReadReq deriving(Bits, FShow);
-
-typedef struct {
-    Bool isRespErr;
-    DataStream dataStream;
-} DmaReadResp deriving(Bits, FShow);
-
-typedef struct {
-    ADDR startAddr;
-    PktLen len;
-} DmaWriteMetaData deriving(Bits, Eq, FShow);
-
-typedef struct {
-    DmaWriteMetaData metaData;
-    DataStream dataStream;
-} DmaWriteReq deriving(Bits, FShow);
-
-typedef struct {
-        Bool isRespErr;
-} DmaWriteResp deriving(Bits, FShow);
-
-typedef enum {
-    DMA_SRC_RQ_RD,
-    DMA_SRC_RQ_WR,
-    DMA_SRC_RQ_DUP_RD,
-    DMA_SRC_RQ_ATOMIC,
-    DMA_SRC_RQ_DISCARD,
-    // DMA_SRC_RQ_CANCEL,
-    DMA_SRC_SQ_RD,
-    DMA_SRC_SQ_WR,
-    DMA_SRC_SQ_ATOMIC,
-    DMA_SRC_SQ_DISCARD
-    // DMA_SRC_SQ_CANCEL
-} DmaReqSrcType deriving(Bits, Eq, FShow); // TODO: remove it
-
-
-typedef struct {
-    DmaReqSrcType initiator;
-    Bool casOrFetchAdd;
-    ADDR startAddr;
-    Long compData;
-    Long swapData;
-    QPN sqpn;
-    PSN psn;
-} AtomicOpReq deriving(Bits);
-
-typedef struct {
-    DmaReqSrcType initiator;
-    Long original;
-    QPN sqpn;
-    PSN psn;
-} AtomicOpResp deriving(Bits);
 
 // QP related types
 
@@ -457,47 +326,6 @@ typedef enum {
     IBV_MTU_4096 = 5
 } PMTU deriving(Bits, Eq, FShow);
 
-typedef struct {
-    PendingReqCnt        maxSendWR;
-    PendingReqCnt        maxRecvWR;
-    ScatterGatherElemCnt maxSendSGE;
-    ScatterGatherElemCnt maxRecvSGE;
-    InlineDataSize       maxInlineData;
-} QpCapacity deriving(Bits, FShow);
-
-typedef struct {
-    StateQP                       qpState;
-    StateQP                       curQpState;
-    PMTU                          pmtu;
-    QKEY                          qkey;
-    PSN                           rqPSN;
-    PSN                           sqPSN;
-    QPN                           dqpn;
-    FlagsType#(MemAccessTypeFlag) qpAccessFlags;
-    QpCapacity                    cap;
-    PKEY                          pkeyIndex;
-    Bool                          sqDraining;
-    PendingReqCnt                 maxReadAtomic;
-    PendingReqCnt                 maxDestReadAtomic;
-    RnrTimer                      minRnrTimer;
-    TimeOutTimer                  timeout;
-    RetryCnt                      retryCnt;
-    RetryCnt                      rnrRetry;
-    // PKEY                          alt_pkey_index;
-    // enum ibv_mig_state            path_mig_state;
-    // struct ibv_ah_attr            ah_attr;
-    // struct ibv_ah_attr            alt_ah_attr;
-    // uint8_t                       en_sqd_async_notify;
-    // uint8_t                       port_num;
-    // uint8_t                       alt_port_num;
-    // uint8_t                       alt_timeout;
-    // uint32_t                      rate_limit;
-} AttrQP deriving(Bits, FShow);
-
-typedef struct {
-    TypeQP qpType;
-    Bool   sqSigAll;
-} QpInitAttr deriving(Bits, FShow);
 
 typedef enum {
     IBV_QP_NO_FLAGS            = 0,       // Not defined in rdma-core
@@ -583,40 +411,6 @@ typedef enum {
 instance Flags#(WorkReqSendFlag);
     function Bool isOneHotOrZero(WorkReqSendFlag inputVal) = 1 >= countOnes(pack(inputVal));
 endinstance
-
-typedef struct {
-    // WorkReqID id;  // TODO: remove it
-    Length len;
-    ADDR laddr;
-    LKEY lkey;
-    QPN sqpn; // For RR dispatching
-} RecvReq deriving(Bits, FShow);
-
-
-// Async event related
-
-typedef enum {
-    IBV_EVENT_CQ_ERR,
-    IBV_EVENT_QP_FATAL,
-    IBV_EVENT_QP_REQ_ERR,
-    IBV_EVENT_QP_ACCESS_ERR,
-    IBV_EVENT_COMM_EST,
-    IBV_EVENT_SQ_DRAINED,
-    IBV_EVENT_PATH_MIG,
-    IBV_EVENT_PATH_MIG_ERR,
-    IBV_EVENT_DEVICE_FATAL,
-    IBV_EVENT_PORT_ACTIVE,
-    IBV_EVENT_PORT_ERR,
-    IBV_EVENT_LID_CHANGE,
-    IBV_EVENT_PKEY_CHANGE,
-    IBV_EVENT_SM_CHANGE,
-    IBV_EVENT_SRQ_ERR,
-    IBV_EVENT_SRQ_LIMIT_REACHED,
-    IBV_EVENT_QP_LAST_WQE_REACHED,
-    IBV_EVENT_CLIENT_REREGISTER,
-    IBV_EVENT_GID_CHANGE,
-    IBV_EVENT_WQ_FATAL
-} AsyncEventType deriving(Bits, Eq);
 
 
 // PD Related

@@ -100,7 +100,7 @@ endinterface
 
 (* synthesize *)
 module mkMemRegionTable(MemRegionTable);
-    BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 0) mrTableStorage <- mkBramCache;
+    BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 1) mrTableStorage <- mkBramCache;
     QueuedServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServer("mkMemRegionTable querySrvInst");
     QueuedServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
 
@@ -262,7 +262,7 @@ endfunction
 (* synthesize *)
 module mkAddressTranslate(AddressTranslate);
     
-    BramCache#(PTEIndex, PageTableEntry, 2) pageTableStorage <- mkBramCache;
+    BramCache#(PTEIndex, PageTableEntry, 3) pageTableStorage <- mkBramCache;
 
     QueuedServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServer("translateSrvInst");
     QueuedServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");

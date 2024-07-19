@@ -98,7 +98,7 @@ module mkTestTopNoMockHostInner(
 
     Reg#(Bool) sentReg <- mkReg(False);
     rule injectWQE if (!sentReg);
-        sentReg <= True;
+        // sentReg <= True;
 
         let wqe = WorkQueueElem {
             pkey: 0,
@@ -113,8 +113,8 @@ module mkTestTopNoMockHostInner(
             lkey: unpack(0),
             raddr: unpack(0),
             rkey: unpack(0),
-            len: 1024 * 1024 * 2,
-            totalLen: 1024 * 1024 * 2,
+            len: 1,
+            totalLen: 1,
             dqpn: unpack(0),
             sqpn: unpack(0),
             comp: tagged Invalid,

@@ -294,7 +294,7 @@ module mkAcxNapEthernetWrapperInnerBluesim#(
                 };
                 rxRelayQ.enq(tuple3(isSop, isEop, pack(outBeat)));
             end
-            $display("time=%0t: ", $time, "net ifc forward data");
+            $display("time=%0t: ", $time, "net ifc forward data, isSop=", fshow(isSop), ", isEop=", fshow(isEop));
         end
         else if (!rxRelayQ.notFull) begin
             $display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
@@ -711,6 +711,149 @@ module mkAcxNapAxiMasterWrapperInner(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
                 rid, rdata, rresp, rlast, rvalid);
 endmodule
 
+
+
+
+
+
+
+module mkAcxNapAxiMasterWrapperInnerBluesim(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
+
+    MockHostBarAccess mockHostBarAccess <- mkMockHostBarAccess;
+
+
+    FIFOF#(AxiMmNapBeatAw) awQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatW)   wQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatB)   bQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatAr) arQ   <- mkUGFIFOF;
+    FIFOF#(AxiMmNapBeatR)   rQ   <- mkUGFIFOF;
+
+    Wire#(Bool)       awreadyWire <- mkBypassWire;
+    Wire#(Bool)        wreadyWire <- mkBypassWire;
+    Wire#(NapAxiBid)       bidWire <- mkBypassWire;
+    Wire#(NapAxiBresp)       brespWire <- mkBypassWire;
+    Wire#(Bool)       bvalidWire <- mkBypassWire;
+    Wire#(Bool)       arreadyWire <- mkBypassWire;
+    Wire#(NapAxiRid)       ridWire <- mkBypassWire;
+    Wire#(NapAxiRdata)       rdataWire <- mkBypassWire;
+    Wire#(NapAxiRresp)       rrespWire <- mkBypassWire;
+    Wire#(Bool)       rlastWire <- mkBypassWire;
+    Wire#(Bool)       rvalidWire <- mkBypassWire;
+
+
+
+    rule forwardWriteReq;
+        if (awQ.notFull && wQ.notFull) begin
+            let {addr, data} <- mockHostBarAccess.barWriteClt.request.get;
+            let awReq = AxiMmNapBeatAw {
+                awid: 0,
+                awaddr: zeroExtend(addr),
+                awlen: unpack(0),
+                awsize: unpack(pack(NapAxiSize32B)),
+                awburst: unpack(pack(NapAxiBurstIncr)),
+                awlock: False,
+                awqos: 0
+            };
+            awQ.enq(awReq);
+
+            let wReq = AxiMmNapBeatW {
+                wdata: zeroExtend(data),
+                wstrb: 'hF,
+                wlast: True
+            };
+            wQ.enq(wReq);
+        end
+    endrule
+
+    rule forwardWriteResp;
+        if (bQ.notEmpty) begin
+            let resp = bQ.first;
+            bQ.deq;
+            mockHostBarAccess.barWriteClt.response.put(True);
+        end
+    endrule
+
+
+    rule forwardReadReq;
+        if (arQ.notFull) begin
+            let addr <- mockHostBarAccess.barReadClt.request.get;
+            let arReq = AxiMmNapBeatAr {
+                arid: 0,
+                araddr: zeroExtend(addr),
+                arlen: unpack(0),
+                arsize: unpack(pack(NapAxiSize32B)),
+                arburst: unpack(pack(NapAxiBurstIncr)),
+                arlock: False,
+                arqos: 0
+            };
+            arQ.enq(arReq);
+        end
+    endrule
+
+    rule forwardReadResp;
+        if (rQ.notEmpty) begin
+            let resp = rQ.first;
+            rQ.deq;
+            mockHostBarAccess.barReadClt.response.put(truncate(resp.rdata));
+        end
+    endrule
+
+
+
+
+    // aw channel ===========
+    // output port
+    method awid = awQ.first.awid;
+    method awaddr = awQ.first.awaddr;
+    method awlen = awQ.first.awlen;
+    method awsize = awQ.first.awsize;
+    method awburst = awQ.first.awburst;
+    method awlock = awQ.first.awlock;
+    method awqos = awQ.first.awqos;
+    method awvalid = awQ.notEmpty;
+    // input port
+    method awready = awreadyWire._write;
+
+    // w channel ===========
+    // output port
+    method wdata = wQ.first.wdata;
+    method wstrb = wQ.first.wstrb;
+    method wlast = wQ.first.wlast;
+    method wvalid = wQ.notEmpty;
+    // input port
+    method wready = wreadyWire._write;
+
+    // b channel ===========
+    // output port 
+    method bready = bQ.notFull;
+    // input port
+    method bid = bidWire._write;
+    method bresp = brespWire._write;
+    method bvalid = bvalidWire._write;
+
+    // ar channel ===========
+    // output port 
+    method arid = arQ.first.arid;
+    method araddr = arQ.first.araddr;
+    method arlen = arQ.first.arlen;
+    method arsize = arQ.first.arsize;
+    method arburst = arQ.first.arburst;
+    method arlock = arQ.first.arlock;
+    method arqos = arQ.first.arqos;
+    method arvalid = arQ.notEmpty;
+    // input port
+    method arready = arreadyWire._write;
+
+    // r channel ===========
+    // output port
+    method rready = rQ.notFull;
+    // input port
+    method rid = ridWire._write;
+    method rdata = rdataWire._write;
+    method rresp = rrespWire._write;
+    method rlast = rlastWire._write;
+    method rvalid = rvalidWire._write;
+endmodule
 
 
 module mkAcxNapAxiMasterPrimitiveWrapper(ACX_NAP_AXI_MASTER_BVI_WRAPPER);

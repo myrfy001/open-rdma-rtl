@@ -17,12 +17,12 @@ export NetIfcAccessAction(..);
 
 // Modules for export
 export mkMockHostMem;
-// export mkMockHostBarAccess;
+export mkMockHostBarAccess;
 export mkMockHostNetworkConnector;
 
 // Interfaces
 export MockHostMem(..);
-// export MockHostBarAccess(..);
+export MockHostBarAccess(..);
 export MockHostNetworkConnector(..);
 
 
@@ -66,9 +66,9 @@ interface MockHostMem#(type addr, type data, numeric type n);
 	method Bool ready;
 endinterface
 
-interface MockHostBarAccess#(type bar_addr_t, type bar_data_t);
-	interface Client#(bar_addr_t, bar_data_t) barReadClt;
-	interface Client#(Tuple2#(bar_addr_t, bar_data_t), Bool) barWriteClt; 
+interface MockHostBarAccess;
+	interface Client#(PcieBarAddr, PcieBarData) barReadClt;
+	interface Client#(Tuple2#(PcieBarAddr, PcieBarData), Bool) barWriteClt; 
 	method Bool ready;
 endinterface
 
@@ -266,95 +266,89 @@ endmodule
 
 
 
-// module mkMockHostBarAccess(MockHostBarAccess#(bar_addr_t, bar_data_t)) provisos(
-// 	Bits#(bar_addr_t, bar_addr_sz),
-// 	Bits#(bar_data_t, bar_data_sz),
-// 	Add#(b__, bar_addr_sz, 64),
-// 	Add#(c__, bar_data_sz, 64)
-// );
+module mkMockHostBarAccess(MockHostBarAccess);
 
 
-//     // mem
-// 	Reg#(Bit#(64))  clientIdReg   <- mkReg(0);
-// 	Reg#(Bool)      initDoneReg    <- mkReg(False);
+	Reg#(Bit#(64))  clientIdReg   <- mkReg(0);
+	Reg#(Bool)      initDoneReg    <- mkReg(False);
 
-// 	FIFOF#(Tuple2#(bar_addr_t, bar_data_t)) barWriteReqQ <- mkFIFOF;
-// 	FIFOF#(Bool) barWriteRespQ <- mkFIFOF;
-// 	FIFOF#(bar_addr_t) barReadReqQ <- mkFIFOF;
-// 	FIFOF#(bar_data_t) barReadRespQ <- mkFIFOF;
+	FIFOF#(Tuple2#(PcieBarAddr, PcieBarData)) barWriteReqQ <- mkFIFOF;
+	FIFOF#(Bool) barWriteRespQ <- mkFIFOF;
+	FIFOF#(PcieBarAddr) barReadReqQ <- mkFIFOF;
+	FIFOF#(PcieBarData) barReadRespQ <- mkFIFOF;
 
 
-// 	// Note, it assumes that the resp will keep order as the request.
-// 	// We do not support out of order now, to support OOO, the CSR
-// 	// handling logic must also pass the tag field all the way around.
-// 	// since the current CSR/BAR read logic is simple and will finish
-// 	// in one cycle, it can't be out of order, so we simply keep tag 
-// 	// in order in this queue.
-// 	FIFOF#(Bit#(64)) readTagKeepOrderQ <- mkFIFOF;
-// 	FIFOF#(Bit#(64)) writeTagKeepOrderQ <- mkFIFOF;
+	// Note, it assumes that the resp will keep order as the request.
+	// We do not support out of order now, to support OOO, the CSR
+	// handling logic must also pass the tag field all the way around.
+	// since the current CSR/BAR read logic is simple and will finish
+	// in one cycle, it can't be out of order, so we simply keep tag 
+	// in order in this queue.
+	FIFOF#(Bit#(64)) readTagKeepOrderQ <- mkFIFOF;
+	FIFOF#(Bit#(64)) writeTagKeepOrderQ <- mkFIFOF;
 
-//     rule doInit(!initDoneReg);
-// 		let ptr <- c_createMockHostRpcChannel;
-// 		if(ptr == 0) begin
-// 			$fwrite(stderr, "%0t: mkMockHostBarAccess: ERROR: fail to create createNewMockHostRpcChannel\n", $time);
-// 			$finish;
-// 		end
-// 		$display("%0t: mkMockHostBarAccess: createNewMockHostRpcChannel, client_id = %h", $time, ptr);
-// 		clientIdReg <= ptr;
-// 		initDoneReg <= True;
-// 	endrule
+    rule doInit(!initDoneReg);
+		let ptr <- c_createMockHostRpcChannel;
+		if(ptr == 0) begin
+			$fwrite(stderr, "%0t: mkMockHostBarAccess: ERROR: fail to create createNewMockHostRpcChannel\n", $time);
+			$finish;
+		end
+		$display("%0t: mkMockHostBarAccess: createNewMockHostRpcChannel, client_id = %h", $time, ptr);
+		clientIdReg <= ptr;
+		initDoneReg <= True;
+	endrule
 
-// 	rule forwardBarReadReq if (initDoneReg);
-// 		let rawReq <- c_getPcieBarReadReq(clientIdReg);
-// 		if (rawReq.valid != 0) begin
-// 			barReadReqQ.enq(unpack(truncate(pack(rawReq.addr))));
-// 			readTagKeepOrderQ.enq(rawReq.pci_tag);
-// 		end
-// 	endrule
+	rule forwardBarReadReq if (initDoneReg);
+		let rawReq <- c_getPcieBarReadReq(clientIdReg);
+		if (rawReq.valid != 0) begin
+			barReadReqQ.enq(unpack(truncate(pack(rawReq.addr))));
+			readTagKeepOrderQ.enq(rawReq.pci_tag);
+		end
+	endrule
 
-// 	rule forwardBarReadResp if (initDoneReg);
-// 		barReadRespQ.deq;
-// 		readTagKeepOrderQ.deq;
-// 		let resp = PcieBarAccessAction {
-// 			pci_tag: readTagKeepOrderQ.first,
-// 			valid: 1,
-// 			addr: 0,
-// 			value: unpack(zeroExtend(pack(barReadRespQ.first)))
-// 		};
-// 		c_putPcieBarReadResp(clientIdReg, resp);
-// 	endrule
+	rule forwardBarReadResp if (initDoneReg);
+		barReadRespQ.deq;
+		readTagKeepOrderQ.deq;
+		let resp = PcieBarAccessAction {
+			pci_tag: readTagKeepOrderQ.first,
+			valid: 1,
+			addr: 0,
+			value: unpack(zeroExtend(pack(barReadRespQ.first)))
+		};
+		c_putPcieBarReadResp(clientIdReg, resp);
+	endrule
 
-// 	rule forwardBarWriteReq if (initDoneReg);
-// 		let rawReq <- c_getPcieBarWriteReq(clientIdReg);
-// 		if (rawReq.valid != 0) begin
-// 			barWriteReqQ.enq(
-// 				tuple2(
-// 					unpack(truncate(pack(rawReq.addr))),
-// 					unpack(truncate(pack(rawReq.value)))
-// 				)
-// 			);
-// 			writeTagKeepOrderQ.enq(rawReq.pci_tag);
-// 		end
-// 	endrule
+	rule forwardBarWriteReq if (initDoneReg);
+		let rawReq <- c_getPcieBarWriteReq(clientIdReg);
+		if (rawReq.valid != 0) begin
+			barWriteReqQ.enq(
+				tuple2(
+					unpack(truncate(pack(rawReq.addr))),
+					unpack(truncate(pack(rawReq.value)))
+				)
+			);
+			writeTagKeepOrderQ.enq(rawReq.pci_tag);
+		end
+	endrule
 
-// 	rule forwardBarWriteResp if (initDoneReg);
-// 		barWriteRespQ.deq;
-// 		writeTagKeepOrderQ.deq;
-// 		let resp = PcieBarAccessAction {
-// 			pci_tag: writeTagKeepOrderQ.first,
-// 			valid: barWriteRespQ.first ? 1 : 0,
-// 			addr: 0,
-// 			value: 0
-// 		};
-// 		c_putPcieBarWriteResp(clientIdReg, resp);
-// 	endrule
+	rule forwardBarWriteResp if (initDoneReg);
+		barWriteRespQ.deq;
+		writeTagKeepOrderQ.deq;
+		let resp = PcieBarAccessAction {
+			pci_tag: writeTagKeepOrderQ.first,
+			valid: barWriteRespQ.first ? 1 : 0,
+			addr: 0,
+			value: 0
+		};
+		c_putPcieBarWriteResp(clientIdReg, resp);
+	endrule
 
-// 	method Bool ready = initDoneReg;
+	method Bool ready = initDoneReg;
 
-// 	interface barWriteClt = toGPClient(barWriteReqQ, barWriteRespQ);
-//     interface barReadClt = toGPClient(barReadReqQ, barReadRespQ);
+	interface barWriteClt = toGPClient(barWriteReqQ, barWriteRespQ);
+    interface barReadClt = toGPClient(barReadReqQ, barReadRespQ);
 
-// endmodule
+endmodule
 
 
 
