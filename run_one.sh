@@ -56,7 +56,7 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestRingbuf
 
 FILE=`ls TestTop.bsv`
-TESTCASE=mkTestTop
+TESTCASE=mkTestTopNoMockHost
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
 

@@ -141,16 +141,17 @@ module mkMockHostNetworkConnector (MockHostNetworkConnector);
 	rule forwardNetIfcRx if (initDoneForCamcReg);
 		let beat <- c_netIfcGetRxData(memHandleForCmacReg);
 		if (beat.isValid != 0) begin
-			rxQ.enq(beat);
+			// rxQ.enq(beat);
 			// $display("time=%0t: ", $time, "net ifc recv beat=", fshow(beat));
 
-			// if (rxQ.notFull) begin
-			// 	rxQ.enq(beat);
-			// 	$display("time=%0t: ", $time, "net ifc recv beat=", fshow(beat));
-			// end 
-			// else begin
-			// 	$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
-			// end
+			if (rxQ.notFull) begin
+				rxQ.enq(beat);
+				// $display("time=%0t: ", $time, "net ifc recv beat=", fshow(beat));
+			end 
+			else begin
+				$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
+				$finish(1);
+			end
 		end
 	endrule
 

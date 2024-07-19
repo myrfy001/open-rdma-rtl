@@ -17,6 +17,7 @@ typedef 7 NUMERIC_TYPE_SEVEN;
 typedef 8 NUMERIC_TYPE_EIGHT;
 
 typedef NUMERIC_TYPE_TWO QUEUE_DEPTH_2;
+typedef NUMERIC_TYPE_FOUR QUEUE_DEPTH_4;
 
 
 
@@ -122,6 +123,8 @@ typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ByteIndexInBeat; // 5 (bus 256b), 6 (bus 5
 
 typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;            // 64
 typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;          // 96
+
+typedef 3 RDMA_PACKET_HEADER_BETA_CNT;
 
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;

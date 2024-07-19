@@ -28,23 +28,23 @@ import PacketGenAndParse :: *;
 import Top :: *;
 
 
-module mkTestTop(Empty);
+module mkTestTopNoMockHost(Empty);
 
-    Clock clkLogic <- mkAbsoluteClock(0, 10);
-    Clock clkEthNap  <- mkAbsoluteClock(0, 5);
-    Clock clkQpcMrPgtSrv  <- mkAbsoluteClock(0, 5);
+    Clock clkLogic <- mkAbsoluteClock(0, 250);
+    Clock clkEthNap  <- mkAbsoluteClock(0, 196);
+    Clock clkQpcMrPgtSrv  <- mkAbsoluteClock(0, 196);
 
     let rstLogic <- mkAsyncResetFromCR(0, clkLogic);
     let rstEthNap <- mkAsyncResetFromCR(0, clkEthNap);
     let rstQpcMrPgtSrv <- mkAsyncResetFromCR(0, clkQpcMrPgtSrv);
 
-    let inner <- mkTestTopInner(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkLogic, reset_by rstLogic);
+    let inner <- mkTestTopNoMockHostInner(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkLogic, reset_by rstLogic);
 
 
 endmodule
 
 
-module mkTestTopInner(
+module mkTestTopNoMockHostInner(
         Clock clkEthNap,
         Reset rstEthNap,
         Clock clkQpcMrPgtSrv,
@@ -72,7 +72,7 @@ module mkTestTopInner(
                 pdHandler: unpack(0),
                 qpType: IBV_QPT_RC,
                 rqAccessFlags: enum2Flag(IBV_ACCESS_LOCAL_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_READ),
-                pmtu: IBV_MTU_4096,
+                pmtu: IBV_MTU_256,
                 peerQPN: 0
             }
         });
@@ -87,7 +87,7 @@ module mkTestTopInner(
             entry: tagged Valid MemRegionTableEntry {
                 pgtOffset: unpack(0),
                 baseVA: 0,
-                len: 1024*1024*2,
+                len: 1024*1024*1024,
                 accFlags: enum2Flag(IBV_ACCESS_LOCAL_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_READ),
                 pdHandler: 0,
                 keyPart: 0
@@ -106,15 +106,15 @@ module mkTestTopInner(
             flags:  enum2Flag(IBV_SEND_NO_FLAGS),
             qpType: IBV_QPT_RC,
             psn: 0,
-            pmtu: IBV_MTU_4096,
+            pmtu: IBV_MTU_256,
             dqpIP: unpack(0),
             macAddr: unpack(0),
             laddr: unpack(0),
             lkey: unpack(0),
             raddr: unpack(0),
             rkey: unpack(0),
-            len: 8192,
-            totalLen:8192,
+            len: 1024 * 1024 * 2,
+            totalLen: 1024 * 1024 * 2,
             dqpn: unpack(0),
             sqpn: unpack(0),
             comp: tagged Invalid,
@@ -127,6 +127,7 @@ module mkTestTopInner(
         };
 
         dut.wqePipeInVec[0].enq(wqe);
+        // dut.wqePipeInVec[1].enq(wqe);
     endrule
 
 endmodule

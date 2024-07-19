@@ -265,37 +265,42 @@ module mkAcxNapEthernetWrapperInnerBluesim#(
     endrule
 
 `else
-    // rule forwardPacket;
-    //     if (txRelayQ.notEmpty && rxRelayQ.notFull) begin
-    //         let {isSop, isEop, beat} = txRelayQ.first
-    //         txRelayQ.deq;
+    rule forwardPacket;
+        if (txRelayQ.notEmpty && rxRelayQ.notFull) begin
+            let {isSop, isEop, beat} = txRelayQ.first;
+            txRelayQ.deq;
 
-    //         if (isSop) begin
-    //             EthernetNapSendFirstBeat decodedPayload = unpack(beat);
-    //             let outBeat = EthernetNapRecvFirstBeat {
-    //                 data: decodedPayload.data,
-    //                 extraInfo: EthernetNapRecvFirstBeatExtraInfo {
-    //                     rsvd2: 0,
-    //                     rsvd1: 0,
-    //                     timestamp: 0
-    //                 }
-    //             };
-    //             rxRelayQ.enq(tuple3(isSop, isEop, unpack(outBeat)));
-    //         end
-    //         else begin
-    //             EthernetNapSendOtherBeat decodedPayload = unpack(beat);
-    //             let outBeat = EthernetNapSendOtherBeat {
-    //                 data: decodedPayload.data,
-    //                 extraInfo: EthernetNapSendOtherBeatExtraInfo {
-    //                     rsvd1: 0,
-    //                     flags: unpack(0),
-    //                     mod: decodedPayload.extraInfo.mod
-    //                 }
-    //             };
-    //             rxRelayQ.enq(tuple3(isSop, isEop, unpack(outBeat)));
-    //         end
-    //     end
-    // endrule
+            if (isSop) begin
+                EthernetNapSendFirstBeat decodedPayload = unpack(beat);
+                let outBeat = EthernetNapRecvFirstBeat {
+                    data: decodedPayload.data,
+                    extraInfo: EthernetNapRecvFirstBeatExtraInfo {
+                        rsvd2: unpack(0),
+                        rsvd1: unpack(0),
+                        timestamp: unpack(0)
+                    }
+                };
+                rxRelayQ.enq(tuple3(isSop, isEop, pack(outBeat)));
+            end
+            else begin
+                EthernetNapSendOtherBeat decodedPayload = unpack(beat);
+                let outBeat = EthernetNapSendOtherBeat {
+                    data: decodedPayload.data,
+                    extraInfo: EthernetNapSendOtherBeatExtraInfo {
+                        rsvd1: unpack(0),
+                        flags: unpack(0),
+                        mod: decodedPayload.extraInfo.mod
+                    }
+                };
+                rxRelayQ.enq(tuple3(isSop, isEop, pack(outBeat)));
+            end
+            $display("time=%0t: ", $time, "net ifc forward data");
+        end
+        else if (!rxRelayQ.notFull) begin
+            $display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
+            $finish(1);
+        end
+    endrule
 `endif
 
     rule handleTxInput;

@@ -62,7 +62,7 @@ typedef struct {
     EntryQPC qpc;
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
-} IssuePayloadGenReqOrDiscardPipelineEntry deriving(Bits, FShow);
+} IssuePayloadConReqOrDiscardPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
@@ -108,26 +108,36 @@ module mkRQ#(
     QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkSyncQueuedClient("qpcQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
-    SyncFIFOIfc#(PayloadConReq) conReqPipeOutQ <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
-    SyncFIFOIfc#(Bool) conRespPipeInQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_2), clkEthNap, rstEthNap);
+    SyncFIFOIfc#(PayloadConReq) conReqPipeOutQ <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_4), clkEthNap);
+    SyncFIFOIfc#(Bool) conRespPipeInQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_4), clkEthNap, rstEthNap);
 
     // invalid request payload filter related
-    SyncFIFOIfc#(Bool) filterCmdSyncQ <-  mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    SyncFIFOIfc#(Bool) filterCmdSyncQ <-  mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_4), clkEthNap);
     FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
 
     // Clock domain convert queues
-    SyncFIFOIfc#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_2), clkEthNap, rstEthNap);
-    SyncFIFOIfc#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_2), clkEthNap, rstEthNap);
+    SyncFIFOIfc#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_4), clkEthNap, rstEthNap);
+    SyncFIFOIfc#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_4), clkEthNap, rstEthNap);
 
     mkConnection(packetParser.rdmaPacketMetaPipeOut, toPipeInSync(rdmaPacketMetaPipeOutSyncQ), clocked_by clkEthNap, reset_by rstEthNap);
     mkConnection(packetParser.rdmaPacketTailMetaPipeOut, toPipeInSync(rdmaPacketTailMetaPipeOutSyncQ), clocked_by clkEthNap, reset_by rstEthNap);
 
     // Pipeline Queues
-    FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkFIFOF;
-    FIFOF#(CheckMrTableStep2PipelineEntry) checkMrTableStep2PipeQ <- mkFIFOF;
-    FIFOF#(CheckMrTableStep3PipelineEntry) checkMrTableStep3PipeQ <- mkFIFOF;
-    FIFOF#(IssuePayloadGenReqOrDiscardPipelineEntry) issuePayloadGenReqOrDiscardPipeQ <- mkFIFOF;
-    FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkFIFOF;
+    FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkSizedFIFOF(4);
+    FIFOF#(CheckMrTableStep2PipelineEntry) checkMrTableStep2PipeQ <- mkSizedFIFOF(2);
+    FIFOF#(CheckMrTableStep3PipelineEntry) checkMrTableStep3PipeQ <- mkSizedFIFOF(2);
+    FIFOF#(IssuePayloadConReqOrDiscardPipelineEntry) issuePayloadConReqOrDiscardPipeQ <- mkSizedFIFOF(2);
+    // For a 4096 PMTU packet followed by all packet that without payload. When consuming a big packet, all small packets has to waiting in the queue
+    FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkSizedFIFOF(valueOf(TDiv#(TDiv#(MAX_PMTU, DATA_BUS_BYTE_WIDTH), RDMA_PACKET_HEADER_BETA_CNT)));
+
+    rule printDebugInfo;
+        if (!checkQpcAndMrTablePipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkQpcAndMrTablePipeQ");
+        if (!checkMrTableStep2PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep2PipeQ");
+        if (!checkMrTableStep3PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep3PipeQ");
+        if (!issuePayloadConReqOrDiscardPipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ issuePayloadConReqOrDiscardPipeQ");
+        if (!handleConRespPipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ handleConRespPipeQ");
+    endrule
+
 
     rule sendQpcQueryReqAndSomeSimpleParse;
         let rdmaPacketMeta = rdmaPacketMetaPipeOutSyncQ.first;
@@ -402,7 +412,7 @@ module mkRQ#(
         end
 
 
-        let pipelineEntryOut = IssuePayloadGenReqOrDiscardPipelineEntry{
+        let pipelineEntryOut = IssuePayloadConReqOrDiscardPipelineEntry{
             rdmaPacketMeta          : rdmaPacketMeta,
             packetStatus            : packetStatus,
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
@@ -411,7 +421,7 @@ module mkRQ#(
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen
         };
-        issuePayloadGenReqOrDiscardPipeQ.enq(pipelineEntryOut);
+        issuePayloadConReqOrDiscardPipeQ.enq(pipelineEntryOut);
         $display(
             "time=%0t:", $time, toGreen(" mkRQ checkMrTableStep3"),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
@@ -420,9 +430,9 @@ module mkRQ#(
 
 
 
-    rule issuePayloadGenReqOrDiscard;
-        let pipelineEntryIn = issuePayloadGenReqOrDiscardPipeQ.first;
-        issuePayloadGenReqOrDiscardPipeQ.deq;
+    rule issuePayloadConReqOrDiscard;
+        let pipelineEntryIn = issuePayloadConReqOrDiscardPipeQ.first;
+        issuePayloadConReqOrDiscardPipeQ.deq;
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
         let packetStatus = pipelineEntryIn.packetStatus;
         let bth = rdmaPacketMeta.header.bth;
@@ -459,7 +469,7 @@ module mkRQ#(
         };
         handleConRespPipeQ.enq(pipelineEntryOut);
         $display(
-            "time=%0t:", $time, toGreen(" mkRQ issuePayloadGenReqOrDiscard"),
+            "time=%0t:", $time, toGreen(" mkRQ issuePayloadConReqOrDiscard"),
             discardDebugFlag ? toRed(" Discard!") : " keeped",
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
@@ -480,6 +490,10 @@ module mkRQ#(
                 $display("payload con resp = ", fshow(resp));
             end
         end
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ handleConResp")
+        );
     endrule
 
 
@@ -493,8 +507,14 @@ module mkRQ#(
         end
 
         if (ds.isLast) begin
-        filterCmdSyncQ.deq;
+            filterCmdSyncQ.deq;
         end
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ filterDiscardedPayloadStream"),
+            isDiscard ? toRed(" Discard!") : " keeped",
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     interface qpcQueryClt = qpcQueryCltInst.clt;
