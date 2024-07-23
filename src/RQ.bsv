@@ -27,6 +27,7 @@ typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
     RdmaRecvPacketStatus packetStatus;
     Bool isNeedQueryMrTable;
+    Bool isZeroPayload;
     Bool isFirstPacket;
 } CheckQpcAndMrTablePipelineEntry deriving(Bits, FShow);
 
@@ -34,6 +35,7 @@ typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
     RdmaRecvPacketStatus packetStatus;
     Bool isNeedQueryMrTable;
+    Bool isZeroPayload;
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     Bool isMrLowerAddrBoundOk;
@@ -46,6 +48,7 @@ typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
     RdmaRecvPacketStatus packetStatus;
     Bool isNeedQueryMrTable;
+    Bool isZeroPayload;
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     Bool isMrLowerAddrBoundOk;
@@ -58,6 +61,7 @@ typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
     RdmaRecvPacketStatus packetStatus;
     Bool isNeedQueryMrTable;
+    Bool isZeroPayload;
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     PktFragNum zerobasedExpectedPayloadBeatNum;
@@ -68,6 +72,7 @@ typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
     RdmaRecvPacketStatus packetStatus;
     Bool isNeedQueryMrTable;
+    Bool isZeroPayload;
     MemRegionTableEntry mrEntry;
     EntryQPC qpc;
     PktFragNum zerobasedExpectedPayloadBeatNum;
@@ -91,6 +96,9 @@ interface RQ;
     interface PipeIn#(Bool) payloadConRespPipeIn;
 endinterface
 
+// FIXME: handle illegal packet length. don't trust length or other meta extracted from header. 
+//        only trust what you have really received.
+//        And for packet that isn't normal, make sure all related queues are dequeued. otherwise deadlock.
 (* synthesize *)
 module mkRQ#(
         Clock clkEthNap, 
@@ -153,6 +161,7 @@ module mkRQ#(
 
         let isRespNeedDMAWrite  = rdmaRespNeedDmaWrite(bth.opcode);
         let isReqNeedDMAWrite   = rdmaReqNeedDmaWrite(bth.opcode);
+        let isZeroPayload       = isZeroR(reth.dlen);
         let isNeedQueryMrTable  = isRespNeedDMAWrite || isReqNeedDMAWrite;
         let isFirstPacket       = isFirstRdmaOpCode(bth.opcode);
 
@@ -168,6 +177,7 @@ module mkRQ#(
             rdmaPacketMeta: rdmaPacketMeta,
             packetStatus: RdmaRecvPacketStatusNormal,
             isNeedQueryMrTable: isNeedQueryMrTable,
+            isZeroPayload: isZeroPayload,
             isFirstPacket: isFirstPacket
         };
         checkQpcAndMrTablePipeQ.enq(pipelineEntryOut);
@@ -188,6 +198,7 @@ module mkRQ#(
         let packetStatus = pipelineEntryIn.packetStatus;
         let isNeedQueryMrTable = pipelineEntryIn.isNeedQueryMrTable;
         let isFirstPacket = pipelineEntryIn.isFirstPacket;
+        let isZeroPayload = pipelineEntryIn.isZeroPayload;
 
         let isSendReq            = isSendReqRdmaOpCode(bth.opcode);
         let isWriteReq           = isWriteReqRdmaOpCode(bth.opcode);
@@ -324,6 +335,7 @@ module mkRQ#(
             rdmaPacketMeta          : rdmaPacketMeta,
             packetStatus            : packetStatus,
             isNeedQueryMrTable      : isNeedQueryMrTable,
+            isZeroPayload           : isZeroPayload,
             mrEntry                 : mrEntryUnwraped,
             qpc                     : unwrapMaybe(qpcMaybe),
             isMrLowerAddrBoundOk    : isMrLowerAddrBoundOk,
@@ -353,6 +365,7 @@ module mkRQ#(
             rdmaPacketMeta          : pipelineEntryIn.rdmaPacketMeta,
             packetStatus            : pipelineEntryIn.packetStatus,
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
+            isZeroPayload           : pipelineEntryIn.isZeroPayload,
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
             isMrLowerAddrBoundOk    : pipelineEntryIn.isMrLowerAddrBoundOk,
@@ -416,6 +429,7 @@ module mkRQ#(
             rdmaPacketMeta          : rdmaPacketMeta,
             packetStatus            : packetStatus,
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
+            isZeroPayload           : pipelineEntryIn.isZeroPayload,
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
@@ -462,6 +476,7 @@ module mkRQ#(
             rdmaPacketMeta          : pipelineEntryIn.rdmaPacketMeta,
             packetStatus            : pipelineEntryIn.packetStatus,
             isNeedQueryMrTable      : pipelineEntryIn.isNeedQueryMrTable,
+            isZeroPayload           : pipelineEntryIn.isZeroPayload,
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,

@@ -22,7 +22,7 @@ module mkTestRingbuf(Empty);
     let ringbufDmaNapWrappr <- mkRingbufDmaNapWrappr;
 
     RingbufC2hSlot4096 dutC2H <- mkRingbufC2h(0);
-    let dutH2C <- mkRingbufH2c(0, 8);
+    let dutH2C <- mkRingbufH2c(0);
 
     mkConnection(dutC2H.dmaWriteReqPipeOut, ringbufDmaNapWrappr.dmaWriteReqPipeIn);
     mkConnection(dutC2H.dmaWriteDataPipeOut, ringbufDmaNapWrappr.dmaWriteDataPipeIn);

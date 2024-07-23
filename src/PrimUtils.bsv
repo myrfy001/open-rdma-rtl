@@ -694,3 +694,41 @@ module mkAutoInferBram(AutoInferBram#(tAddr, tData)) provisos (
         return outputBufQ.first;
     endmethod
 endmodule
+
+
+typedef enum {
+    AddressAlignAssertionMask512B = 'h1FF,
+    AddressAlignAssertionMask4KB = 'hFFF,
+    AddressAlignAssertionMask2MB = 'h1FFFFF
+} AddressAlignAssertionMask deriving (Bits, Eq);
+
+function Action immAssertAddressAlign(tAddr addr, AddressAlignAssertionMask alignMask, String name) provisos (
+    Bits#(tAddr, szAddr),
+    Bits#(AddressAlignAssertionMask, szMask),
+    Add#(anySize, szMask, szAddr)
+);
+    action
+        tAddr maskedAddr = unpack(zeroExtend(pack(alignMask)) & pack(addr));
+        immAssert(
+            pack(maskedAddr) == 0,
+            "address not aligned @ immAssertAddressAlign",
+            $format("name=%s, addr=%x, maskedLowerBIts=%x", name, addr, maskedAddr)
+        );
+    endaction
+endfunction
+
+
+function Action immAssertAddressAndLengthNotCross4kBoundary(tAddr addr, tLen len, String name) provisos (
+    Bits#(tAddr, szAddr),
+    Bits#(tLen, szLen),
+    Add#(anySize, szLen, szAddr)
+);
+    action
+        tAddr addedAddr = unpack(pack(addr) + zeroExtend(pack(len)) - 1);
+        immAssert(
+            (pack(addr) >> 12) == (pack(addedAddr) >> 12),   // 2 ^ 12 = 4096
+            "address plus length crossed 4kB boundary @ immAssertAddressAndLengthNotCross4kBoundary",
+            $format("name=%s, addr=%x, len=%x", name, addr, len)
+        );
+    endaction
+endfunction

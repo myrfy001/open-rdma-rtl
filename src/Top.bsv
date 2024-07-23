@@ -22,16 +22,17 @@ import PacketGenAndParse :: *;
 import MemRegionAndAddressTranslate :: *;
 import SQ :: *;
 import RQ :: *;
+import Ringbuf :: *;
 
 
 interface BsvTop;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVec;
     interface Server#(WriteReqQPC, Bool) qpContextUpdateSrv;
     interface Server#(PgtModifyReq, PgtModifyResp) pgtModifySrv;
     interface Server#(MrTableModifyReq, MrTableModifyResp) mrTableModifySrv;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
+
 
 module mkBsvTop#(
         Clock clkEthNap,
@@ -40,11 +41,54 @@ module mkBsvTop#(
         Reset rstQpcMrPgtSrv
     )(BsvTop);
 
-    // Clock clkEthNap <- exposeCurrentClock;
-    // Reset rstEthNap <- exposeCurrentReset;
+    let qpMrPgtQpc <- mkQpMrPgtQpc(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
-    // Clock clkQpcMrPgtSrv <- exposeCurrentClock;
-    // Reset rstQpcMrPgtSrv <- exposeCurrentReset;
+    // Ringbuf and it's NAPs
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufC2hSlot4096) c2hRingbufVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufH2cSlot4096) h2cRingbufVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufDmaNapWrappr) ringbufDmaNapVec <- replicateM(mkRingbufDmaNapWrappr);
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueRingbufController) sendQueueDescToWqeConvertorVec <- replicateM(mkWorkQueueRingbufController);
+
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        c2hRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
+        h2cRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
+
+        mkConnection(c2hRingbufVec[idx].dmaWriteReqPipeOut, ringbufDmaNapVec[idx].dmaWriteReqPipeIn);
+        mkConnection(c2hRingbufVec[idx].dmaWriteDataPipeOut, ringbufDmaNapVec[idx].dmaWriteDataPipeIn);
+        mkConnection(c2hRingbufVec[idx].dmaWriteRespPipeIn, ringbufDmaNapVec[idx].dmaWriteRespPipeOut);
+        mkConnection(h2cRingbufVec[idx].dmaReadReqPipeOut, ringbufDmaNapVec[idx].dmaReadReqPipeIn);
+        mkConnection(h2cRingbufVec[idx].dmaReadRespPipeIn, ringbufDmaNapVec[idx].dmaReadRespPipeOut);
+
+        mkConnection(h2cRingbufVec[idx].descPipeOut, sendQueueDescToWqeConvertorVec[idx].rawDescPipeIn);
+        mkConnection(sendQueueDescToWqeConvertorVec[idx].workReqPipeOut, qpMrPgtQpc.wqePipeInVec[idx]);
+    end
+
+
+    interface otherRawPacketPipeOutVec = qpMrPgtQpc.otherRawPacketPipeOutVec; 
+    interface qpContextUpdateSrv = qpMrPgtQpc.qpContextUpdateSrv; 
+    interface pgtModifySrv = qpMrPgtQpc.pgtModifySrv; 
+    interface mrTableModifySrv = qpMrPgtQpc.mrTableModifySrv; 
+    method setLocalNetworkSettings = qpMrPgtQpc.setLocalNetworkSettings; 
+endmodule
+
+
+interface QpMrPgtQpc;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVec;
+    interface Server#(WriteReqQPC, Bool) qpContextUpdateSrv;
+    interface Server#(PgtModifyReq, PgtModifyResp) pgtModifySrv;
+    interface Server#(MrTableModifyReq, MrTableModifyResp) mrTableModifySrv;
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+endinterface
+
+(* synthesize *)
+module mkQpMrPgtQpc#(
+        Clock clkEthNap,
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(QpMrPgtQpc);
 
 
     QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
@@ -59,13 +103,6 @@ module mkBsvTop#(
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkEthNap,  rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
-
-    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatAw)) awRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
-    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatW)) wRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
-    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatB)) bRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
-    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatAr)) arRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
-    // Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(AxiMmNapBeatR)) rRelayVecInst <- replicateM(mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap));
-
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
 
@@ -93,19 +130,6 @@ module mkBsvTop#(
         mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
         // RDMA payload DMA NAP
-
-        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, toPipeIn(awRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, toPipeIn(wRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, toPipeOut(bRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readAddrPipeOut, toPipeIn(arRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readRespPipeIn, toPipeOut(rRelayVecInst[idx]), clocked_by clkEthNap, reset_by rstEthNap);
-
-        // mkConnection(toPipeOut(awRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(toPipeOut(wRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(toPipeIn(bRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(toPipeOut(arRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].readPipeIfc.readAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        // mkConnection(toPipeIn(rRelayVecInst[idx]), dmaReadWriteSlaveNapVec[idx].readPipeIfc.readRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
-
 
         mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
         mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);

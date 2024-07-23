@@ -13,7 +13,10 @@ import PrimUtils :: *;
 import Settings :: *;
 import RdmaUtils :: *;
 import Arbitration :: *;
-
+import Ringbuf :: *;
+import ConnectableF :: *;
+import Descriptors :: *;
+import NapWrapper :: *;
 
 typedef Server#(addrType, dataType)                    BramRead#(type addrType, type dataType);
 typedef Server#(Tuple2#(addrType, dataType), Bool)     BramWrite#(type addrType, type dataType);
@@ -423,3 +426,240 @@ module mkBypassAddressTranslateForTest(AddressTranslate);
     interface translateSrv = translateSrvInst.srv;
     interface modifySrv = modifySrvInst.srv;
 endmodule
+
+
+
+
+interface MrAndPgtUpdater;
+    interface PipeOut#(PgtUpdateDmaReadReq) dmaReadReqPipeOut;
+    interface PipeIn#(PgtUpdateDmaReadResp) dmaReadRespPipeIn;
+
+    interface Server#(RingbufRawDescriptor, Bool) mrAndPgtModifyDescSrv;
+    interface Client#(MrTableModifyReq, MrTableModifyResp) mrModifyClt;
+    interface Client#(PgtModifyReq, PgtModifyResp) pgtModifyClt;
+endinterface
+
+
+typedef enum {
+    MrAndPgtManagerFsmStateIdle,
+    MrAndPgtManagerFsmStateWaitMRModifyResponse,
+    MrAndPgtManagerFsmStateHandlePGTUpdate,
+    MrAndPgtManagerFsmStateWaitPGTUpdateLastResp
+} MrAndPgtManagerFsmState deriving(Bits, Eq);
+
+typedef 64 PGT_SECOND_STAGE_ENTRY_BIT_WIDTH_PADDED;
+typedef TDiv#(PGT_SECOND_STAGE_ENTRY_BIT_WIDTH_PADDED, BYTE_WIDTH) PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED;
+
+typedef TDiv#(PCIE_NAP_MAX_BYTE_IN_BURST, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED) PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST;
+typedef Bit#(TLog#(PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST)) ZeroBasedPgtSecondStageEntryCnt;
+
+typedef Bit#(TDiv#(PCIE_NAP_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED)) ZeroBasedPgtEntryCntInDmaBeat;
+
+(* synthesize *)
+module mkMrAndPgtUpdater(MrAndPgtUpdater);
+    FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
+    FIFOF#(Bool) respQ <- mkFIFOF;
+
+    FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkFIFOF;
+    FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkFIFOF;
+
+    QueuedClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClient("mrModifyCltInst");
+    QueuedClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkQueuedClient("pgtModifyCltInst");
+    
+
+    Reg#(MrAndPgtManagerFsmState) state <- mkReg(MrAndPgtManagerFsmStateIdle);
+
+    Reg#(DataStream) curBeatOfDataReg <- mkReg(unpack(0));
+    Reg#(PTEIndex) curSecondStagePgtWriteIdxReg <- mkRegU;
+    Reg#(ZeroBasedPgtSecondStageEntryCnt) zeroBasedPgtEntryTotalCntReg <- mkRegU;
+    Reg#(ZeroBasedPgtEntryCntInDmaBeat) zeroBasedPgtEntryBeatCntReg <- mkReg(0);
+    
+    
+    
+    Integer bytesPerPgtSecondStageEntry = valueOf(PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED);
+
+    // we set max inflight pgt update request is 2^3 = 8;
+    Count#(Bit#(3)) pgtUpdateRespCounter <- mkCount(0);
+
+    rule updateMrAndPgtStateIdle if (state == MrAndPgtManagerFsmStateIdle);
+        let descRaw = reqQ.first;
+        reqQ.deq;
+        // $display("PGT get modify request", fshow(descRaw));
+
+        RingbufDescCommonHead descComHdr = unpack(truncate(descRaw));
+
+        case (unpack(truncate(descComHdr.opCode)))
+            CmdQueueOpcodeUpdateMrTable: begin
+                state <= MrAndPgtManagerFsmStateWaitMRModifyResponse;
+                CmdQueueReqDescUpdateMrTable desc = unpack(descRaw);
+                let modifyReq = MrTableModifyReq {
+                    idx: lkey2IndexMR(unpack(desc.mrKey)),
+                    entry: isZeroR(desc.mrLength) ?
+                            tagged Invalid : 
+                            tagged Valid MemRegionTableEntry {
+                                pgtOffset: desc.pgtOffset,
+                                baseVA: desc.mrBaseVA,
+                                len: desc.mrLength,
+                                accFlags: unpack(desc.accFlags),
+                                pdHandler: desc.pdHandler,
+                                keyPart: lkey2KeyPartMR(desc.mrKey)
+                            }
+                };
+                mrModifyCltInst.putReq(modifyReq);
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc));
+            end
+            CmdQueueOpcodeUpdatePGT: begin
+                CmdQueueReqDescUpdatePGT desc = unpack(descRaw);
+
+                immAssertAddressAlign(desc.dmaAddr, AddressAlignAssertionMask512B, "PGT table update dma request");
+                Length dmaReadLengthInByte = (zeroExtend(desc.zeroBasedEntryCount) + 1) << valueOf(TLog#(PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED)); 
+                immAssertAddressAndLengthNotCross4kBoundary(desc.dmaAddr, dmaReadLengthInByte, "PGT table update dma request");
+                immAssert(
+                    dmaReadLengthInByte <= fromInteger(valueOf(PCIE_NAP_MAX_BYTE_IN_BURST)),
+                    "PGT update dma request length exceed max PCIe read burst",
+                    $format("dmaReadLengthInByte=", fshow(dmaReadLengthInByte), ", maxburst='h%x", valueOf(PCIE_NAP_MAX_BYTE_IN_BURST))
+                );
+
+                dmaReadReqQ.enq(PgtUpdateDmaReadReq{
+                    addr: desc.dmaAddr,
+                    zeroBasedPgtUpdateReadBlockNum: truncate(desc.zeroBasedEntryCount)
+                });
+                curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
+                zeroBasedPgtEntryTotalCntReg <= truncate(desc.zeroBasedEntryCount);
+                state <= MrAndPgtManagerFsmStateHandlePGTUpdate;
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc));
+            end
+        endcase
+    endrule
+
+    rule handleMrModifyResp if (state == MrAndPgtManagerFsmStateWaitMRModifyResponse);
+        let _ <- mrModifyCltInst.getResp;
+        respQ.enq(True);
+        state <= MrAndPgtManagerFsmStateIdle;
+    endrule
+
+
+    rule updatePgtStateHandlePGTUpdate if (state == MrAndPgtManagerFsmStateHandlePGTUpdate);
+        // since this is the control path, it's not fully pipelined to make it simple.
+        
+        if (isZeroR(zeroBasedPgtEntryTotalCntReg)) begin
+            state <= MrAndPgtManagerFsmStateWaitPGTUpdateLastResp;
+            $display("addr translate modify second stage finished.");
+        end
+        zeroBasedPgtEntryTotalCntReg <= zeroBasedPgtEntryTotalCntReg - 1;
+        
+        let ds = ?;
+        if (isZeroR(zeroBasedPgtEntryBeatCntReg)) begin
+            let newFrag = dmaReadRespQ.first.data;
+            dmaReadRespQ.deq;
+            ds = newFrag;
+        end
+        else begin
+            ds = curBeatOfDataReg;
+        end
+
+        zeroBasedPgtEntryBeatCntReg <= zeroBasedPgtEntryBeatCntReg + 1;
+
+        let modifyReq = PgtModifyReq {
+            idx: curSecondStagePgtWriteIdxReg,
+            pte: PageTableEntry {
+                pn: truncate(ds.data >> valueOf(PAGE_OFFSET_WIDTH))
+            }
+        };
+        pgtModifyCltInst.putReq(modifyReq);
+        pgtUpdateRespCounter.incr(1);
+        $display("addr translate modify second stage:", fshow(modifyReq));
+        curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
+
+        ds.data = ds.data >> valueOf(PGT_SECOND_STAGE_ENTRY_BIT_WIDTH_PADDED);
+        curBeatOfDataReg <= ds;
+    endrule
+
+    rule handlePgtModifyResp;
+        let _ <- pgtModifyCltInst.getResp;
+        pgtUpdateRespCounter.decr(1);
+    endrule
+
+    rule handlePgtModifyLastResp if (state == MrAndPgtManagerFsmStateWaitPGTUpdateLastResp);
+        if (pgtUpdateRespCounter == 0) begin
+            respQ.enq(True);
+            state <= MrAndPgtManagerFsmStateIdle;
+        end
+    endrule
+
+    interface mrAndPgtModifyDescSrv = toGPServer(reqQ, respQ);
+
+    interface dmaReadReqPipeOut = toPipeOut(dmaReadReqQ);
+    interface dmaReadRespPipeIn = toPipeIn(dmaReadRespQ);
+
+    interface mrModifyClt = mrModifyCltInst.clt;
+    interface pgtModifyClt = pgtModifyCltInst.clt;
+endmodule
+
+
+
+
+typedef Bit#(TLog#(PCIE_NAP_MAX_BURST_LEN)) ZeroBasedPgtUpdateReadBlockNum;
+
+typedef struct {
+    ADDR addr;
+    ZeroBasedPgtUpdateReadBlockNum zeroBasedPgtUpdateReadBlockNum;
+} PgtUpdateDmaReadReq deriving(Bits, FShow);
+
+typedef struct {
+    DataStream data;
+} PgtUpdateDmaReadResp deriving(Bits, FShow);
+
+
+
+
+
+interface PgtUpdateDmaNapWrappr;
+    interface PipeIn#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
+    interface PipeOut#(PgtUpdateDmaReadResp) dmaReadRespPipeOut;
+endinterface
+
+module mkPgtUpdateDmaNapWrappr(PgtUpdateDmaNapWrappr);
+    FIFOF#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkFIFOF;
+    FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
+
+    AcxNapSlaveWrapperPipe nap <- mkAcxNapSlaveWrapperPipe;
+
+    rule forwardReadReq;
+        let req = dmaReadReqPipeInQ.first;
+        dmaReadReqPipeInQ.deq;
+
+        let ar = AxiMmNapBeatAr {
+            arid: 0,
+            araddr: truncate(req.addr),
+            arlen: unpack(zeroExtend(req.zeroBasedPgtUpdateReadBlockNum)),
+            arsize: unpack(pack(NapAxiSize32B)),
+            arburst: unpack(pack(NapAxiBurstIncr)),
+            arlock: False,
+            arqos: 0
+        };
+        nap.readPipeIfc.readAddrPipeIn.enq(ar);
+    endrule
+
+    rule forwardReadResp;
+        let resp = nap.readPipeIfc.readRespPipeOut.first;
+        nap.readPipeIfc.readRespPipeOut.deq;
+
+        let ds = PgtUpdateDmaReadResp {
+            data: DataStream {
+                data: resp.rdata,
+                byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                startByteIdx: 0,
+                isFirst: dontCareValue,
+                isLast: resp.rlast
+            }
+        };
+
+        dmaReadRespPipeOutQ.enq(ds);
+    endrule
+
+    interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);
+    interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);
+endmodule
+
+

@@ -17,6 +17,8 @@ import RdmaUtils :: *;
 
 import ConnectableF :: *;
 import NapWrapper :: *;
+import Descriptors :: *;
+import PacketGenAndParse :: *;
 
 typedef 3 RINGBUF_NUMBER_WIDTH;
 
@@ -91,6 +93,7 @@ typedef 4096  USER_LOGIC_RING_BUF_4096_DEEP;
 typedef TLog#(USER_LOGIC_RING_BUF_4096_DEEP)  USER_LOGIC_RING_BUF_4096_DEEP_WIDTH; 
 typedef RingbufPointer#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) Fix128kBRingBufPointer;
 typedef RingbufC2h#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufC2hSlot4096;
+typedef RingbufH2c#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufH2cSlot4096;
 
 typedef 8 RINGBUF_DESC_ENTRY_PER_READ_BLOCK;
 typedef 4 RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK;
@@ -118,14 +121,14 @@ typedef struct {
 } RingbufDmaWriteResp deriving(Bits, FShow);
 
 
-interface RingbufH2cMetadata;
+interface RingbufH2cMetadata#(numeric type szPtrIdx);
     interface Reg#(ADDR) addr;
-    interface Reg#(Fix128kBRingBufPointer) head;
-    interface Reg#(Fix128kBRingBufPointer) tail;
+    interface Reg#(RingbufPointer#(szPtrIdx)) head;
+    interface Reg#(RingbufPointer#(szPtrIdx)) tail;
 endinterface
 
-interface RingbufH2c;
-    interface RingbufH2cMetadata controlRegs;
+interface RingbufH2c#(numeric type szPtrIdx);
+    interface RingbufH2cMetadata#(szPtrIdx) controlRegs;
     interface PipeOut#(RingbufDmaReadReq) dmaReadReqPipeOut;
     interface PipeIn#(RingbufDmaReadResp) dmaReadRespPipeIn;
     interface PipeOut#(RingbufRawDescriptor) descPipeOut;
@@ -135,19 +138,25 @@ endinterface
 // Important Note: The whole algorithm below based on the fact that the NAP bit width is 256 bits, and
 // is the same as our descriptor size, so when doing aligned memory read, each NAP read beat is a 
 // complete descriptor.
-module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc) provisos (
-        Alias#(tReadBlockIndex, Bit#(TSub#(SizeOf#(Fix128kBRingBufPointer), TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))))
+module mkRingbufH2c(RingbufNumber qIdx, RingbufH2c#(szPtrIdx) ifc) provisos(
+        NumAlias#(TAdd#(1, szPtrIdx), szPtrWithGuard),
+        Alias#(Bit#(TSub#(szPtrWithGuard, TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK))), tReadBlockIndex),
+        Alias#(RingbufPointer#(szPtrIdx), tPtrWithGuard),
+        Add#(a__, 2, TAdd#(1, szPtrIdx)),
+        Add#(d__, 3, TAdd#(1, szPtrIdx)),
+        Add#(b__, 4, TAdd#(1, szPtrIdx)),
+        Add#(c__, szPtrIdx, SizeOf#(ADDR))
     );
 
-    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(internalBufSize);
+    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT));
     FIFOF#(RingbufRawDescriptor) outputQ <- mkFIFOF;
 
     mkConnection(toGet(bufQ), toPut(outputQ));
     
     Reg#(ADDR) baseAddrReg <- mkReg(0);
-    Reg#(Fix128kBRingBufPointer) headReg[2] <- mkCReg(2, unpack(0));
-    Reg#(Fix128kBRingBufPointer) tailReg[2] <- mkCReg(2, unpack(0));
-    Reg#(Fix128kBRingBufPointer) tailShadowReg <- mkConfigReg(unpack(0));
+    Reg#(tPtrWithGuard) headReg[2] <- mkCReg(2, unpack(0));
+    Reg#(tPtrWithGuard) tailReg[2] <- mkCReg(2, unpack(0));
+    Reg#(tPtrWithGuard) tailShadowReg <- mkConfigReg(unpack(0));
     FIFOF#(RingbufDmaReadReq) dmaReqQ <- mkFIFOF;
     FIFOF#(RingbufDmaReadResp) dmaRespQ <- mkFIFOF;
 
@@ -165,7 +174,7 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc)
         let zeroBasedMaxDescReadCnt = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK) - 1) - tailShadowRingBufReadBlockOffset;
         RingBufReadBlockOffset spanBetweenHeadAndTailShadow = truncate(pack(headReg[0])) - truncate(pack(tailShadowReg));
 
-        Fix128kBRingBufPointer nextReadBlockAlignedPointer = unpack(pack(tailShadowReg) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
+        tPtrWithGuard nextReadBlockAlignedPointer = unpack(pack(tailShadowReg) >> valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
         nextReadBlockAlignedPointer = nextReadBlockAlignedPointer + 1;
         nextReadBlockAlignedPointer = unpack(pack(nextReadBlockAlignedPointer) << valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
         
@@ -174,7 +183,7 @@ module mkRingbufH2c(RingbufNumber qIdx, Integer internalBufSize, RingbufH2c ifc)
         if (needDoDMA) begin
 
             RingBufReadBlockOffset zeroBasedDescReadCnt = ?;
-            Fix128kBRingBufPointer newTailShadow = ?;
+            tPtrWithGuard newTailShadow = ?;
             if (isHeadAndTailShadowInTheSameReadBlock) begin
                 zeroBasedDescReadCnt = spanBetweenHeadAndTailShadow - 1;
                 newTailShadow = headReg[0];
@@ -269,7 +278,6 @@ interface RingbufC2h#(numeric type szPtrIdx);
 endinterface
 
 
-// TODO: For C2H, doesn't support batch descriptor writeback now. 
 module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
         NumAlias#(TAdd#(1, szPtrIdx), szPtrWithGuard),
         Alias#(Bit#(TSub#(szPtrWithGuard, TLog#(RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK))), tWriteBlockIndex),
@@ -423,9 +431,9 @@ endmodule
 interface RingbufDmaNapWrappr;
     interface PipeIn#(RingbufDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(RingbufDmaReadResp) dmaReadRespPipeOut;
-    interface PipeOut#(Bool) dmaWriteRespPipeOut;
     interface PipeIn#(RingbufDmaWriteReq) dmaWriteReqPipeIn;
     interface PipeIn#(DataStream) dmaWriteDataPipeIn;
+    interface PipeOut#(Bool) dmaWriteRespPipeOut;
 endinterface
 
 module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
@@ -509,4 +517,153 @@ module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
     interface dmaWriteReqPipeIn = toPipeIn(dmaWriteReqPipeInQ);
     interface dmaWriteDataPipeIn = toPipeIn(dmaWriteDataPipeInQ);
     interface dmaWriteRespPipeOut = toPipeOut(dmaWriteRespPipeOutQ);
+endmodule
+
+typedef 3 DESCRIPTOR_MAX_SEGMENT_CNT;
+typedef Bit#(TLog#(DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex;
+
+interface RingbufDescriptorReadProxy#(numeric type n_desc);
+    interface PipeIn#(RingbufRawDescriptor) rawDescPipeIn;
+    interface PipeOut#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragsPipeOut;
+endinterface
+
+interface RingbufDescriptorWriteProxy#(numeric type n_desc);
+    interface PipeOut#(RingbufRawDescriptor) rawDescPipeOut;
+    interface PipeIn#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragsPipeIn;
+endinterface
+
+module mkRingbufDescriptorReadProxy(RingbufDescriptorReadProxy#(n_desc));
+    FIFOF#(RingbufRawDescriptor) ringbufQ <- mkFIFOF;
+    FIFOF#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragQ <- mkFIFOF;
+
+    Vector#(n_desc, Reg#(RingbufRawDescriptor)) segBuf <- replicateM(mkRegU);
+    Reg#(DescriptorSegmentIndex) curSegCntReg <- mkReg(0);
+
+    rule fillAllReqSegments;
+        let rawDesc = ringbufQ.first;
+        ringbufQ.deq;
+        segBuf[0] <= rawDesc;
+        RingbufDescCommonHead head = unpack(truncate(rawDesc));
+
+        let hasMoreSegs = head.hasNextFrag;
+        if (!hasMoreSegs) begin
+            curSegCntReg <= 0;
+
+            Vector#(n_desc, RingbufRawDescriptor) outVec = newVector;
+            for (Integer idx = 0; idx < valueOf(n_desc) - 1; idx=idx+1) begin
+                outVec[idx+1] = segBuf[idx];
+            end
+            outVec[0] = rawDesc;
+            descFragQ.enq(tuple2(outVec, curSegCntReg));
+        end 
+        else begin
+            curSegCntReg <= curSegCntReg + 1;
+        end
+        for (Integer idx = 0; idx < valueOf(n_desc) - 1; idx=idx+1) begin
+            segBuf [idx+1] <= segBuf[idx];
+        end
+
+    endrule
+
+    interface rawDescPipeIn = toPipeIn(ringbufQ);
+    interface descFragsPipeOut = toPipeOut(descFragQ);
+endmodule
+
+
+
+module mkRingbufDescriptorWriteProxy(RingbufDescriptorWriteProxy#(n_desc));
+    FIFOF#(RingbufRawDescriptor) ringbufQ <- mkFIFOF;
+    FIFOF#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragQ <- mkFIFOF;
+
+    Vector#(n_desc, Reg#(RingbufRawDescriptor)) segBuf <- replicateM(mkRegU);
+
+    Reg#(Bool) isSendingFirstDescReg <- mkReg(True); 
+    Reg#(DescriptorSegmentIndex) segCntReg <- mkRegU;
+    
+    rule sendFirstBeat if (isSendingFirstDescReg);
+        let {descs, zeroBasedDescCnt} = descFragQ.first;
+        descFragQ.deq;
+
+        if (zeroBasedDescCnt != 0) begin
+            isSendingFirstDescReg <= False;
+        end
+
+        segCntReg <= zeroBasedDescCnt;
+        writeVReg(segBuf, descs);
+        ringbufQ.enq(descs[0]);
+    endrule
+
+    rule sendExtraBeat if (!isSendingFirstDescReg);
+        
+        for (Integer idx = 0; idx < valueOf(n_desc) - 1; idx=idx+1) begin
+            segBuf [idx] <= segBuf[idx+1];
+        end
+        if (segCntReg == 1) begin
+            isSendingFirstDescReg <= True;
+        end
+        segCntReg <= segCntReg - 1;
+    endrule
+
+    interface rawDescPipeOut = toPipeOut(ringbufQ);
+    interface descFragsPipeIn = toPipeIn(descFragQ);
+endmodule
+
+typedef 2 COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+typedef 2 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+
+
+
+interface WorkQueueRingbufController;
+    interface PipeIn#(RingbufRawDescriptor) rawDescPipeIn;
+    interface PipeOut#(WorkQueueElem)       workReqPipeOut;
+endinterface
+
+
+(* synthesize *)
+module mkWorkQueueRingbufController(WorkQueueRingbufController);
+
+    FIFOF#(WorkQueueElem) workReqPipeOutQ <- mkFIFOF;
+
+    RingbufDescriptorReadProxy#(SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) sqDescReadProxy <- mkRingbufDescriptorReadProxy;
+    
+    rule forwardSQ;
+        let {reqSegBuf, headDescIdx} = sqDescReadProxy.descFragsPipeOut.first;
+        sqDescReadProxy.descFragsPipeOut.deq;
+
+        SendQueueReqDescSeg0 desc0 = unpack(reqSegBuf[1]);
+        SendQueueReqDescSeg1 desc1 = unpack(reqSegBuf[0]);
+
+
+        WorkQueueElem req   = unpack(0);
+        req.pkey            = desc0.pkey;
+        req.opcode          = unpack(truncate(desc0.commonHeader.opCode));
+        req.flags           = unpack(pack(desc0.flags));
+        req.qpType          = desc0.qpType;
+        req.psn             = desc0.psn;
+        req.pmtu            = desc1.pmtu;
+        req.dqpIP           = desc0.dqpIP;
+        req.macAddr         = desc1.macAddr;
+        req.laddr           = desc1.laddr;
+        req.lkey            = desc1.lkey;
+        req.raddr           = desc0.raddr;
+        req.rkey            = desc0.rkey;
+        req.len             = desc1.len;
+        req.totalLen        = desc0.totalLen;
+        req.dqpn            = desc0.dqpn;
+        req.sqpn            = {desc1.sqpnHigh16Bits, desc1.sqpnLow8Bits};
+        req.isFirst         = desc1.isFirst;
+        req.isLast          = desc1.isLast;
+        
+
+        let hasImmDt = workReqHasImmDt(req.opcode);
+        let hasInv   = workReqHasInv(req.opcode);
+        let immOrInv = hasImmDt ? tagged Imm desc1.imm : tagged RKey desc1.imm;
+        req.immDtOrInvRKey = (hasImmDt || hasInv) ? tagged Valid immOrInv : tagged Invalid;
+
+        workReqPipeOutQ.enq(req);
+        $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "SQ read a new descriptor: ", fshow(req));
+    endrule
+
+    interface rawDescPipeIn = sqDescReadProxy.rawDescPipeIn;
+    interface workReqPipeOut = toPipeOut(workReqPipeOutQ);
 endmodule

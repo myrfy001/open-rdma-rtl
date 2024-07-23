@@ -53,12 +53,14 @@ module mkTestTopNoMockHostInner(
     );
 
 
-    let dut <- mkBsvTop(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    let dut <- mkQpMrPgtQpc(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
 
 
     rule setNetworkParam;
         LocalNetworkSettings networkSettings = unpack(0);
+        networkSettings.macAddr = 'hAABBCCDDEEFF;
+        networkSettings.ipAddr = 'h11223344;
         dut.setLocalNetworkSettings(networkSettings);
     endrule
 
@@ -107,8 +109,8 @@ module mkTestTopNoMockHostInner(
             qpType: IBV_QPT_RC,
             psn: 0,
             pmtu: IBV_MTU_256,
-            dqpIP: unpack(0),
-            macAddr: unpack(0),
+            dqpIP: 'h11223344,
+            macAddr: 'hAABBCCDDEEFF,
             laddr: unpack(0),
             lkey: unpack(0),
             raddr: unpack(0),
@@ -135,18 +137,18 @@ endmodule
 
 
 
-interface TestTopTiming;
+interface TestQpMrPgtQpcTiming;
     method Bool getOutput;
 endinterface
 
-module mkTestTopTiming#(
+module mkTestQpMrPgtQpcTiming#(
         Clock clkEthNap,
         Reset rstEthNap,
         Clock clkQpcMrPgtSrv,
         Reset rstQpcMrPgtSrv
-    )(TestTopTiming);
+    )(TestQpMrPgtQpcTiming);
 
-    let dut <- mkBsvTop(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    let dut <- mkQpMrPgtQpc(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
     Reg#(Bool) outputSyncReg <- mkSyncRegToCC(False, clkEthNap, rstEthNap);
 

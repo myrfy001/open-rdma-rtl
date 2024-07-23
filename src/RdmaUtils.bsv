@@ -197,3 +197,15 @@ function Bool containAccessTypeFlag(
     return containEnum(flags, flag);
     // return !isZero(pack(flags & enum2Flag(flag)));
 endfunction
+
+function Bool workReqHasImmDt(WorkReqOpCode opcode);
+    return case (opcode)
+        IBV_WR_RDMA_WRITE_WITH_IMM,
+        IBV_WR_SEND_WITH_IMM: True;
+        default: False;
+    endcase;
+endfunction
+
+function Bool workReqHasInv(WorkReqOpCode opcode);
+    return opcode == IBV_WR_SEND_WITH_INV;
+endfunction

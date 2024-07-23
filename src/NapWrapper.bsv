@@ -857,7 +857,15 @@ endmodule
 
 
 module mkAcxNapAxiMasterPrimitiveWrapper(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
-    let inst <- mkAcxNapAxiMasterWrapperInner;
+    ACX_NAP_AXI_MASTER_BVI_WRAPPER inst;
+
+    if (genVerilog) begin
+        inst <- mkAcxNapAxiMasterWrapperInner;
+    end
+    else begin
+        inst <- mkAcxNapAxiMasterWrapperInner;
+    end
+
     return inst;
 endmodule
 

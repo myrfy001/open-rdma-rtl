@@ -526,7 +526,8 @@ module mkPacketGen#(
     rule queryMrTable;
         let wqe = wqePipeInQ.first;
         wqePipeInQ.deq;
-        Bool hasPayload = workReqNeedPayloadGen(wqe.opcode);
+        Bool isZeroPayload = isZeroR(wqe.len);
+        Bool hasPayload = workReqNeedPayloadGen(wqe.opcode) && !isZeroPayload;
 
         if (hasPayload) begin
             let mrTableQueryReq = MrTableQueryReq{

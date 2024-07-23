@@ -54,8 +54,6 @@ typedef 8 QP_CAP_CNT_WIDTH;
 // Derived settings
 typedef AETH_VALUE_WIDTH TIMER_WIDTH;
 
-typedef TLog#(MAX_SGE)          SGE_IDX_WIDTH;
-typedef TAdd#(1, SGE_IDX_WIDTH) SGE_NUM_WIDTH;
 
 // 12 + 4 + 16 + 16 = 48 bytes
 typedef TAdd#(TAdd#(BTH_BYTE_WIDTH, XRCETH_BYTE_WIDTH), TAdd#(RETH_BYTE_WIDTH, LETH_BYTE_WIDTH)) RDMA_HEADER_MAX_BYTE_LENGTH;
@@ -105,8 +103,6 @@ typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
 typedef Bit#(DATA_BUS_WIDTH)      DATA;
 typedef Bit#(DATA_BUS_BYTE_WIDTH) ByteEn;
 
-typedef Bit#(SGE_IDX_WIDTH) IdxSGL;
-typedef Bit#(SGE_NUM_WIDTH) NumSGE;
 
 
 typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8 (bus 256b), 9 (bus 512b)
