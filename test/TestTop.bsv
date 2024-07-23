@@ -28,6 +28,87 @@ import PacketGenAndParse :: *;
 import Top :: *;
 
 
+module mkTestTop(Empty);
+    Clock clkLogic <- mkAbsoluteClock(0, 250);
+    Clock clkEthNap  <- mkAbsoluteClock(0, 196);
+    Clock clkQpcMrPgtSrv  <- mkAbsoluteClock(0, 196);
+
+    let rstLogic <- mkAsyncResetFromCR(0, clkLogic);
+    let rstEthNap <- mkAsyncResetFromCR(0, clkEthNap);
+    let rstQpcMrPgtSrv <- mkAsyncResetFromCR(0, clkQpcMrPgtSrv);
+
+    let inner <- mkTestTopInner(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkLogic, reset_by rstLogic);
+endmodule
+
+module mkTestTopInner(
+        Clock clkEthNap,
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv, 
+        Empty ifc
+    );
+
+    let dut <- mkBsvTop(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+
+    rule setNetworkParam;
+        LocalNetworkSettings networkSettings = unpack(0);
+        networkSettings.macAddr = 'hAABBCCDDEEFF;
+        networkSettings.ipAddr = 'h11223344;
+        dut.setLocalNetworkSettings(networkSettings);
+    endrule
+
+    Reg#(Bool) configDoneReg <- mkReg(False, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    rule updateOnChipStorage if (!configDoneReg);
+        configDoneReg <= True;
+        dut.qpContextUpdateSrv.request.put(WriteReqQPC {
+            qpn: unpack(0),
+            ent: tagged Valid EntryQPC {
+                qpnKeyPart: unpack(0),
+                pdHandler: unpack(0),
+                qpType: IBV_QPT_RC,
+                rqAccessFlags: enum2Flag(IBV_ACCESS_LOCAL_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_READ),
+                pmtu: IBV_MTU_256,
+                peerQPN: 0
+            }
+        });
+
+        dut.pgtModifySrv.request.put(PgtModifyReq {
+            idx: unpack(0),
+            pte: unpack(0)
+        });
+
+        dut.mrTableModifySrv.request.put(MrTableModifyReq {
+            idx: unpack(0),
+            entry: tagged Valid MemRegionTableEntry {
+                pgtOffset: unpack(0),
+                baseVA: 0,
+                len: 1024*1024*1024,
+                accFlags: enum2Flag(IBV_ACCESS_LOCAL_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_WRITE) | enum2Flag(IBV_ACCESS_REMOTE_READ),
+                pdHandler: 0,
+                keyPart: 0
+            }
+        });
+    endrule
+
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 module mkTestTopNoMockHost(Empty);
 
     Clock clkLogic <- mkAbsoluteClock(0, 250);
@@ -52,10 +133,7 @@ module mkTestTopNoMockHostInner(
         Empty ifc
     );
 
-
     let dut <- mkQpMrPgtQpc(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
-
-
 
     rule setNetworkParam;
         LocalNetworkSettings networkSettings = unpack(0);
@@ -137,16 +215,16 @@ endmodule
 
 
 
-interface TestQpMrPgtQpcTiming;
+interface TestTopTiming;
     method Bool getOutput;
 endinterface
 
-module mkTestQpMrPgtQpcTiming#(
+module mkTestTopTiming#(
         Clock clkEthNap,
         Reset rstEthNap,
         Clock clkQpcMrPgtSrv,
         Reset rstQpcMrPgtSrv
-    )(TestQpMrPgtQpcTiming);
+    )(TestTopTiming);
 
     let dut <- mkQpMrPgtQpc(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 

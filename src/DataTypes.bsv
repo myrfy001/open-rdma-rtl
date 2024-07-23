@@ -103,6 +103,7 @@ typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
 typedef Bit#(DATA_BUS_WIDTH)      DATA;
 typedef Bit#(DATA_BUS_BYTE_WIDTH) ByteEn;
 
+typedef Bit#(32) ADDR32;
 
 
 typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8 (bus 256b), 9 (bus 512b)

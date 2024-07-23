@@ -863,7 +863,7 @@ module mkAcxNapAxiMasterPrimitiveWrapper(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
         inst <- mkAcxNapAxiMasterWrapperInner;
     end
     else begin
-        inst <- mkAcxNapAxiMasterWrapperInner;
+        inst <- mkAcxNapAxiMasterWrapperInnerBluesim;
     end
 
     return inst;
