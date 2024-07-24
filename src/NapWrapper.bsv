@@ -762,6 +762,7 @@ module mkAcxNapAxiMasterWrapperInnerBluesim(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
                 wlast: True
             };
             wQ.enq(wReq);
+            $display("time=%0t,  mkAcxNapAxiMasterWrapperInnerBluesim, forwardWriteReq", $time, "addr=", fshow(addr));
         end
     endrule
 
@@ -795,6 +796,34 @@ module mkAcxNapAxiMasterWrapperInnerBluesim(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
             let resp = rQ.first;
             rQ.deq;
             mockHostBarAccess.barReadClt.response.put(truncate(resp.rdata));
+        end
+    endrule
+
+    rule handleHandshake;
+        if (awQ.notEmpty && awreadyWire) begin
+            awQ.deq;
+        end
+        if (wQ.notEmpty && wreadyWire) begin
+            wQ.deq;
+        end
+        if (bQ.notFull && bvalidWire) begin
+            let bresp = AxiMmNapBeatB {
+                bid: bidWire,
+                bresp: brespWire
+            };
+            bQ.enq(bresp);
+        end
+        if (arQ.notEmpty && arreadyWire) begin
+            arQ.deq;
+        end
+        if (rQ.notFull && rvalidWire) begin
+            let rresp = AxiMmNapBeatR {
+                rid  : ridWire,
+                rdata: rdataWire,
+                rresp: rrespWire,
+                rlast: rlastWire
+            };
+            rQ.enq(rresp);
         end
     endrule
 
@@ -954,6 +983,7 @@ module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
                     awqos: axiMasterNap.awqos
                 };
                 awQ.enq(recvBeat);
+                $display("3333333333=====");
             end
         end
         else begin
@@ -971,6 +1001,7 @@ module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
                     wlast: axiMasterNap.wlast
                 };
                 wQ.enq(recvBeat);
+                $display("44444444444=====");
             end
         end
         else begin
@@ -985,7 +1016,9 @@ module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
         axiMasterNap.bid(bBeat.bid);
         axiMasterNap.bresp(bBeat.bresp);
         if (bQ.notEmpty) begin
+            $display("111111111111=====");
             if (axiMasterNap.bready) begin
+                $display("2222222222=====");
                 bQ.deq;
             end
         end

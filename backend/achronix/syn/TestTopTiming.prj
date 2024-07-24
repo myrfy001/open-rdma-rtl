@@ -1,7 +1,7 @@
 #--  Synopsys, Inc.
 #--  Version U-2023.03X-2
 #--  Project file /root/work/backend/achronix/syn/TestTopTiming.prj
-#--  Written on Tue Jul 16 13:13:08 2024
+#--  Written on Wed Jul 24 03:13:43 2024
 
 
 #project files
@@ -42,6 +42,12 @@ add_file -verilog "../../../test/verilog/top_mkTestTopTiming.v"
 add_file -constraint "../ioring/TestTopTiming_ioring.sdc"
 add_file -verilog "../../../src/verilog/bsv_modules/SyncFIFO.v"
 add_file -verilog "../../../src/verilog/bsv_modules/SyncHandshake.v"
+add_file -verilog "../../verilog/mkQpMrPgtQpc.v"
+add_file -verilog "../../verilog/Counter.v"
+add_file -verilog "../../verilog/mkCommandQueueDescParserAndDispatcher.v"
+add_file -verilog "../../verilog/mkMrAndPgtUpdater.v"
+add_file -verilog "../../verilog/mkWorkQueueDescParser.v"
+add_file -verilog "../../verilog/mkAcxNapMasterWrapperPipe.v"
 
 
 #implementation: "rev_10"

@@ -341,6 +341,7 @@ module mkMockHostBarAccess(MockHostBarAccess);
 			value: 0
 		};
 		c_putPcieBarWriteResp(clientIdReg, resp);
+		$display("time=%0t,  mkMockHostBarAccess, forwardBarWriteResp", $time);
 	endrule
 
 	method Bool ready = initDoneReg;

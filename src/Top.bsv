@@ -1,6 +1,7 @@
 import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
+import GetPut :: *;
 import Vector :: *;
 
 import ConnectableF :: *;
@@ -30,10 +31,6 @@ import DescriptorParsers :: *;
 
 interface BsvTop;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVec;
-    interface Server#(WriteReqQPC, Bool) qpContextUpdateSrv;
-    interface Server#(PgtModifyReq, PgtModifyResp) pgtModifySrv;
-    interface Server#(MrTableModifyReq, MrTableModifyResp) mrTableModifySrv;
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
 
@@ -48,8 +45,6 @@ module mkBsvTop#(
 
 
 
-
-
     // Ringbuf and it's NAPs
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufC2hSlot4096) wqeRingbufVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufH2cSlot4096) rqMetaReportRingbufVec = newVector;
@@ -57,8 +52,8 @@ module mkBsvTop#(
     RingbufC2hSlot4096 cmdRespQueueRingbuf <- mkRingbufC2h(4);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufDmaNapWrappr) ringbufDmaNapVec <- replicateM(mkRingbufDmaNapWrappr);
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueRingbufController) sendQueueDescToWqeConvertorVec <- replicateM(mkWorkQueueRingbufController);
-
+    Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueDescParser) workQueueDescParserVec <- replicateM(mkWorkQueueDescParser);
+    CommandQueueDescParserAndDispatcher cmdQueueDescParserAndDispatcher <- mkCommandQueueDescParserAndDispatcher(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         wqeRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
         rqMetaReportRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
@@ -69,13 +64,13 @@ module mkBsvTop#(
         mkConnection(rqMetaReportRingbufVec[idx].dmaReadReqPipeOut, ringbufDmaNapVec[idx].dmaReadReqPipeIn);
         mkConnection(rqMetaReportRingbufVec[idx].dmaReadRespPipeIn, ringbufDmaNapVec[idx].dmaReadRespPipeOut);
 
-        mkConnection(rqMetaReportRingbufVec[idx].descPipeOut, sendQueueDescToWqeConvertorVec[idx].rawDescPipeIn);
-        mkConnection(sendQueueDescToWqeConvertorVec[idx].workReqPipeOut, qpMrPgtQpc.wqePipeInVec[idx]);
+        mkConnection(rqMetaReportRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
+        mkConnection(workQueueDescParserVec[idx].workReqPipeOut, qpMrPgtQpc.wqePipeInVec[idx]);
     end
 
 
     // CSR Access
-    RdmaCsrSwitch#(20) csrRootSwitch <- mkCsrRootSwitch;
+    RdmaCsrSwitch#(16) csrRootSwitch <- mkCsrRootSwitch;
     Integer blockOffset = 0;
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         blockOffset = valueOf(ASR_ADDR_BLOCK_START_ADDR_FOR_QP) + valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) * idx;
@@ -85,10 +80,20 @@ module mkBsvTop#(
         RdmaCsrLeafAccessor csrAccessorSqHead           <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD));
         RdmaCsrLeafAccessor csrAccessorSqTail           <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL));
 
+        RdmaCsrLeafAccessor csrAccessorRqBaseAddrLow    <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW));
+        RdmaCsrLeafAccessor csrAccessorRqBaseAddrHigh   <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH));
+        RdmaCsrLeafAccessor csrAccessorRqHead           <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD));
+        RdmaCsrLeafAccessor csrAccessorRqTail           <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL));
+
         mkConnection(csrAccessorSqBaseAddrLow.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 0]);
         mkConnection(csrAccessorSqBaseAddrHigh.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 1]);
         mkConnection(csrAccessorSqHead.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 2]);
         mkConnection(csrAccessorSqTail.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 3]);
+
+        mkConnection(csrAccessorRqBaseAddrLow.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 4]);
+        mkConnection(csrAccessorRqBaseAddrHigh.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 5]);
+        mkConnection(csrAccessorRqHead.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 6]);
+        mkConnection(csrAccessorRqTail.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 7]);
 
 
         mkConnectionCsrAccessorAndRingbuf(
@@ -96,6 +101,14 @@ module mkBsvTop#(
             csrAccessorSqBaseAddrHigh,
             csrAccessorSqHead,
             csrAccessorSqTail,
+            wqeRingbufVec[idx].controlRegs
+        );
+
+        mkConnectionCsrAccessorAndRingbuf(
+            csrAccessorRqBaseAddrLow,
+            csrAccessorRqBaseAddrHigh,
+            csrAccessorRqHead,
+            csrAccessorRqTail,
             rqMetaReportRingbufVec[idx].controlRegs
         );
     end
@@ -138,13 +151,26 @@ module mkBsvTop#(
         cmdRespQueueRingbuf.controlRegs
     );
 
+    mkConnection(cmdReqQueueRingbuf.descPipeOut, cmdQueueDescParserAndDispatcher.reqRawDescPipeIn);
+    mkConnection(cmdRespQueueRingbuf.descPipeIn, cmdQueueDescParserAndDispatcher.respRawDescPipeOut);
 
+    MrAndPgtUpdater mrAndPgtUpdater <- mkMrAndPgtUpdater(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    PgtUpdateDmaNapWrappr pgtUpdateDmaNapWrappr <- mkPgtUpdateDmaNapWrappr;
+
+    mkConnection(mrAndPgtUpdater.dmaReadReqPipeOut, pgtUpdateDmaNapWrappr.dmaReadReqPipeIn);
+    mkConnection(mrAndPgtUpdater.dmaReadRespPipeIn, pgtUpdateDmaNapWrappr.dmaReadRespPipeOut);
+
+    mkConnection(cmdQueueDescParserAndDispatcher.mrAndPgtManagerClt, mrAndPgtUpdater.mrAndPgtModifyDescSrv);
+    mkConnection(mrAndPgtUpdater.mrModifyClt, qpMrPgtQpc.mrTableModifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    mkConnection(mrAndPgtUpdater.pgtModifyClt, qpMrPgtQpc.pgtModifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    mkConnection(cmdQueueDescParserAndDispatcher.qpcModifyClt, qpMrPgtQpc.qpContextUpdateSrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+
+    rule setLocalNetworkSettings;
+        qpMrPgtQpc.setLocalNetworkSettings(cmdQueueDescParserAndDispatcher.setNetworkParamReqPipeOut.first);
+        cmdQueueDescParserAndDispatcher.setNetworkParamReqPipeOut.deq;
+    endrule
 
     interface otherRawPacketPipeOutVec = qpMrPgtQpc.otherRawPacketPipeOutVec; 
-    interface qpContextUpdateSrv = qpMrPgtQpc.qpContextUpdateSrv; 
-    interface pgtModifySrv = qpMrPgtQpc.pgtModifySrv; 
-    interface mrTableModifySrv = qpMrPgtQpc.mrTableModifySrv; 
-    method setLocalNetworkSettings = qpMrPgtQpc.setLocalNetworkSettings; 
 endmodule
 
 

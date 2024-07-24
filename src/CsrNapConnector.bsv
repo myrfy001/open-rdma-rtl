@@ -40,7 +40,7 @@ module mkCsrRootSwitch(CsrSwitch#(CsrAddr, CsrData, downStreamPortCnt));
     FIFOF#(NapAxiRid) axiRidKeepOrderQ <- mkFIFOF;
 
 
-    rule forwardReadReq;
+    rule forwardReadOrWriteReq;
 
         if (napInst.readPipeIfc.readAddrPipeOut.notEmpty) begin
             let rawReadReq = napInst.readPipeIfc.readAddrPipeOut.first;

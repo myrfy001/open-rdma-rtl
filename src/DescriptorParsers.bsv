@@ -1,4 +1,5 @@
 import Vector :: *;
+import Clocks :: *;
 import Settings :: *;
 import DataTypes :: *;
 import RdmaHeaders :: *;
@@ -29,14 +30,14 @@ typedef 2 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 
 
 
-interface WorkQueueRingbufController;
+interface WorkQueueDescParser;
     interface PipeIn#(RingbufRawDescriptor) rawDescPipeIn;
     interface PipeOut#(WorkQueueElem)       workReqPipeOut;
 endinterface
 
 
 (* synthesize *)
-module mkWorkQueueRingbufController(WorkQueueRingbufController);
+module mkWorkQueueDescParser(WorkQueueDescParser);
 
     FIFOF#(WorkQueueElem) workReqPipeOutQ <- mkFIFOF;
 
@@ -87,19 +88,24 @@ endmodule
 
 
 
-interface CommandQueueController;
+interface CommandQueueDescParserAndDispatcher;
     interface PipeIn#(RingbufRawDescriptor)                                 reqRawDescPipeIn;
     interface PipeOut#(RingbufRawDescriptor)                                respRawDescPipeOut;
     interface Client#(RingbufRawDescriptor, Bool)                           mrAndPgtManagerClt;
     interface Client#(WriteReqQPC, Bool)                                    qpcModifyClt;
-    interface Get#(LocalNetworkSettings)                                    setNetworkParamReqOut;
+    interface PipeOut#(LocalNetworkSettings)                                setNetworkParamReqPipeOut;
     interface Get#(RawPacketReceiveMeta)                                    setRawPacketReceiveMetaReqOut;
     // interface Get#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))      setRqExpectedPsnReqOut;
 endinterface
 
 
 (* synthesize *)
-module mkCommandQueueController(CommandQueueController ifc);
+module mkCommandQueueDescParserAndDispatcher#(
+        Clock clkEthNap,
+        Reset rstEthNap,
+        Clock clkQpcMrPgtSrv,
+        Reset rstQpcMrPgtSrv
+    )(CommandQueueDescParserAndDispatcher ifc);
 
     // If we need to wait for response for some cycle to finish, then we need to set this to False;
     Reg#(Bool) isDispatchingReqReg                                                          <- mkReg(True);
@@ -108,11 +114,10 @@ module mkCommandQueueController(CommandQueueController ifc);
     FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
     FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkFIFOF;
 
-    FIFOF#(WriteReqQPC) qpcReqQ                                                             <- mkFIFOF;
+    QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkSyncQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
-    FIFOF#(Bool) qpcRespQ                                                                   <- mkFIFOF;
 
-    FIFOF#(LocalNetworkSettings)            setNetworkParamReqQ                             <- mkFIFOF;
+    SyncFIFOIfc#(LocalNetworkSettings) setNetworkParamPipeOutQ                              <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
     FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkFIFOF;
     // FIFOF#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))    setRqExpectedPsnReqQ      <- mkFIFOF;
 
@@ -147,7 +152,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                 };
 
                 qpcInflightReqQ.enq(rawDesc);
-                qpcReqQ.enq(
+                qpcUpdateCltInst.putReq(
                     WriteReqQPC {
                         qpn: desc0.qpn,
                         ent: desc0.isValid ? tagged Valid ent : tagged Invalid
@@ -165,7 +170,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                     netMask     :   reqDesc.netMask,
                     gatewayAddr :   reqDesc.gateWay
                 };
-                setNetworkParamReqQ.enq(localNetworkConfig);
+                setNetworkParamPipeOutQ.enq(localNetworkConfig);
                 CmdQueueRespDescOnlyCommonHeader respDesc = unpack(pack(reqDesc));
                 respDesc.cmdQueueCommonHeader.isSuccess = True;
                 respDesc.commonHeader.valid = True;
@@ -232,12 +237,11 @@ module mkCommandQueueController(CommandQueueController ifc);
             isDispatchingReqReg <= True;
             $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
         end 
-        else if (qpcRespQ.notEmpty) begin 
-            qpcRespQ.deq;
+        else if (qpcUpdateCltInst.hasResp) begin 
             qpcInflightReqQ.deq;
            
             CmdQueueRespDescQpManagementSeg0 respDesc = unpack(qpcInflightReqQ.first);
-            respDesc.cmdQueueCommonHeader.isSuccess = qpcRespQ.first;
+            respDesc.cmdQueueCommonHeader.isSuccess <- qpcUpdateCltInst.getResp;
             respDesc.commonHeader.valid = True;
             respDesc.commonHeader.hasNextFrag = False;
             respRawDescSeg[0] = pack(respDesc);
@@ -251,9 +255,9 @@ module mkCommandQueueController(CommandQueueController ifc);
     interface respRawDescPipeOut = descWriteProxy.rawDescPipeOut;
 
     interface mrAndPgtManagerClt = toGPClient(mrAndPgtReqQ, mrAndPgtRespQ);
-    interface qpcModifyClt = toGPClient(qpcReqQ, qpcRespQ);
+    interface qpcModifyClt = qpcUpdateCltInst.clt;
 
-    interface setNetworkParamReqOut = toGet(setNetworkParamReqQ);
+    interface setNetworkParamReqPipeOut = toPipeOutSync(setNetworkParamPipeOutQ);
     interface setRawPacketReceiveMetaReqOut = toGet(setRawPacketReceiveMetaReqQ);
     // interface setRqExpectedPsnReqOut = toGet(setRqExpectedPsnReqQ);
 endmodule
