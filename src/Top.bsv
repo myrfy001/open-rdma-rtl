@@ -46,27 +46,36 @@ module mkBsvTop#(
 
 
     // Ringbuf and it's NAPs
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufC2hSlot4096) wqeRingbufVec = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufH2cSlot4096) rqMetaReportRingbufVec = newVector;
-    RingbufH2cSlot4096 cmdReqQueueRingbuf <- mkRingbufH2c(4);
-    RingbufC2hSlot4096 cmdRespQueueRingbuf <- mkRingbufC2h(4);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufH2cSlot4096) wqeRingbufVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufC2hSlot4096) rqMetaReportRingbufVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufDmaNapWrappr) ringbufDmaNapVec <- replicateM(mkRingbufDmaNapWrappr);
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueDescParser) workQueueDescParserVec <- replicateM(mkWorkQueueDescParser);
     CommandQueueDescParserAndDispatcher cmdQueueDescParserAndDispatcher <- mkCommandQueueDescParserAndDispatcher(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-        wqeRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
-        rqMetaReportRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
+        wqeRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
+        rqMetaReportRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
 
-        mkConnection(wqeRingbufVec[idx].dmaWriteReqPipeOut, ringbufDmaNapVec[idx].dmaWriteReqPipeIn);
-        mkConnection(wqeRingbufVec[idx].dmaWriteDataPipeOut, ringbufDmaNapVec[idx].dmaWriteDataPipeIn);
-        mkConnection(wqeRingbufVec[idx].dmaWriteRespPipeIn, ringbufDmaNapVec[idx].dmaWriteRespPipeOut);
-        mkConnection(rqMetaReportRingbufVec[idx].dmaReadReqPipeOut, ringbufDmaNapVec[idx].dmaReadReqPipeIn);
-        mkConnection(rqMetaReportRingbufVec[idx].dmaReadRespPipeIn, ringbufDmaNapVec[idx].dmaReadRespPipeOut);
+        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteReqPipeOut, ringbufDmaNapVec[idx].dmaWriteReqPipeIn);
+        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteDataPipeOut, ringbufDmaNapVec[idx].dmaWriteDataPipeIn);
+        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteRespPipeIn, ringbufDmaNapVec[idx].dmaWriteRespPipeOut);
+        mkConnection(wqeRingbufVec[idx].dmaReadReqPipeOut, ringbufDmaNapVec[idx].dmaReadReqPipeIn);
+        mkConnection(wqeRingbufVec[idx].dmaReadRespPipeIn, ringbufDmaNapVec[idx].dmaReadRespPipeOut);
 
-        mkConnection(rqMetaReportRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
+        mkConnection(wqeRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
         mkConnection(workQueueDescParserVec[idx].workReqPipeOut, qpMrPgtQpc.wqePipeInVec[idx]);
     end
+
+    RingbufH2cSlot4096 cmdReqQueueRingbuf <- mkRingbufH2c(4);
+    RingbufC2hSlot4096 cmdRespQueueRingbuf <- mkRingbufC2h(4);
+    RingbufDmaNapWrappr cmdQueueRingbufDmaNap <- mkRingbufDmaNapWrappr;
+
+    mkConnection(cmdRespQueueRingbuf.dmaWriteReqPipeOut, cmdQueueRingbufDmaNap.dmaWriteReqPipeIn);
+    mkConnection(cmdRespQueueRingbuf.dmaWriteDataPipeOut, cmdQueueRingbufDmaNap.dmaWriteDataPipeIn);
+    mkConnection(cmdRespQueueRingbuf.dmaWriteRespPipeIn, cmdQueueRingbufDmaNap.dmaWriteRespPipeOut);
+    mkConnection(cmdReqQueueRingbuf.dmaReadReqPipeOut, cmdQueueRingbufDmaNap.dmaReadReqPipeIn);
+    mkConnection(cmdReqQueueRingbuf.dmaReadRespPipeIn, cmdQueueRingbufDmaNap.dmaReadRespPipeOut);
+
 
 
     // CSR Access

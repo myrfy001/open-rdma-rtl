@@ -108,7 +108,8 @@ endmodule
 
 module mkPipelineCsrSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provisos (
         Bits#(tAddr, szAddr),
-        Bits#(tValue, szValue)
+        Bits#(tValue, szValue),
+        FShow#(CsrFramework::CsrReadWriteResp#(tValue))
     );
 
     Vector#(downStreamPortCnt, FIFOF#(CsrReadWriteReq#(tAddr, tValue))) reqRelayVec <- replicateM(mkPipelineFIFOF);
@@ -136,6 +137,7 @@ module mkPipelineCsrSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) proviso
                 for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
                     let resp = respRelayVec[portIdx].first; 
                     respRelayVec[portIdx].deq;
+                    // $display("time=%0t", $time, "mkPipelineCsrSwitch idx=%x", portIdx, "resp=", fshow(resp));
                     if (isValid(resp.valueMaybe)) begin
                         immAssert(
                             !foundValidResp,
@@ -167,11 +169,11 @@ interface CsrLeaf#(type tAddr, type tValue);
 endinterface
 
 module mkCsrLeaf#(Integer myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
-    Bits#(tAddr, szAddr),
-    Bits#(tValue, szData),
-    Literal#(tAddr),
-    Eq#(tAddr)
-);
+        Bits#(tAddr, szAddr),
+        Bits#(tValue, szData),
+        Literal#(tAddr),
+        Eq#(tAddr)
+    );
 
     Reg#(tValue) storageReg <- mkReg(unpack(0));
     RWire#(tValue) userWriteReqWire <- mkRWire;
@@ -208,7 +210,7 @@ module mkCsrLeaf#(Integer myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
 
                 Bool isAddrHit = req.addr == fromInteger(myAddr);
 
-                $display("leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
+                // $display("leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
 
                 if (isAddrHit) begin
                     if (req.isWrite) begin
@@ -245,17 +247,17 @@ endinterface
 
 
 module mkCsrLeafAccessor#(Integer myAddr) (CsrLeafAccessor#(tAddr, tValue)) provisos (
-    Bits#(tAddr, szAddr),
-    Bits#(tValue, szData),
-    Literal#(tAddr),
-    Eq#(tAddr)
-);
+        Bits#(tAddr, szAddr),
+        Bits#(tValue, szData),
+        Literal#(tAddr),
+        Eq#(tAddr)
+    );
 
     RWire#(tValue) readValueWire <- mkRWire;
     Wire#(tValue) busWriteReqWire <- mkWire;
 
-    PulseWire busReqIsReadWire <- mkPulseWire;
-    PulseWire busReqOccuredWire <- mkPulseWire;
+    PulseWire busReqIsReadWire  <- mkPulseWire;
+    PulseWire isAddrMatchWire   <- mkPulseWire;
 
     method Action readValIn (tValue value);
         readValueWire.wset(value);
@@ -268,18 +270,20 @@ module mkCsrLeafAccessor#(Integer myAddr) (CsrLeafAccessor#(tAddr, tValue)) prov
     interface CsrReadWriteSrvIfc busInputSrv;
         interface Put request;
             method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-                busReqOccuredWire.send;
 
                 Bool isAddrHit = req.addr == fromInteger(myAddr);
+                if (isAddrHit) begin
+                    isAddrMatchWire.send;
+                end
+                if (!req.isWrite) begin
+                    busReqIsReadWire.send;
+                end
 
-                $display("leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
+                // $display("time=%0t, ", $time, "leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
 
                 if (isAddrHit) begin
                     if (req.isWrite) begin
                         busWriteReqWire <= req.value;
-                    end
-                    else begin
-                        busReqIsReadWire.send;
                     end
                 end
             endmethod
@@ -287,19 +291,22 @@ module mkCsrLeafAccessor#(Integer myAddr) (CsrLeafAccessor#(tAddr, tValue)) prov
 
         interface Get response;
 
-            method ActionValue#(CsrReadWriteResp#(tValue)) get if (busReqOccuredWire);
-                if (busReqIsReadWire) begin
-                    if (readValueWire.wget matches tagged Valid .inputReadData) begin
+            method ActionValue#(CsrReadWriteResp#(tValue)) get if (busReqIsReadWire);
+                
+                if (readValueWire.wget matches tagged Valid .inputReadData) begin
+                    if (isAddrMatchWire) begin
+                        // $display("time=%0t, ", $time, "leaf node send resp, addr=%x", myAddr, "valid");
                         return CsrReadWriteResp{valueMaybe: tagged Valid inputReadData};
-                    end 
-                    else begin
-                        immFail("mkCsrLeafAccessor, read value should be valid", $format(""));
-                        return ?;
                     end
-                end
+                    else begin
+                        return CsrReadWriteResp{valueMaybe: tagged Invalid};
+                    end
+                end 
                 else begin
-                    return CsrReadWriteResp{valueMaybe: tagged Invalid};
+                    immFail("mkCsrLeafAccessor, read value should be valid", $format(""));
+                    return ?;
                 end
+               
             endmethod
         endinterface
     endinterface

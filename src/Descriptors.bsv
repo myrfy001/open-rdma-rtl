@@ -17,27 +17,25 @@ typedef enum {
 typedef struct {
     Bool                    valid;          //  1  bits
     Bit#(7)                 opCode;         //  7  bits
-    ReservedZero#(7)        reserved1;      //  7  bits
+    ReservedZero#(7)        reserved0;      //  7  bits
     Bool                    hasNextFrag;    //  1  bits
 } RingbufDescCommonHead deriving(Bits, FShow);
 
 
 typedef struct {
+    ReservedZero#(3)            reserved1;        // 3  bits
+    WorkReqSendFlag             flags;            // 5  bits 
     QPN                         dqpn;             // 24 bits
+    ReservedZero#(4)            reserved0;        // 4  bits
+    TypeQP                      qpType;           // 4  bits
     PSN                         psn;              // 24 bits
 
-    PKEY                        pkey;             // 16 bits
     IpAddr                      dqpIP;            // 32 bits
-    RKEY                        rkey;             // 32 bits
     ADDR                        raddr;            // 64 bits
+    RKEY                        rkey;             // 32 bits
     Length                      totalLen;         // 32 bits
 
-    ReservedZero#(3)            reserved2;        // 3  bits
-    WorkReqSendFlag             flags;            // 5  bits 
-
-    ReservedZero#(4)            reserved3;        // 4  bits
-    TypeQP                      qpType;           // 4  bits
-
+    PKEY                        pkey;             // 16 bits
     RingbufDescCommonHead       commonHeader;     // 16 bits
 } SendQueueReqDescSeg0 deriving(Bits, FShow);
 
@@ -55,7 +53,7 @@ typedef struct {
     Bit#(8)                     sqpnLow8Bits;       // 8  bits
 
 
-    ReservedZero#(3)            reserved8;          // 3  bits
+    ReservedZero#(3)            reserved0;          // 3  bits
     Bool                        isLast;             // 1  bits
     Bool                        isFirst;            // 1  bits
     PMTU                        pmtu;               // 3  bits
@@ -66,14 +64,16 @@ typedef struct {
 
 
 typedef struct {
-    ReservedZero#(31)       reserved1;      // 31  bits
+    ReservedZero#(31)       reserved0;      // 31  bits
     Bool                    isSuccess;      //  1  bits
     Bit#(16)                userData;       // 16  bits
 } RingbufDescCmdQueueCommonHead deriving(Bits, FShow);
 
 
 typedef struct {
-    ReservedZero#(192)              reserved1;              // 192 bits
+    ReservedZero#(64)               reserved2;              // 64  bits
+    ReservedZero#(64)               reserved1;              // 64  bits
+    ReservedZero#(64)               reserved0;              // 64  bits
     RingbufDescCmdQueueCommonHead   cmdQueueCommonHeader;   // 48  bits
     RingbufDescCommonHead           commonHeader;           // 16  bits
 } CmdQueueRespDescOnlyCommonHeader deriving(Bits, FShow);
@@ -91,7 +91,7 @@ typedef struct {
 } CmdQueueReqDescUpdateMrTable deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)               reserved1;
+    ReservedZero#(64)               reserved0;
     Bit#(32)                        zeroBasedEntryCount;
     Bit#(32)                        startIndex;
     Bit#(64)                        dmaAddr;
@@ -100,39 +100,30 @@ typedef struct {
 } CmdQueueReqDescUpdatePGT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)               reserved1;
-    ReservedZero#(64)               reserved2;
-    ReservedZero#(64)               reserved3;
-    RingbufDescCmdQueueCommonHead   cmdQueueCommonHeader;   // 48  bits
-    RingbufDescCommonHead           commonHeader;           // 16  bits
-} CmdQueueRespDescUpdatePGT deriving(Bits, FShow);
-
-
-typedef struct {
-    ReservedZero#(80 )              reserved1;              // 80  bits
-    QPN                             peerQPN;                // 24  bits
-    ReservedZero#(5)                reserved2;              // 5   bits
+    ReservedZero#(64)               reserved3;              // 64  bits
+    ReservedZero#(21)               reserved2;              // 16  bits
     PMTU                            pmtu;                   // 3   bits
-    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;          // 8   bits
-    ReservedZero#(4)                reserved3;              // 4   bits
+    ReservedZero#(4)                reserved1;              // 4   bits
     TypeQP                          qpType;                 // 4   bits
+    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;          // 8   bits
+    QPN                             peerQPN;                // 24  bits
     HandlerPD                       pdHandler;              // 32  bits
     QPN                             qpn;                    // 24  bits
-    ReservedZero#(6)                reserved4;              // 6   bits
+    ReservedZero#(6)                reserved0;              // 6   bits
     Bool                            isError;                // 1   bit
     Bool                            isValid;                // 1   bit
     RingbufDescCmdQueueCommonHead   cmdQueueCommonHeader;   // 48  bits
     RingbufDescCommonHead           commonHeader;           // 16  bits
-} CmdQueueReqDescQpManagementSeg0 deriving(Bits, FShow);
+} CmdQueueReqDescQpManagement deriving(Bits, FShow);
 
 
-typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
+typedef CmdQueueReqDescQpManagement CmdQueueRespDescQpManagement;
 
 
 typedef struct {
     ReservedZero#(16)               reserved1;              // 16  bits
     EthMacAddr                      macAddr;                // 48  bits
-    ReservedZero#(32)               reserved2;              // 32  bits
+    ReservedZero#(32)               reserved0;              // 32  bits
     IpAddr                          ipAddr;                 // 32  bits
     IpNetMask                       netMask;                // 32  bits
     IpGateWay                       gateWay;                // 32  bits
@@ -142,17 +133,19 @@ typedef struct {
 
 
 typedef struct {
-    ReservedZero#(96)               reserved1;              // 96  bits
-    RKEY                            writeMrKey;             // 32  bits
+    ReservedZero#(64)               reserved1;              // 64  bits
+    ReservedZero#(64)               reserved0;              // 64  bits
     ADDR                            writeBaseAddr;          // 64  bits
     RingbufDescCmdQueueCommonHead   cmdQueueCommonHeader;   // 48  bits
     RingbufDescCommonHead           commonHeader;           // 16  bits
 } CmdQueueReqDescSetRawPacketReceiveMeta deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(136)              reserved1;              // 136 bits
+    ReservedZero#(64)               reserved3;              // 136 bits
+    ReservedZero#(64)               reserved2;              // 136 bits
+    ReservedZero#(8)                reserved1;              // 136 bits
     QPN                             qpn;                    // 24  bits
-    ReservedZero#(8)                reserved2;              // 8   bits
+    ReservedZero#(8)                reserved0;              // 8   bits
     PSN                             recoverPoint;           // 24  bits
     RingbufDescCmdQueueCommonHead   cmdQueueCommonHeader;   // 48  bits
     RingbufDescCommonHead           commonHeader;           // 16  bits

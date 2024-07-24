@@ -140,7 +140,7 @@ module mkCommandQueueDescParserAndDispatcher#(
                 isDispatchingReqReg <= False;
             end
             CmdQueueOpcodeQpManagement: begin
-                CmdQueueReqDescQpManagementSeg0 desc0 = unpack(reqSegBuf[0]);
+                CmdQueueReqDescQpManagement desc0 = unpack(reqSegBuf[0]);
                 
                 let ent = EntryQPC {
                     peerQPN   :     desc0.peerQPN,
@@ -183,8 +183,7 @@ module mkCommandQueueDescParserAndDispatcher#(
             CmdQueueOpcodeSetRawPacketReceiveMeta: begin
                 CmdQueueReqDescSetRawPacketReceiveMeta reqDesc = unpack(rawDesc);
                 setRawPacketReceiveMetaReqQ.enq(RawPacketReceiveMeta{
-                    writeBaseAddr: reqDesc.writeBaseAddr,
-                    writeMrKey   : reqDesc.writeMrKey
+                    writeBaseAddr: reqDesc.writeBaseAddr
                 });
 
                 CmdQueueRespDescOnlyCommonHeader respDesc = unpack(pack(reqDesc));
@@ -224,9 +223,7 @@ module mkCommandQueueDescParserAndDispatcher#(
         
 
         if (mrAndPgtRespQ.notEmpty) begin
-            // Note: since the update MR and update PGT req both need only one descriptor and the response only care for
-            // `isSuccessOrNeedSignalCplt` field, so we use CmdQueueRespDescUpdatePGT to handle both resp.
-            CmdQueueRespDescUpdatePGT respDesc = unpack(mrAndPgtInflightReqQ.first);
+            CmdQueueRespDescOnlyCommonHeader respDesc = unpack(mrAndPgtInflightReqQ.first);
             respDesc.cmdQueueCommonHeader.isSuccess = mrAndPgtRespQ.first;
             respDesc.commonHeader.valid = True;
             respDesc.commonHeader.hasNextFrag = False;
@@ -240,7 +237,7 @@ module mkCommandQueueDescParserAndDispatcher#(
         else if (qpcUpdateCltInst.hasResp) begin 
             qpcInflightReqQ.deq;
            
-            CmdQueueRespDescQpManagementSeg0 respDesc = unpack(qpcInflightReqQ.first);
+            CmdQueueRespDescQpManagement respDesc = unpack(qpcInflightReqQ.first);
             respDesc.cmdQueueCommonHeader.isSuccess <- qpcUpdateCltInst.getResp;
             respDesc.commonHeader.valid = True;
             respDesc.commonHeader.hasNextFrag = False;

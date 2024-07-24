@@ -762,7 +762,7 @@ module mkAcxNapAxiMasterWrapperInnerBluesim(ACX_NAP_AXI_MASTER_BVI_WRAPPER);
                 wlast: True
             };
             wQ.enq(wReq);
-            $display("time=%0t,  mkAcxNapAxiMasterWrapperInnerBluesim, forwardWriteReq", $time, "addr=", fshow(addr));
+            // $display("time=%0t,  mkAcxNapAxiMasterWrapperInnerBluesim, forwardWriteReq", $time, "addr=", fshow(addr));
         end
     endrule
 
@@ -983,7 +983,6 @@ module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
                     awqos: axiMasterNap.awqos
                 };
                 awQ.enq(recvBeat);
-                $display("3333333333=====");
             end
         end
         else begin
@@ -1001,7 +1000,6 @@ module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
                     wlast: axiMasterNap.wlast
                 };
                 wQ.enq(recvBeat);
-                $display("44444444444=====");
             end
         end
         else begin
@@ -1016,9 +1014,7 @@ module mkAcxNapMasterWrapperPipe(AcxNapMasterWrapperPipe);
         axiMasterNap.bid(bBeat.bid);
         axiMasterNap.bresp(bBeat.bresp);
         if (bQ.notEmpty) begin
-            $display("111111111111=====");
             if (axiMasterNap.bready) begin
-                $display("2222222222=====");
                 bQ.deq;
             end
         end

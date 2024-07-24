@@ -41,7 +41,6 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     Vector#(TExp#(splitCntExp), AutoInferBram#(subAddrType, dataType)) subBramVec <- replicateM(mkAutoInferBram);
 
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
-    FIFOF#(subBlockIdxType) orderKeepQueuePortB <- mkSizedFIFOF(6);
 
     FIFOF#(addrType)   bramReadReqQ <- mkFIFOF;
     FIFOF#(dataType)  bramReadRespQ <- mkFIFOF;
@@ -77,18 +76,9 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
         subAddrType addr = unpack(truncate(pack(cacheAddr)));
         subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
         subBramVec[subIdx].write(addr, writeData);
-        orderKeepQueuePortB.enq(subIdx);
         bramWriteRespQ.enq(True);
         // $display("send BRAM write req to sub block =", fshow(subIdx), "addr=", fshow(addr));
     endrule
-
-    // rule handleBramWriteResp;
-    //     let subIdx = orderKeepQueuePortB.first;
-    //     orderKeepQueuePortB.deq;
-    //     let _ <- subBramVec[subIdx].portB.response.get;
-        
-    //     // $display("recv BRAM write resp from sub block =", fshow(subIdx));
-    // endrule
 
 
     interface read =  toGPServer(bramReadReqQ,  bramReadRespQ);
@@ -105,7 +95,7 @@ endinterface
 module mkMemRegionTable(MemRegionTable);
     BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 1) mrTableStorage <- mkBramCache;
     QueuedServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServer("mkMemRegionTable querySrvInst");
-    QueuedServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
+    QueuedServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServer("MemRegionTable modifySrvInst");
 
     rule handleQueryReq;
         let req <- querySrvInst.getReq;
@@ -224,7 +214,7 @@ endmodule
 
     module mkBypassMemRegionTableForTest(MemRegionTable);
         QueuedServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServer("mkMemRegionTable querySrvInst");
-        QueuedServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
+        QueuedServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServer("mkBypassMemRegionTableForTest modifySrvInst");
     
         rule handleQueryReq;
             let req <- querySrvInst.getReq;
@@ -268,7 +258,7 @@ module mkAddressTranslate(AddressTranslate);
     BramCache#(PTEIndex, PageTableEntry, 3) pageTableStorage <- mkBramCache;
 
     QueuedServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServer("translateSrvInst");
-    QueuedServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
+    QueuedServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServer("mkAddressTranslate modifySrvInst");
 
     FIFOF#(Bit#(PAGE_OFFSET_WIDTH)) offsetInputQ <- mkSizedFIFOF(10);
 
@@ -307,6 +297,7 @@ module mkAddressTranslate(AddressTranslate);
     rule handleModifyResp;
         let resp <- pageTableStorage.write.response.get;
         modifySrvInst.putResp(PgtModifyResp{success: resp});
+        $display("insert AddressTranslate response = ", fshow(resp));
     endrule
 
 
@@ -408,7 +399,7 @@ endmodule
 
 module mkBypassAddressTranslateForTest(AddressTranslate);
     QueuedServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServer("translateSrvInst");
-    QueuedServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServer("modifySrvInst");
+    QueuedServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServer("mkBypassAddressTranslateForTest modifySrvInst");
 
     rule handleTranslateReq;
         let req <- translateSrvInst.getReq;
@@ -453,7 +444,7 @@ typedef TDiv#(PGT_SECOND_STAGE_ENTRY_BIT_WIDTH_PADDED, BYTE_WIDTH) PGT_SECOND_ST
 typedef TDiv#(PCIE_NAP_MAX_BYTE_IN_BURST, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED) PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST;
 typedef Bit#(TLog#(PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST)) ZeroBasedPgtSecondStageEntryCnt;
 
-typedef Bit#(TDiv#(PCIE_NAP_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED)) ZeroBasedPgtEntryCntInDmaBeat;
+typedef Bit#(TLog#(TDiv#(PCIE_NAP_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED))) ZeroBasedPgtEntryCntInDmaBeat;
 
 (* synthesize *)
 module mkMrAndPgtUpdater#(
@@ -556,6 +547,7 @@ module mkMrAndPgtUpdater#(
         if (isZeroR(zeroBasedPgtEntryBeatCntReg)) begin
             let newFrag = dmaReadRespQ.first.data;
             dmaReadRespQ.deq;
+            $display("beat deq");
             ds = newFrag;
         end
         else begin
@@ -580,6 +572,7 @@ module mkMrAndPgtUpdater#(
     endrule
 
     rule handlePgtModifyResp;
+        $display("pgtModifyCltInst.getResp");
         let _ <- pgtModifyCltInst.getResp;
         pgtUpdateRespCounter.decr(1);
     endrule

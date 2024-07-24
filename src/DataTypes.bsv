@@ -522,7 +522,6 @@ typedef Bit#(RAW_PACKET_RECV_BUFFER_INDEX_WIDTH) RawPacketRecvBufIndex;
 
 typedef struct {
     ADDR writeBaseAddr;
-    RKEY writeMrKey;
 } RawPacketReceiveMeta deriving(Bits, FShow);
 
 typedef 4 FORCE_REPORT_HEADER_META_INTERVAL_MASK_WIDTH;

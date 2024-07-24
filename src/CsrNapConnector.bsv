@@ -52,7 +52,6 @@ module mkCsrRootSwitch(CsrSwitch#(CsrAddr, CsrData, downStreamPortCnt));
                 isWrite: False
             };
             innerSwitch.busInputSrv.request.put(req);
-            $display("bbbbbb=", fshow(req));
             axiRidKeepOrderQ.enq(rawReadReq.arid);
         end
         else if (napInst.writePipeIfc.writeAddrPipeOut.notEmpty && napInst.writePipeIfc.writeDataPipeOut.notEmpty) begin
@@ -67,7 +66,6 @@ module mkCsrRootSwitch(CsrSwitch#(CsrAddr, CsrData, downStreamPortCnt));
                 isWrite: True
             };
             innerSwitch.busInputSrv.request.put(req);
-            $display("aaaaa=", fshow(req));
 
             napInst.writePipeIfc.writeRespPipeIn.enq(AxiMmNapBeatB {
                 bid: rawWriteAddrReq.awid,
@@ -81,10 +79,11 @@ module mkCsrRootSwitch(CsrSwitch#(CsrAddr, CsrData, downStreamPortCnt));
         let rid = axiRidKeepOrderQ.first;
         axiRidKeepOrderQ.deq;
 
+        let now <- $time;
         immAssert(
             isValid(resp.valueMaybe),
             "mkCsrRootSwitch, read resp not vaild, maybe CSR address not match",
-            $format("")
+            $format("time=%0t", now)
         );
 
         let axiResp = AxiMmNapBeatR {
@@ -126,12 +125,20 @@ module mkConnectionCsrAccessorAndRingbuf#(
     Reg#(ADDR32) baseAddrLowReg <- mkReg(0);
     Reg#(ADDR32) baseAddrHighReg <- mkReg(0);
 
-    rule connectBaseAddrLow;
+    rule connectBaseAddrLowWrite;
         baseAddrLowReg <= csrAccessorSqBaseAddrLow.writeValOut;
     endrule
 
-    rule connectBaseAddrHigh;
+    rule connectBaseAddrLowRead;
+        csrAccessorSqBaseAddrLow.readValIn(zeroExtend(pack(baseAddrLowReg)));
+    endrule
+    
+    rule connectBaseAddrHighWrite;
         baseAddrHighReg <= csrAccessorSqBaseAddrHigh.writeValOut;
+    endrule
+
+    rule connectBaseAddrHighRead;
+        csrAccessorSqBaseAddrHigh.readValIn(zeroExtend(pack(baseAddrHighReg)));
     endrule
 
     rule combineLowAndHighAddr;
