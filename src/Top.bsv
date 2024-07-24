@@ -79,7 +79,7 @@ module mkBsvTop#(
 
 
     // CSR Access
-    RdmaCsrSwitch#(16) csrRootSwitch <- mkCsrRootSwitch;
+    RdmaCsrSwitch#(40) csrRootSwitch <- mkCsrRootSwitch;
     Integer blockOffset = 0;
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         blockOffset = valueOf(ASR_ADDR_BLOCK_START_ADDR_FOR_QP) + valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) * idx;
@@ -94,15 +94,15 @@ module mkBsvTop#(
         RdmaCsrLeafAccessor csrAccessorRqHead           <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD));
         RdmaCsrLeafAccessor csrAccessorRqTail           <- mkCsrLeafAccessor(blockOffset + valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL));
 
-        mkConnection(csrAccessorSqBaseAddrLow.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 0]);
-        mkConnection(csrAccessorSqBaseAddrHigh.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 1]);
-        mkConnection(csrAccessorSqHead.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 2]);
-        mkConnection(csrAccessorSqTail.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 3]);
+        mkConnection(csrAccessorSqBaseAddrLow.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 0]);
+        mkConnection(csrAccessorSqBaseAddrHigh.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 1]);
+        mkConnection(csrAccessorSqHead.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 2]);
+        mkConnection(csrAccessorSqTail.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 3]);
 
-        mkConnection(csrAccessorRqBaseAddrLow.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 4]);
-        mkConnection(csrAccessorRqBaseAddrHigh.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 5]);
-        mkConnection(csrAccessorRqHead.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 6]);
-        mkConnection(csrAccessorRqTail.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 4 + 7]);
+        mkConnection(csrAccessorRqBaseAddrLow.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 4]);
+        mkConnection(csrAccessorRqBaseAddrHigh.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 5]);
+        mkConnection(csrAccessorRqHead.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 6]);
+        mkConnection(csrAccessorRqTail.busInputSrv, csrRootSwitch.busOutputCltVecIfc[idx * 8 + 7]);
 
 
         mkConnectionCsrAccessorAndRingbuf(

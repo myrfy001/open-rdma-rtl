@@ -24,7 +24,7 @@ typedef TDiv#(MAX_QP_WR, 2) MAX_QP_RD_ATOM;
 typedef TDiv#(MAX_QP_WR, 2) MAX_QP_DST_RD_ATOM;
 typedef 0                   MAX_SRQ;
 typedef MAX_QP_WR           MAX_SRQ_WR;
-typedef 1                   HARDWARE_QP_CHANNEL_CNT;
+typedef 4                   HARDWARE_QP_CHANNEL_CNT;
 // End must-be-power-of-2
 
 typedef 0 MAX_INLINE_DATA; // No inline data
