@@ -208,7 +208,8 @@ module mkQpMrPgtQpc#(
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapEthernetWrapperPipe) ethNapVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapSlaveWrapperPipe) dmaReadWriteSlaveNapVec <- replicateM(mkAcxNapSlaveWrapperPipe(clocked_by clkEthNap, reset_by rstEthNap));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapSlaveWrapperPipe) dmaReadSlaveNapVec <- replicateM(mkAcxNapSlaveWrapperPipe(clocked_by clkEthNap, reset_by rstEthNap));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, AcxNapSlaveWrapperPipe) dmaWriteSlaveNapVec <- replicateM(mkAcxNapSlaveWrapperPipe(clocked_by clkEthNap, reset_by rstEthNap));
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkEthNap,  rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkEthNap,  rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
@@ -241,11 +242,11 @@ module mkQpMrPgtQpc#(
 
         // RDMA payload DMA NAP
 
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNapVec[idx].readPipeIfc.readAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNapVec[idx].readPipeIfc.readRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaWriteSlaveNapVec[idx].writePipeIfc.writeAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaWriteSlaveNapVec[idx].writePipeIfc.writeDataPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaWriteSlaveNapVec[idx].writePipeIfc.writeRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadSlaveNapVec[idx].readPipeIfc.readAddrPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(payloadGenAndConVec[idx].axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadSlaveNapVec[idx].readPipeIfc.readRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
 
     
         // IO interface 

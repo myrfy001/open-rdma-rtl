@@ -1,5 +1,5 @@
 #ACE 10.0 IP Properties File, generated on:
-#Tue Jul 16 15:12:12 CST 2024
+#Mon Jul 29 10:32:50 CST 2024
 acxip_version=5
 enable_ref_clk_sharing=No
 ff_clk0=eth_ff_clk
@@ -92,7 +92,7 @@ output.path_relative_to=ACXIP File
 override_1ms_reference=No
 override_free_running_counter=No
 override_link_up=No
-placement=ETH_0
+placement=ETH_1
 ref_clk=eth_ref_clk
 reset_source=Internal Reset from FCU
 reset_source_name=ethernet_rstn

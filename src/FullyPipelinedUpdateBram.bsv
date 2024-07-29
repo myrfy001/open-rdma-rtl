@@ -21,20 +21,26 @@ typedef struct {
 } FullyPipelinedUpdateBramQueryReq#(type tAddr, type tBankAddr) deriving(Bits, Eq, FShow);
 
 typedef struct {
-    tAddr       address;
-    tBankAddr   bankAddress;
-    tData       data;
+    tAddr           address;
+    tBankAddr       bankAddress;
+    tData           data;
+    Maybe#(tData)   evictedDataMaybe;
 } FullyPipelinedUpdateBramUpdateResp#(type tAddr, type tBankAddr, type tData) deriving(Bits, Eq, FShow);
+
+typedef struct {
+    tAddr           address;
+    tBankAddr       bankAddress;
+    tData           data;
+} FullyPipelinedUpdateBramQueryResp#(type tAddr, type tBankAddr, type tData) deriving(Bits, Eq, FShow);
 
 interface FullyPipelinedUpdateBram2#(type tAddr, type tBankAddr, type tData);
     interface Server#(FullyPipelinedUpdateBramUpdateReq#(tAddr, tBankAddr, tData), FullyPipelinedUpdateBramUpdateResp#(tAddr, tBankAddr, tData)) updateSrv;
-    interface Server#(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr), FullyPipelinedUpdateBramUpdateResp#(tAddr, tBankAddr, tData)) querySrv;
+    interface Server#(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr), FullyPipelinedUpdateBramQueryResp#(tAddr, tBankAddr, tData)) querySrv;
 endinterface
 
-typedef 6 FullyPipelinedUpdateBram2InternalCacheDepth; 
 module mkFullyPipelinedUpdateBram2#(
         Bool supportQuery,
-        function tData updateLogic(tData oldValue, tData newValue)
+        function Tuple2#(tData, Bool) updateLogic(tData oldValue, tData newValue)
     )(
         FullyPipelinedUpdateBram2#(tAddr, tBankAddr, tData)
     ) provisos (
@@ -49,168 +55,143 @@ module mkFullyPipelinedUpdateBram2#(
         PrimIndex#(tBankAddr, a__),
         Add#(b__, szAddr, ACX_BRAM72K_SDP_ADDR_WIDTH),
         Add#(c__, szData, BITS_COUNT_72K),
-        Alias#(Tuple2#(tAddr, tBankAddr), tSlotTag),
-        Alias#(Bit#(TLog#(FullyPipelinedUpdateBram2InternalCacheDepth)), tSlotID),
-        Alias#(Tuple2#(Bool, tSlotID), tSlotIdQueryResp)
+        Alias#(Tuple2#(tAddr, tBankAddr), tSlotTag)
     );
 
-    Reg#(tSlotID) nextFreeSlotIdCounterReg <- mkReg(0);
-    Vector#(TExp#(szBankAddr), SdpBram#(tData)) bramInstVec <- replicateM(mkSdpBram);
-    PrioritySearchBuffer#(FullyPipelinedUpdateBram2InternalCacheDepth, tSlotTag, tSlotID) searchCache <- mkPrioritySearchBuffer(valueOf(FullyPipelinedUpdateBram2InternalCacheDepth));
+    Vector#(TExp#(szBankAddr), SdpBram#(tData)) rwBramInstVec = newVector;
+    Vector#(TExp#(szBankAddr), SdpBram#(tData)) roBramInstVec = newVector;
 
-    Vector#(FullyPipelinedUpdateBram2InternalCacheDepth, Reg#(tData)) cacheRegVec <- replicateM(mkRegU);
+    for (Integer idx = 0; idx < valueOf(TExp#(szBankAddr)); idx = idx + 1) begin
+        rwBramInstVec[idx] <- mkSdpBram(idx);
+        roBramInstVec[idx] <- mkSdpBram(idx);
+    end
+    
 
-    FIFOF#(Tuple6#(Bool, Bool, tAddr, tBankAddr, tData, tSlotIdQueryResp)) inflightBramReadReqQ     <- mkSizedFIFOF(5);
-    FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tAddr, tBankAddr, tData)) updateReqQ                  <- mkFIFOF;
-    FIFOF#(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr)) queryReqQ                           <- mkFIFOF;
+
+    Reg#(tSlotTag) lastUpdateTagReg <- mkReg(unpack(0));
+    Reg#(tData) lastUpdateDataReg <- mkReg(unpack(0));
+
+
+
+
+    // FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tAddr, tBankAddr, tData)) updateReqQ                  <- mkFIFOF;
     FIFOF#(FullyPipelinedUpdateBramUpdateResp#(tAddr, tBankAddr, tData)) updateRespQ                <- mkFIFOF;
-    FIFOF#(FullyPipelinedUpdateBramUpdateResp#(tAddr, tBankAddr, tData)) queryRespQ                 <- mkFIFOF;
-    FIFOF#(Tuple6#(Bool, tAddr, tBankAddr, tData, tData, tSlotIdQueryResp)) waitingUpdateDataQ      <- mkFIFOF; // TODO: Try Pipeline FIFO and see timing
-    FIFOF#(Tuple4#(Bool, tAddr, tBankAddr, tData)) bramWriteBackQ                                   <- mkFIFOF; // TODO: Try Pipeline FIFO and see timing
+    // FIFOF#(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr)) queryReqQ                           <- mkFIFOF;
+    // FIFOF#(FullyPipelinedUpdateBramQueryResp#(tAddr, tBankAddr, tData)) queryRespQ                 <- mkFIFOF;
+    
 
-    // mkConnection(toGet(inflightBramReadReqQ1), toPut(inflightBramReadReqQ2));
+    FIFOF#(Tuple4#(Bool, tAddr, tBankAddr, tData)) inflightBramReadForWriteReqQ                     <- mkFIFOF;
+    FIFOF#(Tuple5#(Bool, tAddr, tBankAddr, tData, tData)) waitingForUpdataQ                         <- mkFIFOF;
+    FIFOF#(Tuple2#(tAddr, tBankAddr)) inflightBramReadReqQ                                          <- mkFIFOF;
+    FIFOF#(Tuple3#(tAddr, tBankAddr, tData)) bramWriteBackQ                                         <- mkFIFOF; // TODO: Try Pipeline FIFO and see timing
 
-    function ActionValue#(tSlotIdQueryResp) getSlotId(tSlotTag tag);
-        return actionvalue
-            let slotIdxMaybe <- searchCache.search(tag);
-            Bool isNewAllocSlotID;
-            if (slotIdxMaybe matches tagged Valid .slotID) begin
-                // if the tag is already in the buffer, re-enq this tag so we can make it keep in the buffer longer. 
-                searchCache.enq(tag, slotID);
-                isNewAllocSlotID = False;
-                return tuple2(isNewAllocSlotID, slotID);
-            end
-            else begin
-                // alloc a new slotID and put it into the buffer.
-                let newSlotId = nextFreeSlotIdCounterReg;
-
-                // nextFreeSlotIdCounterReg <= nextFreeSlotIdCounterReg + 1;
-
-                if (nextFreeSlotIdCounterReg == fromInteger(valueOf(FullyPipelinedUpdateBram2InternalCacheDepth)-1)) begin
-                    nextFreeSlotIdCounterReg <= 0;
-                end
-                else begin
-                    nextFreeSlotIdCounterReg <= nextFreeSlotIdCounterReg + 1;
-                end
-
-                searchCache.enq(tag, newSlotId);
-                isNewAllocSlotID = True;
-                return tuple2(isNewAllocSlotID, newSlotId);
-            end
-        endactionvalue;
-    endfunction
+  
 
     rule debugRule;
-        if (!inflightBramReadReqQ.notFull) $display("FullQueue: inflightBramReadReqQ");
-        if (!updateReqQ.notFull) $display("FullQueue: updateReqQ");
-        if (!updateReqQ.notFull) $display("FullQueue: updateReqQ");
-        if (!queryReqQ.notFull) $display("FullQueue: queryReqQ");
+        if (!inflightBramReadForWriteReqQ.notFull) $display("FullQueue: inflightBramReadForWriteReqQ");
+        // if (!updateReqQ.notFull) $display("FullQueue: updateReqQ");
+        // if (!queryReqQ.notFull) $display("FullQueue: queryReqQ");
         if (!updateRespQ.notFull) $display("FullQueue: updateRespQ");
-        if (!queryRespQ.notFull) $display("FullQueue: queryRespQ");
-        if (!waitingUpdateDataQ.notFull) $display("FullQueue: waitingUpdateDataQ");
-        if (!bramWriteBackQ.notFull) $display("FullQueue: bramWriteBackQ");
+        // if (!queryRespQ.notFull) $display("FullQueue: queryRespQ");
     endrule
-    
-    if (supportQuery) begin
-        rule handleInputReq;
-            // query has higher priority
-            if (queryReqQ.notEmpty) begin
-                let isWrite = False;
-                let req = queryReqQ.first;
-                queryReqQ.deq;
-                let generateResp = True; // infact, don't care for query request, only as a place holder
-                bramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
-                inflightBramReadReqQ.enq(tuple6(isWrite, generateResp, req.address, req.bankAddress, ?, ?));
-            end 
-            else if (updateReqQ.notEmpty) begin
-                let isWrite = True;
-                let req = updateReqQ.first;
-                updateReqQ.deq;
-                let generateResp = req.generateResp;
-                bramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
-                let slotIdQueryResp <- getSlotId(tuple2(req.address, req.bankAddress)); 
-                inflightBramReadReqQ.enq(tuple6(isWrite, generateResp, req.address, req.bankAddress, req.data, slotIdQueryResp));
-            end
-        endrule
-    end
 
     rule handleBramReadResp;
-        let {isWrite, generateResp, address, bankAddress, data, slotIdQueryResp} = inflightBramReadReqQ.first;
-        inflightBramReadReqQ.deq;
-        let resp <- bramInstVec[bankAddress].readSrv.response.get;
+        let {generateResp, address, bankAddress, newData} = inflightBramReadForWriteReqQ.first;
+        inflightBramReadForWriteReqQ.deq;
+        let bramReadResp <- rwBramInstVec[bankAddress].readSrv.response.get;
+        
+        tSlotTag reqTag = tuple2(address, bankAddress);
+        let tagMatch = reqTag == lastUpdateTagReg;
 
-        if (isWrite) begin
-            waitingUpdateDataQ.enq(tuple6(generateResp, address, bankAddress, resp, data, slotIdQueryResp));
-        end
-        else if (supportQuery) begin
-            queryRespQ.enq(FullyPipelinedUpdateBramUpdateResp{
-                address: address,
-                bankAddress: bankAddress,
-                data: data
-            });
-        end
+        bramReadResp = tagMatch ? lastUpdateDataReg : bramReadResp;
+
+        waitingForUpdataQ.enq(tuple5(generateResp, address, bankAddress, newData, bramReadResp));
+        // $display("time=%0t", $time, ", handleBramReadResp, tagMatch=", fshow(tagMatch), ", lastUpdateDataReg=", fshow(lastUpdateDataReg), ", bramReadResp=", fshow(bramReadResp));
     endrule
 
-    rule handleUpdate;
-        let {generateResp, address, bankAddress, oldBramData, newData, slotIdQueryResp} = waitingUpdateDataQ.first;
-        waitingUpdateDataQ.deq;
+    rule handleUpdata;
 
-        let {isNewAllocSlotID, slotID} = slotIdQueryResp;
+        let {generateResp, address, bankAddress, newData, bramReadResp} = waitingForUpdataQ.first;
+        waitingForUpdataQ.deq;
 
-        let oldData = isNewAllocSlotID ?  oldBramData : cacheRegVec[slotID];
-        let updatedData = updateLogic(oldData, newData);
-        cacheRegVec[slotID] <= updatedData;
-        bramWriteBackQ.enq(tuple4(generateResp, address, bankAddress, updatedData));
+        tSlotTag reqTag = tuple2(address, bankAddress);
+        let tagMatch = reqTag == lastUpdateTagReg;
 
-    endrule
+        let oldData = tagMatch ? lastUpdateDataReg : bramReadResp;
+        let {updatedData, isEvicated} = updateLogic(oldData, newData);
 
-    rule handleBramWriteBack;
-        let {generateResp, address, bankAddress, updatedData} = bramWriteBackQ.first;
-        bramWriteBackQ.deq;
-        bramInstVec[bankAddress].write.put(tuple2(zeroExtend(pack(address)), updatedData));
+        // $display("time=%0t", $time, ", lastUpdateDataReg=", fshow(lastUpdateDataReg), ", bramReadResp=", fshow(bramReadResp), ", updatedData=", fshow(updatedData), ", isEvicated=", fshow(isEvicated), ", tagMatch=", fshow(tagMatch), ", reqTag=", fshow(reqTag), ", lastUpdateTagReg=", fshow(lastUpdateTagReg));
 
-        // if timing is OK, try move the following if statement to rule handleUpdate to save one cycle delay
+        lastUpdateTagReg <= reqTag;
+        lastUpdateDataReg <= updatedData;
+
         if (generateResp) begin
             updateRespQ.enq(FullyPipelinedUpdateBramUpdateResp{
                 address: address,
                 bankAddress: bankAddress,
-                data: updatedData
+                data: updatedData,
+                evictedDataMaybe: isEvicated ? tagged Valid oldData : tagged Invalid
             });
         end
+
+        bramWriteBackQ.enq(tuple3(address, bankAddress, updatedData));
+
     endrule
 
-    if (supportQuery) begin
-        interface updateSrv = toGPServer(updateReqQ, updateRespQ);
-        interface querySrv = toGPServer(queryReqQ, queryRespQ);
-    end
-    else begin
-        interface Server updateSrv;
-            interface Put request;
-                method Action put(FullyPipelinedUpdateBramUpdateReq#(tAddr, tBankAddr, tData) req);
-                    let isWrite = True;
-                    let generateResp = req.generateResp;
-                    bramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
-                    let slotIdQueryResp <- getSlotId(tuple2(req.address, req.bankAddress)); 
-                    inflightBramReadReqQ.enq(tuple6(isWrite, generateResp, req.address, req.bankAddress, req.data, slotIdQueryResp));
-                endmethod
-            endinterface
-            interface response = toGet(updateRespQ);
+    rule handleBramWriteBack;
+        let {address, bankAddress, updatedData} = bramWriteBackQ.first;
+        bramWriteBackQ.deq;
+        rwBramInstVec[bankAddress].write.put(tuple2(zeroExtend(pack(address)), updatedData));
+        if (supportQuery) begin
+            roBramInstVec[bankAddress].write.put(tuple2(zeroExtend(pack(address)), updatedData));
+        end
+        // $display("time=%0t", $time, "handleBramWriteBack, bankAddress=%x", bankAddress, "updatedData=", fshow(updatedData));
+    endrule
+    
+    interface Server updateSrv;
+        interface Put request;
+            method Action put(FullyPipelinedUpdateBramUpdateReq#(tAddr, tBankAddr, tData) req);
+                let generateResp = req.generateResp;
+                rwBramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
+                inflightBramReadForWriteReqQ.enq(tuple4(generateResp, req.address, req.bankAddress, req.data));
+                // $display("time=%0t", $time, "put bram read for write req, bankAddress=%x", req.bankAddress, "req.data=", fshow(req.data));
+            endmethod
         endinterface
+        interface response = toGet(updateRespQ);
+    endinterface
 
-        interface Server querySrv;
-            interface Put request;
-                method Action put(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr) req);
+    interface Server querySrv;
+        interface Put request;
+            method Action put(FullyPipelinedUpdateBramQueryReq#(tAddr, tBankAddr) req);
+                if (supportQuery) begin
+                    roBramInstVec[req.bankAddress].readSrv.request.put(zeroExtend(pack(req.address)));
+                    inflightBramReadReqQ.enq(tuple2(req.address, req.bankAddress));
+                end
+                else begin
                     immFail("This mkFullyPipelinedUpdateBram2 instance does not support query.", $format(""));
-                endmethod
-            endinterface
-            interface Get response;
-                method ActionValue#(FullyPipelinedUpdateBramUpdateResp#(tAddr, tBankAddr, tData)) get;
+                end
+            endmethod
+        endinterface
+        interface Get response;
+            method ActionValue#(FullyPipelinedUpdateBramQueryResp#(tAddr, tBankAddr, tData)) get;
+                if (supportQuery) begin
+                    let {address, bankAddress} = inflightBramReadReqQ.first;
+                    inflightBramReadReqQ.deq;
+                    let resp <- rwBramInstVec[bankAddress].readSrv.response.get;
+                    return FullyPipelinedUpdateBramQueryResp{
+                        address: address,
+                        bankAddress: bankAddress,
+                        data: resp
+                    };
+                end
+                else begin
                     immFail("This mkFullyPipelinedUpdateBram2 instance does not support query.", $format(""));
                     return ?;
-                endmethod
-            endinterface
+                end
+            endmethod
         endinterface
-    end
+    endinterface
+
 endmodule
 
 

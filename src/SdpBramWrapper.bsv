@@ -33,7 +33,7 @@ module mkBram72kSdpVerilogInner(BRAM72K_SDP#(tData))
     parameter read_width  = valueOf(szData);
     parameter write_width = valueOf(szData);
     parameter byte_width = 8;
-    parameter outreg_enable = 1;
+    parameter outreg_enable = 0;
     
     input_clock wrClk (wrclk) = clk;
     input_clock rdClk (rdclk) = clk;
@@ -46,7 +46,7 @@ module mkBram72kSdpVerilogInner(BRAM72K_SDP#(tData))
     port we = 18'h3FFFF;
     port wrmsel = 1'b0;
     port rdmsel = 1'b0;
-    port outreg_ce = 1'b1;
+    port outreg_ce = 1'b0;
 
 
     method putReadReq((*reg*)rdaddr) enable(rden) clocked_by(rdClk) reset_by(no_reset);
@@ -109,13 +109,14 @@ endmodule
 module mkBram72kSdpBluesim(BRAM72K_SDP#(tData))
     provisos(
             Bits#(tData, szData),
-            Add#(a__, szData, BITS_COUNT_72K)
+            Add#(a__, szData, BITS_COUNT_72K),
+            FShow#(tData)
     );
 
     RegFile#(AcxBram72kAddr, tData) storage <- mkRegFileFull;
     
-    Reg#(tData) outDataDelayReg1 <- mkRegU;
-    Reg#(tData) outDataDelayReg2 <- mkRegU;
+    Reg#(AcxBram72kAddr) addrReg <- mkRegU;
+    Reg#(tData) outDataDelayReg <- mkRegU;
 
     RWire#(Tuple2#(AcxBram72kAddr, tData)) writeReqWire <- mkRWire;
     RWire#(AcxBram72kAddr) readReqWire <- mkRWire;
@@ -126,20 +127,15 @@ module mkBram72kSdpBluesim(BRAM72K_SDP#(tData))
             let {addr, data} = req;
             storage.upd(addr, data);
         end
-
-        if (readReqWire.wget matches tagged Valid .addr) begin
-            outDataDelayReg1 <= storage.sub(addr);
-        end
-
-        outDataDelayReg2 <= outDataDelayReg1;
-
+        let outData = storage.sub(addrReg);
+        outDataDelayReg <= outData;
     endrule
 
     method Action putReadReq(AcxBram72kAddr addr);
-        readReqWire.wset(addr);
+        addrReg <= addr;
     endmethod
     
-    method read = outDataDelayReg2;
+    method read = outDataDelayReg;
 
     method Action putWriteReq(AcxBram72kAddr addr, tData data);
         writeReqWire.wset(tuple2(addr, data));
@@ -150,7 +146,8 @@ endmodule
 module mkBRAM72K_SDP(BRAM72K_SDP#(tData))
     provisos(
             Bits#(tData, szData),
-            Add#(a__, szData, BITS_COUNT_72K)
+            Add#(a__, szData, BITS_COUNT_72K),
+            FShow#(tData)
     );
 
     BRAM72K_SDP#(tData) _i;
@@ -168,52 +165,45 @@ interface SdpBram#(type tData);
     interface Server#(AcxBram72kAddr, tData) readSrv;
 endinterface
 
-module mkSdpBram(SdpBram#(tData)) provisos (
+module mkSdpBram#(Integer nameId)(SdpBram#(tData)) provisos (
         Bits#(AcxBram72kAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(AcxBram72kAddr),
         Eq#(AcxBram72kAddr),
-        Add#(a__, szData, BITS_COUNT_72K)
+        Add#(a__, szData, BITS_COUNT_72K),
+        FShow#(tData)
     );
 
     BRAM72K_SDP#(tData) ram <- mkBRAM72K_SDP;
 
 
     FIFOF#(Tuple2#(AcxBram72kAddr, tData)) writeReqQ1 <- mkUGLFIFOF;
-    FIFOF#(Tuple2#(AcxBram72kAddr, tData)) writeReqQ2 <- mkUGLFIFOF;
 
     FIFOF#(AcxBram72kAddr) readAddrQ1  <- mkUGLFIFOF;
-    FIFOF#(AcxBram72kAddr) readAddrQ2  <- mkUGLFIFOF;
 
-    FIFOF#(tData) outQ <- mkUGSizedFIFOF(4);
-    FIFOF#(Bit#(0)) backPressureQ <- mkUGFIFOF;
+    Wire#(tData) outWire <- mkWire;
 
-    rule doDelay;
-        if (readAddrQ1.notEmpty && readAddrQ2.notFull) begin
-            readAddrQ2.enq(readAddrQ1.first);
-            readAddrQ1.deq;
-        end
+    PulseWire hasReadRespWire <- mkPulseWire;
+    PulseWire getRespCalledWire <- mkPulseWire;
 
-        if (writeReqQ1.notEmpty && writeReqQ2.notFull) begin
-            writeReqQ2.enq(writeReqQ1.first);
-            writeReqQ1.deq;
-        end
-    endrule
+
 
     (* no_implicit_conditions *)
     rule checkConflict;
         Maybe#(AcxBram72kAddr) writeReqMaybe = tagged Invalid;
         Maybe#(AcxBram72kAddr) readReqMaybe = tagged Invalid;
         let {addr, data} = ?;
-        if (writeReqQ2.notEmpty) begin
-            writeReqQ2.deq;
-            {addr, data} = writeReqQ2.first;
+        if (writeReqQ1.notEmpty) begin
+            writeReqQ1.deq;
+            {addr, data} = writeReqQ1.first;
             writeReqMaybe = tagged Valid addr;
+
+            // $display("time=%0t", $time, "nameId=%d", nameId, " BRAM checkConflict, data=", fshow(data));
         end
 
-        if (readAddrQ2.notEmpty) begin
-            readAddrQ2.deq;
-            readReqMaybe = tagged Valid readAddrQ2.first;
+        if (readAddrQ1.notEmpty) begin
+            readAddrQ1.deq;
+            readReqMaybe = tagged Valid readAddrQ1.first;
         end
     
         Bool isAddrConflict = (
@@ -222,19 +212,24 @@ module mkSdpBram(SdpBram#(tData)) provisos (
             fromMaybe(?, writeReqMaybe) == fromMaybe(?, readReqMaybe)
         );
 
-        Bool hasReadReqInThisBeat = readAddrQ2.notEmpty;
+        Bool hasReadReqInThisBeat = readAddrQ1.notEmpty;
 
         if (hasReadReqInThisBeat) begin
+            // $display("time=%0t", $time, "nameId=%d", nameId, ", isAddrConflict=", fshow(isAddrConflict), ", writeReqMaybe=", fshow(writeReqMaybe), ", readReqMaybe=", fshow(readReqMaybe));
             if (isAddrConflict) begin
-                outQ.enq(data);
+                outWire <= data;
             end
             else begin
-                outQ.enq(ram.read);
+                outWire <= ram.read;
             end
-            backPressureQ.enq(0);
+            hasReadRespWire.send;
         end
-        
+    endrule
 
+    rule respGetDelayMonitor;
+        if (hasReadRespWire && !getRespCalledWire) begin
+            immFail("Has pending bram read result but not read", $format(""));
+        end
     endrule
 
     interface Put write;
@@ -242,24 +237,24 @@ module mkSdpBram(SdpBram#(tData)) provisos (
             let {addr, data} = req;
             immAssert(writeReqQ1.notFull, "UG FIFO writeReqQ1 is Full when trying to enq", $format(""));
             ram.putWriteReq(addr, data);
-            writeReqQ1.enq(tuple2(addr,data));
+            writeReqQ1.enq(tuple2(addr, data));
+            // $display("time=%0t", $time, "nameId=%d", nameId, "BRAM write, addr=", fshow(addr), ", data=", fshow(data));
         endmethod
     endinterface
 
     interface Server readSrv;
         interface Put request;
-            method Action put(AcxBram72kAddr addr) if (backPressureQ.notFull);
+            method Action put(AcxBram72kAddr addr);
                 ram.putReadReq(addr);
-                immAssert(readAddrQ1.notFull, "UG FIFO readAddrQ1 is Full when trying to enq", $format(""));
+                // immAssert(readAddrQ1.notFull, "UG FIFO readAddrQ1 is Full when trying to enq", $format(""));
                 readAddrQ1.enq(addr);
             endmethod
         endinterface
 
         interface Get response;
-            method ActionValue#(tData) get if (outQ.notEmpty);
-                outQ.deq;
-                backPressureQ.deq;
-                return outQ.first;
+            method ActionValue#(tData) get;
+                getRespCalledWire.send;
+                return outWire;
             endmethod
         endinterface
     endinterface

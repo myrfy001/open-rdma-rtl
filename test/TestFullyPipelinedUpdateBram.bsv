@@ -10,72 +10,117 @@ import FullyPipelinedUpdateBram :: *;
 import RdmaHeaders :: *;
 
 
-function Bit#(144) mergeFuncBitOr(Bit#(144) oldData, Bit#(144) newData);
+function Tuple2#(Bit#(144), Bool) mergeFuncBitOr(Bit#(144) oldData, Bit#(144) newData);
     let oldTag = oldData[15:0];
     let newTag = newData[15:0];
     if (oldTag == newTag) begin
-        return {oldData[143:16] | newData[143:16], oldTag};
+        return tuple2({oldData[143:16] | newData[143:16], oldTag}, False);
     end 
     else begin
-        return newData;
+        return tuple2({newData[143:16], newTag}, True);
+    end
+endfunction
+
+
+function Tuple2#(Bit#(144), Bool) mergeFuncIncCounter(Bit#(144) oldData, Bit#(144) newData);
+    let oldTag = oldData[15:0];
+    let newTag = newData[15:0];
+    if (oldTag == newTag) begin
+        let data = oldData[143:16];
+        data = data + 1;
+        return tuple2({data, oldTag}, False);
+    end 
+    else begin
+        return tuple2({1, newTag}, True);
     end
 endfunction
 
 (* doc = "testcase" *)
 module mkTestFullyPipelinedUpdateBram(Empty);
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(2), Bit#(144)) instWithFourBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncIncCounter);
 
     // The following instance has a bankAddr type of `Bit#(0)`, which is of zero size, make sure it works.
-    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(False, mergeFuncBitOr);
+    FullyPipelinedUpdateBram2#(Bit#(9), Bit#(0), Bit#(144)) instWithOneBank <- mkFullyPipelinedUpdateBram2(True, mergeFuncBitOr);
 
-    let cycleCounter <- mkSimulationCycleLimitCounter(10000);
+    Reg#(Long) cycleCounterReg <- mkReg(0);
+    Reg#(Long) cycleCounterStopReg <- mkReg(10000000);
 
-    Reg#(Bit#(9)) addrReg1 <- mkReg(0);
     Reg#(Long) lastEnqCycleReg <- mkReg(-1);
 
     Vector#(1, PipeOut#(Bit#(7))) oneHotRandomGen <-
         mkRandomValueInRangePipeOut(0, 127);
 
-    rule checkFullyPipeline if (cycleCounter > 1); // random generator need one cycle to start.
+    Vector#(4, Reg#(Long)) expectedCounterVec <- replicateM(mkReg(0));
+
+    rule incCounter;
+        cycleCounterReg <= cycleCounterReg + 1;
+        if (cycleCounterReg % 100000 == 0) begin
+            $display(cycleCounterStopReg - cycleCounterReg);
+        end
+    endrule
+
+    rule checkFullyPipeline if (cycleCounterReg > 1 && cycleCounterReg <= cycleCounterStopReg - 3); // random generator need one cycle to start.
         immAssert(
-            cycleCounter - lastEnqCycleReg <= 1,
+            cycleCounterReg - lastEnqCycleReg <= 1,
             "mkTestFullyPipelinedUpdateBram Error",
-            $format("pipeline paused, cycleCounter=%d, lastEnqCycleReg=%d", cycleCounter, lastEnqCycleReg)
+            $format("pipeline paused, cycleCounterReg=%d, lastEnqCycleReg=%d", cycleCounterReg, lastEnqCycleReg)
         );
     endrule
 
-    rule testEnq;
-        lastEnqCycleReg <= cycleCounter;
+    rule testEnq if (cycleCounterReg <= cycleCounterStopReg - 3);
+        lastEnqCycleReg <= cycleCounterReg;
 
-        let oneHotShift = oneHotRandomGen[0].first;
-        let bankAddr = truncate(oneHotRandomGen[0].first);
+        Bit#(2) bankAddr = truncate(oneHotRandomGen[0].first);
         oneHotRandomGen[0].deq;
 
-        Bit#(128) oneHot = 1 << oneHotShift;
+        expectedCounterVec[bankAddr] <= expectedCounterVec[bankAddr] + 1;
+
+
         instWithOneBank.updateSrv.request.put(
             FullyPipelinedUpdateBramUpdateReq{
-                generateResp: lsb(addrReg1) == 0,
-                address:      addrReg1,
+                generateResp: True,
+                address:      0,
                 bankAddress:  0,
-                data:       {oneHot, 16'h0}
+                data:       {0, 16'h0}
             }
         );
         instWithFourBank.updateSrv.request.put(
             FullyPipelinedUpdateBramUpdateReq{
-                generateResp: lsb(addrReg1) == 0,
-                address:      addrReg1,
+                generateResp: True,
+                address:      0,
                 bankAddress:  bankAddr,
-                data:       {oneHot, 16'h0}
+                data:       {0, 14'h0, bankAddr}
             }
         );
-        addrReg1 <= addrReg1 + 1;
+
     endrule
 
     rule fetchUpdateResp;
+
         let resp1 <- instWithOneBank.updateSrv.response.get;
         let resp2 <- instWithFourBank.updateSrv.response.get;
+
+        if (cycleCounterReg == cycleCounterStopReg) begin
+
+            Long expected = expectedCounterVec[resp2.bankAddress];
+            Long got = truncate(resp2.data[143:16]);
+            if ( expected == got) begin
+                $display("PASS");
+                $finish;
+            end
+            else begin
+                let now <- $time;
+                immFail(
+                    "mkTestFullyPipelinedUpdateBram Failed", 
+                    $format("time=%0t", now, ", got=", fshow(got), ", expected=", fshow(expected), ", resp2=", fshow(resp2))
+                );
+            end
+        end
     endrule
 endmodule
+
+
+
 
 interface TestFullyPipelinedBackendTimingTest;
     method Bit#(155) _read;
@@ -121,7 +166,7 @@ module mkTestFullyPipelinedBackendTimingTest(TestFullyPipelinedBackendTimingTest
     rule fetchUpdateResp;
         let resp1 <- instWithOneBank.updateSrv.response.get;
         let resp2 <- instWithFourBank.updateSrv.response.get;
-        outputReg <=  zeroExtend(pack(resp1)) ^ pack(resp2);
+        outputReg <=  truncate(pack(resp1)) ^ truncate(pack(resp2));
     endrule
 
     method _read = outputReg;
