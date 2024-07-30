@@ -83,7 +83,7 @@ module mkFullyPipelinedUpdateBram2#(
     FIFOF#(Tuple4#(Bool, tAddr, tBankAddr, tData)) inflightBramReadForWriteReqQ                     <- mkFIFOF;
     FIFOF#(Tuple5#(Bool, tAddr, tBankAddr, tData, tData)) waitingForUpdataQ                         <- mkFIFOF;
     FIFOF#(Tuple2#(tAddr, tBankAddr)) inflightBramReadReqQ                                          <- mkFIFOF;
-    FIFOF#(Tuple3#(tAddr, tBankAddr, tData)) bramWriteBackQ                                         <- mkFIFOF; // TODO: Try Pipeline FIFO and see timing
+    FIFOF#(Tuple3#(tAddr, tBankAddr, tData)) bramWriteBackQ                                         <- mkLFIFOF; // TODO: Try Pipeline FIFO and see timing
 
   
 
