@@ -108,8 +108,8 @@ module mkFourChannelButterflyMerge#(
 
 
 
-    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) firstStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(False, bramUpdateFunctionAdapter(0)));
-    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) secondStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(False, bramUpdateFunctionAdapter(1)));
+    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) firstStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(True, bramUpdateFunctionAdapter(0)));
+    Vector#(FourChannel, FullyPipelinedUpdateBram2#(tRowAddr, tBankAddr, tBramEntry)) secondStageBramVec <- replicateM(mkFullyPipelinedUpdateBram2(True, bramUpdateFunctionAdapter(1)));
 
 
     Vector#(FourChannel, FIFOF#(FullyPipelinedUpdateBramUpdateReq#(tRowAddr, tBankAddr, tBramEntry))) firstStageSelfChannelInputQueueVec <- replicateM(mkFIFOF);
@@ -147,16 +147,27 @@ module mkFourChannelButterflyMerge#(
         mkConnection(toGet(firstStageInputArbiter), firstStageBramVec[idx].updateSrv.request);
     end
 
-    // Connect first stage output to second stage input buffer.
+    // connect first and second stage
     for (Integer idx = 0; idx < valueOf(FourChannel); idx = idx + 1) begin
         let twistTableEntry = secondStageTwistTable[idx];
         let selfChannelIdx = twistTableEntry[0];
         let otherChannelIdx = twistTableEntry[1];
-        rule doFirstStageToSecondStageReq;
+        rule sendPullOtherChannelFirstStageInfoReq;
             let firstStageUpdateResult <- firstStageBramVec[idx].updateSrv.response.get;
             // let {rowAddr, bankAddr} = firstStageUpdateInflightReqMetaQueueVec[idx].first;
             // firstStageUpdateInflightReqMetaQueueVec[idx].deq;
 
+            let otherChannelReadReq = FullyPipelinedUpdateBramQueryReq {
+                address: firstStageUpdateResult.address,
+                bankAddress: firstStageUpdateResult.bankAddress
+            };
+
+            firstStageBramVec[otherChannelIdx].querySrv.request.put(otherChannelReadReq);
+        endrule
+
+        rule recvPullOtherChannelFirstStageInfoResp;
+
+            let otherChannelQueryResp <- firstStageBramVec[otherChannelIdx].querySrv.response.get;
 
             let bramReq1 = FullyPipelinedUpdateBramUpdateReq {
                 generateResp: True,

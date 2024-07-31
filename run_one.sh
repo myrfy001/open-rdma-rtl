@@ -26,7 +26,8 @@ truncate -s 0 $TEST_LOG
 # done
 
 
-
+# FILE=`ls TestFullyPipelinedUpdateBram.bsv`
+# TESTCASE=mkTestFullyPipelinedUpdateBram
 
 # FILE=`ls TestButterflyMerge.bsv`
 # # TESTCASE=mkTestFourChannelButterflyMergeTimingTest
@@ -55,9 +56,15 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestRingbuf.bsv`
 # TESTCASE=mkTestRingbuf
 
-FILE=`ls TestTop.bsv`
-TESTCASE=mkTestTop
+FILE=`ls TestPsnContinousChecker.bsv`
+TESTCASE=mkTestBitmapWindowStorage
 # TESTCASE=mkTestTopNoMockHost
+
+# FILE=`ls TestTop.bsv`
+# TESTCASE=mkTestTop
+# TESTCASE=mkTestTopNoMockHost
+
+
 
 make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
 

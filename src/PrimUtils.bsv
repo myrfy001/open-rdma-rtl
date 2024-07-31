@@ -7,6 +7,7 @@ import Clocks :: *;
 import ClientServer :: *;
 import GetPut :: *;
 import SpecialFIFOs :: *;
+import Cntrs :: * ;
 
 import ConnectableF :: *;
 import DataTypes :: *;
@@ -692,6 +693,51 @@ module mkAutoInferBram(AutoInferBram#(tAddr, tData)) provisos (
     method ActionValue#(tData) getReadResp;
         outputBufQ.deq;
         return outputBufQ.first;
+    endmethod
+endmodule
+
+// ungarded interface, use with care!
+module mkAutoInferBramWithRwBypassLogicUG(AutoInferBram#(tAddr, tData)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Bounded#(tAddr),
+        Eq#(tAddr)
+    );
+
+    RegFile#(tAddr, tData) storage <- mkRegFileFull;
+    Reg#(tData) tReg <- mkRegU;
+
+
+    FIFOF#(tData) outputBufQ <- mkFIFOF;
+    RWire#(Tuple2#(tAddr, tData)) writeReqWire <- mkRWire;
+
+    Count#(Bit#(2)) illegalReadMonitorCounter <- mkCount(0);
+    
+    method Action write(tAddr addr, tData data);
+        storage.upd(addr, data);
+        writeReqWire.wset(tuple2(addr, data));
+    endmethod
+
+    method Action putReadReq(tAddr addr);
+        let {writeAddr, writeData} = fromMaybe(?, writeReqWire.wget);
+        Bool isConflict = isValid(writeReqWire.wget) && (writeAddr == addr);
+        if (isConflict) begin
+            tReg <= writeData;
+        end
+        else begin
+            tReg <= storage.sub(addr);
+        end
+        illegalReadMonitorCounter.incr(1);
+    endmethod
+
+    method ActionValue#(tData) getReadResp;
+        immAssert(
+            illegalReadMonitorCounter == 1,
+            "mkAutoInferBramWithRwBypassLogicUG, illegal read, illegalReadMonitorCounter must be 1, 0 means read not ready, and greater than 0 means some data is lost due to not read timely.",
+            $format("illegalReadMonitorCounter=", fshow(illegalReadMonitorCounter))
+        );
+        illegalReadMonitorCounter.decr(1);
+        return tReg;
     endmethod
 endmodule
 
