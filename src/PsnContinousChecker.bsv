@@ -115,7 +115,10 @@ typedef struct {
 } BitmapWindowStorageUpdateReq#(type tRowAddr, type tData, type tBoundary) deriving(Bits, FShow);
 
 typedef struct {
-    tRowAddr    rowAddr;
+    tRowAddr                                    rowAddr;
+    Bool                                        isShiftWindow;
+    Bool                                        isShiftOutOfBoundary;
+    tData                                       windowShiftedOutData;
     BitmapWindowStorageEntry#(tData, tBoundary) oldEntry;
     BitmapWindowStorageEntry#(tData, tBoundary) newEntry;
 } BitmapWindowStorageUpdateResp#(type tRowAddr, type tData, type tBoundary) deriving(Bits, FShow);
@@ -134,10 +137,11 @@ typedef struct {
 typedef struct {
     tRowAddr        rowAddr;
     Bool            isShiftWindow;
-    Bool            isShiftOutOfBoundary;
+    // Bool            isShiftOutOfBoundary;
     tShiftOffset    shiftAbsValue;
     BitmapWindowStorageEntry#(tData, tBoundary) oldEntry;
     BitmapWindowStorageEntry#(tData, tBoundary) newEntry;
+    tBoundary boundaryDeltaAbs;
 } BitmapWindowStorageStageThreeToFourPipelineEntry#(type tRowAddr, type tData, type tBoundary, type tShiftOffset) deriving(Bits, FShow);
 
 
@@ -155,6 +159,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Bits#(tRowAddr, szRowAddr),
         Bits#(tData, szData),
         Bitwise#(tData),
+        Literal#(tData),
         Bits#(tBoundary, szBoundary),
         Bounded#(tRowAddr),
         Eq#(tRowAddr),
@@ -162,9 +167,13 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Bitwise#(tBoundary),
         Ord#(tBoundary),
         NumAlias#(TLog#(TDiv#(szData, szStride)), szShiftOffset),
+        NumAlias#(TAdd#(1, szShiftOffset), szWideShiftOffset),
         Alias#(Bit#(szShiftOffset), tShiftOffset),
+        Alias#(Bit#(szWideShiftOffset), tWideShiftOffset),
         Add#(a__, szShiftOffset, szBoundary),
-        Add#(b__, szShiftOffset, TLog#(szData))
+        Add#(b__, szShiftOffset, TLog#(szData)),
+        Add#(c__, szWideShiftOffset, szBoundary),
+        Add#(d__, szWideShiftOffset, TLog#(szData))
     );
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))) reqPipeInVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVecInst = newVector;
@@ -181,7 +190,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     // Pipeline Queues
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageOneToTwoPipelineEntry#(tRowAddr, tData, tBoundary)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageTwoToThreePipelineEntry#(tRowAddr, tData, tBoundary)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageThreeToFourPipelineEntry#(tRowAddr, tData, tBoundary, tShiftOffset)))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageThreeToFourPipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset)))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
 
     function Integer getSelfIdx(Integer idx) = idx;
     function Integer getOtherIdx(Integer idx) = 1 - idx;
@@ -275,15 +284,13 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
                 let isShiftWindow = msb(boundaryDelta) == 0;
 
-                let outOfBoundary = boundaryDeltaAbs >= fromInteger(valueOf(TDiv#(szData, szStride)));
-
-
                 let pipelineEntryOut = BitmapWindowStorageStageThreeToFourPipelineEntry {
                     rowAddr: pipelineEntryIn.rowAddr,
                     oldEntry: newestAlreadyExistEntry,
                     newEntry: pipelineEntryIn.newEntry,
                     isShiftWindow: isShiftWindow,
-                    isShiftOutOfBoundary: outOfBoundary,
+                    // isShiftOutOfBoundary: outOfBoundary,
+                    boundaryDeltaAbs: boundaryDeltaAbs,
                     shiftAbsValue: unpack(truncate(pack(boundaryDeltaAbs)))
                 };
 
@@ -308,6 +315,9 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
             if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
                 let alreadyExistEntry = pipelineEntryIn.oldEntry;
                 let newEntry = pipelineEntryIn.newEntry;
+                tData windowShiftedOutData = -1;
+
+                let isShiftOutOfBoundary = pipelineEntryIn.boundaryDeltaAbs > fromInteger(valueOf(TDiv#(szData, szStride)));
 
                 if (pipelineEntryIn.isShiftWindow) begin
                     alreadyExistEntry.leftBound = newEntry.leftBound;
@@ -316,23 +326,19 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                     newEntry.leftBound = alreadyExistEntry.leftBound;
                 end
 
-                if (pipelineEntryIn.isShiftOutOfBoundary) begin
-                    if (pipelineEntryIn.isShiftWindow) begin
-                        alreadyExistEntry.data = unpack(0);
-                    end
-                    else begin 
-                        newEntry.data = unpack(0);
-                    end
+
+                Bit#(TLog#(szData)) bitShiftCnt = zeroExtend(pipelineEntryIn.shiftAbsValue) << valueOf(TLog#(szStride));
+                tData allOneData = unpack(-1);
+                if (pipelineEntryIn.isShiftWindow) begin
+                    let tmpToShift = {pack(alreadyExistEntry.data), pack(allOneData)};
+                    tmpToShift = tmpToShift >> bitShiftCnt;
+                    alreadyExistEntry.data = unpack(truncateLSB(tmpToShift));
+                    windowShiftedOutData = unpack(truncate(tmpToShift));
                 end
-                else begin
-                    Bit#(TLog#(szData)) bitShiftCnt = zeroExtend(pipelineEntryIn.shiftAbsValue) << valueOf(TLog#(szStride));
-                    if (pipelineEntryIn.isShiftWindow) begin
-                        alreadyExistEntry.data = alreadyExistEntry.data >> bitShiftCnt;
-                    end
-                    else begin 
-                        newEntry.data = newEntry.data >> bitShiftCnt;
-                    end
+                else begin 
+                    newEntry.data = newEntry.data >> bitShiftCnt;
                 end
+
 
                 newEntry.data = newEntry.data | alreadyExistEntry.data;
 
@@ -345,6 +351,9 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                 let resp = BitmapWindowStorageUpdateResp {
                     rowAddr: pipelineEntryIn.rowAddr,
                     oldEntry: pipelineEntryIn.oldEntry,
+                    windowShiftedOutData: windowShiftedOutData,
+                    isShiftOutOfBoundary: isShiftOutOfBoundary,
+                    isShiftWindow: pipelineEntryIn.isShiftWindow,
                     newEntry: newEntry
                 };
                 respPipeOutQueueVec[selfChannelIdx].enq(tagged Valid resp);
