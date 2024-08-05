@@ -57,7 +57,8 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestRingbuf
 
 FILE=`ls TestPsnContinousChecker.bsv`
-TESTCASE=mkTestBitmapWindowStorage
+TESTCASE=mkTestBitmapPreMerge
+# TESTCASE=mkTestBitmapWindowStorage
 # TESTCASE=mkTestTopNoMockHost
 
 # FILE=`ls TestTop.bsv`

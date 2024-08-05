@@ -16,6 +16,35 @@ import ConnectableF :: *;
 import PsnContinousChecker :: *;
 
 
+
+
+(* doc = "testcase" *)
+module mkTestBitmapPreMerge(Empty);
+ 
+    FourChannelPsnBitmapPreMerge dut <- mkFourChannelPsnBitmapPreMerge;
+
+    rule inject;
+        let ch0 = FourChannelPsnBitmapPreMergeReq{psn: 0, qpn: 0};
+        let ch1 = FourChannelPsnBitmapPreMergeReq{psn: 1, qpn: 0};
+        let ch2 = FourChannelPsnBitmapPreMergeReq{psn: 2, qpn: 1};
+        let ch3 = FourChannelPsnBitmapPreMergeReq{psn: 64, qpn: 0};
+
+        // dut.reqPipeInVec[0].enq(ch0);
+        dut.reqPipeInVec[1].enq(ch1);
+        dut.reqPipeInVec[2].enq(ch2);
+        dut.reqPipeInVec[3].enq(ch3);
+    endrule
+
+    rule check;
+        let resp = dut.respPipeOut.first;
+        dut.respPipeOut.deq;
+        $display(fshow(resp));
+    endrule
+
+
+endmodule
+
+
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorage(Empty);
  

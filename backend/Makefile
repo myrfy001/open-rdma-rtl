@@ -14,6 +14,9 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
 # TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
 
+# TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
+# TOPMODULE ?= mkTestFullyPipelinedUpdateBramFunctionalTest
+
 # TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
 # TOPMODULE ?= mkTestSdpBramWrapperConflictReadWriteTest
 
@@ -35,8 +38,11 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
 # TOPMODULE ?= mkTestPayloadGenAndConTiming
 
-TARGETFILE ?= ../test/TestTop.bsv
-TOPMODULE ?= mkTestTopTiming
+TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
+TOPMODULE ?= mkTestBitmapWindowStorageTiming
+
+# TARGETFILE ?= ../test/TestTop.bsv
+# TOPMODULE ?= mkTestTopTiming
 
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000

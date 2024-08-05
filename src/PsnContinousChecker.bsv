@@ -1,4 +1,5 @@
 import Vector :: *;
+import BuildVector :: *;
 import FIFOF :: *;
 
 import PrimUtils :: *;
@@ -9,89 +10,557 @@ import RdmaHeaders :: *;
 
 import ConnectableF :: *;
 
-typedef 128 BITMAP_BIT_WIDTH_PER_BANK;
-typedef Bit#(BITMAP_BIT_WIDTH_PER_BANK) BitmapPerBank;
+// typedef 128 BITMAP_BIT_WIDTH_PER_BANK;
+// typedef Bit#(BITMAP_BIT_WIDTH_PER_BANK) BitmapPerBank;
 
-typedef TLog#(BITMAP_BIT_WIDTH_PER_BANK) BITMAP_BIT_INDEX_WIDTH;
-typedef Bit#(BITMAP_BIT_INDEX_WIDTH) BitmapBitIdx;
+// typedef TLog#(BITMAP_BIT_WIDTH_PER_BANK) BITMAP_BIT_INDEX_WIDTH;
+// typedef Bit#(BITMAP_BIT_INDEX_WIDTH) BitmapBitIdx;
 
-typedef 4 BITMAP_BANK_NUM;
-typedef TLog#(BITMAP_BANK_NUM) BITMAP_BANK_IDNEX_WIDTH;
-typedef Bit#(BITMAP_BANK_IDNEX_WIDTH) BitmapBankIdx;
+// typedef 4 BITMAP_BANK_NUM;
+// typedef TLog#(BITMAP_BANK_NUM) BITMAP_BANK_IDNEX_WIDTH;
+// typedef Bit#(BITMAP_BANK_IDNEX_WIDTH) BitmapBankIdx;
 
-typedef TSub#(PSN_WIDTH, TAdd#(BITMAP_BIT_INDEX_WIDTH, BITMAP_BANK_IDNEX_WIDTH)) BITMAP_BANK_TAG_BIT_WIDTH;
-typedef Bit#(BITMAP_BANK_TAG_BIT_WIDTH) BitmapBankTag;
+// typedef TSub#(PSN_WIDTH, TAdd#(BITMAP_BIT_INDEX_WIDTH, BITMAP_BANK_IDNEX_WIDTH)) BITMAP_BANK_TAG_BIT_WIDTH;
+// typedef Bit#(BITMAP_BANK_TAG_BIT_WIDTH) BitmapBankTag;
 
 typedef 4 CPSN_CHECKER_CHANNEL_NUM;
+typedef Bit#(TLog#(CPSN_CHECKER_CHANNEL_NUM)) CpsnCheckerChannelIdx;
+
+// typedef struct {
+//     PSN psn;
+//     QPN qpn;
+//     Bool needAck;
+// } PsnContinousCheckerReq deriving(Bits, FShow);
+
+// typedef struct {
+//     QPN qpn;
+//     PSN cpsn;
+//     Maybe#(BitmapPerBank) evictedBitmapMaybe;
+// } PsnContinousCheckerResp deriving(Bits, FShow);
+
+// typedef struct {
+//     BitmapBankTag   tag;
+//     BitmapBankIdx   bankIdx;
+//     BitmapBitIdx    bitIdx;
+// } PsnAsBitmapIndex deriving(Bits, FShow);
+
+// interface PsnContinousCheckerAndAckAutoGen;
+//     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(PsnContinousCheckerReq)) reqPipeInVec;
+//     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeOut#(PsnContinousCheckerResp)) respPipeOutVec;
+// endinterface
+
+
+// (* synthesize *)
+// module mkPsnContinousCheckerAndAckAutoGen(PsnContinousCheckerAndAckAutoGen);
+//     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(PsnContinousCheckerReq)) reqPipeInVecInst = newVector;
+//     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeOut#(PsnContinousCheckerResp)) respPipeOutVecInst = newVector;
+//     Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(PsnContinousCheckerReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
+//     Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(PsnContinousCheckerResp)) respPipeOutQueueVec <- replicateM(mkFIFOF);
+
+
+
+
+
+
+
+//     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+//         reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
+//         respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
+//     end
+//     interface reqPipeInVec = reqPipeInVecInst;
+//     interface respPipeOutVec = respPipeOutVecInst;
+// endmodule
+
+
+// interface OneHotBankBitmapGen;
+//     interface PipeIn#(PSN) psnPipeIn;
+//     interface PipeOut#(BitmapPerBank) bitmapPipeOut;
+// endinterface
+
+// module mkOneHotBankBitmapGen(OneHotBankBitmapGen);
+//     FIFOF#(PSN) psnPipeInQ <- mkFIFOF;
+//     FIFOF#(BitmapPerBank) bitmapPipeOutQ <- mkFIFOF;
+
+//     rule doShift;
+//         let psn = psnPipeInQ.first;
+//         psnPipeInQ.deq;
+
+//         PsnAsBitmapIndex psnAsBitmapIndex = unpack(pack(psn));
+//         BitmapPerBank out = 1 << psnAsBitmapIndex.bitIdx;
+
+//         bitmapPipeOutQ.enq(out);
+//     endrule
+
+//     interface psnPipeIn = toPipeIn(psnPipeInQ);
+//     interface bitmapPipeOut = toPipeOut(bitmapPipeOutQ);
+// endmodule
+
+
+
+
+typedef TSub#(PSN_WIDTH, TLog#(OOO_WINDOW_STRIDE)) PSN_MERGE_WINDOW_BOUNDARY_WIDTH;
+typedef Bit#(PSN_MERGE_WINDOW_BOUNDARY_WIDTH) PsnMergeWindowBoundary;
+typedef Bit#(TLog#(OOO_WINDOW_SIZE)) PsnMergeWindowBitOffset;
+
 
 typedef struct {
     PSN psn;
     QPN qpn;
-    Bool needAck;
-} PsnContinousCheckerReq deriving(Bits, FShow);
+} FourChannelPsnBitmapPreMergeReq deriving(Bits, FShow);
 
 typedef struct {
     QPN qpn;
-    PSN cpsn;
-    Maybe#(BitmapPerBank) evictedBitmapMaybe;
-} PsnContinousCheckerResp deriving(Bits, FShow);
+    PsnMergeWindowBoundary maxLeftBoundary;
+    OooWindowBitmap  bitmap;
+} FourChannelPsnBitmapPreMergeResp deriving(Bits, FShow);
 
 typedef struct {
-    BitmapBankTag   tag;
-    BitmapBankIdx   bankIdx;
-    BitmapBitIdx    bitIdx;
-} PsnAsBitmapIndex deriving(Bits, FShow);
+    PSN psn;
+    QPN qpn;
+    PsnMergeWindowBoundary maxLeftBoundary;
+} FourChannelPsnBitmapPreMergeGetMaxPsnInternalState deriving(Bits, FShow);
 
-interface PsnContinousCheckerAndAckAutoGen;
-    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(PsnContinousCheckerReq)) reqPipeInVec;
-    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeOut#(PsnContinousCheckerResp)) respPipeOutVec;
+typedef struct {
+    QPN qpn;
+    PsnMergeWindowBoundary maxLeftBoundary;
+    Bool isOverflow;
+    PsnMergeWindowBitOffset shiftOffset;
+} FourChannelPsnBitmapPreMergeOnehotGenInternalState deriving(Bits, FShow);
+
+interface FourChannelPsnBitmapPreMerge;
+    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
+    interface PipeOut#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOut;
 endinterface
 
+typedef TAdd#(1, CPSN_CHECKER_CHANNEL_NUM) GET_MAX_PSN_PIPELINE_STAGE_CNT;
 
-(* synthesize *)
-module mkPsnContinousCheckerAndAckAutoGen(PsnContinousCheckerAndAckAutoGen);
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(PsnContinousCheckerReq)) reqPipeInVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeOut#(PsnContinousCheckerResp)) respPipeOutVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(PsnContinousCheckerReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(PsnContinousCheckerResp)) respPipeOutQueueVec <- replicateM(mkFIFOF);
-
+module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVecInst = newVector;
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkFIFOF;
 
 
+    // Pipeline Queues 
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnInputPipelineQueue <- mkFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnOutputPipelineQueue <- mkSizedFIFOF(5);
+    FIFOF#(Bit#(3)) channelQpnEqualMapPipelineQueue <- mkFIFOF;
 
+    Vector#(GET_MAX_PSN_PIPELINE_STAGE_CNT, FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)))) maxPsnBroadcastPipelineQueueVec <- replicateM(mkLFIFOF);
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState))) reorderedFourChannelReqWithMaxPsnPipelineQueue <- mkFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeOnehotGenInternalState))) onehotGenMetaCalcPipelineQueue <- mkLFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) onehotGenToOnehotMergePipelineQueue <- mkLFIFOF;
+
+    Reg#(Bool) evenOddCounterReg <- mkReg(False);
+
+    function Bool canUpadteCh2ToCh1Boundary(
+            Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState) ch1InfoMaybe,
+            Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState) ch2InfoMaybe
+        );
+        
+        let ch1Info = fromMaybe(?, ch1InfoMaybe);
+        let ch2Info = fromMaybe(?, ch2InfoMaybe);
+
+        PsnMergeWindowBoundary leftBoundCh1 = truncateLSB(ch1Info.psn);
+        PsnMergeWindowBoundary leftBoundCh2 = truncateLSB(ch2Info.psn);
+
+        let canUpdata = isValid(ch1InfoMaybe) && isValid(ch2InfoMaybe) && (ch1Info.qpn == ch2Info.qpn) && (msb(leftBoundCh1 - leftBoundCh2) == 0) ;
+        return canUpdata;
+    endfunction
+
+    function Tuple2#(Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)), Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx))) bitonicAscSwap(
+            Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)) inMaybe1,
+            Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)) inMaybe2
+        );
+        // we treat maybe as +inf, so after sort, it will be at the end of the vector
+        if (inMaybe1 matches tagged Valid .in1 &&& inMaybe2 matches tagged Valid .in2) begin
+            let {val1, tag1} = in1;
+            let {val2, tag2} = in2;
+            if (in1 <= in2) begin
+                return tuple2(inMaybe1, inMaybe2);
+            end
+            else begin
+                return tuple2(inMaybe2, inMaybe1);
+            end
+        end
+        else begin
+            // in this branch, at most one channel is Valid, so only move the valid one to first and another to last;
+            // if both channel is Invalid, swap will also happen, but that doesn't matter.
+            if (isValid(inMaybe1)) begin
+                return tuple2(inMaybe1, inMaybe2);
+            end
+            else begin
+                return tuple2(inMaybe2, inMaybe1);
+            end
+        end
+    endfunction
+
+    rule handleInputReqEveryTwoBeta;
+        evenOddCounterReg <= !evenOddCounterReg;
+
+        if (evenOddCounterReg) begin
+            Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)) outVec = newVector;
+            Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx))) bitonicSortQpnPipelineEntryOutVec = newVector;
+
+            for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+                if (reqPipeInQueueVec[idx].notEmpty) begin
+                    reqPipeInQueueVec[idx].deq;
+
+                    let psn = reqPipeInQueueVec[idx].first.psn;
+                    let qpn = reqPipeInQueueVec[idx].first.qpn;
+
+                    let outItem = FourChannelPsnBitmapPreMergeGetMaxPsnInternalState{
+                        psn:                psn,
+                        qpn:                qpn,
+                        maxLeftBoundary:    truncateLSB(psn)
+                    };
+                    outVec[idx] = tagged Valid outItem;
+
+                    bitonicSortQpnPipelineEntryOutVec[idx] = tagged Valid tuple2(qpn, fromInteger(idx));
+                end
+                else begin
+                    outVec[idx] = tagged Invalid;
+                    bitonicSortQpnPipelineEntryOutVec[idx] = tagged Invalid;
+                end
+            end
+            maxPsnBroadcastPipelineQueueVec[0].enq(outVec);
+            bitonicSortQpnInputPipelineQueue.enq(bitonicSortQpnPipelineEntryOutVec);
+        end
+    endrule
+
+    // generate four stage compare, and broadcast max PSN to each channel
+    for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+        rule broadcastChannelPsn;
+            let pipelineEntryIn = maxPsnBroadcastPipelineQueueVec[idx].first;
+            maxPsnBroadcastPipelineQueueVec[idx].deq;
+
+            Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)) pipelineEntryOut = pipelineEntryIn;
+            
+            Vector#(CPSN_CHECKER_CHANNEL_NUM, FourChannelPsnBitmapPreMergeGetMaxPsnInternalState) chInfoVec = newVector;
+
+            for (Integer idxInner = 0; idxInner < valueOf(CPSN_CHECKER_CHANNEL_NUM); idxInner = idxInner + 1) begin
+                chInfoVec[idxInner] = fromMaybe(?, pipelineEntryIn[idxInner]);
+            end
+
+            for (Integer idxInner = 0; idxInner < valueOf(CPSN_CHECKER_CHANNEL_NUM); idxInner = idxInner + 1) begin
+
+                if (idx != idxInner) begin
+                    if (canUpadteCh2ToCh1Boundary(pipelineEntryIn[idx], pipelineEntryIn[idxInner])) begin
+                        chInfoVec[idxInner].maxLeftBoundary = chInfoVec[idx].maxLeftBoundary;
+                        pipelineEntryOut[idxInner] = tagged Valid chInfoVec[idxInner];
+                    end
+                end
+            end
+
+            maxPsnBroadcastPipelineQueueVec[idx+1].enq(pipelineEntryOut);
+        endrule
+    end
+
+    rule bitonicSortQpn;
+
+        let pipelineEntryIn = bitonicSortQpnInputPipelineQueue.first;
+        bitonicSortQpnInputPipelineQueue.deq;
+        // first swap
+        let {v00, v01} = bitonicAscSwap(pipelineEntryIn[0], pipelineEntryIn[1]);
+        let {v03, v02} = bitonicAscSwap(pipelineEntryIn[2], pipelineEntryIn[3]);
+        // second swap
+        let {v10, v12} = bitonicAscSwap(v00, v02);
+        let {v11, v13} = bitonicAscSwap(v01, v03);
+        // third swap
+        let {v20, v21} = bitonicAscSwap(v10, v11);
+        let {v22, v23} = bitonicAscSwap(v12, v13);
+
+        bitonicSortQpnOutputPipelineQueue.enq(vec(v20, v21, v22, v23));
+    endrule
+
+    rule reorderChannel;
+        let sortedInfo = bitonicSortQpnOutputPipelineQueue.first;
+        bitonicSortQpnOutputPipelineQueue.deq;
+
+        let pipelineEntryIn = maxPsnBroadcastPipelineQueueVec[valueOf(GET_MAX_PSN_PIPELINE_STAGE_CNT)-1].first;
+        maxPsnBroadcastPipelineQueueVec[valueOf(GET_MAX_PSN_PIPELINE_STAGE_CNT)-1].deq;
+
+        Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)) outVec = newVector;
+
+        for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+            if (sortedInfo[idx] matches tagged Valid .sortInfo) begin
+                let chIdx = tpl_2(sortInfo);
+                outVec[idx] = pipelineEntryIn[chIdx];
+            end
+            else begin
+                outVec[idx] = tagged Invalid;
+            end
+        end
+        reorderedFourChannelReqWithMaxPsnPipelineQueue.enq(outVec);
+    endrule
+
+    // generate one-hot bitmap for each channel
+    rule preCalcOneHotBitmapMetaForEachChannel;
+        let pipelineEntryIn = reorderedFourChannelReqWithMaxPsnPipelineQueue.first;
+        reorderedFourChannelReqWithMaxPsnPipelineQueue.deq;
+
+        Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeOnehotGenInternalState)) outputVec = newVector;
+        
+
+        for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+            let channelInfoMaybe = pipelineEntryIn[idx];
+            if (channelInfoMaybe matches tagged Valid .channelInfo) begin
+                
+                // extend lsb and fill lsb with 1
+                PSN boundaryPSN = unpack({pack(channelInfo.maxLeftBoundary), -1});
+                let shiftDelta = boundaryPSN - channelInfo.psn;
+
+                Bool isOverflow = (shiftDelta >= fromInteger(valueOf(OOO_WINDOW_SIZE)));
+
+                let outInfo = FourChannelPsnBitmapPreMergeOnehotGenInternalState {
+                    qpn: channelInfo.qpn,
+                    maxLeftBoundary: channelInfo.maxLeftBoundary,
+                    isOverflow: isOverflow,
+                    shiftOffset:truncate(shiftDelta)
+                };
+                outputVec[idx] = tagged Valid outInfo;
+            end
+            else begin
+                outputVec[idx] = tagged Invalid;
+            end
+        end
+        onehotGenMetaCalcPipelineQueue.enq(outputVec);
+    endrule
+
+    rule genOneHotBitmapForEachChannel;
+        let pipelineEntryIn = onehotGenMetaCalcPipelineQueue.first;
+        onehotGenMetaCalcPipelineQueue.deq;
+
+        Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp)) outputVec = newVector;
+
+        for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+            let channelInfoMaybe = pipelineEntryIn[idx];
+            if (channelInfoMaybe matches tagged Valid .channelInfo) begin
+                OooWindowBitmap  bitmap = channelInfo.isOverflow ? 0 : swapEndianBit(1 << channelInfo.shiftOffset);
+
+                let outInfo = FourChannelPsnBitmapPreMergeResp {
+                    qpn: channelInfo.qpn,
+                    maxLeftBoundary: channelInfo.maxLeftBoundary,
+                    bitmap: bitmap
+                };
+                outputVec[idx] = tagged Valid outInfo;
+            end
+            else begin
+                outputVec[idx] = tagged Invalid;
+            end
+        end
+
+        onehotGenToOnehotMergePipelineQueue.enq(outputVec);
+
+
+        let channelEqual01 = False;
+        let channelEqual12 = False;
+        let channelEqual23 = False;
+        if (pipelineEntryIn[0] matches tagged Valid .chA &&& pipelineEntryIn[1] matches tagged Valid .chB &&& chA.qpn == chB.qpn) begin
+            channelEqual01 = True;
+        end
+        if (pipelineEntryIn[1] matches tagged Valid .chA &&& pipelineEntryIn[2] matches tagged Valid .chB &&& chA.qpn == chB.qpn) begin
+            channelEqual12 = True;
+        end
+        if (pipelineEntryIn[2] matches tagged Valid .chA &&& pipelineEntryIn[3] matches tagged Valid .chB &&& chA.qpn == chB.qpn) begin
+            channelEqual23 = True;
+        end
+
+        channelQpnEqualMapPipelineQueue.enq({pack(channelEqual01), pack(channelEqual12), pack(channelEqual23)});
+    endrule
+
+    rule preMergeChannels;
+        let oneHotBitmapVec = onehotGenToOnehotMergePipelineQueue.first;
+        onehotGenToOnehotMergePipelineQueue.deq;
+
+        let equalBitMap = channelQpnEqualMapPipelineQueue.first;
+        channelQpnEqualMapPipelineQueue.deq;
+
+        Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp)) outVec = newVector;
+
+        case (equalBitMap)
+            3'b000: begin
+                outVec[0] = oneHotBitmapVec[0];
+                outVec[1] = oneHotBitmapVec[1];
+                outVec[2] = oneHotBitmapVec[2];
+                outVec[3] = oneHotBitmapVec[3];
+            end
+            3'b100: begin
+                let c0 = fromMaybe(?, oneHotBitmapVec[0]);
+                let c1 = fromMaybe(?, oneHotBitmapVec[1]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && c0.qpn == c1.qpn && c0.maxLeftBoundary == c1.maxLeftBoundary,
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c0=", fshow(c0), ", c1=", fshow(c1))
+                );
+
+                outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c0.qpn,
+                    maxLeftBoundary: c0.maxLeftBoundary,
+                    bitmap: c0.bitmap | c1.bitmap
+                };
+
+                outVec[1] = oneHotBitmapVec[2];
+                outVec[2] = oneHotBitmapVec[3];
+                outVec[3] = tagged Invalid;
+            end
+            3'b110: begin
+                let c0 = fromMaybe(?, oneHotBitmapVec[0]);
+                let c1 = fromMaybe(?, oneHotBitmapVec[1]);
+                let c2 = fromMaybe(?, oneHotBitmapVec[2]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && isValid(oneHotBitmapVec[2]) &&
+                    c0.qpn == c1.qpn && c1.qpn == c2.qpn && c0.maxLeftBoundary == c1.maxLeftBoundary && c1.maxLeftBoundary == c2.maxLeftBoundary, 
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c0=", fshow(c0), ", c1=", fshow(c1), ", c2=", fshow(c2))
+                );
+
+                outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c0.qpn,
+                    maxLeftBoundary: c0.maxLeftBoundary,
+                    bitmap: c0.bitmap | c1.bitmap | c2.bitmap
+                };
+
+                outVec[1] = oneHotBitmapVec[3];
+                outVec[2] = tagged Invalid;
+                outVec[3] = tagged Invalid;
+            end
+            3'b111: begin
+                let c0 = fromMaybe(?, oneHotBitmapVec[0]);
+                let c1 = fromMaybe(?, oneHotBitmapVec[1]);
+                let c2 = fromMaybe(?, oneHotBitmapVec[2]);
+                let c3 = fromMaybe(?, oneHotBitmapVec[3]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && isValid(oneHotBitmapVec[2]) && isValid(oneHotBitmapVec[3]) &&
+                    c0.qpn == c1.qpn && c1.qpn == c2.qpn && c2.qpn == c3.qpn &&
+                    c0.maxLeftBoundary == c1.maxLeftBoundary && c1.maxLeftBoundary == c2.maxLeftBoundary && c2.maxLeftBoundary == c3.maxLeftBoundary, 
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c0=", fshow(c0), ", c1=", fshow(c1), ", c2=", fshow(c2), ", c3=", fshow(c3))
+                );
+
+                outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c0.qpn,
+                    maxLeftBoundary: c0.maxLeftBoundary,
+                    bitmap: c0.bitmap | c1.bitmap | c2.bitmap | c3.bitmap
+                };
+
+                outVec[1] = tagged Invalid;
+                outVec[2] = tagged Invalid;
+                outVec[3] = tagged Invalid;
+            end
+            3'b101: begin
+                let c0 = fromMaybe(?, oneHotBitmapVec[0]);
+                let c1 = fromMaybe(?, oneHotBitmapVec[1]);
+                let c2 = fromMaybe(?, oneHotBitmapVec[2]);
+                let c3 = fromMaybe(?, oneHotBitmapVec[3]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && c0.qpn == c1.qpn && c0.maxLeftBoundary == c1.maxLeftBoundary,
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c0=", fshow(c0), ", c1=", fshow(c1))
+                );
+                immAssert(
+                    isValid(oneHotBitmapVec[2]) && isValid(oneHotBitmapVec[3]) && c2.qpn == c3.qpn && c2.maxLeftBoundary == c3.maxLeftBoundary,
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c2=", fshow(c2), ", c3=", fshow(c3))
+                );
+
+                outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c0.qpn,
+                    maxLeftBoundary: c0.maxLeftBoundary,
+                    bitmap: c0.bitmap | c1.bitmap 
+                };
+
+                outVec[1] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c2.qpn,
+                    maxLeftBoundary: c2.maxLeftBoundary,
+                    bitmap:  c2.bitmap | c3.bitmap
+                };
+                outVec[2] = tagged Invalid;
+                outVec[3] = tagged Invalid;
+            end
+            3'b011: begin
+                let c0 = fromMaybe(?, oneHotBitmapVec[0]);
+                let c1 = fromMaybe(?, oneHotBitmapVec[1]);
+                let c2 = fromMaybe(?, oneHotBitmapVec[2]);
+                let c3 = fromMaybe(?, oneHotBitmapVec[3]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && isValid(oneHotBitmapVec[2]) && isValid(oneHotBitmapVec[3]) &&
+                    c1.qpn == c2.qpn && c2.qpn == c3.qpn && c1.maxLeftBoundary == c2.maxLeftBoundary && c2.maxLeftBoundary == c3.maxLeftBoundary, 
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c1=", fshow(c1), ", c2=", fshow(c2), ", c3=", fshow(c3))
+                );
+
+                outVec[0] = oneHotBitmapVec[0];
+
+                outVec[1] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c1.qpn,
+                    maxLeftBoundary: c1.maxLeftBoundary,
+                    bitmap:  c1.bitmap | c2.bitmap | c3.bitmap
+                };
+                outVec[2] = tagged Invalid;
+                outVec[3] = tagged Invalid;
+            end
+            3'b010: begin
+                let c1 = fromMaybe(?, oneHotBitmapVec[1]);
+                let c2 = fromMaybe(?, oneHotBitmapVec[2]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && isValid(oneHotBitmapVec[2]) && c1.qpn == c2.qpn && c1.maxLeftBoundary == c2.maxLeftBoundary,
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c1=", fshow(c1), ", c2=", fshow(c2))
+                );
+
+                outVec[0] = oneHotBitmapVec[0];
+                outVec[1] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c1.qpn,
+                    maxLeftBoundary: c1.maxLeftBoundary,
+                    bitmap: c1.bitmap | c2.bitmap
+                };
+                outVec[2] = oneHotBitmapVec[3];
+                outVec[3] = tagged Invalid;
+            end
+            3'b001: begin
+                let c2 = fromMaybe(?, oneHotBitmapVec[2]);
+                let c3 = fromMaybe(?, oneHotBitmapVec[3]);
+
+                immAssert(
+                    isValid(oneHotBitmapVec[0]) && isValid(oneHotBitmapVec[1]) && isValid(oneHotBitmapVec[2]) && isValid(oneHotBitmapVec[3]) && 
+                    c2.qpn == c3.qpn && c2.maxLeftBoundary == c3.maxLeftBoundary,
+                    "QPN and maxLeftBoundary must be equal to do merge",
+                    $format("c2=", fshow(c2), ", c3=", fshow(c3))
+                );
+
+                outVec[0] = oneHotBitmapVec[0];
+                outVec[1] = oneHotBitmapVec[1];
+                outVec[2] = tagged Valid FourChannelPsnBitmapPreMergeResp{
+                    qpn: c2.qpn,
+                    maxLeftBoundary: c2.maxLeftBoundary,
+                    bitmap: c2.bitmap | c3.bitmap
+                };
+                outVec[3] = tagged Invalid;
+            end
+
+        endcase
+        respPipeOutQueue.enq(outVec);
+    endrule
 
 
 
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
         reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
-        respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
     end
     interface reqPipeInVec = reqPipeInVecInst;
-    interface respPipeOutVec = respPipeOutVecInst;
+    interface respPipeOut = toPipeOut(respPipeOutQueue);
 endmodule
 
 
-interface OneHotBankBitmapGen;
-    interface PipeIn#(PSN) psnPipeIn;
-    interface PipeOut#(BitmapPerBank) bitmapPipeOut;
-endinterface
 
-module mkOneHotBankBitmapGen(OneHotBankBitmapGen);
-    FIFOF#(PSN) psnPipeInQ <- mkFIFOF;
-    FIFOF#(BitmapPerBank) bitmapPipeOutQ <- mkFIFOF;
 
-    rule doShift;
-        let psn = psnPipeInQ.first;
-        psnPipeInQ.deq;
 
-        PsnAsBitmapIndex psnAsBitmapIndex = unpack(pack(psn));
-        BitmapPerBank out = 1 << psnAsBitmapIndex.bitIdx;
-
-        bitmapPipeOutQ.enq(out);
-    endrule
-
-    interface psnPipeIn = toPipeIn(psnPipeInQ);
-    interface bitmapPipeOut = toPipeOut(bitmapPipeOutQ);
-endmodule
 
 
 // Must be 2^N
@@ -137,12 +606,16 @@ typedef struct {
 typedef struct {
     tRowAddr        rowAddr;
     Bool            isShiftWindow;
-    // Bool            isShiftOutOfBoundary;
     tShiftOffset    shiftAbsValue;
     BitmapWindowStorageEntry#(tData, tBoundary) oldEntry;
     BitmapWindowStorageEntry#(tData, tBoundary) newEntry;
     tBoundary boundaryDeltaAbs;
 } BitmapWindowStorageStageThreeToFourPipelineEntry#(type tRowAddr, type tData, type tBoundary, type tShiftOffset) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr        rowAddr;
+    BitmapWindowStorageEntry#(tData, tBoundary) newEntry;
+} BitmapWindowStorageStageFourToFivePipelineEntry#(type tRowAddr, type tData, type tBoundary, type tShiftOffset) deriving(Bits, FShow);
 
 
 typedef struct {
@@ -162,6 +635,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Literal#(tData),
         Bits#(tBoundary, szBoundary),
         Bounded#(tRowAddr),
+        Literal#(tRowAddr),
         Eq#(tRowAddr),
         Arith#(tBoundary),
         Bitwise#(tBoundary),
@@ -183,34 +657,134 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG));
 
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))))) reorderBuf <- replicateM(replicateM(mkReg(tagged Invalid)));
+    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) prevReqRowAddrVec <- replicateM(mkReg(tagged Invalid));
 
     // Forward Registers
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageInternalForwardEntry#(tRowAddr, tData, tBoundary)))) forwardRegVec <- replicateM(mkReg(tagged Invalid));
 
     // Pipeline Queues
+    FIFOF#(Bit#(0)) mergeStateOneToTwoPipelineQueue <- mkLFIFOF;  // only used to handle back pressure
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) mergeOutputQueueVec <- replicateM(mkLFIFOF);
+
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageOneToTwoPipelineEntry#(tRowAddr, tData, tBoundary)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageTwoToThreePipelineEntry#(tRowAddr, tData, tBoundary)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageThreeToFourPipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset)))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageStageFourToFivePipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset))) stageFourToFivePipelineQueueVec <- replicateM(mkLFIFOF);
 
     function Integer getSelfIdx(Integer idx) = idx;
     function Integer getOtherIdx(Integer idx) = 1 - idx;
 
+    function Bool addrConflictCheck(Maybe#(tRowAddr) prevAddrMaybe, Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)) curReqMaybe);
+        let prevAddr = fromMaybe(?, prevAddrMaybe);
+        let curReq = fromMaybe(?, curReqMaybe);
+        return isValid(prevAddrMaybe) && isValid(curReqMaybe) && prevAddr == curReq.rowAddr;
+    endfunction
 
-    // Pipeline Stage One
+    // reorder Pipeline Stage One
+    rule enqueueIntoReorderBuffer;
+        if (reqPipeInQueueVec[0].notEmpty || reqPipeInQueueVec[1].notEmpty) begin
+
+            for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                let selfChannelIdx = getSelfIdx(idx);
+                let otherChannelIdx = getOtherIdx(idx);
+
+                if (reqPipeInQueueVec[idx].notEmpty) begin
+                    let req = reqPipeInQueueVec[idx].first;
+                    reqPipeInQueueVec[idx].deq;
+
+                    reorderBuf[0][selfChannelIdx] <= tagged Valid req;
+                end
+                else begin
+                    reorderBuf[0][selfChannelIdx] <= tagged Invalid;
+                end
+            end
+
+            mergeStateOneToTwoPipelineQueue.enq(0);
+        end
+    endrule
+
+    // reorder Pipeline Stage Two
+    // +-----+-----+
+    // |  1  |  2  |    <-  reorderBuf[0]
+    // +-----+-----+
+    // |  3  |  4  |    <-  reorderBuf[1]
+    // +-----+-----+
+    rule reorderCore;
+        mergeStateOneToTwoPipelineQueue.deq;
+        
+
+        let confilct1 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[0][0]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[0][0]);
+        let confilct2 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[0][1]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[0][1]);
+        let confilct3 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[1][0]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[1][0]);
+        let confilct4 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[1][1]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[1][1]);
+
+        let channelOutputMaybeA = ?;
+        let channelOutputMaybeB = ?;
+
+        case ({pack(confilct3), pack(confilct4)})
+            2'b00: begin
+                channelOutputMaybeA = reorderBuf[1][0];
+                channelOutputMaybeB = reorderBuf[1][1];
+                reorderBuf[1][0] <= reorderBuf[0][0];
+                reorderBuf[1][1] <= reorderBuf[0][1];
+            end
+            2'b01: begin
+                if (confilct2) begin
+                    channelOutputMaybeA = reorderBuf[1][0];
+                    channelOutputMaybeB = reorderBuf[0][0];
+                    reorderBuf[1][0] <= reorderBuf[0][1];
+                end
+                else begin
+                    channelOutputMaybeA = reorderBuf[1][0];
+                    channelOutputMaybeB = reorderBuf[0][1];
+                    reorderBuf[1][0] <= reorderBuf[0][0];
+                end
+            end
+            2'b10: begin
+                if (confilct1) begin
+                    channelOutputMaybeA = reorderBuf[0][1];
+                    channelOutputMaybeB = reorderBuf[1][1];
+                    reorderBuf[1][1] <= reorderBuf[0][0];
+                end
+                else begin
+                    channelOutputMaybeA = reorderBuf[0][0];
+                    channelOutputMaybeB = reorderBuf[1][1];
+                    reorderBuf[1][1] <= reorderBuf[0][1];
+                end
+            end
+            2'b11: begin
+                channelOutputMaybeA = reorderBuf[0][0];
+                channelOutputMaybeB = reorderBuf[0][1];
+            end
+
+        endcase
+
+        mergeOutputQueueVec[0].enq(channelOutputMaybeA);
+        mergeOutputQueueVec[1].enq(channelOutputMaybeB);
+
+        let channelOutputA = fromMaybe(?, channelOutputMaybeA);
+        let channelOutputB = fromMaybe(?, channelOutputMaybeB);
+        prevReqRowAddrVec[0] <= isValid(channelOutputMaybeA) ? tagged Valid channelOutputA.rowAddr : tagged Invalid;
+        prevReqRowAddrVec[1] <= isValid(channelOutputMaybeB) ? tagged Valid channelOutputB.rowAddr : tagged Invalid;
+    endrule
+
+    // Merge Pipeline Stage One
     rule sendBramQueryReq;
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
             let selfChannelIdx = getSelfIdx(idx);
             let otherChannelIdx = getOtherIdx(idx);
 
-            if (reqPipeInQueueVec[idx].notEmpty) begin
-                let req = reqPipeInQueueVec[idx].first;
-                reqPipeInQueueVec[idx].deq;
-                storage[selfChannelIdx][0].putReadReq(req.rowAddr);
-                storage[otherChannelIdx][1].putReadReq(req.rowAddr);
+            let pipelineEntryInMaybe = mergeOutputQueueVec[selfChannelIdx].first;
+            mergeOutputQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                storage[selfChannelIdx][0].putReadReq(pipelineEntryIn.rowAddr);
+                storage[otherChannelIdx][1].putReadReq(pipelineEntryIn.rowAddr);
 
                 let pipelineEntryOut = BitmapWindowStorageStageOneToTwoPipelineEntry {
-                    rowAddr: req.rowAddr,
-                    newEntry: req.entry
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    newEntry: pipelineEntryIn.entry
                 };
                 stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
             end
@@ -220,7 +794,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
     endrule
 
-    // Pipeline Stage Two
+    // Merge Pipeline Stage Two
     rule getBramQueryRespAndPreMergeThem;
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
             let selfChannelIdx = getSelfIdx(idx);
@@ -251,7 +825,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
     endrule
 
-    // Pipeline Stage Three
+    // Merge Pipeline Stage Three
     rule doNewOldPreMerge;
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
             let selfChannelIdx = getSelfIdx(idx);
@@ -302,7 +876,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
     endrule
 
-    // Pipeline Stage Four
+    // Merge Pipeline Stage Four
     rule doMerge;
 
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
@@ -357,6 +931,12 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                     newEntry: newEntry
                 };
                 respPipeOutQueueVec[selfChannelIdx].enq(tagged Valid resp);
+
+                let bramWriteBackReq = BitmapWindowStorageStageFourToFivePipelineEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    newEntry: newEntry
+                };
+                stageFourToFivePipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
             end
             else begin
                 forwardRegVec[selfChannelIdx] <= tagged Invalid;
@@ -365,11 +945,20 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
     endrule
 
+    // Merge Pipeline Stage Four
+    rule doBramWriteBack;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+            if (stageFourToFivePipelineQueueVec[idx].notEmpty) begin
+                let writeBackReq = stageFourToFivePipelineQueueVec[idx].first;
+                stageFourToFivePipelineQueueVec[idx].deq;
 
-
-
-
-
+                storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+                storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+            end
+        end
+    endrule
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);

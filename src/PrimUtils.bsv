@@ -701,10 +701,11 @@ module mkAutoInferBramWithRwBypassLogicUG(AutoInferBram#(tAddr, tData)) provisos
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(tAddr),
-        Eq#(tAddr)
+        Eq#(tAddr),
+        Literal#(tAddr)
     );
 
-    RegFile#(tAddr, tData) storage <- mkRegFileFull;
+    RegFile#(tAddr, tData) storage <- mkRegFileWCF(0, -1);
     Reg#(tData) tReg <- mkRegU;
 
 
