@@ -363,8 +363,8 @@ endinstance
 typedef TLog#(MAX_QP) QP_INDEX_WIDTH;
 typedef TSub#(QPN_WIDTH, QP_INDEX_WIDTH) QPN_KEY_PART_WIDTH;
 
-typedef UInt#(QP_INDEX_WIDTH)     IndexQP;
-typedef UInt#(QPN_KEY_PART_WIDTH) KeyQP;
+typedef Bit#(QP_INDEX_WIDTH)     IndexQP;
+typedef Bit#(QPN_KEY_PART_WIDTH) KeyQP;
 
 
 function IndexQP getIndexQP(QPN qpn) = unpack(truncateLSB(qpn));

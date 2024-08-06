@@ -8,7 +8,12 @@ SIMSCRIPT_NAME = ./$(TOPMODULE).sh
 
 MISCFLAGS += -D IS_DEBUG=True -D USE_MOCK_HOST=True
 
-compile:
+ZERO_BRAM_HEX_FILE ?= zero_bram.hex
+
+gen_bram_hex:
+	python3 ../scripts/gen_zero_bram_init_file.py $(BUILDDIR)/bram_zero_128x512.bin 128 512
+
+compile: gen_bram_hex
 	mkdir -p $(BUILDDIR)
 	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TESTFILE)
 

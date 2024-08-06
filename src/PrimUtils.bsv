@@ -697,15 +697,17 @@ module mkAutoInferBram(AutoInferBram#(tAddr, tData)) provisos (
 endmodule
 
 // ungarded interface, use with care!
-module mkAutoInferBramWithRwBypassLogicUG(AutoInferBram#(tAddr, tData)) provisos (
+module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(tAddr),
         Eq#(tAddr),
-        Literal#(tAddr)
+        Literal#(tAddr),
+        FShow#(tAddr),
+        FShow#(tData)
     );
 
-    RegFile#(tAddr, tData) storage <- mkRegFileWCF(0, -1);
+    RegFile#(tAddr, tData) storage <- mkRegFileWCFLoadBin(initFile, 0, maxBound);
     Reg#(tData) tReg <- mkRegU;
 
 
@@ -722,7 +724,15 @@ module mkAutoInferBramWithRwBypassLogicUG(AutoInferBram#(tAddr, tData)) provisos
     method Action putReadReq(tAddr addr);
         let {writeAddr, writeData} = fromMaybe(?, writeReqWire.wget);
         Bool isConflict = isValid(writeReqWire.wget) && (writeAddr == addr);
+        $display("time=%0t", $time, "putReadReq", 
+            ", isValid writeReqWire=", fshow(isValid(writeReqWire.wget)),
+            ", writeAddr=", fshow(writeAddr), 
+            ", addr=", fshow(addr)
+        );
         if (isConflict) begin
+            $display("time=%0t", $time, "putReadReq conflict", 
+                ", writeData=", fshow(writeData)
+            );
             tReg <= writeData;
         end
         else begin
@@ -738,6 +748,10 @@ module mkAutoInferBramWithRwBypassLogicUG(AutoInferBram#(tAddr, tData)) provisos
             $format("illegalReadMonitorCounter=", fshow(illegalReadMonitorCounter))
         );
         illegalReadMonitorCounter.decr(1);
+
+        $display("time=%0t", $time, "getReadResp", 
+            ", tReg=", fshow(tReg)
+        );
         return tReg;
     endmethod
 endmodule

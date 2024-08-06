@@ -1,6 +1,7 @@
 import Vector :: *;
 import BuildVector :: *;
 import FIFOF :: *;
+import ConfigReg :: * ;
 
 import PrimUtils :: *;
 import DataTypes :: *;
@@ -628,7 +629,7 @@ interface BitmapWindowStorage#(type tRowAddr, type tData, type tBoundary, numeri
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVec;
 endinterface
 
-module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, szStride)) provisos (
+module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tData, tBoundary, szStride)) provisos (
         Bits#(tRowAddr, szRowAddr),
         Bits#(tData, szData),
         Bitwise#(tData),
@@ -640,6 +641,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Arith#(tBoundary),
         Bitwise#(tBoundary),
         Ord#(tBoundary),
+        Eq#(tBoundary),
         NumAlias#(TLog#(TDiv#(szData, szStride)), szShiftOffset),
         NumAlias#(TAdd#(1, szShiftOffset), szWideShiftOffset),
         Alias#(Bit#(szShiftOffset), tShiftOffset),
@@ -647,7 +649,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Add#(a__, szShiftOffset, szBoundary),
         Add#(b__, szShiftOffset, TLog#(szData)),
         Add#(c__, szWideShiftOffset, szBoundary),
-        Add#(d__, szWideShiftOffset, TLog#(szData))
+        Add#(d__, szWideShiftOffset, TLog#(szData)),
+        FShow#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))
     );
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))) reqPipeInVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVecInst = newVector;
@@ -655,17 +658,17 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))) reqPipeInQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG));
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG(initFile)));
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))))) reorderBuf <- replicateM(replicateM(mkReg(tagged Invalid)));
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) prevReqRowAddrVec <- replicateM(mkReg(tagged Invalid));
 
-    // Forward Registers
-    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageInternalForwardEntry#(tRowAddr, tData, tBoundary)))) forwardRegVec <- replicateM(mkReg(tagged Invalid));
+    // Forward Registers (use config reg to solve rule schedule order)
+    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageInternalForwardEntry#(tRowAddr, tData, tBoundary)))) forwardRegVec <- replicateM(mkConfigReg(tagged Invalid));
 
     // Pipeline Queues
     FIFOF#(Bit#(0)) mergeStateOneToTwoPipelineQueue <- mkLFIFOF;  // only used to handle back pressure
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) mergeOutputQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reorderOutputQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageOneToTwoPipelineEntry#(tRowAddr, tData, tBoundary)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageTwoToThreePipelineEntry#(tRowAddr, tData, tBoundary)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
@@ -760,13 +763,24 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
         endcase
 
-        mergeOutputQueueVec[0].enq(channelOutputMaybeA);
-        mergeOutputQueueVec[1].enq(channelOutputMaybeB);
+        reorderOutputQueueVec[0].enq(channelOutputMaybeA);
+        reorderOutputQueueVec[1].enq(channelOutputMaybeB);
 
         let channelOutputA = fromMaybe(?, channelOutputMaybeA);
         let channelOutputB = fromMaybe(?, channelOutputMaybeB);
         prevReqRowAddrVec[0] <= isValid(channelOutputMaybeA) ? tagged Valid channelOutputA.rowAddr : tagged Invalid;
         prevReqRowAddrVec[1] <= isValid(channelOutputMaybeB) ? tagged Valid channelOutputB.rowAddr : tagged Invalid;
+
+        // if (isValid(channelOutputMaybeA) && channelOutputA.rowAddr == 4) begin
+        //     $display("time=%0t", $time, "mkBitmapWindowStorage reorderCore", 
+        //              ", out Channel A out=", fshow(channelOutputA)
+        //     );
+        // end
+        // if (isValid(channelOutputMaybeB) && channelOutputB.rowAddr == 4) begin
+        //     $display("time=%0t", $time, "mkBitmapWindowStorage reorderCore", 
+        //              ", out Channel B out=", fshow(channelOutputB)
+        //     );
+        // end
     endrule
 
     // Merge Pipeline Stage One
@@ -775,8 +789,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
             let selfChannelIdx = getSelfIdx(idx);
             let otherChannelIdx = getOtherIdx(idx);
 
-            let pipelineEntryInMaybe = mergeOutputQueueVec[selfChannelIdx].first;
-            mergeOutputQueueVec[selfChannelIdx].deq;
+            let pipelineEntryInMaybe = reorderOutputQueueVec[selfChannelIdx].first;
+            reorderOutputQueueVec[selfChannelIdx].deq;
 
             if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
                 storage[selfChannelIdx][0].putReadReq(pipelineEntryIn.rowAddr);
@@ -787,6 +801,11 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                     newEntry: pipelineEntryIn.entry
                 };
                 stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    $display("time=%0t", $time, "mkBitmapWindowStorage 1 sendBramQueryReq", 
+                            ", pipelineEntryIn=", fshow(pipelineEntryIn)
+                    );
+                end
             end
             else begin
                 stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
@@ -807,10 +826,34 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                 let selfResp <- storage[selfChannelIdx][0].getReadResp;
                 let otherResp <- storage[otherChannelIdx][1].getReadResp;
 
+                Maybe#(BitmapWindowStorageEntry#(tData, tBoundary)) forwardedRespMaybe = tagged Invalid;
+                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        $display("time=%0t", $time, "mkBitmapWindowStorage 2 getBramQueryRespAndPreMergeThem", 
+                                ", forwardRegVec[0]=", fshow(forwardRegVec[0])
+                        );
+                    end
+                end
+                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        $display("time=%0t", $time, "mkBitmapWindowStorage 2 getBramQueryRespAndPreMergeThem", 
+                                ", forwardRegVec[1]=", fshow(forwardRegVec[1])
+                        );
+                    end
+                end
+                
                 let delta = selfResp.leftBound - otherResp.leftBound;
 
-                // if delta is non-negative, means `selfResp` is newer or equal to `otherResp`, so choose `selfResp`.
-                let selectedResp = msb(delta) == 0 ? selfResp : otherResp;
+                // if forward path has data, then use the newest value from forward path.
+                // else, if delta is non-negative, means `selfResp` is newer or equal to `otherResp`, so choose `selfResp`.
+                let selectedResp = isValid(forwardedRespMaybe) ? fromMaybe(?, forwardedRespMaybe) : ( msb(delta) == 0 ? selfResp : otherResp);
+                if (delta == 0 && !isValid(forwardedRespMaybe)) begin
+                    selectedResp.data = selfResp.data | otherResp.data;
+                end
 
                 let pipelineEntryOut = BitmapWindowStorageStageTwoToThreePipelineEntry {
                     rowAddr: pipelineEntryIn.rowAddr,
@@ -818,6 +861,14 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                     newEntry: pipelineEntryIn.newEntry
                 };
                 stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    $display("time=%0t", $time, "mkBitmapWindowStorage 2 getBramQueryRespAndPreMergeThem", 
+                            ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                            ", pipelineEntryOut=", fshow(pipelineEntryOut),
+                            ", selfResp=", fshow(selfResp),
+                            ", otherResp=", fshow(otherResp)
+                    );
+                end
             end
             else begin
                 stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
@@ -841,14 +892,22 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                 // if forward path has valid data, then use the forwarded data.
                 // Since the request for the same rowAddr can't occur in two channel at the same time, if any channel has 
                 // forwarded data, just use it.
-                if (forwardRegVec[0] matches tagged Valid .forwardedEntry) begin
-                    if (forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
-                        newestAlreadyExistEntry = forwardedEntry.entry;
+                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    newestAlreadyExistEntry = forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        $display("time=%0t", $time, "mkBitmapWindowStorage 3 doNewOldPreMerge", 
+                                ", forwardRegVec[0]=", fshow(forwardRegVec[0])
+                        );
                     end
                 end
-                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry) begin
-                    if (forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
-                        newestAlreadyExistEntry = forwardedEntry.entry;
+                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    newestAlreadyExistEntry = forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        $display("time=%0t", $time, "mkBitmapWindowStorage 3 doNewOldPreMerge", 
+                                ", forwardRegVec[1]=", fshow(forwardRegVec[1])
+                        );
                     end
                 end
 
@@ -858,17 +917,23 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
                 let isShiftWindow = msb(boundaryDelta) == 0;
 
+                tWideShiftOffset shiftOffset = unpack(truncate(pack(boundaryDeltaAbs)));
                 let pipelineEntryOut = BitmapWindowStorageStageThreeToFourPipelineEntry {
                     rowAddr: pipelineEntryIn.rowAddr,
                     oldEntry: newestAlreadyExistEntry,
                     newEntry: pipelineEntryIn.newEntry,
                     isShiftWindow: isShiftWindow,
-                    // isShiftOutOfBoundary: outOfBoundary,
                     boundaryDeltaAbs: boundaryDeltaAbs,
-                    shiftAbsValue: unpack(truncate(pack(boundaryDeltaAbs)))
+                    shiftAbsValue: shiftOffset
                 };
 
                 stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    $display("time=%0t", $time, "mkBitmapWindowStorage 3 doNewOldPreMerge", 
+                            ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                            ", pipelineEntryOut=", fshow(pipelineEntryOut)
+                    );
+                end
             end
             else begin
                 stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
@@ -937,6 +1002,14 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                     newEntry: newEntry
                 };
                 stageFourToFivePipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
+
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    $display("time=%0t", $time, "mkBitmapWindowStorage 4 doMerge", 
+                            ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                            ", resp=", fshow(resp)
+                    );
+                end
+
             end
             else begin
                 forwardRegVec[selfChannelIdx] <= tagged Invalid;
@@ -945,7 +1018,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
     endrule
 
-    // Merge Pipeline Stage Four
+    // Merge Pipeline Stage Five
     rule doBramWriteBack;
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
             let selfChannelIdx = getSelfIdx(idx);
@@ -956,6 +1029,12 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
                 storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
                 storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+
+                if (writeBackReq.rowAddr == 4) begin
+                    $display("time=%0t", $time, "mkBitmapWindowStorage 5 doBramWriteBack", 
+                            ", writeBackReq=", fshow(writeBackReq)
+                    );
+                end
             end
         end
     endrule
