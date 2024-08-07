@@ -111,6 +111,7 @@ typedef struct {
 
 typedef struct {
     QPN qpn;
+    PSN psn;  // for debug use
     PsnMergeWindowBoundary maxLeftBoundary;
     OooWindowBitmap  bitmap;
 } FourChannelPsnBitmapPreMergeResp deriving(Bits, FShow);
@@ -123,6 +124,7 @@ typedef struct {
 
 typedef struct {
     QPN qpn;
+    PSN psn;  // for debug use
     PsnMergeWindowBoundary maxLeftBoundary;
     Bool isOverflow;
     PsnMergeWindowBitOffset shiftOffset;
@@ -314,6 +316,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 let outInfo = FourChannelPsnBitmapPreMergeOnehotGenInternalState {
                     qpn: channelInfo.qpn,
+                    psn: channelInfo.psn,
                     maxLeftBoundary: channelInfo.maxLeftBoundary,
                     isOverflow: isOverflow,
                     shiftOffset:truncate(shiftDelta)
@@ -333,6 +336,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
         Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp)) outputVec = newVector;
 
+        Bool needPrintDebugInfo = False;
         for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
             let channelInfoMaybe = pipelineEntryIn[idx];
             if (channelInfoMaybe matches tagged Valid .channelInfo) begin
@@ -340,10 +344,14 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 let outInfo = FourChannelPsnBitmapPreMergeResp {
                     qpn: channelInfo.qpn,
+                    psn: channelInfo.psn,
                     maxLeftBoundary: channelInfo.maxLeftBoundary,
                     bitmap: bitmap
                 };
                 outputVec[idx] = tagged Valid outInfo;
+                if (getIndexQP(channelInfo.qpn) == 4) begin
+                    needPrintDebugInfo = True;
+                end
             end
             else begin
                 outputVec[idx] = tagged Invalid;
@@ -366,7 +374,15 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
             channelEqual23 = True;
         end
 
-        channelQpnEqualMapPipelineQueue.enq({pack(channelEqual01), pack(channelEqual12), pack(channelEqual23)});
+        let channelQpnEqualMap = {pack(channelEqual01), pack(channelEqual12), pack(channelEqual23)};
+        channelQpnEqualMapPipelineQueue.enq(channelQpnEqualMap);
+        if (needPrintDebugInfo) begin
+            $display("time=%0t", $time, ", mkFourChannelPsnBitmapPreMerge genOneHotBitmapForEachChannel", 
+                ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                ", outputVec=", fshow(outputVec),
+                ", channelQpnEqualMap=", fshow(channelQpnEqualMap)
+            );
+        end
     endrule
 
     rule preMergeChannels;
@@ -397,6 +413,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c0.qpn,
+                    psn: c0.psn,
                     maxLeftBoundary: c0.maxLeftBoundary,
                     bitmap: c0.bitmap | c1.bitmap
                 };
@@ -419,6 +436,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c0.qpn,
+                    psn: c0.psn,
                     maxLeftBoundary: c0.maxLeftBoundary,
                     bitmap: c0.bitmap | c1.bitmap | c2.bitmap
                 };
@@ -443,6 +461,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c0.qpn,
+                    psn: c0.psn,
                     maxLeftBoundary: c0.maxLeftBoundary,
                     bitmap: c0.bitmap | c1.bitmap | c2.bitmap | c3.bitmap
                 };
@@ -470,12 +489,14 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 outVec[0] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c0.qpn,
+                    psn: c0.psn,
                     maxLeftBoundary: c0.maxLeftBoundary,
                     bitmap: c0.bitmap | c1.bitmap 
                 };
 
                 outVec[1] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c2.qpn,
+                    psn: c2.psn,
                     maxLeftBoundary: c2.maxLeftBoundary,
                     bitmap:  c2.bitmap | c3.bitmap
                 };
@@ -499,6 +520,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
                 outVec[1] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c1.qpn,
+                    psn: c1.psn,
                     maxLeftBoundary: c1.maxLeftBoundary,
                     bitmap:  c1.bitmap | c2.bitmap | c3.bitmap
                 };
@@ -518,6 +540,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
                 outVec[0] = oneHotBitmapVec[0];
                 outVec[1] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c1.qpn,
+                    psn: c1.psn,
                     maxLeftBoundary: c1.maxLeftBoundary,
                     bitmap: c1.bitmap | c2.bitmap
                 };
@@ -539,6 +562,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
                 outVec[1] = oneHotBitmapVec[1];
                 outVec[2] = tagged Valid FourChannelPsnBitmapPreMergeResp{
                     qpn: c2.qpn,
+                    psn: c2.psn,
                     maxLeftBoundary: c2.maxLeftBoundary,
                     bitmap: c2.bitmap | c3.bitmap
                 };
@@ -625,7 +649,7 @@ typedef struct {
 } BitmapWindowStorageInternalForwardEntry#(type tRowAddr, type tData, type tBoundary) deriving(Bits, FShow);
 
 interface BitmapWindowStorage#(type tRowAddr, type tData, type tBoundary, numeric type szStride);
-    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))) reqPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVec;
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVec;
 endinterface
 
@@ -652,10 +676,10 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
         Add#(d__, szWideShiftOffset, TLog#(szData)),
         FShow#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))
     );
-    Vector#(NUMERIC_TYPE_TWO, PipeIn#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))) reqPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVecInst = newVector;
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))) reqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG(initFile)));
@@ -684,27 +708,31 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
         return isValid(prevAddrMaybe) && isValid(curReqMaybe) && prevAddr == curReq.rowAddr;
     endfunction
 
+    function Bool addrConflictCheckV2(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)) in1Maybe, Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)) in2Maybe);
+        let in1 = fromMaybe(?, in1Maybe);
+        let in2 = fromMaybe(?, in2Maybe);
+        return isValid(in1Maybe) && isValid(in1Maybe) && in1.rowAddr == in2.rowAddr;
+    endfunction
+
     // reorder Pipeline Stage One
     rule enqueueIntoReorderBuffer;
-        if (reqPipeInQueueVec[0].notEmpty || reqPipeInQueueVec[1].notEmpty) begin
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
 
-            for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-                let selfChannelIdx = getSelfIdx(idx);
-                let otherChannelIdx = getOtherIdx(idx);
+            if (reqPipeInQueueVec[idx].notEmpty) begin
+                let req = reqPipeInQueueVec[idx].first;
+                reqPipeInQueueVec[idx].deq;
 
-                if (reqPipeInQueueVec[idx].notEmpty) begin
-                    let req = reqPipeInQueueVec[idx].first;
-                    reqPipeInQueueVec[idx].deq;
-
-                    reorderBuf[0][selfChannelIdx] <= tagged Valid req;
-                end
-                else begin
-                    reorderBuf[0][selfChannelIdx] <= tagged Invalid;
-                end
+                reorderBuf[0][selfChannelIdx] <= req;
             end
-
-            mergeStateOneToTwoPipelineQueue.enq(0);
         end
+
+        mergeStateOneToTwoPipelineQueue.enq(0);
+        
+        // $display("time=%0t", $time, "mkBitmapWindowStorage enqueueIntoReorderBuffer", 
+        //         ", reqPipeInQueueVec=", fshow(reqPipeInQueueVec)
+        // );
     endrule
 
     // reorder Pipeline Stage Two
@@ -721,6 +749,11 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
         let confilct2 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[0][1]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[0][1]);
         let confilct3 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[1][0]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[1][0]);
         let confilct4 = addrConflictCheck(prevReqRowAddrVec[0], reorderBuf[1][1]) || addrConflictCheck(prevReqRowAddrVec[1], reorderBuf[1][1]);
+        let conflict13 = addrConflictCheckV2(reorderBuf[0][0], reorderBuf[1][0]);
+        let conflict24 = addrConflictCheckV2(reorderBuf[0][1], reorderBuf[1][1]);
+        let conflict14 = addrConflictCheckV2(reorderBuf[0][0], reorderBuf[1][1]);
+        let conflict23 = addrConflictCheckV2(reorderBuf[0][1], reorderBuf[1][0]);
+        let conflict34 = addrConflictCheckV2(reorderBuf[1][0], reorderBuf[1][1]);
 
         let channelOutputMaybeA = ?;
         let channelOutputMaybeB = ?;
@@ -734,26 +767,50 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
             end
             2'b01: begin
                 if (confilct2) begin
-                    channelOutputMaybeA = reorderBuf[1][0];
-                    channelOutputMaybeB = reorderBuf[0][0];
-                    reorderBuf[1][0] <= reorderBuf[0][1];
+                    if (conflict13) begin
+                        channelOutputMaybeA = reorderBuf[0][0];
+                        channelOutputMaybeB = reorderBuf[0][1];
+                    end
+                    else begin
+                        channelOutputMaybeA = reorderBuf[1][0];
+                        channelOutputMaybeB = reorderBuf[0][0];
+                        reorderBuf[1][0] <= reorderBuf[0][1];
+                    end
                 end
                 else begin
-                    channelOutputMaybeA = reorderBuf[1][0];
-                    channelOutputMaybeB = reorderBuf[0][1];
-                    reorderBuf[1][0] <= reorderBuf[0][0];
+                    if (conflict23) begin
+                        channelOutputMaybeA = reorderBuf[0][0];
+                        channelOutputMaybeB = reorderBuf[0][1];
+                    end
+                    else begin
+                        channelOutputMaybeA = reorderBuf[1][0];
+                        channelOutputMaybeB = reorderBuf[0][1];
+                        reorderBuf[1][0] <= reorderBuf[0][0];
+                    end
                 end
             end
             2'b10: begin
                 if (confilct1) begin
-                    channelOutputMaybeA = reorderBuf[0][1];
-                    channelOutputMaybeB = reorderBuf[1][1];
-                    reorderBuf[1][1] <= reorderBuf[0][0];
+                    if (conflict24) begin
+                        channelOutputMaybeA = reorderBuf[0][0];
+                        channelOutputMaybeB = reorderBuf[0][1];
+                    end
+                    else begin
+                        channelOutputMaybeA = reorderBuf[0][1];
+                        channelOutputMaybeB = reorderBuf[1][1];
+                        reorderBuf[1][1] <= reorderBuf[0][0];
+                    end
                 end
                 else begin
-                    channelOutputMaybeA = reorderBuf[0][0];
-                    channelOutputMaybeB = reorderBuf[1][1];
-                    reorderBuf[1][1] <= reorderBuf[0][1];
+                    if (conflict14) begin
+                        channelOutputMaybeA = reorderBuf[0][0];
+                        channelOutputMaybeB = reorderBuf[0][1];
+                    end
+                    else begin
+                        channelOutputMaybeA = reorderBuf[0][0];
+                        channelOutputMaybeB = reorderBuf[1][1];
+                        reorderBuf[1][1] <= reorderBuf[0][1];
+                    end
                 end
             end
             2'b11: begin
@@ -770,6 +827,23 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
         let channelOutputB = fromMaybe(?, channelOutputMaybeB);
         prevReqRowAddrVec[0] <= isValid(channelOutputMaybeA) ? tagged Valid channelOutputA.rowAddr : tagged Invalid;
         prevReqRowAddrVec[1] <= isValid(channelOutputMaybeB) ? tagged Valid channelOutputB.rowAddr : tagged Invalid;
+
+        // $display("time=%0t", $time, "mkBitmapWindowStorage reorderCore \n",
+        //         fshow(prevReqRowAddrVec[0]),  " , ",  fshow(prevReqRowAddrVec[1]), "\n",
+        //         "------------\n",
+        //         fshow(reorderBuf[0][0]), " , ",  fshow(reorderBuf[0][1]), "\n",
+        //         fshow(reorderBuf[1][0]), " , ",  fshow(reorderBuf[1][1]), "\n",
+        //         "------------\n",
+        //         fshow(channelOutputMaybeA),  " , ",  fshow(channelOutputMaybeB), "\n"
+        // );
+
+        if (channelOutputMaybeA matches tagged Valid .outA &&& channelOutputMaybeB matches tagged Valid .outB) begin
+            immAssert(
+                outA.rowAddr != outB.rowAddr,
+                "two channel has the same row address",
+                $format(", outA=", fshow(outA), ", outB=", fshow(outB))
+            );
+        end
 
         // if (isValid(channelOutputMaybeA) && channelOutputA.rowAddr == 4) begin
         //     $display("time=%0t", $time, "mkBitmapWindowStorage reorderCore", 

@@ -11,7 +11,7 @@ MISCFLAGS += -D IS_DEBUG=True -D USE_MOCK_HOST=True
 ZERO_BRAM_HEX_FILE ?= zero_bram.hex
 
 gen_bram_hex:
-	python3 ../scripts/gen_zero_bram_init_file.py $(BUILDDIR)/bram_zero_128x512.bin 128 512
+	python3 ../scripts/gen_bram_init_file.py $(BUILDDIR)
 
 compile: gen_bram_hex
 	mkdir -p $(BUILDDIR)

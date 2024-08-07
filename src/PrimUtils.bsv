@@ -724,15 +724,15 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
     method Action putReadReq(tAddr addr);
         let {writeAddr, writeData} = fromMaybe(?, writeReqWire.wget);
         Bool isConflict = isValid(writeReqWire.wget) && (writeAddr == addr);
-        $display("time=%0t", $time, "putReadReq", 
-            ", isValid writeReqWire=", fshow(isValid(writeReqWire.wget)),
-            ", writeAddr=", fshow(writeAddr), 
-            ", addr=", fshow(addr)
-        );
+        // $display("time=%0t", $time, "putReadReq", 
+        //     ", isValid writeReqWire=", fshow(isValid(writeReqWire.wget)),
+        //     ", writeAddr=", fshow(writeAddr), 
+        //     ", addr=", fshow(addr)
+        // );
         if (isConflict) begin
-            $display("time=%0t", $time, "putReadReq conflict", 
-                ", writeData=", fshow(writeData)
-            );
+            // $display("time=%0t", $time, "putReadReq conflict", 
+            //     ", writeData=", fshow(writeData)
+            // );
             tReg <= writeData;
         end
         else begin
@@ -749,9 +749,9 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
         );
         illegalReadMonitorCounter.decr(1);
 
-        $display("time=%0t", $time, "getReadResp", 
-            ", tReg=", fshow(tReg)
-        );
+        // $display("time=%0t", $time, "getReadResp", 
+        //     ", tReg=", fshow(tReg)
+        // );
         return tReg;
     endmethod
 endmodule

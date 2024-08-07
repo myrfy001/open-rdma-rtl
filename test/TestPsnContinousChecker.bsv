@@ -17,24 +17,26 @@ import PsnContinousChecker :: *;
 
 
 
-module mkGenRandomPsnInContinousWindow(PipeOut#(PSN));
+module mkGenRandomPsnInContinousWindow(PipeOut#(PSN)) provisos (
+    NumAlias#(TDiv#(OOO_WINDOW_SIZE, 2), szRandomWindow)
+);
     FIFOF#(PSN) outputBufferQ <- mkFIFOF;
     
     Reg#(PSN) nextPsnReg <- mkReg(0);
     Reg#(Bit#(5)) swapCounterReg <- mkReg(0);
     Reg#(Bit#(8)) moveCounterReg <- mkReg(0);
-    Reg#(Vector#(OOO_WINDOW_SIZE, PSN)) randomWindowVecReg <- mkRegU;
+    Reg#(Vector#(szRandomWindow, PSN)) randomWindowVecReg <- mkRegU;
 
-    PipeOut#(Length) randomPsnSlotIdxPipeOut <- mkRandomLenPipeOut(0, fromInteger(valueOf(OOO_WINDOW_SIZE)-1));
+    PipeOut#(Length) randomPsnSlotIdxPipeOut <- mkRandomLenPipeOut(0, fromInteger(valueOf(szRandomWindow)-1));
 
     Reg#(Bit#(2)) stateReg <- mkReg(0);
     rule addPsnToRandomWindow if (stateReg == 0);
 
-        Vector#(OOO_WINDOW_SIZE, PSN) winVec = newVector;
-        for (Integer idx = 0; idx < valueOf(OOO_WINDOW_SIZE); idx = idx + 1) begin
+        Vector#(szRandomWindow, PSN) winVec = newVector;
+        for (Integer idx = 0; idx < valueOf(szRandomWindow); idx = idx + 1) begin
             winVec[idx] = nextPsnReg + fromInteger(idx);
         end
-        nextPsnReg <= nextPsnReg + fromInteger(valueOf(OOO_WINDOW_SIZE));
+        nextPsnReg <= nextPsnReg + fromInteger(valueOf(szRandomWindow));
         randomWindowVecReg <= winVec;
         stateReg <= 1;
 
@@ -45,8 +47,8 @@ module mkGenRandomPsnInContinousWindow(PipeOut#(PSN));
         randomPsnSlotIdxPipeOut.deq;
 
         let winVec = randomWindowVecReg;
-        PSN t = winVec[valueOf(OOO_WINDOW_SIZE) / 2];
-        winVec[valueOf(OOO_WINDOW_SIZE) / 2] = winVec[randomIdx];
+        PSN t = winVec[valueOf(szRandomWindow) / 2];
+        winVec[valueOf(szRandomWindow) / 2] = winVec[randomIdx];
         winVec[randomIdx] = t;
 
         randomWindowVecReg <= winVec;
@@ -62,7 +64,7 @@ module mkGenRandomPsnInContinousWindow(PipeOut#(PSN));
     endrule
 
     rule movePsnToOutputBuffer if (stateReg == 2);
-        if (moveCounterReg == fromInteger(valueOf(OOO_WINDOW_SIZE)-1)) begin
+        if (moveCounterReg == fromInteger(valueOf(szRandomWindow)-1)) begin
             moveCounterReg <= 0;
             stateReg <= 0;
         end
@@ -89,7 +91,7 @@ module mkTestCpsnCalc(Empty);
     Reg#(Bool) deqEvenOddReg <- mkReg(False);
 
     FourChannelPsnBitmapPreMerge dutPreMerge <- mkFourChannelPsnBitmapPreMerge;
-    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dutPsnMergeStorage <- mkBitmapWindowStorage("bram_zero_128x512.bin");
+    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dutPsnMergeStorage <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
 
     for (Integer idx = 0; idx < 4; idx = idx + 1) begin
         rule fillReqVector if (stateReg == fromInteger(idx));
@@ -143,9 +145,11 @@ module mkTestCpsnCalc(Empty);
         deqEvenOddReg <= !deqEvenOddReg;
         let resp = dutPreMerge.respPipeOut.first;
         if (deqEvenOddReg) begin
-            
+            $display("time=%0t", $time, ", mkTestCpsnCalc forwardPremergeToStorage", 
+                    "resp=", fshow(resp));
+
             if (resp[0] matches tagged Valid .req) begin
-                dutPsnMergeStorage.reqPipeInVec[0].enq(BitmapWindowStorageUpdateReq {
+                dutPsnMergeStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
                     rowAddr: getIndexQP(req.qpn),
                     entry: BitmapWindowStorageEntry {
                         data: req.bitmap,
@@ -156,8 +160,12 @@ module mkTestCpsnCalc(Empty);
                     // $display("time=%0t", $time, ", per merge result=", fshow(req));
                 end
             end
+            else begin
+                dutPsnMergeStorage.reqPipeInVec[0].enq(tagged Invalid);
+            end
+
             if (resp[1] matches tagged Valid .req) begin
-                dutPsnMergeStorage.reqPipeInVec[1].enq(BitmapWindowStorageUpdateReq {
+                dutPsnMergeStorage.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
                     rowAddr: getIndexQP(req.qpn),
                     entry: BitmapWindowStorageEntry {
                         data: req.bitmap,
@@ -167,11 +175,14 @@ module mkTestCpsnCalc(Empty);
                 if (getIndexQP(req.qpn) == 4) begin
                     // $display("time=%0t", $time, ", per merge result=", fshow(req));
                 end
+            end
+            else begin
+                dutPsnMergeStorage.reqPipeInVec[1].enq(tagged Invalid);
             end
         end
         else begin
             if (resp[2] matches tagged Valid .req) begin
-                dutPsnMergeStorage.reqPipeInVec[0].enq(BitmapWindowStorageUpdateReq {
+                dutPsnMergeStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
                     rowAddr: getIndexQP(req.qpn),
                     entry: BitmapWindowStorageEntry {
                         data: req.bitmap,
@@ -182,8 +193,12 @@ module mkTestCpsnCalc(Empty);
                     // $display("time=%0t", $time, ", per merge result=", fshow(req));
                 end
             end
+            else begin
+                dutPsnMergeStorage.reqPipeInVec[0].enq(tagged Invalid);
+            end
+
             if (resp[3] matches tagged Valid .req) begin
-                dutPsnMergeStorage.reqPipeInVec[1].enq(BitmapWindowStorageUpdateReq {
+                dutPsnMergeStorage.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
                     rowAddr: getIndexQP(req.qpn),
                     entry: BitmapWindowStorageEntry {
                         data: req.bitmap,
@@ -193,6 +208,9 @@ module mkTestCpsnCalc(Empty);
                 if (getIndexQP(req.qpn) == 4) begin
                     // $display("time=%0t", $time, ", per merge result=", fshow(req));
                 end
+            end
+            else begin
+                dutPsnMergeStorage.reqPipeInVec[1].enq(tagged Invalid);
             end
 
             dutPreMerge.respPipeOut.deq;
@@ -207,12 +225,25 @@ module mkTestCpsnCalc(Empty);
         if (resp1 matches tagged Valid .resp) begin
             if (resp.rowAddr == 4) begin
                 $display("time=%0t", $time, ", resp=", fshow(resp));
+
+                immAssert(
+                resp.windowShiftedOutData == -1,
+                "PSN contonous checker found broken reorder window.",
+                $format("resp=", fshow(resp))
+            );
             end
+            
         end
         if (resp2 matches tagged Valid .resp) begin
             if (resp.rowAddr == 4) begin
                 $display("time=%0t", $time, ", resp=", fshow(resp));
-            end
+
+                immAssert(
+                resp.windowShiftedOutData == -1,
+                "PSN contonous checker found broken reorder window.",
+                $format("resp=", fshow(resp))
+            );
+            end 
         end
         
     endrule
@@ -247,17 +278,17 @@ endmodule
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorage(Empty);
  
-    BitmapWindowStorage#(Bit#(9), Bit#(128), Bit#(17), OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("bram_zero_128x512.bin");
+    BitmapWindowStorage#(Bit#(9), Bit#(128), Bit#(17), OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
 
     rule inject;
-        dut.reqPipeInVec[0].enq(BitmapWindowStorageUpdateReq {
+        dut.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
             rowAddr: 0,
             entry: BitmapWindowStorageEntry {
                 data: 0,
                 leftBound: 0
             }
         });
-        dut.reqPipeInVec[1].enq(BitmapWindowStorageUpdateReq {
+        dut.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
             rowAddr: 4,
             entry: BitmapWindowStorageEntry {
                 data: 0,
@@ -283,7 +314,7 @@ endinterface
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorageTiming(TestBitmapWindowStorageTiming);
  
-    BitmapWindowStorage#(Bit#(9), Bit#(128), Bit#(17), OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("bram_zero_128x512.bin");
+    BitmapWindowStorage#(Bit#(9), Bit#(128), Bit#(17), OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
 
     ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(Bit#(9), Bit#(128), Bit#(17)))) signalKeeperForResp1 <- mkForceKeepWideSignals; 
     ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(Bit#(9), Bit#(128), Bit#(17)))) signalKeeperForResp2 <- mkForceKeepWideSignals; 
