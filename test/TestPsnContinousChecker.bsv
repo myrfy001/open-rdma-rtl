@@ -106,9 +106,6 @@ module mkTestCpsnCalc(Empty);
                 let req = tuple2(genQPN(qpnIdx, 0), rangPsnPipeOutVec[qpnIdx].first);
                 reqRegVector[idx] <= tagged Valid req;
                 rangPsnPipeOutVec[qpnIdx].deq;
-                if (qpnIdx == 4) begin
-                    $display("time=%0t", $time, ", req=", fshow(req));
-                end
             end
         endrule
     end
@@ -145,8 +142,8 @@ module mkTestCpsnCalc(Empty);
         deqEvenOddReg <= !deqEvenOddReg;
         let resp = dutPreMerge.respPipeOut.first;
         if (deqEvenOddReg) begin
-            $display("time=%0t", $time, ", mkTestCpsnCalc forwardPremergeToStorage", 
-                    "resp=", fshow(resp));
+            // $display("time=%0t", $time, ", mkTestCpsnCalc forwardPremergeToStorage", 
+            //         ", resp=", fshow(resp));
 
             if (resp[0] matches tagged Valid .req) begin
                 dutPsnMergeStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
@@ -247,6 +244,15 @@ module mkTestCpsnCalc(Empty);
         end
         
     endrule
+
+    rule injectReset;
+        dutPsnMergeStorage.resetReqPipeIn.enq(1);
+    endrule
+
+    rule getResetResp;
+        dutPsnMergeStorage.resetRespPipeOut.deq;
+        $display("Got Reset Resp");
+    endrule
 endmodule
 
 
@@ -325,6 +331,9 @@ module mkTestBitmapWindowStorageTiming(TestBitmapWindowStorageTiming);
         let rndData <- randSource1.get;
         dut.reqPipeInVec[0].enq(unpack(truncate(rndData)));
         dut.reqPipeInVec[1].enq(unpack(truncate(rndData[511:256])));
+        if (rndData[20] == 1) begin
+            dut.resetReqPipeIn.enq(unpack(truncate(rndData[100: 10])));
+        end
     endrule
 
     rule getResp;
@@ -335,6 +344,10 @@ module mkTestBitmapWindowStorageTiming(TestBitmapWindowStorageTiming);
 
         signalKeeperForResp1.bitsPipeIn.enq(resp1);
         signalKeeperForResp2.bitsPipeIn.enq(resp2);
+    endrule
+
+    rule getResetResp;
+        dut.resetRespPipeOut.deq;
     endrule
 
     rule gatherKeptSignals;
