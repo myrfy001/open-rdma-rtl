@@ -15,8 +15,8 @@ def gen_init_bram_psn_merge_storage():
         } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
         '''
         for i in range(512):
-            data_part = "1" * 128
-            left_boundary_part = "0" * 20
+            data_part = "1" * 128              # -1
+            left_boundary_part = "1" * 20      # -1
             fo.write(data_part + left_boundary_part + "\n")
 
 

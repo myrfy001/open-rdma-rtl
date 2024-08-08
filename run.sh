@@ -32,7 +32,7 @@ make -j8 TESTFILE=TestPayloadGenAndCon.bsv TOPMODULE=mkTestPayloadGenAndCon 2>&1
 
 make -j8 TESTFILE=TestStreamShifter.bsv TOPMODULE=mkTestBiDirectionStreamShifter 2>&1 | tee -a $ALL_LOG
 
-
+make -j8 TESTFILE=TestPsnContinousChecker.bsv TOPMODULE=mkTestCpsnCounter 2>&1 | tee -a $ALL_LOG
 
 
 

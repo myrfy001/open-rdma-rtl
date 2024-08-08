@@ -1125,7 +1125,7 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 // Reset is low priority.
                 if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
                     let resetValue = BitmapWindowStorageEntry{
-                        leftBound: 0,
+                        leftBound: -1,
                         data: -1
                     };
                     storage[selfChannelIdx][0].write(resetReqAddr, resetValue);
@@ -1169,32 +1169,102 @@ endmodule
 
 
 typedef struct {
-    BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary) bitmapStorageOutput;
-    PSN oldCpsn;
-} CpsnCounterReq#(type tRowAddr, type tData, type tBoundary) deriving(FShow, Bits);
+    BitmapWindowStorageEntry#(tData, tBoundary) bitmapEntry;
+} CpsnCounterReq#(type tData, type tBoundary) deriving(FShow, Bits);
 
 
 
-interface CpsnCounter#(type tRowAddr, type tData, type tBoundary, numeric type szStride);
-    interface PipeIn#(CpsnCounterReq#(tRowAddr, tData, tBoundary)) reqPipeIn;
+interface CpsnCounter#(type tData, type tBoundary, numeric type szStride);
+    interface PipeIn#(CpsnCounterReq#(tData, tBoundary)) reqPipeIn;
     interface PipeOut#(PSN) respPipeOut;
 endinterface
 
-// module mkCpsnCounter(CpsnCounter#(tRowAddr, tData, tBoundary, szStride));
-//     FIFOF#(CpsnCounterReq#(tRowAddr, tData, tBoundary)) reqPipeInQ <- mkFIFOF;
-//     FIFOF#(PSN) respPipeOutQ <- mkFIFOF;
+module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
+    Bits#(tData, szData),
+    NumAlias#(32, szCompareBlock),
+    Alias#(Bit#(szCompareBlock), tCompareBlock),
+    NumAlias#(TLog#(TAdd#(szData, 1)), szDataBitCount),
+    Alias#(Bit#(szDataBitCount), tDataBitCount),
+    NumAlias#(TDiv#(szData, szCompareBlock), nCompareBlockCount),
+    NumAlias#(TLog#(nCompareBlockCount), szCompareBlockCount),
+    Alias#(Bit#(szCompareBlockCount), tCompareBlockIdx),
+    Alias#(Bit#(nCompareBlockCount), tBlockCompareResultBitmap),
+    Bits#(tBoundary, szBoundary),
+    Add#(a__, szBoundary, PSN_WIDTH),
+    Arith#(tBoundary),
+    Add#(b__, szDataBitCount, PSN_WIDTH),
+    Add#(szCompareBlockCount, c__, szDataBitCount),
+    FShow#(Tuple5#(Bool, Bit#(TLog#(TDiv#(szData, 32))), Bit#(32), Bit#(32),
+    tBoundary))
+
+);
+    FIFOF#(CpsnCounterReq#(tData, tBoundary)) reqPipeInQ <- mkFIFOF;
+    FIFOF#(PSN) respPipeOutQ <- mkFIFOF;
 
 
-//     rule firstState;
-//         let pipelineEntryIn = reqPipeInQ.first;
-//         reqPipeInQ.deq;
+    FIFOF#(Tuple5#(Bool, tCompareBlockIdx, tCompareBlock, tCompareBlock, tBoundary)) stageOneToTwoPipelineQueue <- mkFIFOF;
+    rule firstState;
+        let req = reqPipeInQ.first;
+        reqPipeInQ.deq;
 
-//         let rightBoundary = pipelineEntryIn.boundaryDeltaAbs > fromInteger(valueOf(TDiv#(szData, szStride)));
-//     endrule
+        tBoundary rightBoundary = req.bitmapEntry.leftBound - fromInteger(valueOf(TDiv#(szData, szStride))-1);
+        
+
+        tBlockCompareResultBitmap fullOneBlockBitmap = 0;
+
+        Bit#(szData) windowBitmap = unpack(pack(req.bitmapEntry.data));
+        Vector#(nCompareBlockCount, tCompareBlock) invBlockVec = newVector;
+        for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
+            tCompareBlock block = windowBitmap[ valueOf(szCompareBlock) * (idx + 1) - 1 : valueOf(szCompareBlock) * idx ];
+            fullOneBlockBitmap[idx] = pack(block == -1);
+            invBlockVec[idx] = ~block;
+        end
+
+        Bool foundNonFullOneBlock = False;
+        tCompareBlockIdx firstNonFullOneBlockIdx = 0;
+        tCompareBlock firstNonFullOneBlockPos = 0;
+        tCompareBlock firstNonFullOneBlockNeg = 0;
+        for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
+            if ( !foundNonFullOneBlock && fullOneBlockBitmap[idx] == 0 ) begin
+                foundNonFullOneBlock = True;
+                firstNonFullOneBlockIdx = fromInteger(idx);
+                firstNonFullOneBlockPos = invBlockVec[idx];
+                firstNonFullOneBlockNeg = -invBlockVec[idx];
+            end
+        end
+
+        stageOneToTwoPipelineQueue.enq(tuple5(foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary));
+    endrule
 
 
+    rule secondStage;
+        let {foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary} = stageOneToTwoPipelineQueue.first;
+        stageOneToTwoPipelineQueue.deq;
+        $display("=====", fshow(stageOneToTwoPipelineQueue.first));
+        PSN rightMostPsn = zeroExtendLSB(pack(rightBoundary));
+        PSN cpsn = rightMostPsn;
 
+        if (!foundNonFullOneBlock) begin
+            cpsn = cpsn + fromInteger(valueOf(szCompareBlock) * valueOf(nCompareBlockCount));
+        end
+        else begin
+            tDataBitCount continousOneCntHighPart = zeroExtend(pack(firstNonFullOneBlockIdx)) << valueOf(TLog#(szCompareBlock));
+            tDataBitCount continousOneCntLowPart = 0;
 
-//     interface reqPipeIn = toPipeIn(reqPipeInQ);
-//     interface respPipeOut = toPipeOut(respPipeOutQ);
-// endmodule
+            tCompareBlock oneHot = firstNonFullOneBlockPos & firstNonFullOneBlockNeg;
+
+            for (Integer idx = 0; idx < valueOf(szCompareBlock); idx = idx + 1) begin
+                if ( oneHot[idx] == 1 ) begin
+                    continousOneCntLowPart = fromInteger(idx);
+                end
+            end
+            $display("===== high=", fshow(continousOneCntHighPart), ", low=", fshow(continousOneCntLowPart), ", oneHot=", fshow(oneHot));
+            tDataBitCount continousOneInBlock = continousOneCntHighPart + continousOneCntLowPart;
+            cpsn = cpsn + zeroExtend(continousOneInBlock);
+        end
+        respPipeOutQ.enq(cpsn);
+    endrule
+
+    interface reqPipeIn = toPipeIn(reqPipeInQ);
+    interface respPipeOut = toPipeOut(respPipeOutQ);
+endmodule

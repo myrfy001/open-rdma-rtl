@@ -280,6 +280,67 @@ module mkTestBitmapPreMerge(Empty);
     endrule
 endmodule
 
+(* doc = "testcase" *)
+module mkTestCpsnCounter(Empty) provisos (
+        NumAlias#(16, nTestCnt),
+        NumAlias#(TLog#(TAdd#(1, nTestCnt)), szTestCnt),
+        Alias#(Bit#(szTestCnt), tTestCnt)
+    );
+    
+    CpsnCounter#(OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dut <- mkCpsnCounter;
+
+
+    Vector#(nTestCnt, Tuple2#(PSN, BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary))) testTable = vec(
+        tuple2(0, BitmapWindowStorageEntry{ data: 128'h0000_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 0}),
+        tuple2(1, BitmapWindowStorageEntry{ data: 128'h0001_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 0}),
+        tuple2(1, BitmapWindowStorageEntry{ data: 128'h0005_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 0}),
+        tuple2(0, BitmapWindowStorageEntry{ data: 128'h0006_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 0}),
+        tuple2(3, BitmapWindowStorageEntry{ data: 128'h0007_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 0}),
+        tuple2(16, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 0}),
+        tuple2(0, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: -1}),
+        tuple2(32, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 1}),
+        tuple2(48, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 2}),
+        tuple2(64, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 3}),
+        tuple2(80, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 4}),
+        tuple2(96, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 5}),
+        tuple2(112, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 6}),
+        tuple2(128, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, leftBound: 7}),
+        tuple2(0, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFF0, leftBound: 7}),
+        tuple2(1, BitmapWindowStorageEntry{ data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFF5, leftBound: 7})
+    );
+
+    Reg#(tTestCnt) inputIdxReg <- mkReg(0);
+    Reg#(tTestCnt) outputIdxReg <- mkReg(0);
+
+    rule inject;
+        if (inputIdxReg < fromInteger(valueOf(nTestCnt))) begin
+            inputIdxReg <= inputIdxReg + 1;
+            let ent = CpsnCounterReq {
+                bitmapEntry: tpl_2(testTable[inputIdxReg])
+            };
+            dut.reqPipeIn.enq(ent);
+        end
+    endrule
+
+    rule check;
+        let resp = dut.respPipeOut.first;
+        dut.respPipeOut.deq;
+
+        outputIdxReg <= outputIdxReg + 1;
+
+        immAssert(
+            resp == tpl_1(testTable[outputIdxReg]),
+            "mkTestCpsnCounter test failed",
+            $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(resp))
+        );
+        
+        if (outputIdxReg == fromInteger(valueOf(nTestCnt)-1)) begin
+            $display("PASS");
+            $finish;
+        end
+    endrule
+endmodule
+
 
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorage(Empty);
