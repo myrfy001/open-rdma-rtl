@@ -20,5 +20,13 @@ def gen_init_bram_psn_merge_storage():
             fo.write(data_part + left_boundary_part + "\n")
 
 
+def gen_init_bram_psn_incr_storage():
+    with open(os.path.join(out_path, "init_bram_psn_incr_storage.bin"), "w") as fo:
+        for i in range(512):
+            data_part = "0" * 24
+            fo.write(data_part + "\n")
+
+
 if __name__ == "__main__":
     gen_init_bram_psn_merge_storage()
+    gen_init_bram_psn_incr_storage()

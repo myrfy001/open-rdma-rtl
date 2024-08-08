@@ -11,19 +11,6 @@ import RdmaHeaders :: *;
 
 import ConnectableF :: *;
 
-// typedef 128 BITMAP_BIT_WIDTH_PER_BANK;
-// typedef Bit#(BITMAP_BIT_WIDTH_PER_BANK) BitmapPerBank;
-
-// typedef TLog#(BITMAP_BIT_WIDTH_PER_BANK) BITMAP_BIT_INDEX_WIDTH;
-// typedef Bit#(BITMAP_BIT_INDEX_WIDTH) BitmapBitIdx;
-
-// typedef 4 BITMAP_BANK_NUM;
-// typedef TLog#(BITMAP_BANK_NUM) BITMAP_BANK_IDNEX_WIDTH;
-// typedef Bit#(BITMAP_BANK_IDNEX_WIDTH) BitmapBankIdx;
-
-// typedef TSub#(PSN_WIDTH, TAdd#(BITMAP_BIT_INDEX_WIDTH, BITMAP_BANK_IDNEX_WIDTH)) BITMAP_BANK_TAG_BIT_WIDTH;
-// typedef Bit#(BITMAP_BANK_TAG_BIT_WIDTH) BitmapBankTag;
-
 typedef 4 CPSN_CHECKER_CHANNEL_NUM;
 typedef Bit#(TLog#(CPSN_CHECKER_CHANNEL_NUM)) CpsnCheckerChannelIdx;
 
@@ -73,28 +60,6 @@ typedef Bit#(TLog#(CPSN_CHECKER_CHANNEL_NUM)) CpsnCheckerChannelIdx;
 // endmodule
 
 
-// interface OneHotBankBitmapGen;
-//     interface PipeIn#(PSN) psnPipeIn;
-//     interface PipeOut#(BitmapPerBank) bitmapPipeOut;
-// endinterface
-
-// module mkOneHotBankBitmapGen(OneHotBankBitmapGen);
-//     FIFOF#(PSN) psnPipeInQ <- mkFIFOF;
-//     FIFOF#(BitmapPerBank) bitmapPipeOutQ <- mkFIFOF;
-
-//     rule doShift;
-//         let psn = psnPipeInQ.first;
-//         psnPipeInQ.deq;
-
-//         PsnAsBitmapIndex psnAsBitmapIndex = unpack(pack(psn));
-//         BitmapPerBank out = 1 << psnAsBitmapIndex.bitIdx;
-
-//         bitmapPipeOutQ.enq(out);
-//     endrule
-
-//     interface psnPipeIn = toPipeIn(psnPipeInQ);
-//     interface bitmapPipeOut = toPipeOut(bitmapPipeOutQ);
-// endmodule
 
 
 
@@ -582,21 +547,10 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
     interface respPipeOut = toPipeOut(respPipeOutQueue);
 endmodule
 
-
-
-
-
-
-
 // Must be 2^N
 typedef 128 OOO_WINDOW_SIZE;
 typedef 16  OOO_WINDOW_STRIDE;  
-
-
 typedef Bit#(OOO_WINDOW_SIZE) OooWindowBitmap;
-
-
-
 
 typedef struct {
     tData       data;
@@ -1240,7 +1194,6 @@ module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
     rule secondStage;
         let {foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary} = stageOneToTwoPipelineQueue.first;
         stageOneToTwoPipelineQueue.deq;
-        $display("=====", fshow(stageOneToTwoPipelineQueue.first));
         PSN rightMostPsn = zeroExtendLSB(pack(rightBoundary));
         PSN cpsn = rightMostPsn;
 
@@ -1258,7 +1211,6 @@ module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
                     continousOneCntLowPart = fromInteger(idx);
                 end
             end
-            $display("===== high=", fshow(continousOneCntHighPart), ", low=", fshow(continousOneCntLowPart), ", oneHot=", fshow(oneHot));
             tDataBitCount continousOneInBlock = continousOneCntHighPart + continousOneCntLowPart;
             cpsn = cpsn + zeroExtend(continousOneInBlock);
         end
@@ -1267,4 +1219,301 @@ module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
 
     interface reqPipeIn = toPipeIn(reqPipeInQ);
     interface respPipeOut = toPipeOut(respPipeOutQ);
+endmodule
+
+
+
+
+
+typedef struct {
+    tRowAddr    rowAddr;
+    tData       value;
+} MonoInrcNumberStorageUpdateReq#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    tData       newValue;
+} MonoInrcNumberStorageUpdateResp#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tData       data;
+} MonoInrcNumberStorageEntry#(type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    MonoInrcNumberStorageEntry#(tData) newEntry;
+} MonoInrcNumberStorageStageOneToTwoPipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    MonoInrcNumberStorageEntry#(tData) oldEntry;
+    MonoInrcNumberStorageEntry#(tData) newEntry;
+} MonoInrcNumberStorageStageTwoToThreePipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr        rowAddr;
+    MonoInrcNumberStorageEntry#(tData) newEntry;
+} MonoInrcNumberStorageStageThreeToFourPipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    MonoInrcNumberStorageEntry#(tData) entry;
+} MonoInrcNumberStorageInternalForwardEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+interface MonoInrcNumberStorage#(type tRowAddr, type tData);
+    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVec;
+    
+    interface PipeIn#(tRowAddr) resetReqPipeIn;
+    interface PipeOut#(Bit#(0)) resetRespPipeOut;
+endinterface
+
+module mkMonoInrcNumberStorage#(String initFile)(MonoInrcNumberStorage#(tRowAddr, tData)) provisos (
+        Bits#(tRowAddr, szRowAddr),
+        Bits#(tData, szData),
+        Bitwise#(tData),
+        Literal#(tData),
+        Arith#(tData),
+        Ord#(tData),
+        Bounded#(tRowAddr),
+        Literal#(tRowAddr),
+        Eq#(tRowAddr),
+        FShow#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData))
+    );
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVecInst = newVector;
+
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
+
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, MonoInrcNumberStorageEntry#(tData)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG(initFile)));
+
+    // Forward Registers (use config reg to solve rule schedule order)
+    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(MonoInrcNumberStorageInternalForwardEntry#(tRowAddr, tData)))) forwardRegVec <- replicateM(mkConfigReg(tagged Invalid));
+
+    // Pipeline Queues
+
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageStageOneToTwoPipelineEntry#(tRowAddr, tData)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageStageTwoToThreePipelineEntry#(tRowAddr, tData)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(MonoInrcNumberStorageStageThreeToFourPipelineEntry#(tRowAddr, tData))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
+
+    function Integer getSelfIdx(Integer idx) = idx;
+    function Integer getOtherIdx(Integer idx) = 1 - idx;
+
+    FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
+    FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
+
+    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
+    Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);
+
+    // Merge Pipeline Stage One
+    rule sendBramQueryReq;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+
+            let pipelineEntryInMaybe = reqPipeInQueueVec[selfChannelIdx].first;
+            reqPipeInQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                storage[selfChannelIdx][0].putReadReq(pipelineEntryIn.rowAddr);
+                storage[otherChannelIdx][1].putReadReq(pipelineEntryIn.rowAddr);
+
+                let pipelineEntryOut = MonoInrcNumberStorageStageOneToTwoPipelineEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    newEntry: MonoInrcNumberStorageEntry {
+                        data: pipelineEntryIn.value
+                    }
+                };
+                stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 1 sendBramQueryReq", 
+                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn)
+                    // );
+                end
+            end
+            else begin
+                stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
+            end
+        end
+    endrule
+
+    // Merge Pipeline Stage Two
+    rule getBramQueryRespAndPreMergeThem;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+
+            let pipelineEntryInMaybe = stageOneToTwoPipelineQueueVec[selfChannelIdx].first;
+            stageOneToTwoPipelineQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                let selfResp <- storage[selfChannelIdx][0].getReadResp;
+                let otherResp <- storage[otherChannelIdx][1].getReadResp;
+
+                Maybe#(MonoInrcNumberStorageEntry#(tData)) forwardedRespMaybe = tagged Invalid;
+                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        // $display("time=%0t", $time, "mkMonoInrcNumberStorage 2 getBramQueryRespAndPreMergeThem", 
+                        //         ", forwardRegVec[0]=", fshow(forwardRegVec[0])
+                        // );
+                    end
+                end
+                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        // $display("time=%0t", $time, "mkMonoInrcNumberStorage 2 getBramQueryRespAndPreMergeThem", 
+                        //         ", forwardRegVec[1]=", fshow(forwardRegVec[1])
+                        // );
+                    end
+                end
+                
+                let delta = selfResp.data - otherResp.data;
+
+                // if forward path has data, then use the newest value from forward path.
+                // else, if delta is non-negative, means `selfResp` is newer or equal to `otherResp`, so choose `selfResp`.
+                let selectedResp = isValid(forwardedRespMaybe) ? fromMaybe(?, forwardedRespMaybe) : ( msb(delta) == 0 ? selfResp : otherResp);
+
+                let pipelineEntryOut = MonoInrcNumberStorageStageTwoToThreePipelineEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    oldEntry: selectedResp,
+                    newEntry: pipelineEntryIn.newEntry
+                };
+
+                stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 2 getBramQueryRespAndPreMergeThem", 
+                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                    //         ", pipelineEntryOut=", fshow(pipelineEntryOut),
+                    //         ", selfResp=", fshow(selfResp),
+                    //         ", otherResp=", fshow(otherResp)
+                    // );
+                end
+            end
+            else begin
+                stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
+            end
+        end
+    endrule
+
+    // Merge Pipeline Stage Three
+    rule doMerge;
+
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+
+            let pipelineEntryInMaybe = stageTwoToThreePipelineQueueVec[selfChannelIdx].first;
+            stageTwoToThreePipelineQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                let alreadyExistEntry = pipelineEntryIn.oldEntry;
+                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    alreadyExistEntry = forwardedEntry.entry;
+                end
+                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    alreadyExistEntry = forwardedEntry.entry;
+                end
+
+                let delta = pipelineEntryIn.newEntry.data - alreadyExistEntry.data;
+                let newEntry =  msb(delta) == 0 ? pipelineEntryIn.newEntry : alreadyExistEntry;
+
+                let forwardEntry = MonoInrcNumberStorageInternalForwardEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    entry: newEntry
+                };
+                forwardRegVec[selfChannelIdx] <= tagged Valid forwardEntry;
+
+                let resp = MonoInrcNumberStorageUpdateResp {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    newValue: newEntry.data
+                };
+                respPipeOutQueueVec[selfChannelIdx].enq(tagged Valid resp);
+
+                let bramWriteBackReq = MonoInrcNumberStorageStageThreeToFourPipelineEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    newEntry: newEntry
+                };
+                stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
+
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 3 doMerge", 
+                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                    //         ", resp=", fshow(resp)
+                    // );
+                end
+
+            end
+            else begin
+                forwardRegVec[selfChannelIdx] <= tagged Invalid;
+                respPipeOutQueueVec[selfChannelIdx].enq(tagged Invalid);
+            end
+        end
+    endrule
+
+    // Merge Pipeline Stage Four
+    (* conflict_free = "doBramWriteBack, handleResetRequest" *)
+    rule doBramWriteBack;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+            if (stageThreeToFourPipelineQueueVec[idx].notEmpty) begin
+                let writeBackReq = stageThreeToFourPipelineQueueVec[idx].first;
+                stageThreeToFourPipelineQueueVec[idx].deq;
+
+                storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+                storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+
+                if (writeBackReq.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 4 doBramWriteBack", 
+                    //         ", writeBackReq=", fshow(writeBackReq)
+                    // );
+                end
+            end
+            else begin
+                // Reset is low priority.
+                if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
+                    let resetValue = MonoInrcNumberStorageEntry{
+                        data: 0
+                    };
+                    storage[selfChannelIdx][0].write(resetReqAddr, resetValue);
+                    storage[selfChannelIdx][1].write(resetReqAddr, resetValue);
+                    curResetReqRegVec[selfChannelIdx] <= tagged Invalid;
+                end
+            end
+        end
+    endrule
+
+    rule handleResetRequest;
+        if (!hasPendingResetRequestReg) begin
+            if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
+                if (resetReqPipeInQ.notEmpty) begin
+                    curResetReqRegVec[0] <= tagged Valid resetReqPipeInQ.first;
+                    curResetReqRegVec[1] <= tagged Valid resetReqPipeInQ.first;
+                    resetReqPipeInQ.deq;
+                    hasPendingResetRequestReg <= True;
+                end
+            end
+        end
+        else begin
+            if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
+                hasPendingResetRequestReg <= False;
+                resetRespPipeOutQ.enq(0);
+            end
+        end
+    endrule
+
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
+        respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
+    end
+
+    interface reqPipeInVec = reqPipeInVecInst;
+    interface respPipeOutVec = respPipeOutVecInst;
+
+    interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
+    interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule

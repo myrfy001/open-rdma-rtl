@@ -342,6 +342,100 @@ module mkTestCpsnCounter(Empty) provisos (
 endmodule
 
 
+
+
+
+(* doc = "testcase" *)
+module mkTestMonoInrcNumberStorage(Empty) provisos (
+        NumAlias#(22, nTestCnt),
+        NumAlias#(TLog#(TAdd#(1, nTestCnt)), szTestCnt),
+        Alias#(Bit#(szTestCnt), tTestCnt)
+    );
+    
+    MonoInrcNumberStorage#(IndexQP, PSN) dut <- mkMonoInrcNumberStorage("init_bram_psn_incr_storage.bin");
+
+
+    Vector#(nTestCnt, Tuple3#(PSN, PSN, Bool)) testTable = vec(
+        tuple3(0, 0, True),
+        tuple3(1, 1, True),
+        tuple3(1, 0, True),
+        tuple3(5, 5, False),
+        tuple3(5, 4, True),
+        tuple3(6, 6, False),
+        tuple3(7, 7, True),
+        tuple3(8, 8, False),
+        tuple3(20, 20, True),
+        tuple3(20, 16, False),
+        tuple3(20, 17, False),
+        tuple3(20, 18, False),
+        tuple3(20, 19, False),
+        tuple3(128, 128, True),
+        tuple3(128, 124, True),
+        tuple3(128, 125, True),
+        tuple3(128, 126, True),
+        tuple3(128, 127, True),
+        tuple3((1<<23)-1, (1<<23)-1, True),
+        tuple3((1<<23)+5, (1<<23)+5, False),
+        tuple3((1<<24)-10, (1<<24)-10, False),
+        tuple3(0, 0, True)
+    );
+
+    Reg#(tTestCnt) inputIdxReg <- mkReg(0);
+    Reg#(tTestCnt) outputIdxReg <- mkReg(0);
+
+    rule inject;
+        if (inputIdxReg < fromInteger(valueOf(nTestCnt))) begin
+            inputIdxReg <= inputIdxReg + 1;
+            let {expectData, injectData, injectFirstChannel} = testTable[inputIdxReg];
+            let ent = MonoInrcNumberStorageUpdateReq {
+                rowAddr: 4,
+                value: injectData
+            };
+            if (injectFirstChannel) begin
+                dut.reqPipeInVec[0].enq(tagged Valid ent);
+                dut.reqPipeInVec[1].enq(tagged Invalid);
+            end
+            else begin
+                dut.reqPipeInVec[0].enq(tagged Invalid);
+                dut.reqPipeInVec[1].enq(tagged Valid ent);
+            end
+        end
+    endrule
+
+    rule check;
+        let respMaybe0 = dut.respPipeOutVec[0].first;
+        dut.respPipeOutVec[0].deq;
+        let respMaybe1 = dut.respPipeOutVec[1].first;
+        dut.respPipeOutVec[1].deq;
+
+        outputIdxReg <= outputIdxReg + 1;
+
+        let {expectData, injectData, injectFirstChannel} = testTable[outputIdxReg];
+        if (injectFirstChannel) begin
+            let resp = fromMaybe(?, respMaybe0);
+            immAssert(
+                resp.newValue == expectData && isValid(respMaybe0) && !isValid(respMaybe1),
+                "mkTestMonoInrcNumberStorage test failed",
+                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(resp))
+            );
+        end
+        else begin
+            let resp = fromMaybe(?, respMaybe1);
+            immAssert(
+                resp.newValue == expectData && isValid(respMaybe1) && !isValid(respMaybe0),
+                "mkTestMonoInrcNumberStorage test failed",
+                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(resp))
+            );
+        end
+        
+        if (outputIdxReg == fromInteger(valueOf(nTestCnt)-1)) begin
+            $display("PASS");
+            $finish;
+        end
+    endrule
+endmodule
+
+
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorage(Empty);
  
