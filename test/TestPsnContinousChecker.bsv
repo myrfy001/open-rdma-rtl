@@ -341,10 +341,6 @@ module mkTestCpsnCounter(Empty) provisos (
     endrule
 endmodule
 
-
-
-
-
 (* doc = "testcase" *)
 module mkTestMonoInrcNumberStorage(Empty) provisos (
         NumAlias#(22, nTestCnt),
@@ -434,6 +430,78 @@ module mkTestMonoInrcNumberStorage(Empty) provisos (
         end
     endrule
 endmodule
+
+
+
+(* doc = "testcase" *)
+module mkTestMaxAckPsnCalculator(Empty) provisos (
+        NumAlias#(24, nTestCnt),
+        NumAlias#(TLog#(TAdd#(1, nTestCnt)), szTestCnt),
+        Alias#(Bit#(szTestCnt), tTestCnt)
+    );
+    
+    MaxAckPsnCalculator#(OooWindowBitmap, PsnMergeWindowBoundary) dut <- mkMaxAckPsnCalculator;
+
+
+    Vector#(nTestCnt, Tuple2#(Maybe#(PSN), MaxAckPsnCalculatorReq#(OooWindowBitmap, PsnMergeWindowBoundary))) testTable = vec(
+        tuple2(tagged Valid 0, MaxAckPsnCalculatorReq{cpsn: 0, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF}}),
+        tuple2(tagged Valid 10, MaxAckPsnCalculatorReq{cpsn: 10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF}}),
+        tuple2(tagged Valid 1000, MaxAckPsnCalculatorReq{cpsn: 1000, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 0, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 1000, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 0, MaxAckPsnCalculatorReq{cpsn: 0, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0001}}),
+        tuple2(tagged Valid 10, MaxAckPsnCalculatorReq{cpsn: 10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0001}}),
+        tuple2(tagged Valid 1000, MaxAckPsnCalculatorReq{cpsn: 1000, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0001}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 0, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 1000, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0000_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 0, MaxAckPsnCalculatorReq{cpsn: 0, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0001_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 10, MaxAckPsnCalculatorReq{cpsn: 10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0001_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 1000, MaxAckPsnCalculatorReq{cpsn: 1000, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0001_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 0, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0002_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 1, MaxAckPsnCalculatorReq{cpsn: 1, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0002_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 2, MaxAckPsnCalculatorReq{cpsn: 2, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0002_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 10, MaxAckPsnCalculatorReq{cpsn: 10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0002_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Valid 1000, MaxAckPsnCalculatorReq{cpsn: 1000, needAckBitmap: BitmapWindowStorageEntry{leftBound: 0, data: 128'h0002_0000_0000_0000_0000_0000_0000_0000}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 'h0F, needAckBitmap: BitmapWindowStorageEntry{leftBound: 8, data: 128'h0000_0000_0000_0000_0000_0000_0000_0001}}),
+        tuple2(tagged Valid 'h10, MaxAckPsnCalculatorReq{cpsn: 'h10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 8, data: 128'h0000_0000_0000_0000_0000_0000_0000_0001}}),
+        tuple2(tagged Invalid, MaxAckPsnCalculatorReq{cpsn: 'h0F, needAckBitmap: BitmapWindowStorageEntry{leftBound: 8, data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF}}),
+        tuple2(tagged Valid 'h10, MaxAckPsnCalculatorReq{cpsn: 'h10, needAckBitmap: BitmapWindowStorageEntry{leftBound: 8, data: 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF}})
+    );
+
+    Reg#(tTestCnt) inputIdxReg <- mkReg(0);
+    Reg#(tTestCnt) outputIdxReg <- mkReg(0);
+
+    rule inject;
+        if (inputIdxReg < fromInteger(valueOf(nTestCnt))) begin
+            inputIdxReg <= inputIdxReg + 1;
+            let {expectData, injectData} = testTable[inputIdxReg];
+            dut.reqPipeIn.enq(injectData);
+        end
+    endrule
+
+    rule check;
+        let respMaybe = dut.respPipeOut.first;
+        dut.respPipeOut.deq;
+
+        outputIdxReg <= outputIdxReg + 1;
+
+        let {expectData, injectData} = testTable[outputIdxReg];
+        immAssert(
+            respMaybe == expectData,
+            "mkTestMonoInrcNumberStorage test failed",
+            $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(respMaybe))
+        );
+        
+        if (outputIdxReg == fromInteger(valueOf(nTestCnt)-1)) begin
+            $display("PASS");
+            $finish;
+        end
+    endrule
+endmodule
+
+
 
 
 (* doc = "testcase" *)

@@ -1517,3 +1517,81 @@ module mkMonoInrcNumberStorage#(String initFile)(MonoInrcNumberStorage#(tRowAddr
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
     interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule
+
+
+typedef struct {
+    BitmapWindowStorageEntry#(tData, tBoundary) needAckBitmap;
+    PSN cpsn;
+} MaxAckPsnCalculatorReq#(type tData, type tBoundary) deriving(Bits, FShow);
+
+
+interface MaxAckPsnCalculator#(type tData, type tBoundary);
+    interface PipeIn#(MaxAckPsnCalculatorReq#(tData, tBoundary)) reqPipeIn;
+    interface PipeOut#(Maybe#(PSN)) respPipeOut;
+endinterface
+
+module mkMaxAckPsnCalculator(MaxAckPsnCalculator#(tData, tBoundary)) provisos (
+        Bits#(tData, szData),
+        NumAlias#(TLog#(szData), szShiftOffset),
+        Alias#(Bit#(szShiftOffset), tShiftOffset),
+        Add#(a__, szShiftOffset, PSN_WIDTH),
+        Bits#(tBoundary, szBoundary),
+        Add#(b__, szBoundary, 24),
+        Eq#(tData),
+        Bitwise#(tData),
+        Literal#(tData)
+    );
+    FIFOF#(MaxAckPsnCalculatorReq#(tData, tBoundary)) reqPipeInQueue <- mkFIFOF;
+    FIFOF#(Maybe#(PSN)) respPipeOutQueue <- mkFIFOF;
+
+
+    FIFOF#(Tuple4#(Bool, Bool, tShiftOffset, MaxAckPsnCalculatorReq#(tData, tBoundary))) doShiftPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(BitmapWindowStorageEntry#(tData, tBoundary), MaxAckPsnCalculatorReq#(tData, tBoundary))) doBitmapCompareQ <- mkFIFOF;
+    rule preClac;
+        let req = reqPipeInQueue.first;
+        reqPipeInQueue.deq;
+
+        PSN leftMostPsnValOfBitmapWindow = unpack({pack(req.needAckBitmap.leftBound), -1});
+        PSN psnDelta = leftMostPsnValOfBitmapWindow - req.cpsn;
+        Bool isCpsnFallBehindExceedWindow = psnDelta >= fromInteger(valueOf(szData));
+        Bool isCpsnGreaterThanWholeWindow = msb(psnDelta) == 1;
+        tShiftOffset shiftOffset = truncate(psnDelta);
+
+        doShiftPipelineQ.enq(tuple4(isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req));
+
+    endrule
+
+    rule doShift;
+        let {isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req} = doShiftPipelineQ.first;
+        doShiftPipelineQ.deq;
+
+        BitmapWindowStorageEntry#(tData, tBoundary) psnBitmapEntry = req.needAckBitmap;
+        if (isCpsnGreaterThanWholeWindow) begin
+            psnBitmapEntry.data = -1;
+        end
+        else if (isCpsnFallBehindExceedWindow) begin
+            psnBitmapEntry.data = 0;
+        end
+        else begin
+            psnBitmapEntry.data = -1;
+            psnBitmapEntry.data = psnBitmapEntry.data >> shiftOffset;
+        end
+        doBitmapCompareQ.enq(tuple2(psnBitmapEntry, req));
+    endrule
+
+    rule doBitmapCompare;
+        let {psnBitmapEntry, req} = doBitmapCompareQ.first;
+        doBitmapCompareQ.deq;
+
+        let maskedNeedAckBitmap = req.needAckBitmap.data & psnBitmapEntry.data;
+        if (maskedNeedAckBitmap != 0) begin
+            respPipeOutQueue.enq(tagged Valid req.cpsn);
+        end
+        else begin
+            respPipeOutQueue.enq(tagged Invalid);
+        end
+    endrule
+
+    interface reqPipeIn = toPipeIn(reqPipeInQueue);
+    interface respPipeOut = toPipeOut(respPipeOutQueue);
+endmodule
