@@ -14,54 +14,6 @@ import ConnectableF :: *;
 typedef 4 CPSN_CHECKER_CHANNEL_NUM;
 typedef Bit#(TLog#(CPSN_CHECKER_CHANNEL_NUM)) CpsnCheckerChannelIdx;
 
-// typedef struct {
-//     PSN psn;
-//     QPN qpn;
-//     Bool needAck;
-// } PsnContinousCheckerReq deriving(Bits, FShow);
-
-// typedef struct {
-//     QPN qpn;
-//     PSN cpsn;
-//     Maybe#(BitmapPerBank) evictedBitmapMaybe;
-// } PsnContinousCheckerResp deriving(Bits, FShow);
-
-// typedef struct {
-//     BitmapBankTag   tag;
-//     BitmapBankIdx   bankIdx;
-//     BitmapBitIdx    bitIdx;
-// } PsnAsBitmapIndex deriving(Bits, FShow);
-
-// interface PsnContinousCheckerAndAckAutoGen;
-//     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(PsnContinousCheckerReq)) reqPipeInVec;
-//     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeOut#(PsnContinousCheckerResp)) respPipeOutVec;
-// endinterface
-
-
-// (* synthesize *)
-// module mkPsnContinousCheckerAndAckAutoGen(PsnContinousCheckerAndAckAutoGen);
-//     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(PsnContinousCheckerReq)) reqPipeInVecInst = newVector;
-//     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeOut#(PsnContinousCheckerResp)) respPipeOutVecInst = newVector;
-//     Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(PsnContinousCheckerReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
-//     Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(PsnContinousCheckerResp)) respPipeOutQueueVec <- replicateM(mkFIFOF);
-
-
-
-
-
-
-
-//     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-//         reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
-//         respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
-//     end
-//     interface reqPipeInVec = reqPipeInVecInst;
-//     interface respPipeOutVec = respPipeOutVecInst;
-// endmodule
-
-
-
-
 
 
 typedef TSub#(PSN_WIDTH, TLog#(OOO_WINDOW_STRIDE)) PSN_MERGE_WINDOW_BOUNDARY_WIDTH;
@@ -594,6 +546,7 @@ typedef struct {
 typedef struct {
     tRowAddr        rowAddr;
     BitmapWindowStorageEntry#(tData, tBoundary) newEntry;
+    Bool isReset;
 } BitmapWindowStorageStageFourToFivePipelineEntry#(type tRowAddr, type tData, type tBoundary, type tShiftOffset) deriving(Bits, FShow);
 
 
@@ -1037,7 +990,8 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
 
                 let bramWriteBackReq = BitmapWindowStorageStageFourToFivePipelineEntry {
                     rowAddr: pipelineEntryIn.rowAddr,
-                    newEntry: newEntry
+                    newEntry: newEntry,
+                    isReset: False
                 };
                 stageFourToFivePipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
 
@@ -1052,6 +1006,21 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
             else begin
                 forwardRegVec[selfChannelIdx] <= tagged Invalid;
                 respPipeOutQueueVec[selfChannelIdx].enq(tagged Invalid);
+
+                // Reset is low priority.
+                if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
+                    let resetValue = BitmapWindowStorageEntry{
+                        leftBound: -1,
+                        data: -1
+                    };
+                    let bramWriteBackReq = BitmapWindowStorageStageFourToFivePipelineEntry {
+                        rowAddr: resetReqAddr,
+                        newEntry: resetValue,
+                        isReset: True
+                    };
+                    stageFourToFivePipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
+                end
+
             end
         end
     endrule
@@ -1068,24 +1037,16 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
 
                 storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
                 storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+                
+                if (writeBackReq.isReset) begin
+                    curResetReqRegVec[selfChannelIdx] <= tagged Invalid;
+                end
 
                 // if (writeBackReq.rowAddr == 4) begin
                 //     $display("time=%0t", $time, "mkBitmapWindowStorage 5 doBramWriteBack", 
                 //             ", writeBackReq=", fshow(writeBackReq)
                 //     );
                 // end
-            end
-            else begin
-                // Reset is low priority.
-                if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
-                    let resetValue = BitmapWindowStorageEntry{
-                        leftBound: -1,
-                        data: -1
-                    };
-                    storage[selfChannelIdx][0].write(resetReqAddr, resetValue);
-                    storage[selfChannelIdx][1].write(resetReqAddr, resetValue);
-                    curResetReqRegVec[selfChannelIdx] <= tagged Invalid;
-                end
             end
         end
     endrule
