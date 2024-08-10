@@ -60,9 +60,9 @@ FILE=`ls TestPsnContinousChecker.bsv`
 # TESTCASE=mkTestBitmapPreMerge
 # TESTCASE=mkTestCpsnCalc
 # TESTCASE=mkTestMonoInrcNumberStorage
-TESTCASE=mkTestMaxAckPsnCalculator
+# TESTCASE=mkTestMaxAckPsnCalculator
 # TESTCASE=mkTestCpsnCounter
-# TESTCASE=mkTestBitmapWindowStorage
+TESTCASE=mkTestBitmapWindowStorage
 # TESTCASE=mkTestTopNoMockHost
 
 # FILE=`ls TestTop.bsv`

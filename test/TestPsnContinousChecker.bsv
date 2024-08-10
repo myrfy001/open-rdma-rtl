@@ -507,7 +507,7 @@ endmodule
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorage(Empty);
  
-    BitmapWindowStorage#(Bit#(9), Bit#(128), Bit#(17), OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
+    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
 
     rule inject;
         dut.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
@@ -543,10 +543,10 @@ endinterface
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorageTiming(TestBitmapWindowStorageTiming);
  
-    BitmapWindowStorage#(Bit#(9), Bit#(128), Bit#(17), OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
+    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
 
-    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(Bit#(9), Bit#(128), Bit#(17)))) signalKeeperForResp1 <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(Bit#(9), Bit#(128), Bit#(17)))) signalKeeperForResp2 <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary))) signalKeeperForResp1 <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary))) signalKeeperForResp2 <- mkForceKeepWideSignals; 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
 
     Reg#(Bool) outReg <- mkRegU;

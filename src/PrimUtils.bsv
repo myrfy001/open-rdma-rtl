@@ -696,6 +696,39 @@ module mkAutoInferBram(AutoInferBram#(tAddr, tData)) provisos (
     endmethod
 endmodule
 
+interface AutoInferBramSingleClockWr#(type tAddr, type tData);
+    method Action upd(tAddr addr, tData data);
+    method Action sendReadAddr(tAddr addr);
+    method tData getReadResp;
+endinterface
+
+import "BVI" bram_single_clock_wr =
+module mkAutoInferBramSingleClockWr#(String initFile)(AutoInferBramSingleClockWr#(tAddr, tData)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData)
+    );
+
+    let clk <- exposeCurrentClock;
+
+    parameter ADDR_WIDTH = valueOf(szAddr);
+    parameter DATA_WIDTH = valueOf(szData);
+    parameter FILE = initFile;
+
+    input_clock (clk) = clk;
+    // input_reset = no_reset;
+    default_clock no_clock;
+    default_reset no_reset;
+
+    // input port
+    method upd(write_address, d) enable(we) clocked_by(clk) reset_by(no_reset);
+    method sendReadAddr(read_address)  enable((*inhigh*) EN_NO_USE_1) clocked_by(clk) reset_by(no_reset);
+
+    // output port
+    method q getReadResp clocked_by(clk) reset_by(no_reset);
+
+    schedule (upd, sendReadAddr, getReadResp) CF (upd, sendReadAddr, getReadResp);
+endmodule
+
 // ungarded interface, use with care!
 module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
@@ -707,15 +740,20 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
         FShow#(tData)
     );
 
-    RegFile#(tAddr, tData) storage <- mkRegFileWCFLoadBin(initFile, 0, maxBound);
-    Reg#(tData) tReg <- mkRegU;
+    AutoInferBramSingleClockWr#(tAddr, tData) storage <- mkAutoInferBramSingleClockWr(initFile);
+    // Reg#(tData) tReg <- mkRegU;
 
 
     FIFOF#(tData) outputBufQ <- mkFIFOF;
     RWire#(Tuple2#(tAddr, tData)) writeReqWire <- mkRWire;
+    Wire#(tAddr) readAddrWire <- mkDWire (unpack(0));
 
     Count#(Bit#(2)) illegalReadMonitorCounter <- mkCount(0);
     
+    rule forwardReadAddr;
+        storage.sendReadAddr(readAddrWire);
+    endrule
+
     method Action write(tAddr addr, tData data);
         storage.upd(addr, data);
         writeReqWire.wset(tuple2(addr, data));
@@ -729,15 +767,16 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
         //     ", writeAddr=", fshow(writeAddr), 
         //     ", addr=", fshow(addr)
         // );
-        if (isConflict) begin
-            // $display("time=%0t", $time, "putReadReq conflict", 
-            //     ", writeData=", fshow(writeData)
-            // );
-            tReg <= writeData;
-        end
-        else begin
-            tReg <= storage.sub(addr);
-        end
+        readAddrWire <= addr;
+        // if (isConflict) begin
+        //     // $display("time=%0t", $time, "putReadReq conflict", 
+        //     //     ", writeData=", fshow(writeData)
+        //     // );
+        //     tReg <= writeData;
+        // end
+        // else begin
+        //     tReg <= storage.sub(addr);
+        // end
         illegalReadMonitorCounter.incr(1);
     endmethod
 
@@ -752,7 +791,7 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
         // $display("time=%0t", $time, "getReadResp", 
         //     ", tReg=", fshow(tReg)
         // );
-        return tReg;
+        return storage.getReadResp;
     endmethod
 endmodule
 
