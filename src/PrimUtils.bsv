@@ -703,7 +703,7 @@ interface AutoInferBramSingleClockWr#(type tAddr, type tData);
 endinterface
 
 import "BVI" bram_single_clock_wr =
-module mkAutoInferBramSingleClockWr#(String initFile)(AutoInferBramSingleClockWr#(tAddr, tData)) provisos (
+module mkAutoInferBramSingleClockWrBVI#(Bool bypassWriteData, String initFile)(AutoInferBramSingleClockWr#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData)
     );
@@ -713,6 +713,7 @@ module mkAutoInferBramSingleClockWr#(String initFile)(AutoInferBramSingleClockWr
     parameter ADDR_WIDTH = valueOf(szAddr);
     parameter DATA_WIDTH = valueOf(szData);
     parameter FILE = initFile;
+    parameter BYPASS_WRITE_DATA = bypassWriteData;
 
     input_clock (clk) = clk;
     // input_reset = no_reset;
@@ -729,6 +730,65 @@ module mkAutoInferBramSingleClockWr#(String initFile)(AutoInferBramSingleClockWr
     schedule (upd, sendReadAddr, getReadResp) CF (upd, sendReadAddr, getReadResp);
 endmodule
 
+module mkAutoInferBramSingleClockWrBSV#(Bool bypassWriteData, String initFile)(AutoInferBramSingleClockWr#(tAddr, tData)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Eq#(tAddr),
+        Bounded#(tAddr),
+        Literal#(tAddr)
+    );
+    RegFile#(tAddr, tData) storage <- mkRegFileWCFLoadBin(initFile, 0, maxBound);
+    Reg#(tData) tReg <- mkRegU;
+
+    RWire#(Tuple2#(tAddr, tData)) writeReqWire <- mkRWire;
+
+
+    method Action upd(tAddr addr, tData data);
+        storage.upd(addr, data);
+        writeReqWire.wset(tuple2(addr, data));
+    endmethod
+
+    method Action sendReadAddr(tAddr addr);
+        if (writeReqWire.wget matches tagged Valid .writeReq) begin
+            let {addrWrite, dataWrite} = writeReq;
+            if (addr == addrWrite) begin
+                tReg <= dataWrite;
+            end
+            else begin
+                tReg <= storage.sub(addr);
+            end
+        end
+        else begin
+            tReg <= storage.sub(addr);
+        end
+    endmethod
+
+    method tData getReadResp;
+        return tReg;
+    endmethod
+
+endmodule
+
+module mkAutoInferBramSingleClockWr#(Bool bypassWriteData, String initFile)(AutoInferBramSingleClockWr#(tAddr, tData)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Eq#(tAddr),
+        Bounded#(tAddr),
+        Literal#(tAddr)
+    );
+
+    AutoInferBramSingleClockWr#(tAddr, tData) inst;
+
+    if (genVerilog) begin
+        inst <- mkAutoInferBramSingleClockWrBVI(bypassWriteData, initFile);
+    end
+    else begin
+        inst <- mkAutoInferBramSingleClockWrBSV(bypassWriteData, initFile);
+    end
+
+    return inst;
+endmodule
+
 // ungarded interface, use with care!
 module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
@@ -740,12 +800,9 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
         FShow#(tData)
     );
 
-    AutoInferBramSingleClockWr#(tAddr, tData) storage <- mkAutoInferBramSingleClockWr(initFile);
-    // Reg#(tData) tReg <- mkRegU;
+    AutoInferBramSingleClockWr#(tAddr, tData) storage <- mkAutoInferBramSingleClockWr(True, initFile);
+    Reg#(Maybe#(tData)) conflictForwardReg <- mkRegU;
 
-
-    FIFOF#(tData) outputBufQ <- mkFIFOF;
-    RWire#(Tuple2#(tAddr, tData)) writeReqWire <- mkRWire;
     Wire#(tAddr) readAddrWire <- mkDWire (unpack(0));
 
     Count#(Bit#(2)) illegalReadMonitorCounter <- mkCount(0);
@@ -756,27 +813,13 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
 
     method Action write(tAddr addr, tData data);
         storage.upd(addr, data);
-        writeReqWire.wset(tuple2(addr, data));
     endmethod
 
     method Action putReadReq(tAddr addr);
-        let {writeAddr, writeData} = fromMaybe(?, writeReqWire.wget);
-        Bool isConflict = isValid(writeReqWire.wget) && (writeAddr == addr);
         // $display("time=%0t", $time, "putReadReq", 
-        //     ", isValid writeReqWire=", fshow(isValid(writeReqWire.wget)),
-        //     ", writeAddr=", fshow(writeAddr), 
         //     ", addr=", fshow(addr)
         // );
         readAddrWire <= addr;
-        // if (isConflict) begin
-        //     // $display("time=%0t", $time, "putReadReq conflict", 
-        //     //     ", writeData=", fshow(writeData)
-        //     // );
-        //     tReg <= writeData;
-        // end
-        // else begin
-        //     tReg <= storage.sub(addr);
-        // end
         illegalReadMonitorCounter.incr(1);
     endmethod
 

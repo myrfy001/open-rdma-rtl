@@ -1,7 +1,8 @@
-module bram_single_clock_wr#(
+module bram_single_clock_wr_with_read_bypass#(
         parameter ADDR_WIDTH = 8,
         parameter DATA_WIDTH = 8,
-        parameter FILE = ""
+        parameter FILE = "",
+        parameter BYPASS_WRITE_DATA = FALSE
     )(
         output reg [(DATA_WIDTH-1):0] q,
         input [(DATA_WIDTH-1):0] d,
@@ -18,8 +19,14 @@ module bram_single_clock_wr#(
 
     always @ (posedge clk) begin
         if (we)
-            mem[write_address] = d;
-        q = mem[read_address]; // q does get d in this clock 
-                               // cycle if we is high
+            mem[write_address] <= d;
+        
+        if (BYPASS_WRITE_DATA) begin
+            wire is_conflict = (write_address == read_address && we);
+            q <= is_conflict ? d : mem[read_address];
+        end
+        else begin
+            q <= mem[read_address];
+        end
     end
 endmodule

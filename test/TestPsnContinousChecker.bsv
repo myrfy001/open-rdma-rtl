@@ -224,10 +224,10 @@ module mkTestCpsnCalc(Empty);
                 $display("time=%0t", $time, ", resp=", fshow(resp));
 
                 immAssert(
-                resp.windowShiftedOutData == -1,
-                "PSN contonous checker found broken reorder window.",
-                $format("resp=", fshow(resp))
-            );
+                    resp.windowShiftedOutData == -1,
+                    "PSN contonous checker found broken reorder window.",
+                    $format("resp=", fshow(resp))
+                );
             end
             
         end
@@ -236,10 +236,10 @@ module mkTestCpsnCalc(Empty);
                 $display("time=%0t", $time, ", resp=", fshow(resp));
 
                 immAssert(
-                resp.windowShiftedOutData == -1,
-                "PSN contonous checker found broken reorder window.",
-                $format("resp=", fshow(resp))
-            );
+                    resp.windowShiftedOutData == -1,
+                    "PSN contonous checker found broken reorder window.",
+                    $format("resp=", fshow(resp))
+                );
             end 
         end
         
