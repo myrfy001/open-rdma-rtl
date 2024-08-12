@@ -702,7 +702,7 @@ interface AutoInferBramSingleClockWr#(type tAddr, type tData);
     method tData getReadResp;
 endinterface
 
-import "BVI" bram_single_clock_wr =
+import "BVI" bram_single_clock_wr_with_read_bypass =
 module mkAutoInferBramSingleClockWrBVI#(Bool bypassWriteData, String initFile)(AutoInferBramSingleClockWr#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData)
@@ -749,7 +749,7 @@ module mkAutoInferBramSingleClockWrBSV#(Bool bypassWriteData, String initFile)(A
     endmethod
 
     method Action sendReadAddr(tAddr addr);
-        if (writeReqWire.wget matches tagged Valid .writeReq) begin
+        if (bypassWriteData &&& writeReqWire.wget matches tagged Valid .writeReq) begin
             let {addrWrite, dataWrite} = writeReq;
             if (addr == addrWrite) begin
                 tReg <= dataWrite;

@@ -2,7 +2,7 @@ module bram_single_clock_wr_with_read_bypass#(
         parameter ADDR_WIDTH = 8,
         parameter DATA_WIDTH = 8,
         parameter FILE = "",
-        parameter BYPASS_WRITE_DATA = FALSE
+        parameter BYPASS_WRITE_DATA = 0
     )(
         output reg [(DATA_WIDTH-1):0] q,
         input [(DATA_WIDTH-1):0] d,
@@ -10,7 +10,7 @@ module bram_single_clock_wr_with_read_bypass#(
         input we, clk
     );
 
-    reg [(DATA_WIDTH-1):0] mem [(2**DATA_WIDTH-1):0];
+    reg [(DATA_WIDTH-1):0] mem [(2**ADDR_WIDTH-1):0];
 
     initial begin : init_rom_block
         $readmemb(FILE, mem);
@@ -18,14 +18,16 @@ module bram_single_clock_wr_with_read_bypass#(
 
 
     always @ (posedge clk) begin
-        if (we)
-            mem[write_address] <= d;
+        
         
         if (BYPASS_WRITE_DATA) begin
-            wire is_conflict = (write_address == read_address && we);
-            q <= is_conflict ? d : mem[read_address];
+            if (we)
+                mem[write_address] = d;
+            q = mem[read_address];
         end
         else begin
+            if (we)
+                mem[write_address] <= d;
             q <= mem[read_address];
         end
     end
