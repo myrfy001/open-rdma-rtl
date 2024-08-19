@@ -38,8 +38,11 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
 # TOPMODULE ?= mkTestPayloadGenAndConTiming
 
-TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
-TOPMODULE ?= mkTestBitmapWindowStorageTiming
+# TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
+# TOPMODULE ?= mkTestBitmapWindowStorageTiming
+
+TARGETFILE ?= ../src/AutoAckGenerator.bsv
+TOPMODULE ?= mkAutoAckGenerator
 
 # TARGETFILE ?= ../test/TestTop.bsv
 # TOPMODULE ?= mkTestTopTiming

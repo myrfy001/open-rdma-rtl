@@ -318,7 +318,7 @@ module mkTestCpsnCounter(Empty) provisos (
             let ent = CpsnCounterReq {
                 bitmapEntry: tpl_2(testTable[inputIdxReg])
             };
-            dut.reqPipeIn.enq(ent);
+            dut.reqPipeIn.enq(tagged Valid ent);
         end
     endrule
 
@@ -329,7 +329,7 @@ module mkTestCpsnCounter(Empty) provisos (
         outputIdxReg <= outputIdxReg + 1;
 
         immAssert(
-            resp == tpl_1(testTable[outputIdxReg]),
+            isValid(resp) && fromMaybe(?, resp) == tpl_1(testTable[outputIdxReg]),
             "mkTestCpsnCounter test failed",
             $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(resp))
         );
@@ -348,32 +348,33 @@ module mkTestMonoInrcNumberStorage(Empty) provisos (
         Alias#(Bit#(szTestCnt), tTestCnt)
     );
     
-    MonoInrcNumberStorage#(IndexQP, PSN) dut <- mkMonoInrcNumberStorage("init_bram_psn_incr_storage.bin");
+    MonoInrcNumberStorage#(IndexQP, PSN) dutWithMaxLimit <- mkMonoInrcNumberStorage("init_bram_psn_incr_storage.bin", tagged Valid fromInteger(valueOf(OOO_WINDOW_SIZE) - 1));
+    MonoInrcNumberStorage#(IndexQP, PSN) dutWithoutMaxLimit <- mkMonoInrcNumberStorage("init_bram_psn_incr_storage.bin", tagged Invalid);
 
 
-    Vector#(nTestCnt, Tuple3#(PSN, PSN, Bool)) testTable = vec(
-        tuple3(0, 0, True),
-        tuple3(1, 1, True),
-        tuple3(1, 0, True),
-        tuple3(5, 5, False),
-        tuple3(5, 4, True),
-        tuple3(6, 6, False),
-        tuple3(7, 7, True),
-        tuple3(8, 8, False),
-        tuple3(20, 20, True),
-        tuple3(20, 16, False),
-        tuple3(20, 17, False),
-        tuple3(20, 18, False),
-        tuple3(20, 19, False),
-        tuple3(128, 128, True),
-        tuple3(128, 124, True),
-        tuple3(128, 125, True),
-        tuple3(128, 126, True),
-        tuple3(128, 127, True),
-        tuple3((1<<23)-1, (1<<23)-1, True),
-        tuple3((1<<23)+5, (1<<23)+5, False),
-        tuple3((1<<24)-10, (1<<24)-10, False),
-        tuple3(0, 0, True)
+    Vector#(nTestCnt, Tuple4#(PSN, PSN, PSN, Bool)) testTable = vec(
+        tuple4(0, 0, 0, True),
+        tuple4(1, 1, 1, True),
+        tuple4(1, 1, 0, True),
+        tuple4(5, 5, 5, False),
+        tuple4(5, 5, 4, True),
+        tuple4(6, 6, 6, False),
+        tuple4(7, 7, 7, True),
+        tuple4(8, 8, 8, False),
+        tuple4(20, 20, 20, True),
+        tuple4(20, 20, 16, False),
+        tuple4(20, 20, 17, False),
+        tuple4(20, 20, 18, False),
+        tuple4(20, 20, 19, False),
+        tuple4(128, 128, 128, True),
+        tuple4(128, 128, 124, True),
+        tuple4(128, 128, 125, True),
+        tuple4(128, 128, 126, True),
+        tuple4(128, 128, 127, True),
+        tuple4(128, (1<<23)-1, (1<<23)-1, True),
+        tuple4(128, (1<<23)+5, (1<<23)+5, False),
+        tuple4(128, (1<<24)-10, (1<<24)-10, False),
+        tuple4(128, 0, 0, True)
     );
 
     Reg#(tTestCnt) inputIdxReg <- mkReg(0);
@@ -382,47 +383,74 @@ module mkTestMonoInrcNumberStorage(Empty) provisos (
     rule inject;
         if (inputIdxReg < fromInteger(valueOf(nTestCnt))) begin
             inputIdxReg <= inputIdxReg + 1;
-            let {expectData, injectData, injectFirstChannel} = testTable[inputIdxReg];
+            let {expectDataForNoLimitCkeck, expectDataForHasLimitCkeck, injectData, injectFirstChannel} = testTable[inputIdxReg];
             let ent = MonoInrcNumberStorageUpdateReq {
                 rowAddr: 4,
                 value: injectData
             };
             if (injectFirstChannel) begin
-                dut.reqPipeInVec[0].enq(tagged Valid ent);
-                dut.reqPipeInVec[1].enq(tagged Invalid);
+                dutWithMaxLimit.reqPipeInVec[0].enq(tagged Valid ent);
+                dutWithMaxLimit.reqPipeInVec[1].enq(tagged Invalid);
+
+                dutWithoutMaxLimit.reqPipeInVec[0].enq(tagged Valid ent);
+                dutWithoutMaxLimit.reqPipeInVec[1].enq(tagged Invalid);
             end
             else begin
-                dut.reqPipeInVec[0].enq(tagged Invalid);
-                dut.reqPipeInVec[1].enq(tagged Valid ent);
+                dutWithMaxLimit.reqPipeInVec[0].enq(tagged Invalid);
+                dutWithMaxLimit.reqPipeInVec[1].enq(tagged Valid ent);
+
+                dutWithoutMaxLimit.reqPipeInVec[0].enq(tagged Invalid);
+                dutWithoutMaxLimit.reqPipeInVec[1].enq(tagged Valid ent);
             end
         end
     endrule
 
     rule check;
-        let respMaybe0 = dut.respPipeOutVec[0].first;
-        dut.respPipeOutVec[0].deq;
-        let respMaybe1 = dut.respPipeOutVec[1].first;
-        dut.respPipeOutVec[1].deq;
+        let respWithMaxLimitMaybe0 = dutWithMaxLimit.respPipeOutVec[0].first;
+        dutWithMaxLimit.respPipeOutVec[0].deq;
+        let respWithMaxLimitMaybe1 = dutWithMaxLimit.respPipeOutVec[1].first;
+        dutWithMaxLimit.respPipeOutVec[1].deq;
+
+        let respWithoutMaxLimitMaybe0 = dutWithoutMaxLimit.respPipeOutVec[0].first;
+        dutWithoutMaxLimit.respPipeOutVec[0].deq;
+        let respWithoutMaxLimitMaybe1 = dutWithoutMaxLimit.respPipeOutVec[1].first;
+        dutWithoutMaxLimit.respPipeOutVec[1].deq;
 
         outputIdxReg <= outputIdxReg + 1;
 
-        let {expectData, injectData, injectFirstChannel} = testTable[outputIdxReg];
+        let {expectDataForHasLimitCkeck, expectDataForNoLimitCkeck, injectData, injectFirstChannel} = testTable[outputIdxReg];
         if (injectFirstChannel) begin
-            let resp = fromMaybe(?, respMaybe0);
+            let respWithMaxLimit = fromMaybe(?, respWithMaxLimitMaybe0);
             immAssert(
-                resp.newValue == expectData && isValid(respMaybe0) && !isValid(respMaybe1),
+                respWithMaxLimit.newValue == expectDataForHasLimitCkeck && isValid(respWithMaxLimitMaybe0) && !isValid(respWithMaxLimitMaybe1),
                 "mkTestMonoInrcNumberStorage test failed",
-                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(resp))
+                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(respWithMaxLimit))
+            );
+
+            let respWithoutMaxLimit = fromMaybe(?, respWithoutMaxLimitMaybe0);
+            immAssert(
+                respWithoutMaxLimit.newValue == expectDataForNoLimitCkeck && isValid(respWithoutMaxLimitMaybe0) && !isValid(respWithoutMaxLimitMaybe1),
+                "mkTestMonoInrcNumberStorage test failed",
+                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(respWithoutMaxLimit))
             );
         end
         else begin
-            let resp = fromMaybe(?, respMaybe1);
+            let respWithMaxLimit = fromMaybe(?, respWithMaxLimitMaybe1);
             immAssert(
-                resp.newValue == expectData && isValid(respMaybe1) && !isValid(respMaybe0),
+                respWithMaxLimit.newValue == expectDataForHasLimitCkeck && isValid(respWithMaxLimitMaybe1) && !isValid(respWithMaxLimitMaybe0),
                 "mkTestMonoInrcNumberStorage test failed",
-                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(resp))
+                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(respWithMaxLimit))
+            );
+
+            let respWithoutMaxLimit = fromMaybe(?, respWithoutMaxLimitMaybe1);
+            immAssert(
+                respWithoutMaxLimit.newValue == expectDataForNoLimitCkeck && isValid(respWithoutMaxLimitMaybe1) && !isValid(respWithoutMaxLimitMaybe0),
+                "mkTestMonoInrcNumberStorage test failed",
+                $format("input=", fshow(testTable[outputIdxReg]), ", result=", fshow(respWithoutMaxLimit))
             );
         end
+
+        
         
         if (outputIdxReg == fromInteger(valueOf(nTestCnt)-1)) begin
             $display("PASS");
@@ -477,7 +505,7 @@ module mkTestMaxAckPsnCalculator(Empty) provisos (
         if (inputIdxReg < fromInteger(valueOf(nTestCnt))) begin
             inputIdxReg <= inputIdxReg + 1;
             let {expectData, injectData} = testTable[inputIdxReg];
-            dut.reqPipeIn.enq(injectData);
+            dut.reqPipeIn.enq(tagged Valid injectData);
         end
     endrule
 

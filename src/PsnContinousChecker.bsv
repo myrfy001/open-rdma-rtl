@@ -1084,14 +1084,15 @@ endmodule
 
 
 typedef struct {
-    BitmapWindowStorageEntry#(tData, tBoundary) bitmapEntry;
+    BitmapWindowStorageEntry#(tData, tBoundary) bitmapEntryNew;
+    tData                                       windowShiftedOutData;
 } CpsnCounterReq#(type tData, type tBoundary) deriving(FShow, Bits);
 
 
 
 interface CpsnCounter#(type tData, type tBoundary, numeric type szStride);
-    interface PipeIn#(CpsnCounterReq#(tData, tBoundary)) reqPipeIn;
-    interface PipeOut#(PSN) respPipeOut;
+    interface PipeIn#(Maybe#(CpsnCounterReq#(tData, tBoundary))) reqPipeIn;
+    interface PipeOut#(Maybe#(PSN)) respPipeOut;
 endinterface
 
 module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
@@ -1113,69 +1114,106 @@ module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
     tBoundary))
 
 );
-    FIFOF#(CpsnCounterReq#(tData, tBoundary)) reqPipeInQ <- mkFIFOF;
-    FIFOF#(PSN) respPipeOutQ <- mkFIFOF;
 
+    // Some trick here. Since when moving the the window there is a stride, some corner case will happen when moved out stride has 0 in it.
+    // for example, suppose before moving, the bitmap is like this, then the cpsn calculated should be ('h0F9 << 'd4) + 'hE = 'h0F9E
 
-    FIFOF#(Tuple5#(Bool, tCompareBlockIdx, tCompareBlock, tCompareBlock, tBoundary)) stageOneToTwoPipelineQueue <- mkFIFOF;
+    // left boundary | bitmap                                   | right bound
+    //     'h100     | FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_7FFF  |   'h0F9
+    //                                                    ^ 'h0F9E
+
+    // suppose a new psn comes, and it has bitmap as follows:
+    // left boundary | bitmap                                   | right bound
+    //     'h101     | 0001_0000_0000_0000_0000_0000_0000_0000  |   'h0FA
+    // 
+    // After merge, we got:
+
+    // left boundary | bitmap                                   | right bound   | moved out part
+    //     'h101     | 0001_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF  |   'h0FA       | 7FFF
+    //                    ^ 'h1010                                
+
+    // if when calc cpsn, we don't care the moved out part, then the new cpsn calculated will be ('h0FA << 'd4) + 'h70 = 'h1010
+    // so the cpsn increament is 'h1010 - 'h0F9E = 'd114, which is less than window size. If the following MonoInrcNumberStorage 
+    // update this cpsn, it's legal to replace the old cpsn with the new one, which is wrong.
+    // 
+    // To solve this problem, we need to check if the shifted out bitmap has 0 in it, if it has, then we should not output a valid 
+    // CPSN since that CPSN is not accurate.
+
+    FIFOF#(Maybe#(CpsnCounterReq#(tData, tBoundary))) reqPipeInQ <- mkFIFOF;
+    FIFOF#(Maybe#(PSN)) respPipeOutQ <- mkFIFOF;
+
+    FIFOF#(Maybe#((Tuple6#(Bool, Bool, tCompareBlockIdx, tCompareBlock, tCompareBlock, tBoundary)))) stageOneToTwoPipelineQueue <- mkFIFOF;
     rule firstState;
-        let req = reqPipeInQ.first;
+        let reqMaybe = reqPipeInQ.first;
         reqPipeInQ.deq;
 
-        tBoundary rightBoundary = req.bitmapEntry.leftBound - fromInteger(valueOf(TDiv#(szData, szStride))-1);
-        
+        if (reqMaybe matches tagged Valid .req) begin
+            tBoundary rightBoundary = req.bitmapEntryNew.leftBound - fromInteger(valueOf(TDiv#(szData, szStride))-1);
+            
+            tBlockCompareResultBitmap fullOneBlockBitmap = 0;
 
-        tBlockCompareResultBitmap fullOneBlockBitmap = 0;
-
-        Bit#(szData) windowBitmap = unpack(pack(req.bitmapEntry.data));
-        Vector#(nCompareBlockCount, tCompareBlock) invBlockVec = newVector;
-        for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
-            tCompareBlock block = windowBitmap[ valueOf(szCompareBlock) * (idx + 1) - 1 : valueOf(szCompareBlock) * idx ];
-            fullOneBlockBitmap[idx] = pack(block == -1);
-            invBlockVec[idx] = ~block;
-        end
-
-        Bool foundNonFullOneBlock = False;
-        tCompareBlockIdx firstNonFullOneBlockIdx = 0;
-        tCompareBlock firstNonFullOneBlockPos = 0;
-        tCompareBlock firstNonFullOneBlockNeg = 0;
-        for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
-            if ( !foundNonFullOneBlock && fullOneBlockBitmap[idx] == 0 ) begin
-                foundNonFullOneBlock = True;
-                firstNonFullOneBlockIdx = fromInteger(idx);
-                firstNonFullOneBlockPos = invBlockVec[idx];
-                firstNonFullOneBlockNeg = -invBlockVec[idx];
+            Bit#(szData) windowBitmap = unpack(pack(req.bitmapEntryNew.data));
+            Vector#(nCompareBlockCount, tCompareBlock) invBlockVec = newVector;
+            for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
+                tCompareBlock block = windowBitmap[ valueOf(szCompareBlock) * (idx + 1) - 1 : valueOf(szCompareBlock) * idx ];
+                fullOneBlockBitmap[idx] = pack(block == -1);
+                invBlockVec[idx] = ~block;
             end
-        end
 
-        stageOneToTwoPipelineQueue.enq(tuple5(foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary));
+            Bool foundNonFullOneBlock = False;
+            tCompareBlockIdx firstNonFullOneBlockIdx = 0;
+            tCompareBlock firstNonFullOneBlockPos = 0;
+            tCompareBlock firstNonFullOneBlockNeg = 0;
+            for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
+                if ( !foundNonFullOneBlock && fullOneBlockBitmap[idx] == 0 ) begin
+                    foundNonFullOneBlock = True;
+                    firstNonFullOneBlockIdx = fromInteger(idx);
+                    firstNonFullOneBlockPos = invBlockVec[idx];
+                    firstNonFullOneBlockNeg = -invBlockVec[idx];
+                end
+            end
+
+            let isShiftOutWindowHasZero = req.windowShiftedOutData != -1;
+            stageOneToTwoPipelineQueue.enq(tagged Valid tuple6(isShiftOutWindowHasZero, foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary));
+        end
+        else begin
+            stageOneToTwoPipelineQueue.enq(tagged Invalid);
+        end
     endrule
 
 
     rule secondStage;
-        let {foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary} = stageOneToTwoPipelineQueue.first;
+        let pipelineEntryInMaybe = stageOneToTwoPipelineQueue.first;
         stageOneToTwoPipelineQueue.deq;
-        PSN rightMostPsn = zeroExtendLSB(pack(rightBoundary));
-        PSN cpsn = rightMostPsn;
 
-        if (!foundNonFullOneBlock) begin
-            cpsn = cpsn + fromInteger(valueOf(szCompareBlock) * valueOf(nCompareBlockCount));
+        if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+            let {isShiftOutWindowHasZero, foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary} = pipelineEntryIn;
+            
+            PSN rightMostPsn = zeroExtendLSB(pack(rightBoundary));
+            PSN cpsn = rightMostPsn;
+
+            if (!foundNonFullOneBlock) begin
+                cpsn = cpsn + fromInteger(valueOf(szCompareBlock) * valueOf(nCompareBlockCount));
+            end
+            else begin
+                tDataBitCount continousOneCntHighPart = zeroExtend(pack(firstNonFullOneBlockIdx)) << valueOf(TLog#(szCompareBlock));
+                tDataBitCount continousOneCntLowPart = 0;
+
+                tCompareBlock oneHot = firstNonFullOneBlockPos & firstNonFullOneBlockNeg;
+
+                for (Integer idx = 0; idx < valueOf(szCompareBlock); idx = idx + 1) begin
+                    if ( oneHot[idx] == 1 ) begin
+                        continousOneCntLowPart = fromInteger(idx);
+                    end
+                end
+                tDataBitCount continousOneInBlock = continousOneCntHighPart + continousOneCntLowPart;
+                cpsn = cpsn + zeroExtend(continousOneInBlock);
+            end
+            respPipeOutQ.enq(isShiftOutWindowHasZero ? tagged Invalid : tagged Valid cpsn);
         end
         else begin
-            tDataBitCount continousOneCntHighPart = zeroExtend(pack(firstNonFullOneBlockIdx)) << valueOf(TLog#(szCompareBlock));
-            tDataBitCount continousOneCntLowPart = 0;
-
-            tCompareBlock oneHot = firstNonFullOneBlockPos & firstNonFullOneBlockNeg;
-
-            for (Integer idx = 0; idx < valueOf(szCompareBlock); idx = idx + 1) begin
-                if ( oneHot[idx] == 1 ) begin
-                    continousOneCntLowPart = fromInteger(idx);
-                end
-            end
-            tDataBitCount continousOneInBlock = continousOneCntHighPart + continousOneCntLowPart;
-            cpsn = cpsn + zeroExtend(continousOneInBlock);
+            respPipeOutQ.enq(tagged Invalid);
         end
-        respPipeOutQ.enq(cpsn);
     endrule
 
     interface reqPipeIn = toPipeIn(reqPipeInQ);
@@ -1193,6 +1231,7 @@ typedef struct {
 
 typedef struct {
     tRowAddr    rowAddr;
+    tData       oldValue;
     tData       newValue;
 } MonoInrcNumberStorageUpdateResp#(type tRowAddr, type tData) deriving(Bits, FShow);
 
@@ -1229,7 +1268,10 @@ interface MonoInrcNumberStorage#(type tRowAddr, type tData);
     interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
 
-module mkMonoInrcNumberStorage#(String initFile)(MonoInrcNumberStorage#(tRowAddr, tData)) provisos (
+module mkMonoInrcNumberStorage#(
+        String initFile,
+        Maybe#(tData) maxDeltaLimitMaybe
+    )(MonoInrcNumberStorage#(tRowAddr, tData)) provisos (
         Bits#(tRowAddr, szRowAddr),
         Bits#(tData, szData),
         Bitwise#(tData),
@@ -1380,7 +1422,16 @@ module mkMonoInrcNumberStorage#(String initFile)(MonoInrcNumberStorage#(tRowAddr
                 end
 
                 let delta = pipelineEntryIn.newEntry.data - alreadyExistEntry.data;
-                let newEntry =  msb(delta) == 0 ? pipelineEntryIn.newEntry : alreadyExistEntry;
+
+                let newEntry = ?;
+                if (maxDeltaLimitMaybe matches tagged Valid .maxDeltaLimit) begin
+                    let limitDelta = maxDeltaLimit - delta;
+                    newEntry = msb(delta) == 0 && msb(limitDelta) == 0 ? pipelineEntryIn.newEntry : alreadyExistEntry;
+                end
+                else begin
+                    newEntry = msb(delta) == 0 ? pipelineEntryIn.newEntry : alreadyExistEntry;
+                end
+                
 
                 let forwardEntry = MonoInrcNumberStorageInternalForwardEntry {
                     rowAddr: pipelineEntryIn.rowAddr,
@@ -1390,6 +1441,7 @@ module mkMonoInrcNumberStorage#(String initFile)(MonoInrcNumberStorage#(tRowAddr
 
                 let resp = MonoInrcNumberStorageUpdateResp {
                     rowAddr: pipelineEntryIn.rowAddr,
+                    oldValue: alreadyExistEntry.data,
                     newValue: newEntry.data
                 };
                 respPipeOutQueueVec[selfChannelIdx].enq(tagged Valid resp);
@@ -1487,7 +1539,7 @@ typedef struct {
 
 
 interface MaxAckPsnCalculator#(type tData, type tBoundary);
-    interface PipeIn#(MaxAckPsnCalculatorReq#(tData, tBoundary)) reqPipeIn;
+    interface PipeIn#(Maybe#(MaxAckPsnCalculatorReq#(tData, tBoundary))) reqPipeIn;
     interface PipeOut#(Maybe#(PSN)) respPipeOut;
 endinterface
 
@@ -1502,51 +1554,67 @@ module mkMaxAckPsnCalculator(MaxAckPsnCalculator#(tData, tBoundary)) provisos (
         Bitwise#(tData),
         Literal#(tData)
     );
-    FIFOF#(MaxAckPsnCalculatorReq#(tData, tBoundary)) reqPipeInQueue <- mkFIFOF;
+    FIFOF#(Maybe#(MaxAckPsnCalculatorReq#(tData, tBoundary))) reqPipeInQueue <- mkFIFOF;
     FIFOF#(Maybe#(PSN)) respPipeOutQueue <- mkFIFOF;
 
 
-    FIFOF#(Tuple4#(Bool, Bool, tShiftOffset, MaxAckPsnCalculatorReq#(tData, tBoundary))) doShiftPipelineQ <- mkFIFOF;
-    FIFOF#(Tuple2#(BitmapWindowStorageEntry#(tData, tBoundary), MaxAckPsnCalculatorReq#(tData, tBoundary))) doBitmapCompareQ <- mkFIFOF;
+    FIFOF#(Maybe#(Tuple4#(Bool, Bool, tShiftOffset, MaxAckPsnCalculatorReq#(tData, tBoundary)))) doShiftPipelineQ <- mkFIFOF;
+    FIFOF#(Maybe#(Tuple2#(BitmapWindowStorageEntry#(tData, tBoundary), MaxAckPsnCalculatorReq#(tData, tBoundary)))) doBitmapCompareQ <- mkFIFOF;
     rule preClac;
-        let req = reqPipeInQueue.first;
+        let reqMaybe = reqPipeInQueue.first;
         reqPipeInQueue.deq;
+        if (reqMaybe matches tagged Valid .req) begin
+            PSN leftMostPsnValOfBitmapWindow = unpack({pack(req.needAckBitmap.leftBound), -1});
+            PSN psnDelta = leftMostPsnValOfBitmapWindow - req.cpsn;
+            Bool isCpsnFallBehindExceedWindow = psnDelta >= fromInteger(valueOf(szData));
+            Bool isCpsnGreaterThanWholeWindow = msb(psnDelta) == 1;
+            tShiftOffset shiftOffset = truncate(psnDelta);
 
-        PSN leftMostPsnValOfBitmapWindow = unpack({pack(req.needAckBitmap.leftBound), -1});
-        PSN psnDelta = leftMostPsnValOfBitmapWindow - req.cpsn;
-        Bool isCpsnFallBehindExceedWindow = psnDelta >= fromInteger(valueOf(szData));
-        Bool isCpsnGreaterThanWholeWindow = msb(psnDelta) == 1;
-        tShiftOffset shiftOffset = truncate(psnDelta);
-
-        doShiftPipelineQ.enq(tuple4(isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req));
-
+            doShiftPipelineQ.enq(tagged Valid tuple4(isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req));
+        end
+        else begin
+            doShiftPipelineQ.enq(tagged Invalid);
+        end
     endrule
 
     rule doShift;
-        let {isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req} = doShiftPipelineQ.first;
+        let pipelineEntryInMaybe = doShiftPipelineQ.first;
         doShiftPipelineQ.deq;
 
-        BitmapWindowStorageEntry#(tData, tBoundary) psnBitmapEntry = req.needAckBitmap;
-        if (isCpsnGreaterThanWholeWindow) begin
-            psnBitmapEntry.data = -1;
-        end
-        else if (isCpsnFallBehindExceedWindow) begin
-            psnBitmapEntry.data = 0;
+        if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+            let {isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req} = pipelineEntryIn;
+            
+            BitmapWindowStorageEntry#(tData, tBoundary) psnBitmapEntry = req.needAckBitmap;
+            if (isCpsnGreaterThanWholeWindow) begin
+                psnBitmapEntry.data = -1;
+            end
+            else if (isCpsnFallBehindExceedWindow) begin
+                psnBitmapEntry.data = 0;
+            end
+            else begin
+                psnBitmapEntry.data = -1;
+                psnBitmapEntry.data = psnBitmapEntry.data >> shiftOffset;
+            end
+            doBitmapCompareQ.enq(tagged Valid tuple2(psnBitmapEntry, req));
         end
         else begin
-            psnBitmapEntry.data = -1;
-            psnBitmapEntry.data = psnBitmapEntry.data >> shiftOffset;
+            doBitmapCompareQ.enq(tagged Invalid);
         end
-        doBitmapCompareQ.enq(tuple2(psnBitmapEntry, req));
     endrule
 
     rule doBitmapCompare;
-        let {psnBitmapEntry, req} = doBitmapCompareQ.first;
+        let pipelineEntryInMaybe = doBitmapCompareQ.first;
         doBitmapCompareQ.deq;
 
-        let maskedNeedAckBitmap = req.needAckBitmap.data & psnBitmapEntry.data;
-        if (maskedNeedAckBitmap != 0) begin
-            respPipeOutQueue.enq(tagged Valid req.cpsn);
+        if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+            let {psnBitmapEntry, req} = pipelineEntryIn;
+            let maskedNeedAckBitmap = req.needAckBitmap.data & psnBitmapEntry.data;
+            if (maskedNeedAckBitmap != 0) begin
+                respPipeOutQueue.enq(tagged Valid req.cpsn);
+            end
+            else begin
+                respPipeOutQueue.enq(tagged Invalid);
+            end
         end
         else begin
             respPipeOutQueue.enq(tagged Invalid);
