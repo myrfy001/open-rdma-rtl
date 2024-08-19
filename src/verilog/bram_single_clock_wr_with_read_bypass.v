@@ -13,7 +13,9 @@ module bram_single_clock_wr_with_read_bypass#(
     reg [(DATA_WIDTH-1):0] mem [(2**ADDR_WIDTH-1):0];
 
     initial begin : init_rom_block
-        $readmemb(FILE, mem);
+        if (FILE != "") begin
+            $readmemb(FILE, mem);
+        end
     end // initial begin
 
 

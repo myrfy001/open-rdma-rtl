@@ -56,10 +56,10 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestRingbuf.bsv`
 # TESTCASE=mkTestRingbuf
 
-FILE=`ls TestPsnContinousChecker.bsv`
+# FILE=`ls TestPsnContinousChecker.bsv`
 # TESTCASE=mkTestBitmapPreMerge
 # TESTCASE=mkTestCpsnCalc
-TESTCASE=mkTestMonoInrcNumberStorage
+# TESTCASE=mkTestMonoInrcNumberStorage
 # TESTCASE=mkTestMaxAckPsnCalculator
 # TESTCASE=mkTestCpsnCounter
 # TESTCASE=mkTestBitmapWindowStorage
@@ -67,6 +67,9 @@ TESTCASE=mkTestMonoInrcNumberStorage
 
 # FILE=`ls TestAutoAckGenerator.bsv`
 # TESTCASE=mkTestBitmapPreMerge
+
+FILE=`ls TestGearBoxArbiter.bsv`
+TESTCASE=mkTestBitmapPreMerge
 
 # FILE=`ls TestTop.bsv`
 # TESTCASE=mkTestTop

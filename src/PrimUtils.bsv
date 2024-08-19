@@ -790,7 +790,7 @@ module mkAutoInferBramSingleClockWr#(Bool bypassWriteData, String initFile)(Auto
 endmodule
 
 // ungarded interface, use with care!
-module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr, tData)) provisos (
+module mkAutoInferBramUG#(Bool bypassWriteData, String initFile)(AutoInferBram#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(tAddr),
@@ -800,8 +800,7 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
         FShow#(tData)
     );
 
-    AutoInferBramSingleClockWr#(tAddr, tData) storage <- mkAutoInferBramSingleClockWr(True, initFile);
-    Reg#(Maybe#(tData)) conflictForwardReg <- mkRegU;
+    AutoInferBramSingleClockWr#(tAddr, tData) storage <- mkAutoInferBramSingleClockWr(bypassWriteData, initFile);
 
     Wire#(tAddr) readAddrWire <- mkDWire (unpack(0));
 
@@ -826,7 +825,7 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
     method ActionValue#(tData) getReadResp;
         immAssert(
             illegalReadMonitorCounter == 1,
-            "mkAutoInferBramWithRwBypassLogicUG, illegal read, illegalReadMonitorCounter must be 1, 0 means read not ready, and greater than 0 means some data is lost due to not read timely.",
+            "mkAutoInferBramUG, illegal read, illegalReadMonitorCounter must be 1, 0 means read not ready, and greater than 0 means some data is lost due to not read timely.",
             $format("illegalReadMonitorCounter=", fshow(illegalReadMonitorCounter))
         );
         illegalReadMonitorCounter.decr(1);
@@ -838,6 +837,54 @@ module mkAutoInferBramWithRwBypassLogicUG#(String initFile)(AutoInferBram#(tAddr
     endmethod
 endmodule
 
+
+module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoInferBram#(tAddr, tData)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Bounded#(tAddr),
+        Eq#(tAddr),
+        Literal#(tAddr),
+        FShow#(tAddr),
+        FShow#(tData)
+    );
+
+    AutoInferBram#(tAddr, tData) storage <- mkAutoInferBramUG(bypassWriteData, initFile);
+
+    FIFOF#(Bit#(0)) hasPendingReadReqSignalQueue <- mkUGFIFOF;
+    FIFOF#(tData)   outputQ <- mkUGSizedFIFOF(3);
+    FIFOF#(Bit#(0)) backPreasureQueue <- mkSizedFIFOF(3);
+    
+
+    (* no_implicit_conditions, fire_when_enabled *)
+    rule handleReadResp;
+        if (hasPendingReadReqSignalQueue.notEmpty) begin
+            hasPendingReadReqSignalQueue.deq;
+            immAssert(
+                outputQ.notFull,
+                "output Q is full, the back preasure not work",
+                $format("")
+            );
+            let ret <- storage.getReadResp;
+            outputQ.enq(ret);
+        end
+    endrule
+
+    method Action write(tAddr addr, tData data);
+        storage.write(addr, data);
+    endmethod
+
+    method Action putReadReq(tAddr addr);
+        storage.putReadReq(addr);
+        hasPendingReadReqSignalQueue.enq(0);
+        backPreasureQueue.enq(0);
+    endmethod
+
+    method ActionValue#(tData) getReadResp if (outputQ.notEmpty);
+        outputQ.deq;
+        backPreasureQueue.deq;
+        return outputQ.first;
+    endmethod
+endmodule
 
 typedef enum {
     AddressAlignAssertionMask512B = 'h1FF,

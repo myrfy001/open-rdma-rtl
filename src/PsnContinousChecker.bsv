@@ -592,7 +592,7 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG(initFile)));
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramUG(True, initFile)));
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))))) reorderBuf <- replicateM(replicateM(mkReg(tagged Invalid)));
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) prevReqRowAddrVec <- replicateM(mkReg(tagged Invalid));
@@ -1289,7 +1289,7 @@ module mkMonoInrcNumberStorage#(
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, MonoInrcNumberStorageEntry#(tData)))) storage <- replicateM(replicateM(mkAutoInferBramWithRwBypassLogicUG(initFile)));
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, MonoInrcNumberStorageEntry#(tData)))) storage <- replicateM(replicateM(mkAutoInferBramUG(True, initFile)));
 
     // Forward Registers (use config reg to solve rule schedule order)
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(MonoInrcNumberStorageInternalForwardEntry#(tRowAddr, tData)))) forwardRegVec <- replicateM(mkConfigReg(tagged Invalid));
