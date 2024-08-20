@@ -100,21 +100,18 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, Count#(GearBoxInternalBankCnt))         axiReadValidBankCntForHipSideVec        <- replicateM(mkCount(0));
 
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, Reg#(Bool))                             isFirstBeatForLogicSideRegVec           <- replicateM(mkReg(True));
-    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, FIFOF#(AxiMmBeatAr))                    axiInflightReadRespMetaQueueVec         <- replicateM(mkSizedFIFOF(16));
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, Reg#(AxiArlen))                         axiArLenCounterForLogicSideRegVec       <- replicateM(mkRegU);
-    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, Reg#(GearBoxInternalBankIdx))           axiReadBankIdxForLogicSideRegVec        <- replicateM(mkReg(0));
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, Reg#(GearBoxInternalBankColIdx))        axiReadBankColIdxForLogicSideRegVec     <- replicateM(mkReg(0));
-    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, Reg#(GearBoxInternalBankRowIdx))        axiReadBankRowIdxForLogicSideRegVec     <- replicateM(mkReg(0));
-    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, FIFOF#(Bool))                           axiReadSignalForLogicSideQueueVec       <- replicateM(mkSizedFIFOF(valueOf(GEARBOX_INTERNAL_BRAM_ROW_CNT)));
+    
+    
 
 
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, 
         Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, 
             AutoInferBram#(GearBoxInternalBramAddr, AxiMmBeatW#(AxiDataForLogic)))) storageForWrite <- replicateM(replicateM(mkAutoInferBramQueuedOutput(False, "")));
 
-    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, 
-        Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, 
-            AutoInferBram#(GearBoxInternalBramAddr, AxiDataForLogic))) storageForRead  <- replicateM(replicateM(mkAutoInferBramQueuedOutput(False, "")));
+    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT,  
+        FIFOF#(AxiMmBeatR#(AxiDataForHip))) storageForRead  <- replicateM(mkSizedFIFOF(valueOf(GEARBOX_INTERNAL_BRAM_ROW_CNT)));
     
     
     for (Integer idx = 0; idx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); idx = idx + 1) begin
@@ -126,7 +123,7 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
             let reqW = axiPipeQueueForLogicVecW[idx].first;
             axiPipeQueueForLogicVecW[idx].deq;
 
-            GearBoxInternalBankColIdx startAddrColIdx = truncate(reqAw.awaddr >> valueOf(TLog(TDiv#(SizeOf#(AxiDataForLogic), BYTE_WIDTH))));
+            GearBoxInternalBankColIdx startAddrColIdx = truncate(reqAw.awaddr >> valueOf(TLog#(TDiv#(SizeOf#(AxiDataForLogic), BYTE_WIDTH))));
             GearBoxInternalBramAddr writeBramAddr = pack({axiWriteBankIdxForLogicSideRegVec[idx], 0});
 
             storageForWrite[idx][startAddrColIdx].write(writeBramAddr, reqW);
@@ -281,7 +278,7 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
                 $format("reqIn=", fshow(reqIn))
             );
 
-            GearBoxInternalBankColIdx startAddrColIdx = truncate(reqIn.araddr >> valueOf(TLog(TDiv#(SizeOf#(AxiDataForLogic), BYTE_WIDTH))));
+            GearBoxInternalBankColIdx startAddrColIdx = truncate(reqIn.araddr >> valueOf(TLog#(TDiv#(SizeOf#(AxiDataForLogic), BYTE_WIDTH))));
             AxiArlen arlenTmp = zeroExtend(startAddrColIdx) + reqIn.arlen;
             AxiArlen arlen = arlenTmp >> valueOf(TLog#(GEARBOX_WIDTH_RATIO));
 
@@ -303,14 +300,8 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
 
             let respIn = axiPipeQueueForHipVecR[idx].first;
             axiPipeQueueForHipVecR[idx].deq;
-
-            Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, AxiDataForLogic) combinedDataTmpVec = unpack(pack(respIn.rdata));
-
-            GearBoxInternalBramAddr writeAddr = {axiReadBankIdxForHipSideRegVec[idx], axiReadBankRowIdxForHipSideRegVec[idx]};
-            for (Integer colIdx = 0; colIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); colIdx = colIdx + 1) begin
-                storageForRead[idx][colIdx].write(writeAddr, combinedDataTmpVec[colIdx]);
-            end
-
+            storageForRead[idx].enq(respIn);
+            
             if (respIn.rlast) begin
                 axiReadBankIdxForHipSideRegVec[idx] <= axiReadBankIdxForHipSideRegVec[idx] + 1;
                 axiReadBankRowIdxForHipSideRegVec[idx] <= 0;
@@ -319,39 +310,71 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
             else begin
                 axiReadBankRowIdxForHipSideRegVec[idx] <= axiReadBankRowIdxForHipSideRegVec[idx] + 1;
             end
-
-            axiReadSignalForLogicSideQueueVec[idx].enq(respIn.rlast);
             
         endrule
 
-        rule handleAxiReadSendReadBramReqLogicSide;
-            let isLast = axiReadSignalForLogicSideQueueVec[idx].first;
-            axiReadSignalForLogicSideQueueVec[idx].deq;
+        rule handleAxiReadRespLogicSide;
 
             let rawReadReq = axiInflightReadReqMetaQueueVec[idx].first;
+            Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, AxiDataForLogic) combinedDataTmpVec = unpack(pack(storageForRead[idx].first.rdata));
 
             if (isFirstBeatForLogicSideRegVec[idx]) begin
-                GearBoxInternalBramAddr readAddr = {axiReadBankIdxForLogicSideRegVec[idx], 0};
-                for (Integer colIdx = 0; colIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); colIdx = colIdx + 1) begin
-                    storageForRead[idx][colIdx].putReadReq(readAddr);
+
+                Bool isLast = rawReadReq.arlen == 0;
+                GearBoxInternalBankColIdx startAddrColIdx = truncate(rawReadReq.araddr >> valueOf(TLog#(TDiv#(SizeOf#(AxiDataForLogic), BYTE_WIDTH))));
+
+                axiPipeQueueForLogicVecR[idx].enq(AxiMmBeatR {
+                    rid: pack(rawReadReq.arid),
+                    rdata: combinedDataTmpVec[startAddrColIdx],
+                    rresp: 0,
+                    rlast: isLast
+                });
+
+                axiReadBankColIdxForLogicSideRegVec[idx] <= startAddrColIdx + 1;
+                isFirstBeatForLogicSideRegVec[idx] <= isLast ? True : False;
+
+                if (isLast || startAddrColIdx == maxBound) begin
+                    storageForRead[idx].deq;
                 end
-                axiReadBankRowIdxForLogicSideRegVec[idx] <= 1;
-                axiInflightReadRespMetaQueueVec.enq(rawReadReq);
+
+                if (isLast) begin
+                    axiInflightReadReqMetaQueueVec[idx].deq;
+                end
+
+                axiArLenCounterForLogicSideRegVec[idx] <= rawReadReq.arlen - 1;
             end
             else begin
-                GearBoxInternalBramAddr readAddr = {axiReadBankIdxForLogicSideRegVec[idx], axiReadBankRowIdxForLogicSideRegVec[idx]};
-                for (Integer colIdx = 0; colIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); colIdx = colIdx + 1) begin
-                    storageForRead[idx][colIdx].putReadReq(readAddr);
+                Bool isLast = axiArLenCounterForLogicSideRegVec[idx] == 0;
+                axiArLenCounterForLogicSideRegVec[idx] <= axiArLenCounterForLogicSideRegVec[idx] - 1;
+
+                axiPipeQueueForLogicVecR[idx].enq(AxiMmBeatR {
+                    rid: pack(rawReadReq.arid),
+                    rdata: combinedDataTmpVec[axiReadBankColIdxForLogicSideRegVec[idx]],
+                    rresp: 0,
+                    rlast: isLast
+                });
+
+                if (isLast || axiReadBankColIdxForLogicSideRegVec[idx] == maxBound) begin
+                    storageForRead[idx].deq;
+                end
+
+                if (isLast) begin
+                    axiInflightReadReqMetaQueueVec[idx].deq;
+                end
+
+                axiReadBankColIdxForLogicSideRegVec[idx] <= axiReadBankColIdxForLogicSideRegVec[idx] + 1;
+
+                if (isLast) begin
+                    immAssert(
+                        storageForRead[idx].first.rlast,
+                        "rlast must also be True",
+                        $format("")
+                    );
                 end
             end
-
-            isFirstBeatForLogicSideRegVec[idx] <= isLast ? True : False;
         endrule
-
     end
-
 
     interface axiSlaveVec = axiSlaveVecInst;
     interface axiMasterVec = axiMasterVecInst;
-    
 endmodule
