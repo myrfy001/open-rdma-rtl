@@ -5,6 +5,13 @@ backend/achronix/ace/*/*
 !backend/achronix/ace/*/*.acxprj
 backend/achronix/syn/*
 !backend/achronix/syn/*.prj
+backend/quartus/*/*
+!backend/quartus/*/ips
+!backend/quartus/*/*.ptc
+!backend/quartus/*/*.qpf
+backend/quartus/*/ips/*
+!backend/quartus/*/ips/pcie.ip
+
 ioring
 stdout.log*
 synlog.tcl
