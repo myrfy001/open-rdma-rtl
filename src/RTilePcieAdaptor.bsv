@@ -1,8 +1,10 @@
 import Vector :: *;
+import BuildVector :: *;
 import FIFOF :: *;
 import PcieTypes :: *;
 import Cntrs :: *;
 
+import ConnectableF :: *;
 import PrimUtils :: *;
 
 typedef struct {
@@ -60,6 +62,10 @@ typedef struct {
 } DataCreditUpdateCntSignalBundle deriving(Bits, FShow, Eq);
 
 typedef 4 PCIE_SEGMENT_CNT;
+typedef TLog#(PCIE_SEGMENT_CNT) PCIE_SEGMENT_IDX_WIDTH;
+typedef Bit#(PCIE_SEGMENT_IDX_WIDTH) PcieSegmentIdx;
+
+
 typedef Bit#(PCIE_SEGMENT_CNT) SegmentSopSignalBundle;
 typedef Bit#(PCIE_SEGMENT_CNT) SegmentEopSignalBundle;
 typedef Bit#(PCIE_SEGMENT_CNT) SegmentDvalidSignalBundle;
@@ -177,6 +183,9 @@ interface RTilePcieAdaptor;
 
     (* always_ready, always_enabled *)
     interface RTilePcieAdaptorTx tx;
+
+    interface PipeOut#(PcieRxBeat) pcieRxPipeOut;
+    interface PipeIn#(PcieTxBeat) pcieTxPipeIn;
 endinterface
 
 
@@ -198,12 +207,12 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     PcieCreditCounterSource#(CreditCount, DataCreditUpdateCnt) txCreditNPD <- mkPcieCreditCounterSource;
     PcieCreditCounterSource#(CreditCount, DataCreditUpdateCnt) txCreditCPLD <- mkPcieCreditCounterSource;
 
-    FIFOF#(PcieRxBeat) pcieRxQueue <- mkUGFIFOF;
-    FIFOF#(PcieRxBeat) pcieTxQueue <- mkUGFIFOF;
+    FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
+    FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
 
-    Bool txValid = pcieTxQueue.notEmpty && txReadySignalOutputReg;
+    Bool txValid = pcieTxPipeInQueue.notEmpty && txReadySignalOutputReg;
 
     interface RTilePcieAdaptorRx rx;
         // input port
@@ -239,12 +248,12 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
                 };
 
                 immAssert(
-                    pcieRxQueue.notFull,
-                    "pcieRxQueue is Full",
+                    pcieRxPipeOutQueue.notFull,
+                    "pcieRxPipeOutQueue is Full",
                     $format("")
                 );
 
-                pcieRxQueue.enq(beat);
+                pcieRxPipeOutQueue.enq(beat);
             end
         endmethod
 
@@ -285,14 +294,17 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
         method HeaderCreditInitAckSignalBundle      hcrdt_init_ack = unpack({pack(txCreditCPLH.initAckSignal), pack(txCreditNPH.initAckSignal), pack(txCreditPH.initAckSignal)});
         method DataCreditInitAckSignalBundle        dcrdt_init_ack = unpack({pack(txCreditCPLD.initAckSignal), pack(txCreditNPD.initAckSignal), pack(txCreditPD.initAckSignal)});
         
-        method PcieTlpHeaderBusSegBundle    header = txValid ? pcieTxQueue.first.header : unpack(0);
-        method PcieTlpDataBusSegBundle      data = txValid ? pcieTxQueue.first.data : unpack(0);
+        method PcieTlpHeaderBusSegBundle    header = txValid ? pcieTxPipeInQueue.first.header : unpack(0);
+        method PcieTlpDataBusSegBundle      data = txValid ? pcieTxPipeInQueue.first.data : unpack(0);
 
-        method SopSignalBundle              sop = txValid ? pcieTxQueue.first.sop : unpack(0);
-        method EopSignalBundle              eop = txValid ? pcieTxQueue.first.eop : unpack(0);
-        method HvalidSignalBundle           hvalid = txValid ? pcieTxQueue.first.hvalid : unpack(0);
-        method DvalidSignalBundle           dvalid = txValid ? pcieTxQueue.first.dvalid : unpack(0);
+        method SopSignalBundle              sop = txValid ? pcieTxPipeInQueue.first.sop : unpack(0);
+        method EopSignalBundle              eop = txValid ? pcieTxPipeInQueue.first.eop : unpack(0);
+        method HvalidSignalBundle           hvalid = txValid ? pcieTxPipeInQueue.first.hvalid : unpack(0);
+        method DvalidSignalBundle           dvalid = txValid ? pcieTxPipeInQueue.first.dvalid : unpack(0);
     endinterface
+
+    interface pcieRxPipeOut = ugToPipeOut(pcieRxPipeOutQueue);
+    interface pcieTxPipeIn = ugToPipeIn(pcieTxPipeInQueue);
 endmodule
 
 
@@ -475,3 +487,104 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
         end
     endmethod
 endmodule
+
+
+typedef 3 PCIE_MAX_SEGMENT_CNT;
+typedef PCIE_MAX_SEGMENT_CNT PCIE_RX_HANDLER_CNT;
+typedef TLog#(PCIE_RX_HANDLER_CNT) PCIE_RX_HANDLER_IDX_WIDTH;
+typedef Bit#(PCIE_RX_HANDLER_IDX_WIDTH) PcieRxHandlerIdx;
+
+typedef enum {
+    PcieRxStreamHandlerRole1st = 0,
+    PcieRxStreamHandlerRole2nd = 1,
+    PcieRxStreamHandlerRole3rd = 2
+} PcieRxStreamHandlerRole deriving(Bits, FShow, Eq);
+
+interface PcieRxStreamSegmentFork;
+    interface PipeIn#(PcieRxBeat) pcieRxPipeIn;
+endinterface
+
+module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
+    FIFOF#(PcieRxBeat) pcieRxPipeInQueue <- mkFIFOF;
+
+    Reg#(PcieRxHandlerIdx) curPrimHandlerIdxReg <- mkReg(0);
+
+    Reg#(Vector#(PCIE_RX_HANDLER_CNT, PcieRxStreamHandlerRole)) handlerRoleVec <- mkReg(vec(PcieRxStreamHandlerRole3rd, PcieRxStreamHandlerRole2nd, PcieRxStreamHandlerRole1st));
+
+    Reg#(Bool) prevTlpSpanNextBeatReg <- mkReg(False);
+
+    rule preCalcRxBeatMeta;
+        let beat = pcieRxPipeInQueue.first;
+        pcieRxPipeInQueue.deq;
+
+        Bool isTlpSpanNextBeat = case (pack(beat.eop)) matches
+            'b1???: False;
+            'b01??: (beat.sop[3] == 1);
+            'b001?: (beat.sop[3] == 1 || beat.sop[2] == 1);
+            'b0001: (beat.sop[3] == 1 || beat.sop[2] == 1 || beat.sop[1] == 1);
+            'b0000: True;
+        endcase;
+
+        prevTlpSpanNextBeatReg <= isTlpSpanNextBeat;
+
+        PcieSegmentIdx segCnt = case (pack((beat.sop))) matches
+            'b0000: (prevTlpSpanNextBeatReg ? 1 : 0);
+            'b0001: 1;
+            'b0010: (prevTlpSpanNextBeatReg ? 2 : 1);
+            'b0011: 2;
+            'b0100: (prevTlpSpanNextBeatReg ? 2 : 0);
+            'b0101: 2;
+            'b0110: (prevTlpSpanNextBeatReg ? 3 : 2);
+            'b0111: 3;
+            'b1000: (prevTlpSpanNextBeatReg ? 2 : 0);
+            'b1001: 2;
+            'b1010: (prevTlpSpanNextBeatReg ? 3 : 2);
+            'b1011: 3;
+            'b1100: (prevTlpSpanNextBeatReg ? 3 : 0);
+            'b1101: 3;
+            'b1110: (prevTlpSpanNextBeatReg ? 0 : 3);
+            'b1111: 0;
+        endcase;
+        immAssert(
+            segCnt != 0,
+            "one of the following 2 assumption not hold: \n \
+               1.The R-Tile PCIe IP does not use segment 2 and segment 3 if segment 0 AND segment 1 are unused \n\
+               2.at most 3 TLPs in a beat",
+            $format("prevTlpSpanNextBeatReg=", fshow(prevTlpSpanNextBeatReg), "beat=", fshow(beat))
+        );
+
+
+        Vector#(PCIE_RX_HANDLER_CNT, Maybe#(PcieSegmentIdx)) tlpFirstSegmentIdxVec = case (pack((beat.sop))) matches
+            'b0000: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Invalid, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b0001: vec(tagged Invalid, tagged Invalid, tagged Valid 0);
+            'b0010: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Valid 1, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Valid 1));
+            'b0011: vec(tagged Invalid, tagged Valid 1, tagged Valid 0);
+            'b0100: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Valid 2, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b0101: vec(tagged Invalid, tagged Valid 2, tagged Valid 0);
+            'b0110: (prevTlpSpanNextBeatReg ? vec(tagged Valid 2, tagged Valid 1, tagged Valid 0) : vec(tagged Invalid, tagged Valid 2, tagged Valid 1));
+            'b0111: vec(tagged Valid 2, tagged Valid 1, tagged Valid 0);
+            'b1000: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Valid 3, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b1001: vec(tagged Invalid, tagged Valid 3, tagged Valid 0);
+            'b1010: (prevTlpSpanNextBeatReg ? vec(tagged Valid 3, tagged Valid 1, tagged Valid 0) : vec(tagged Invalid, tagged Valid 3, tagged Valid 1));
+            'b1011: vec(tagged Valid 3, tagged Valid 1, tagged Valid 0);
+            'b1100: (prevTlpSpanNextBeatReg ? vec(tagged Valid 3, tagged Valid 2, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b1101: vec(tagged Valid 3, tagged Valid 2, tagged Valid 0);
+            'b1110: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Invalid, tagged Invalid) : vec(tagged Valid 3, tagged Valid 2, tagged Valid 1));
+            'b1111: vec(tagged Invalid, tagged Invalid, tagged Invalid);
+        endcase;
+
+    endrule
+
+    // for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+    //     rule dispatchStream if (pcieRxPipeInQueue.notEmpty);
+    //         if (handlerIdx == 0) begin
+    //             pcieRxPipeInQueue.deq;
+    //         end
+
+    //     endrule
+    // end
+
+
+    interface pcieRxPipeIn = toPipeIn(pcieRxPipeInQueue);
+endmodule
+
