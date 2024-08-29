@@ -4,8 +4,12 @@ import FIFOF :: *;
 import PcieTypes :: *;
 import Cntrs :: *;
 
+import DataTypes :: *;
+import PAClib :: *;
 import ConnectableF :: *;
 import PrimUtils :: *;
+
+import StreamShifterG :: *;
 
 typedef struct {
     Bool cplh;
@@ -117,7 +121,8 @@ typedef struct {
     DvalidSignalBundle              dvalid;
 } PcieTxBeat deriving (Bits, FShow);
 
-
+typedef 13 PCIE_TLP_DATA_BYTE_LENGTH_WIDTH;
+typedef Bit#(PCIE_TLP_DATA_BYTE_LENGTH_WIDTH) PcieTlpDataByteLen;
 
 interface RTilePcieAdaptorRx;
 
@@ -494,14 +499,32 @@ typedef PCIE_MAX_SEGMENT_CNT PCIE_RX_HANDLER_CNT;
 typedef TLog#(PCIE_RX_HANDLER_CNT) PCIE_RX_HANDLER_IDX_WIDTH;
 typedef Bit#(PCIE_RX_HANDLER_IDX_WIDTH) PcieRxHandlerIdx;
 
-typedef enum {
-    PcieRxStreamHandlerRole1st = 0,
-    PcieRxStreamHandlerRole2nd = 1,
-    PcieRxStreamHandlerRole3rd = 2
-} PcieRxStreamHandlerRole deriving(Bits, FShow, Eq);
+
+typedef struct {
+    PcieRxBeat rxBeat;
+    PcieSegmentIdx startSegIdx;
+} RawPcieRxStreamWithMeta deriving(Bits, FShow);
+
+typedef Bit#(PCIE_TLP_DATA_BUNDLE_WIDTH) PcieDataStreamData;
+typedef Bit#(TAdd#(1, TLog#(TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, BYTE_WIDTH)))) PcieDataStreamByteCnt;
+typedef Bit#(TLog#(TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, BYTE_WIDTH))) PcieDataStreamByteIdx;
+
+typedef StreamShifterStream#(PcieDataStreamData, PcieDataStreamByteCnt, PcieDataStreamByteIdx) PcieDataStreamLsbRight;
+typedef StreamShifterStream#(PcieDataStreamData, PcieDataStreamByteCnt, PcieDataStreamByteIdx) PcieDataStreamLsbLeft;
+
+`define PCIE_TLP_HEADER_FMT_3DW_NO_DATA             3'b000
+`define PCIE_TLP_HEADER_FMT_4DW_NO_DATA             3'b001
+`define PCIE_TLP_HEADER_FMT_3DW_WITH_DATA           3'b010
+`define PCIE_TLP_HEADER_FMT_4DW_WITH_DATA           3'b011
+
+`define PCIE_TLP_HEADER_TYPE_MEM_READ               5'b00000
+`define PCIE_TLP_HEADER_TYPE_MEM_WRITE              5'b00000
+`define PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA          5'b01010
 
 interface PcieRxStreamSegmentFork;
     interface PipeIn#(PcieRxBeat) pcieRxPipeIn;
+    interface Vector#(PCIE_RX_HANDLER_CNT, PipeOut#(PcieDataStreamLsbRight)) tlpDataStreamPipeOutVec;
+    interface Vector#(PCIE_RX_HANDLER_CNT, PipeOut#(PcieTlpHeaderBuffer)) tlpHeaderPipeOutVec;
 endinterface
 
 module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
@@ -509,9 +532,20 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
     Reg#(PcieRxHandlerIdx) curPrimHandlerIdxReg <- mkReg(0);
 
-    Reg#(Vector#(PCIE_RX_HANDLER_CNT, PcieRxStreamHandlerRole)) handlerRoleVec <- mkReg(vec(PcieRxStreamHandlerRole3rd, PcieRxStreamHandlerRole2nd, PcieRxStreamHandlerRole1st));
+    Vector#(PCIE_RX_HANDLER_CNT, FIFOF#(PcieDataStreamLsbRight)) tlpDataStreamPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(PCIE_RX_HANDLER_CNT, FIFOF#(PcieTlpHeaderBuffer)) tlpHeaaderPipeOutQueueVec <- replicateM(mkFIFOF);
+
+    Vector#(PCIE_RX_HANDLER_CNT, PipeOut#(PcieDataStreamLsbRight)) tlpDataStreamPipeOutInstVec = newVector;
+    Vector#(PCIE_RX_HANDLER_CNT, PipeOut#(PcieTlpHeaderBuffer)) tlpHeaaderPipeOutInstVec = newVector;
+
+    for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+        tlpDataStreamPipeOutInstVec[handlerIdx] = toPipeOut(tlpDataStreamPipeOutQueueVec[handlerIdx]);
+        tlpHeaaderPipeOutInstVec[handlerIdx] = toPipeOut(tlpHeaaderPipeOutQueueVec[handlerIdx]);
+    end
 
     Reg#(Bool) prevTlpSpanNextBeatReg <- mkReg(False);
+
+    Vector#(PCIE_RX_HANDLER_CNT, FIFOF#(RawPcieRxStreamWithMeta)) handlerInputQueueVec <- replicateM(mkFIFOF);
 
     rule preCalcRxBeatMeta;
         let beat = pcieRxPipeInQueue.first;
@@ -527,29 +561,30 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
         prevTlpSpanNextBeatReg <= isTlpSpanNextBeat;
 
-        PcieSegmentIdx segCnt = case (pack((beat.sop))) matches
+        PcieSegmentIdx tlpCnt = case (pack((beat.sop))) matches
             'b0000: (prevTlpSpanNextBeatReg ? 1 : 0);
-            'b0001: 1;
+            'b0001: (prevTlpSpanNextBeatReg ? 0 : 1);
             'b0010: (prevTlpSpanNextBeatReg ? 2 : 1);
-            'b0011: 2;
+            'b0011: (prevTlpSpanNextBeatReg ? 0 : 2);
             'b0100: (prevTlpSpanNextBeatReg ? 2 : 0);
-            'b0101: 2;
+            'b0101: (prevTlpSpanNextBeatReg ? 0 : 2);
             'b0110: (prevTlpSpanNextBeatReg ? 3 : 2);
-            'b0111: 3;
+            'b0111: (prevTlpSpanNextBeatReg ? 0 : 3);
             'b1000: (prevTlpSpanNextBeatReg ? 2 : 0);
-            'b1001: 2;
+            'b1001: (prevTlpSpanNextBeatReg ? 0 : 2);
             'b1010: (prevTlpSpanNextBeatReg ? 3 : 2);
-            'b1011: 3;
+            'b1011: (prevTlpSpanNextBeatReg ? 0 : 3);
             'b1100: (prevTlpSpanNextBeatReg ? 3 : 0);
-            'b1101: 3;
+            'b1101: (prevTlpSpanNextBeatReg ? 0 : 3);
             'b1110: (prevTlpSpanNextBeatReg ? 0 : 3);
-            'b1111: 0;
+            'b1111: (prevTlpSpanNextBeatReg ? 0 : 0);
         endcase;
         immAssert(
-            segCnt != 0,
-            "one of the following 2 assumption not hold: \n \
+            tlpCnt != 0,
+            "one of the following 3 assumption not hold: \n \
                1.The R-Tile PCIe IP does not use segment 2 and segment 3 if segment 0 AND segment 1 are unused \n\
-               2.at most 3 TLPs in a beat",
+               2.At most 3 TLPs in a beat\n\
+               3.When Sop occur at seg0, then the prevTlpSpanNextBeatReg must be False",
             $format("prevTlpSpanNextBeatReg=", fshow(prevTlpSpanNextBeatReg), "beat=", fshow(beat))
         );
 
@@ -573,18 +608,131 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
             'b1111: vec(tagged Invalid, tagged Invalid, tagged Invalid);
         endcase;
 
+        for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+            if (tlpFirstSegmentIdxVec[handlerIdx] matches tagged Valid .startSegIdx) begin
+                let ent = RawPcieRxStreamWithMeta {
+                    rxBeat: beat,
+                    startSegIdx: startSegIdx
+                };
+
+                let curPrimHandlerIdxWide = {1'b0, pack(curPrimHandlerIdxReg)};
+                curPrimHandlerIdxWide = curPrimHandlerIdxWide + fromInteger(handlerIdx);
+                if (curPrimHandlerIdxWide > fromInteger(valueOf(PCIE_RX_HANDLER_CNT) - 1)) begin
+                    curPrimHandlerIdxWide = curPrimHandlerIdxWide - fromInteger(valueOf(PCIE_RX_HANDLER_CNT) - 1);
+                end
+
+                PcieRxHandlerIdx curPrimHandlerIdx = truncate(curPrimHandlerIdxWide);
+
+                handlerInputQueueVec[curPrimHandlerIdx].enq(ent);
+            end
+        end
+
+        let nextPrimHandlerIdxWide = {1'b0, pack(curPrimHandlerIdxReg)};
+        nextPrimHandlerIdxWide = nextPrimHandlerIdxWide + zeroExtend(tlpCnt);
+        if (prevTlpSpanNextBeatReg) begin
+            nextPrimHandlerIdxWide = nextPrimHandlerIdxWide - 1;
+        end
+
+        if (nextPrimHandlerIdxWide > 3) begin
+            nextPrimHandlerIdxWide = nextPrimHandlerIdxWide - 3;
+        end
+        curPrimHandlerIdxReg <= truncate(nextPrimHandlerIdxWide);
+
     endrule
 
-    // for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
-    //     rule dispatchStream if (pcieRxPipeInQueue.notEmpty);
-    //         if (handlerIdx == 0) begin
-    //             pcieRxPipeInQueue.deq;
-    //         end
+    for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+        rule rawPcieRxInputToInternalDataType;
+            let beat = handlerInputQueueVec[handlerIdx].first;
+            handlerInputQueueVec[handlerIdx].deq;
 
-    //     endrule
-    // end
+            let sopBundle = beat.rxBeat.sop;
+            let eopBundle = beat.rxBeat.eop;
+
+            let isFirst = sopBundle[beat.startSegIdx] == 1;
+            // for non-first beat, if there is at least one eop, then this beat must be eop.
+            Bool notFirstBeatIsEop = pack(eopBundle) != 0;
+
+            Bool firstBeatIsEop = case (beat.startSegIdx)
+                0: (eopBundle[3:0] != 0);
+                1: (eopBundle[3:1] != 0);
+                2: (eopBundle[3:2] != 0);
+                3: (eopBundle[3:3] != 0);
+            endcase;
+
+            Bool isLast = isFirst ? firstBeatIsEop : notFirstBeatIsEop;
+
+            let tlpDataLenMaybe = getDataLenFromTlpHeader(beat.rxBeat.header);
+
+            // let ds = PcieDataStreamLsbRight {
+            //     data: beat.rxBeat.data,
+            //     byteNum: 
+            //     startByteIdx: 
+            //     isFirst: isFirst,
+            //     isLast: isLast
+            // };
+
+        endrule
+    end
 
 
     interface pcieRxPipeIn = toPipeIn(pcieRxPipeInQueue);
+    interface tlpDataStreamPipeOutVec = tlpDataStreamPipeOutInstVec;
+    interface tlpHeaderPipeOutVec = tlpHeaaderPipeOutInstVec;
 endmodule
 
+function Bool isPcieTlpHasPayload(PcieTlpHeaderBuffer tlpBuffer);
+    PcieHeaderFieldFmt fmt = unpack(truncateLSB(tlpBuffer));
+    return fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA || fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA;
+endfunction
+
+function Maybe#(PcieTlpDataByteLen) getDataLenFromTlpHeader(PcieTlpHeaderBuffer tlpBuffer);
+    PcieTlpHeaderCommon headerFirstDW = unpack(truncateLSB(tlpBuffer));
+
+    PcieTlpDataByteLen length = zeroExtend(headerFirstDW.commonHeader.length);
+    length[valueOf(SizeOf#(PcieHeaderFieldLength))] = pack(headerFirstDW.commonHeader.length == 0);  // length == 0 means 4096 bytes
+    length = length << 2; // convert from DW to Byte
+
+    if (!isPcieTlpHasPayload(tlpBuffer)) begin
+        return tagged Invalid;
+    end
+    else begin
+        if (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_MEM_WRITE) begin
+            PcieTlpHeaderMemoryAccess tlpHeader = unpack(truncateLSB(tlpBuffer));
+            Bit#(3) subValFirstBe = case (pack(tlpHeader.firstDwBe)) matches
+                4'b???1: 0;
+                4'b??10: 1;
+                4'b?100: 2;
+                4'b1000: 3;
+                4'b0000: 4;
+                default: 0;
+            endcase;
+
+            Bit#(2) subValLastBe = case (pack(tlpHeader.lastDwBe)) matches
+                4'b1???: 0;
+                4'b01??: 1;
+                4'b001?: 2;
+                4'b0001: 3;
+                default: 0;
+            endcase;
+
+            length = length - zeroExtend(subValFirstBe) - zeroExtend(subValLastBe);
+            return tagged Valid length;
+        end
+        else if (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA) begin
+            PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(tlpBuffer));
+
+            // for the first cplt, lowerAddr's 2-lsb means the address offset, which is the count of invalid bytes in the first payload DW
+            // for other cplt, lowerAddr's 2-lsb must be zero, so the length won't be modified.
+            let adjustedLength = length - zeroExtend(tlpHeader.lowerAddress[1:0]);
+
+            PcieTlpDataByteLen extendedByteCount = zeroExtend(tlpHeader.byteCount);
+            extendedByteCount[valueOf(PCIE_HEADER_FIELD_BYTE_COUNT_WIDTH)] = pack(tlpHeader.byteCount == 0);  // length == 0 means 4096 bytes
+
+            Bool isLastCplt = adjustedLength >= extendedByteCount;
+            return tagged Valid isLastCplt ? extendedByteCount : adjustedLength;
+        end
+        else begin
+            return tagged Invalid;
+        end
+    end
+endfunction

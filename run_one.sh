@@ -68,11 +68,11 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestAutoAckGenerator.bsv`
 # TESTCASE=mkTestBitmapPreMerge
 
-# FILE=`ls TestGearBoxArbiter.bsv`
-# TESTCASE=mkTestBitmapPreMerge
-
-FILE=`ls TestStreamShifterG.bsv`
+FILE=`ls TestGearBoxArbiter.bsv`
 TESTCASE=mkTestBitmapPreMerge
+
+# FILE=`ls TestStreamShifterG.bsv`
+# TESTCASE=mkTestBitmapPreMerge
 
 # FILE=`ls TestTop.bsv`
 # TESTCASE=mkTestTop

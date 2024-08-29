@@ -7,9 +7,6 @@ import PrimUtils :: *;
 
 import DataTypes :: *;
 
-
-
-
 typedef struct {
     tData              data;
     tByteNum           byteNum;
