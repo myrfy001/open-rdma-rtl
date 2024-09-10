@@ -2,6 +2,7 @@ import Vector :: *;
 import FIFOF :: *;
 import Cntrs :: * ;
 
+import ConnectableF :: *;
 import DataTypes :: *;
 import PrimUtils :: *;
 import AxiBus :: *;
@@ -108,7 +109,7 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
 
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, 
         Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, 
-            AutoInferBram#(GearBoxInternalBramAddr, AxiMmBeatW#(AxiDataForLogic)))) storageForWrite <- replicateM(replicateM(mkAutoInferBramQueuedOutput(False, "")));
+            AutoInferBramQueuedOutput#(GearBoxInternalBramAddr, AxiMmBeatW#(AxiDataForLogic)))) storageForWrite <- replicateM(replicateM(mkAutoInferBramQueuedOutput(False, "")));
 
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT,  
         FIFOF#(AxiMmBeatR#(AxiDataForHip))) storageForRead  <- replicateM(mkSizedFIFOF(valueOf(GEARBOX_INTERNAL_BRAM_ROW_CNT)));
@@ -250,7 +251,8 @@ module mkAxiGearBox4To1MM(AxiGearBox4To1MM);
             axiWriteBramReadMetaForHipSideQueueVec[idx].deq;
 
             for (Integer colIdx = 0; colIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); colIdx = colIdx + 1) begin
-                let chunk <- storageForWrite[idx][colIdx].getReadResp;
+                let chunk = storageForWrite[idx][colIdx].readRespPipeOut.first;
+                storageForWrite[idx][colIdx].readRespPipeOut.deq;
                 combinedDataTmpVec[colIdx] = chunk.wdata;
                 combinedStrbTmpVec[colIdx] = chunk.wstrb;
             end

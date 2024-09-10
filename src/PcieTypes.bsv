@@ -43,6 +43,9 @@ typedef Bit#(PCIE_HEADER_FIELD_BYTE_COUNT_WIDTH) PcieHeaderFieldByteCount;
 typedef 7 PCIE_HEADER_FIELD_LOWER_ADDRESS_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_LOWER_ADDRESS_WIDTH) PcieHeaderFieldLowerAddress;
 
+typedef 10 PCIE_HEADER_FIELD_EXTENDED_TAG_WIDTH;
+typedef Bit#(PCIE_HEADER_FIELD_EXTENDED_TAG_WIDTH) PcieHeaderFieldExtendedTag;
+
 typedef struct {
     PcieHeaderFieldFmt      fmt;
     PcieHeaderFieldType     typ;

@@ -7,6 +7,49 @@ import PrimUtils :: *;
 
 import DataTypes :: *;
 
+/*
+
+For the stream that LSB is at right, the rightmost beat is the first beat and the leftmost beat is last beat.
+
+Note: THIS KIND OF STREAM IS **NOT** SUPPORTED BY THIS SHIFT MODULE. YOU MUST CONVERT IT TO THE STREAM THAT THE LSB
+      IS AT THE LEFT.
+
+       Last Beat            Middle Beat          First Beat
+    (Byte 2N ~ 3N-1)      (Byte N ~ 2N-1)      (Byte 0 ~ N-1)
+  +--------------------+--------------------+--------------------+
+  |               xxxxx|xxxxxxxxxxxxxxxxxxxx|xxxxxxxxxxxxx       |
+  +--------------------+--------------------+--------------------+
+                      ^ startByteIdx = 0                 ^ startByteIdx = 7
+                        Since it's not the first beat      The startByteIdx always means the Byte index of the first valid byte in the FIRST beat.
+                                                           no matter the whole stream is right aligned or left aligned, the value of startByteIdx
+                                                           is always counted from the right to the left.
+
+
+Below is stream that LSB is at left, THIS KIND OF STREAM IS SUPPORTED BY THIS SHIFT MODULE.
+
+       FIRST Beat            Middle Beat          LAST Beat
+     (Byte 0 ~ N-1)        (Byte N ~ 2N-1)      (Byte 2N ~ 3N-1)
+  +--------------------+--------------------+--------------------+
+  |       xxxxxxxxxxxxx|xxxxxxxxxxxxxxxxxxxx|xxxxx               |
+  +--------------------+--------------------+--------------------+
+                      ^ startByteIdx = 0         ^ startByteIdx = 0
+                                                   Since it's not the first beat
+
+       ONLY Beat            
+     (Byte 0 ~ N-1)    
+  +--------------------+
+  |       xxxxxxxxxxx  |
+  +--------------------+
+                    ^ startByteIdx = 2
+        
+       ONLY Beat            
+     (Byte 0 ~ N-1)    
+  +--------------------+
+  |       xxxxxxxxxxxxx|
+  +--------------------+
+                      ^ startByteIdx = 0
+*/
+
 typedef struct {
     tData              data;
     tByteNum           byteNum;
@@ -15,7 +58,7 @@ typedef struct {
     Bool               isLast;
 } StreamShifterStream#(type tData, type tByteNum, type tByteIdx) deriving (FShow, Bits);
 
-interface StreamShifter#(type tData, type tByteNum, type tByteIdx);
+interface StreamShifterG#(type tData, type tByteNum, type tByteIdx);
     interface PipeIn#(tByteNum) offsetPipeIn;
     interface PipeIn#(StreamShifterStream#(tData, tByteNum, tByteIdx)) streamPipeIn;
     interface PipeOut#(StreamShifterStream#(tData, tByteNum, tByteIdx)) streamPipeOut;
@@ -55,7 +98,7 @@ typedef struct {
 // ========== IMPORTANT! =======================
 // Must ensure the first beat is RIGHT aligned.
 // =============================================
-module mkBiDirectionStreamShifter(StreamShifter#(tData, tByteNum, tByteIdx)) provisos (
+module mkBiDirectionStreamShifterG(StreamShifterG#(tData, tByteNum, tByteIdx)) provisos (
         Bits#(tData, szData),
         NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
         NumAlias#(TLog#(szDataInByte), szByteIdx),

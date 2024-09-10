@@ -663,6 +663,12 @@ interface AutoInferBram#(type tAddr, type tData);
     method ActionValue#(tData) getReadResp;
 endinterface
 
+interface AutoInferBramQueuedOutput#(type tAddr, type tData);
+    method Action write(tAddr addr, tData data);
+    method Action putReadReq(tAddr addr);
+    interface PipeOut#(tData) readRespPipeOut;
+endinterface
+
 module mkAutoInferBram(AutoInferBram#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
@@ -838,7 +844,7 @@ module mkAutoInferBramUG#(Bool bypassWriteData, String initFile)(AutoInferBram#(
 endmodule
 
 
-module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoInferBram#(tAddr, tData)) provisos (
+module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoInferBramQueuedOutput#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(tAddr),
@@ -879,11 +885,7 @@ module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoI
         backPreasureQueue.enq(0);
     endmethod
 
-    method ActionValue#(tData) getReadResp if (outputQ.notEmpty);
-        outputQ.deq;
-        backPreasureQueue.deq;
-        return outputQ.first;
-    endmethod
+    interface readRespPipeOut = ugToPipeOut(outputQ);
 endmodule
 
 typedef enum {
@@ -922,3 +924,4 @@ function Action immAssertAddressAndLengthNotCross4kBoundary(tAddr addr, tLen len
         );
     endaction
 endfunction
+
