@@ -4,6 +4,8 @@ import FIFOF :: *;
 import PcieTypes :: *;
 import Cntrs :: *;
 import BRAMCore :: *;
+import Arbiter :: * ;
+import Connectable :: *;
 
 import DataTypes :: *;
 import RdmaHeaders :: *;
@@ -14,6 +16,8 @@ import PrioritySearchBuffer :: *;
 
 import StreamShifterG :: *;
 import GearBoxArbiter :: *;
+
+`include "PcieMacros.bsv"
 
 typedef struct {
     Bool cplh;
@@ -525,14 +529,6 @@ typedef Bit#(TLog#(TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, BYTE_WIDTH))) PcieDataStrea
 typedef StreamShifterStream#(PcieDataStreamDataLsbRight, PcieDataStreamByteCnt, PcieDataStreamByteIdx) PcieDataStreamLsbRight;
 typedef StreamShifterStream#(PcieDataStreamDataLsbLeft, PcieDataStreamByteCnt, PcieDataStreamByteIdx) PcieDataStreamLsbLeft;
 
-`define PCIE_TLP_HEADER_FMT_3DW_NO_DATA             3'b000
-`define PCIE_TLP_HEADER_FMT_4DW_NO_DATA             3'b001
-`define PCIE_TLP_HEADER_FMT_3DW_WITH_DATA           3'b010
-`define PCIE_TLP_HEADER_FMT_4DW_WITH_DATA           3'b011
-
-`define PCIE_TLP_HEADER_TYPE_MEM_READ               5'b00000
-`define PCIE_TLP_HEADER_TYPE_MEM_WRITE              5'b00000
-`define PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA          5'b01010
 
 interface PcieRxStreamSegmentFork;
     interface PipeIn#(PcieRxBeat) pcieRxPipeIn;
@@ -540,6 +536,7 @@ interface PcieRxStreamSegmentFork;
     interface Vector#(PCIE_RX_HANDLER_CNT, PipeOut#(RawPcieRxTlpWithMeta)) tlpHeaderPipeOutVec;
 endinterface
 
+(* synthesize *)
 module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
     FIFOF#(PcieRxBeat) pcieRxPipeInQueue <- mkFIFOF;
 
@@ -562,9 +559,19 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
     Vector#(PCIE_RX_HANDLER_CNT, Reg#(PcieTlpDataByteLen)) streamByteRemainingRegVec <- replicateM(mkRegU);
 
-    rule preCalcRxBeatMeta;
+    RWire#(Vector#(PCIE_RX_HANDLER_CNT, Maybe#(PcieSegmentIdx))) tlpFirstSegmentIdxVecWire <- mkRWire;
+    Wire#(PcieRxBeat) beatPassthroughWire <- mkWire;
+    Wire#(PcieRxHandlerIdx) curPrimHandlerIdxPassthroughWire <- mkWire;
+
+
+    // need this gurad condition since the tlpFirstSegmentIdxVecWire's signal must be consumed in current beat, so we must ensure the consumer not blocked.
+    let preCalcRxBeatMetaRule = (rules
+    rule preCalcRxBeatMeta if (handlerInputQueueVec[0].notFull && handlerInputQueueVec[1].notFull && handlerInputQueueVec[2].notFull);
+
         let beat = pcieRxPipeInQueue.first;
         pcieRxPipeInQueue.deq;
+
+        beatPassthroughWire <= beat;
 
         Bool isTlpSpanNextBeat = case (pack(beat.eop)) matches
             'b1???: False;
@@ -605,42 +612,33 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
 
         Vector#(PCIE_RX_HANDLER_CNT, Maybe#(PcieSegmentIdx)) tlpFirstSegmentIdxVec = case (pack(beat.hvalid)) matches
-            'b0000: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Invalid, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
-            'b0001: vec(tagged Invalid, tagged Invalid, tagged Valid 0);
-            'b0010: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Valid 1, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Valid 1));
-            'b0011: vec(tagged Invalid, tagged Valid 1, tagged Valid 0);
-            'b0100: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Valid 2, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
-            'b0101: vec(tagged Invalid, tagged Valid 2, tagged Valid 0);
-            'b0110: (prevTlpSpanNextBeatReg ? vec(tagged Valid 2, tagged Valid 1, tagged Valid 0) : vec(tagged Invalid, tagged Valid 2, tagged Valid 1));
-            'b0111: vec(tagged Valid 2, tagged Valid 1, tagged Valid 0);
-            'b1000: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Valid 3, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
-            'b1001: vec(tagged Invalid, tagged Valid 3, tagged Valid 0);
-            'b1010: (prevTlpSpanNextBeatReg ? vec(tagged Valid 3, tagged Valid 1, tagged Valid 0) : vec(tagged Invalid, tagged Valid 3, tagged Valid 1));
-            'b1011: vec(tagged Valid 3, tagged Valid 1, tagged Valid 0);
-            'b1100: (prevTlpSpanNextBeatReg ? vec(tagged Valid 3, tagged Valid 2, tagged Valid 0) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
-            'b1101: vec(tagged Valid 3, tagged Valid 2, tagged Valid 0);
-            'b1110: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Invalid, tagged Invalid) : vec(tagged Valid 3, tagged Valid 2, tagged Valid 1));
+            'b0000: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Invalid, tagged Invalid) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b0001: vec(tagged Valid 0, tagged Invalid, tagged Invalid);
+            'b0010: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Valid 1, tagged Invalid) : vec(tagged Valid 1, tagged Invalid, tagged Invalid));
+            'b0011: vec(tagged Valid 0, tagged Valid 1, tagged Invalid);
+            'b0100: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Valid 2, tagged Invalid) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b0101: vec(tagged Valid 0, tagged Valid 2, tagged Invalid);
+            'b0110: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Valid 1, tagged Valid 2) : vec(tagged Valid 1, tagged Valid 2, tagged Invalid));
+            'b0111: vec(tagged Valid 0, tagged Valid 1, tagged Valid 2);
+            'b1000: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Valid 3, tagged Invalid) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b1001: vec(tagged Valid 0, tagged Valid 3, tagged Invalid);
+            'b1010: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Valid 1, tagged Valid 3) : vec(tagged Valid 1, tagged Valid 3, tagged Invalid));
+            'b1011: vec(tagged Valid 0, tagged Valid 1, tagged Valid 3);
+            'b1100: (prevTlpSpanNextBeatReg ? vec(tagged Valid 0, tagged Valid 2, tagged Valid 3) : vec(tagged Invalid, tagged Invalid, tagged Invalid));
+            'b1101: vec(tagged Valid 0, tagged Valid 2, tagged Valid 3);
+            'b1110: (prevTlpSpanNextBeatReg ? vec(tagged Invalid, tagged Invalid, tagged Invalid) : vec(tagged Valid 1, tagged Valid 2, tagged Valid 3));
             'b1111: vec(tagged Invalid, tagged Invalid, tagged Invalid);
         endcase;
 
-        for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
-            if (tlpFirstSegmentIdxVec[handlerIdx] matches tagged Valid .startSegIdx) begin
-                let ent = RawPcieRxStreamWithMeta {
-                    rxBeat: beat,
-                    startSegIdx: startSegIdx
-                };
+        tlpFirstSegmentIdxVecWire.wset(tlpFirstSegmentIdxVec);
+        curPrimHandlerIdxPassthroughWire <= curPrimHandlerIdxReg;
 
-                let curPrimHandlerIdxWide = {1'b0, pack(curPrimHandlerIdxReg)};
-                curPrimHandlerIdxWide = curPrimHandlerIdxWide + fromInteger(handlerIdx);
-                if (curPrimHandlerIdxWide > fromInteger(valueOf(PCIE_RX_HANDLER_CNT) - 1)) begin
-                    curPrimHandlerIdxWide = curPrimHandlerIdxWide - fromInteger(valueOf(PCIE_RX_HANDLER_CNT) - 1);
-                end
-
-                PcieRxHandlerIdx curPrimHandlerIdx = truncate(curPrimHandlerIdxWide);
-
-                handlerInputQueueVec[curPrimHandlerIdx].enq(ent);
-            end
-        end
+        // $display(
+        //     "time=%0t:", $time,
+        //     "isTlpSpanNextBeat=", fshow(isTlpSpanNextBeat),
+        //     ", tlpCnt=", fshow(tlpCnt),
+        //     ", tlpFirstSegmentIdxVec=", fshow(tlpFirstSegmentIdxVec)
+        // );
 
         let nextPrimHandlerIdxWide = {1'b0, pack(curPrimHandlerIdxReg)};
         nextPrimHandlerIdxWide = nextPrimHandlerIdxWide + zeroExtend(tlpCnt);
@@ -654,6 +652,52 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         curPrimHandlerIdxReg <= truncate(nextPrimHandlerIdxWide);
 
     endrule
+    endrules);
+
+    Vector#(PCIE_RX_HANDLER_CNT, Rules) outputRulesVec = newVector;
+    for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+        outputRulesVec[handlerIdx] = (rules 
+            rule dispatchSegmentToHandlers;
+                
+                let beat = beatPassthroughWire;
+                // $display(
+                //     "time=%0t:", $time,
+                //     "dispatchSegmentToHandlers idx=%d", handlerIdx,
+                //     "tlpFirstSegmentIdxVecWire.wget = ", fshow(tlpFirstSegmentIdxVecWire.wget)
+                // );
+
+                if (tlpFirstSegmentIdxVecWire.wget matches tagged Valid .tlpFirstSegmentIdxVec) begin
+                    // $display("dispatchSegmentToHandlers first level idx=%d", handlerIdx, ", tlpFirstSegmentIdxVec=", fshow(tlpFirstSegmentIdxVec));
+
+                    if (tlpFirstSegmentIdxVec[handlerIdx] matches tagged Valid .startSegIdx) begin
+                        let ent = RawPcieRxStreamWithMeta {
+                            rxBeat: beat,
+                            startSegIdx: startSegIdx
+                        };
+
+                        let curPrimHandlerIdxWide = {1'b0, pack(curPrimHandlerIdxPassthroughWire)};
+                        curPrimHandlerIdxWide = curPrimHandlerIdxWide + fromInteger(handlerIdx);
+                        if (curPrimHandlerIdxWide > fromInteger(valueOf(PCIE_RX_HANDLER_CNT) - 1)) begin
+                            curPrimHandlerIdxWide = curPrimHandlerIdxWide - fromInteger(valueOf(PCIE_RX_HANDLER_CNT) - 1);
+                        end
+
+                        PcieRxHandlerIdx curPrimHandlerIdx = truncate(curPrimHandlerIdxWide);
+
+                        handlerInputQueueVec[curPrimHandlerIdx].enq(ent);
+
+                        // $display(
+                        //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork dispatchSegmentToHandlers"),
+                        //     toBlue(", handlerIdx="), "%d", handlerIdx,
+                        //     toBlue(", ent="), fshow(ent)
+                        // );
+                    end
+                end
+            endrule
+        endrules);
+    end
+
+    addRules(rJoinConflictFree(preCalcRxBeatMetaRule, rJoinConflictFree(outputRulesVec[0], rJoinConflictFree(outputRulesVec[1], outputRulesVec[2]))));
+
 
     for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
         rule rawPcieRxInputToInternalDataType;
@@ -763,7 +807,7 @@ endfunction
 
 function PcieHeaderFieldExtendedTag getExtendedTagFromTlpCpltHeader(PcieTlpHeaderBuffer tlpBuffer);
     PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(tlpBuffer));
-    return unpack(truncate({pack(tlpHeader.requesterId), pack(tlpHeader.tag)}));
+    return unpack(truncate({pack(tlpHeader.commonHeader.t9), pack(tlpHeader.commonHeader.t8), pack(tlpHeader.tag)}));
 endfunction
 
 function Bool isPcieTlpLastReadCplt(PcieTlpHeaderBuffer tlpBuffer);
@@ -894,6 +938,8 @@ interface TlpDemuxAndConvertToMemMapStream;
     interface Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, PipeOut#(PcieTlpHeaderBuffer)) tlpCpltHeaderPipeOutVec;
 endinterface
 
+
+(* synthesize *)
 module mkTlpDemuxAndConvertToMemMapStream(TlpDemuxAndConvertToMemMapStream);
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, FIFOF#(MemoeyMapAlignedDataStreamWithMetadata)) tlpCpltDataStreamPipeOutQueueVec <- replicateM(mkFIFOF);
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, FIFOF#(PcieTlpHeaderBuffer)) tlpCpltHeaderPipeOutQueueVec <- replicateM(mkFIFOF);
@@ -999,6 +1045,7 @@ module mkTlpDemuxAndConvertToMemMapStream(TlpDemuxAndConvertToMemMapStream);
         DispatchChannelIdx dispatchIdx = truncate(dispatchMeta.extTag);
         if (dispatchMeta.isCplt) begin
             tlpCpltDataStreamPipeOutQueueVec[dispatchIdx].enq(outputDataStreamWithMeta);
+            $display("outputDataStreamWithMeta=", fshow(outputDataStreamWithMeta));
         end
         else begin
             tlpMemReqDataStreamPipeOutQueue.enq(shiftedRightAlignedStream);
@@ -1233,6 +1280,8 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
         let inputStreamWithMeta = dataStreamPipeInQueue.first;
         dataStreamPipeInQueue.deq;
 
+        $display("inputStreamWithMeta=", fshow(inputStreamWithMeta));
+
         let ds = inputStreamWithMeta.ds;
         let isLastCplt = inputStreamWithMeta.isLastCplt;
 
@@ -1335,6 +1384,10 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
             newCompleteSlotSignal[0] <= False;
             slotMetaReadReqQueueForOutputData.enq(tailReg);
             outputStateReg <= PcieCompletionBufferOutputStateWaitStateQueryResp;
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputSendStateQuery"),
+                toBlue(", tailReg="), fshow(tailReg)
+            );
         end
     endrule
 
@@ -1408,7 +1461,7 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
         dataStreamStorageVec[1].readRespPipeOut.deq;
         outputStreamMetaPipelineQueue.deq;
 
-        let ds = StreamShifterStream {
+        PcieDataStreamLsbRight ds = StreamShifterStream {
             data: unpack({streamHigherPart, streamLowerPart}),
             byteNum: streamMeta.byteNum,
             startByteIdx: streamMeta.startByteIdx,
@@ -1416,10 +1469,153 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
             isLast: streamMeta.isLast
         };
         dataStreamPipeOutQueue.enq(ds);
+
+        if (ds.isLast) begin
+            if (tailReg == fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE))) begin
+                tailReg <=fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE));
+            end 
+            else begin
+                tailReg <= tailReg + 1;
+            end
+            busySlotCounter.decr(1);
+        end
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer receiveDataStreamRowDataAndOutput"),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     interface tagAllocPipeIn    =   toPipeIn(tagAllocPipeInQueue);
     interface tagAllocPipeOut   =   toPipeOut(tagAllocPipeOutQueue);
     interface dataStreamPipeIn  =   toPipeIn(dataStreamPipeInQueue);
     interface dataStreamPipeOut =   toPipeOut(dataStreamPipeOutQueue);
+endmodule
+
+
+interface DataStreamArbiterForCompletionBuffer;
+    interface Vector#(PCIE_RX_HANDLER_CNT, PipeIn#(MemoeyMapAlignedDataStreamWithMetadata)) dataStreamPipeInVec;
+    interface PipeOut#(MemoeyMapAlignedDataStreamWithMetadata) dataStreamPipeOut;
+endinterface
+
+module mkDataStreamArbiterForCompletionBuffer(DataStreamArbiterForCompletionBuffer);
+    Vector#(PCIE_RX_HANDLER_CNT, PipeIn#(MemoeyMapAlignedDataStreamWithMetadata)) dataStreamPipeInVecInst = newVector;
+    Vector#(PCIE_RX_HANDLER_CNT, FIFOF#(MemoeyMapAlignedDataStreamWithMetadata)) dataStreamPipeInQueueVec <- replicateM(mkFIFOF);
+    FIFOF#(MemoeyMapAlignedDataStreamWithMetadata) dataStreamPipeOutQueue <- mkFIFOF;
+
+    for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+        dataStreamPipeInVecInst[handlerIdx] = toPipeIn(dataStreamPipeInQueueVec[handlerIdx]);
+    end
+
+    Arbiter_IFC#(PCIE_RX_HANDLER_CNT) arbiter <- mkArbiter(False);
+
+    Reg#(PcieRxHandlerIdx) curInputChannleIdxReg <- mkReg(0);
+    
+    Reg#(Bool) isForwardFirstBeatReg <- mkReg(True); 
+
+    rule sendArbitReq if (isForwardFirstBeatReg);
+        for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+            if (dataStreamPipeInQueueVec[handlerIdx].notEmpty) begin 
+                arbiter.clients[handlerIdx].request;
+            end
+        end
+    endrule
+
+    rule getArbitResult if (isForwardFirstBeatReg);
+        Bool isOnly = False;
+        Maybe#(MemoeyMapAlignedDataStreamWithMetadata) dsWithMetaMaybe = tagged Invalid;
+        PcieRxHandlerIdx selectedChannel = 0;
+        for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+            if (arbiter.clients[handlerIdx].grant) begin
+                let dsWithMeta = dataStreamPipeInQueueVec[handlerIdx].first;
+                dataStreamPipeInQueueVec[handlerIdx].deq;
+                immAssert(
+                    dsWithMeta.ds.isFirst,
+                    "datastream should be First",
+                    $format("dsWithMeta=", fshow(dsWithMeta))
+                );
+                if (dsWithMeta.ds.isLast) begin
+                    isOnly = True;
+                end
+                dsWithMetaMaybe = tagged Valid dsWithMeta;
+                selectedChannel = fromInteger(handlerIdx);
+            end
+        end
+
+        if (dsWithMetaMaybe matches tagged Valid .dsWithMeta) begin
+            isForwardFirstBeatReg <= isOnly;
+            dataStreamPipeOutQueue.enq(dsWithMeta);
+            curInputChannleIdxReg <= selectedChannel;
+        end
+    endrule
+
+    rule forwardMoreBeat if (!isForwardFirstBeatReg);
+        let dsWithMeta = dataStreamPipeInQueueVec[curInputChannleIdxReg].first;
+        dataStreamPipeInQueueVec[curInputChannleIdxReg].deq;
+        dataStreamPipeOutQueue.enq(dsWithMeta);
+                
+        if (dsWithMeta.ds.isLast) begin
+            isForwardFirstBeatReg <= True;
+        end
+    endrule
+
+    interface dataStreamPipeInVec = dataStreamPipeInVecInst;
+    interface dataStreamPipeOut = toPipeOut(dataStreamPipeOutQueue);
+endmodule
+
+
+interface RTilePcie;
+    interface PipeIn#(PcieRxBeat) pcieRxPipeIn;
+
+endinterface
+
+module mkRTilePcie(RTilePcie);
+    let pcieRxStreamSegmentFork <- mkPcieRxStreamSegmentFork;
+
+    Vector#(PCIE_RX_HANDLER_CNT, TlpDemuxAndConvertToMemMapStream) rxTlpHandlerVec <- replicateM(mkTlpDemuxAndConvertToMemMapStream);
+
+    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, PcieCompletionBuffer) cpltBufferVec = newVector;
+
+    Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DataStreamArbiterForCompletionBuffer) cpltBufferArbiterVec <- replicateM(mkDataStreamArbiterForCompletionBuffer);
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
+        cpltBufferVec[channelIdx] <- mkPcieCompletionBuffer(fromInteger(channelIdx));
+
+        mkConnection(cpltBufferArbiterVec[channelIdx].dataStreamPipeOut, cpltBufferVec[channelIdx].dataStreamPipeIn);
+    end
+
+    for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
+        mkConnection(pcieRxStreamSegmentFork.tlpDataStreamPipeOutVec[handlerIdx], rxTlpHandlerVec[handlerIdx].tlpDataStreamPipeIn);
+        mkConnection(pcieRxStreamSegmentFork.tlpHeaderPipeOutVec[handlerIdx], rxTlpHandlerVec[handlerIdx].tlpHeaderPipeIn);
+
+        for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
+
+            mkConnection(rxTlpHandlerVec[handlerIdx].tlpCpltDataStreamPipeOutVec[channelIdx], cpltBufferArbiterVec[channelIdx].dataStreamPipeInVec[handlerIdx]);
+        
+            rule discardTlpHeader;
+                
+                rxTlpHandlerVec[handlerIdx].tlpCpltHeaderPipeOutVec[channelIdx].deq;
+                
+            endrule
+        end
+    end
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
+        rule testTemp1;
+            cpltBufferVec[channelIdx].tagAllocPipeIn.enq(PcieCompletionBufferSlotAllocReq{userdata: fromInteger(channelIdx)});
+        endrule
+    end
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
+        rule testTemp2;
+            let outputTag = cpltBufferVec[channelIdx].tagAllocPipeOut.first;
+            cpltBufferVec[channelIdx].tagAllocPipeOut.deq;
+            $display("get alloc tag, channelIdx=%d", channelIdx, ", tagValue=", fshow(outputTag));
+        endrule
+    end
+    //     interface PipeOut#(PcieHeaderFieldExtendedTag) tagAllocPipeOut;
+    //     interface PipeOut#(PcieDataStreamLsbRight) dataStreamPipeOut;
+
+
+    interface pcieRxPipeIn = pcieRxStreamSegmentFork.pcieRxPipeIn;
 endmodule

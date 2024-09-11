@@ -8,7 +8,7 @@ typedef 5 PCIE_HEADER_FIELD_TYPE_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_TYPE_WIDTH) PcieHeaderFieldType;
 
 typedef 10 PCIE_HEADER_FIELD_LENGTH_WIDTH;
-typedef Bit#(PCIE_HEADER_FIELD_TYPE_WIDTH) PcieHeaderFieldLength;
+typedef Bit#(PCIE_HEADER_FIELD_LENGTH_WIDTH) PcieHeaderFieldLength;
 
 typedef 3 PCIE_HEADER_FIELD_TC_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_TC_WIDTH) PcieHeaderFieldTc;
@@ -49,9 +49,9 @@ typedef Bit#(PCIE_HEADER_FIELD_EXTENDED_TAG_WIDTH) PcieHeaderFieldExtendedTag;
 typedef struct {
     PcieHeaderFieldFmt      fmt;
     PcieHeaderFieldType     typ;
-    ReservedZero#(1)        rsv1;
+    Bool                    t9;
     PcieHeaderFieldTc       tc;
-    ReservedZero#(1)        rsv2;
+    Bool                    t8;
     Bool                    attrh;
     Bool                    ln;
     Bool                    th;
