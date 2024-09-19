@@ -26,8 +26,10 @@ typedef 3 BIT_BYTE_CONVERT_SHIFT_NUM;
 typedef 2 BYTE_DWORD_CONVERT_SHIFT_NUM;
 typedef 8 BYTE_WIDTH;
 typedef 16 WORD_WIDTH;
+typedef 32 DWORD_WIDTH;
 typedef Bit#(BYTE_WIDTH) Byte;
 typedef Bit#(WORD_WIDTH) Word;
+typedef Bit#(DWORD_WIDTH) Dword;
 
 // Protocol settings
 typedef TExp#(31) RDMA_MAX_LEN;

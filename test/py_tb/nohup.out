@@ -1,0 +1,28 @@
+TCP server started
+Exception in thread Thread-7 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/mingheng/achronix-400g/test/py_tb/mock_host.py", line 123, in _run
+    raise Exception("receive broken rpc header")
+Exception: receive broken rpc header
+Exception in thread Thread-8 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/mingheng/achronix-400g/test/py_tb/mock_host.py", line 119, in _run
+    recv_cnt = self.client_socket.recv_into(
+TimeoutError: timed out
+Exception ignored in: <module 'threading' from '/usr/lib/python3.10/threading.py'>
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1567, in _shutdown
+    lock.acquire()
+KeyboardInterrupt: 
+Client connected: ('127.0.0.1', 43296)
+Client connected: ('127.0.0.1', 45380)
+/usr/lib/python3.10/multiprocessing/resource_tracker.py:224: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

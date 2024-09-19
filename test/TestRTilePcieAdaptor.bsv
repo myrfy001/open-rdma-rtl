@@ -16,6 +16,7 @@ import ClientServer :: *;
 import ConnectableF::*;
 
 import PcieTypes :: *;
+import StreamShifterG :: *;
 
 `include "PcieMacros.bsv"
 
@@ -77,3 +78,137 @@ endmodule
 
 
 
+interface TestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest;
+    method Bool getOutput;
+endinterface
+
+// (* doc = "testcase" *)
+// (* synthesize *)
+// module mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest(TestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest);
+//     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+
+//     ExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream#(PcieDataStreamDataLsbRight) dut <- mkExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream;
+
+//     ForceKeepWideSignals#(PcieDataStreamLsbRight) signalKeeperForStream <- mkForceKeepWideSignals; 
+//     ForceKeepWideSignals#(PcieLengthAndByteEn) signalKeeperForMeta <- mkForceKeepWideSignals; 
+    
+
+//     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+//     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+//     let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
+//     let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
+//     let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
+//     let randSource6 <- mkSynthesizableRng512('h11111111);
+
+//     Reg#(Bool) runReg <- mkReg(True);
+//     Reg#(Bool) outReg <- mkReg(True);
+//     rule injectTlp if (runReg);
+//         runReg <= False;
+
+//         let randValue1 <- randSource1.get;
+//         let randValue2 <- randSource2.get;
+//         let randValue3 <- randSource3.get;
+//         let randValue4 <- randSource4.get;
+//         let randValue5 <- randSource5.get;
+//         let randValue6 <- randSource6.get;
+
+//         let beat = unpack(truncate({pack(randValue1), pack(randValue2), pack(randValue3)}));
+//         dut.axiWriteBeatPipeIn.enq(beat);
+
+//     endrule
+
+//     rule handleOutput;
+//         if (dut.dataStreamPipeOut.notEmpty) begin
+//             signalKeeperForStream.bitsPipeIn.enq(dut.dataStreamPipeOut.first);
+//             dut.dataStreamPipeOut.deq;
+//         end
+
+//         if (dut.lengthAndByteEnPipeOut.notEmpty) begin
+//             signalKeeperForMeta.bitsPipeIn.enq(dut.lengthAndByteEnPipeOut.first);
+//             dut.lengthAndByteEnPipeOut.deq;
+//         end
+
+//         outReg <= signalKeeperForStream.out && signalKeeperForMeta.out;
+//     endrule
+
+//     method getOutput = outReg;
+// endmodule
+
+
+
+
+
+
+
+
+
+(* doc = "testcase" *)
+(* synthesize *)
+module mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest(TestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+
+    ExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream#(PcieDataStreamDataLsbRight) dut0 <- mkExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream;
+    PcieStreamShifter dut <- mkBiDirectionStreamShifterG;
+
+    // ForceKeepWideSignals#(PcieDataStreamLsbRight) signalKeeperForStream <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(PcieLengthAndByteEn) signalKeeperForMeta <- mkForceKeepWideSignals; 
+
+    ForceKeepWideSignals#(PcieDataStreamLsbRight) signalKeeperForStream <- mkForceKeepWideSignals; 
+    
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+    let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
+    let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
+    let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
+    let randSource6 <- mkSynthesizableRng512('h11111111);
+    let randSource7 <- mkSynthesizableRng512('h22222222);
+
+    Reg#(Bool) runReg <- mkReg(True);
+    Reg#(Bool) outReg <- mkReg(True);
+    rule injectTlp if (runReg);
+        runReg <= False;
+
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        let randValue3 <- randSource3.get;
+
+
+        let beat = unpack(truncate({pack(randValue1), pack(randValue2), pack(randValue3)}));
+        dut0.axiWriteBeatPipeIn.enq(beat);
+
+    endrule
+
+    rule tttt;
+        let randValue4 <- randSource4.get;
+        let randValue5 <- randSource5.get;
+        let randValue6 <- randSource6.get;
+        let randValue7 <- randSource7.get;
+
+        let dsOutput = dut0.dataStreamPipeOut.first;
+        dut0.dataStreamPipeOut.deq;
+
+        let signedShiftOffset = unpack(unpack(truncate({pack(randValue7)})));
+        dut.streamPipeIn.enq(dsOutput);
+        dut.offsetPipeIn.enq(signedShiftOffset);
+
+    endrule
+
+
+    rule handleOutput;
+        let shiftedLeftAlignedStream = dut.streamPipeOut.first;
+        dut.streamPipeOut.deq;
+        signalKeeperForStream.bitsPipeIn.enq(shiftedLeftAlignedStream);
+
+        if (dut0.lengthAndByteEnPipeOut.notEmpty) begin
+            signalKeeperForMeta.bitsPipeIn.enq(dut0.lengthAndByteEnPipeOut.first);
+            dut0.lengthAndByteEnPipeOut.deq;
+        end
+
+        outReg <= signalKeeperForStream.out && signalKeeperForMeta.out;
+    endrule
+
+
+
+    method getOutput = outReg;
+endmodule

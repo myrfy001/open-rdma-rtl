@@ -925,3 +925,14 @@ function Action immAssertAddressAndLengthNotCross4kBoundary(tAddr addr, tLen len
     endaction
 endfunction
 
+// function tOut getLogValueOfOneHot(tIn onehotIn) provisos (
+//         Bits#(tOut, szOut),
+//         Bits#(tIn, szIn),
+//         Add#(0, TLog#(szIn), szOut)
+//     );
+//     Vector#(szOut, tOut) tmpBufferVec = newVector;
+//     for (Integer idx = 0; idx < valueOf(szOut); idx = idx + 1) begin
+//         tmpBufferVec[idx] = onehotIn[idx] == 1 ? fromInteger(idx) : 0;
+//     end
+//     // TODO: not finished
+// endfunction

@@ -44,9 +44,11 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../src/AutoAckGenerator.bsv
 # TOPMODULE ?= mkAutoAckGenerator
 
-TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
-TOPMODULE ?= mkRTilePcieAdaptor
+# TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
+# TOPMODULE ?= mkRTilePcieAdaptor
 
+TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+TOPMODULE ?= mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest
 
 
 # TARGETFILE ?= ../test/TestTop.bsv

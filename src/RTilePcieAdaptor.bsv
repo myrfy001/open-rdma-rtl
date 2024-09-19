@@ -13,6 +13,7 @@ import PAClib :: *;
 import ConnectableF :: *;
 import PrimUtils :: *;
 import PrioritySearchBuffer :: *;
+import AxiBus :: *;
 
 import StreamShifterG :: *;
 import GearBoxArbiter :: *;
@@ -1562,6 +1563,201 @@ module mkDataStreamArbiterForCompletionBuffer(DataStreamArbiterForCompletionBuff
     interface dataStreamPipeInVec = dataStreamPipeInVecInst;
     interface dataStreamPipeOut = toPipeOut(dataStreamPipeOutQueue);
 endmodule
+
+
+typedef struct {
+    PcieHeaderFieldLength       length;
+    PcieHeaderFieldLastDwBe     lastDwBe;
+    PcieHeaderFieldFirstDwBe    firstDwBe;
+} PcieLengthAndByteEn deriving(FShow, Bits);
+
+interface ExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream#(type tAxiData);
+    interface PipeIn#(AxiMmBeatW#(tAxiData)) axiWriteBeatPipeIn;
+    interface PipeOut#(StreamShifterStream#(tAxiData, Bit#(TLog#(TAdd#(1,TDiv#(SizeOf#(tAxiData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tAxiData), BYTE_WIDTH))))) dataStreamPipeOut;
+    interface PipeOut#(PcieLengthAndByteEn) lengthAndByteEnPipeOut;
+endinterface
+
+module mkExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream(ExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream#(tAxiData)) provisos (
+        Bits#(tAxiData, szAxiData),
+        Alias#(Bit#(TDiv#(szAxiData, BYTE_WIDTH)), tByteEn),
+        Alias#(Bit#(TDiv#(szAxiData, DWORD_WIDTH)), tDwordEn),
+        Bits#(tByteEn, szByteEn),
+        Bits#(tDwordEn, szDwordEn),
+        Alias#(Bit#(TDiv#(DWORD_WIDTH, BYTE_WIDTH)), tByteEnForDword),
+        Bits#(Vector#(TDiv#(szAxiData, DWORD_WIDTH), tByteEnForDword), szByteEn),
+        Add#(1, a__, TLog#(TAdd#(1, szDwordEn))),
+        Add#(1, b__, TDiv#(szAxiData, DWORD_WIDTH)),
+        Add#(c__, TLog#(TAdd#(1, szDwordEn)), SizeOf#(PcieHeaderFieldLength)),
+        Add#(f__, TLog#(szByteEn), TLog#(TAdd#(1, szByteEn))),
+        Mul#(BYTE_WIDTH, d__, szAxiData),
+        Add#(1, e__, TLog#(TAdd#(1, szByteEn)))
+    );
+    FIFOF#(AxiMmBeatW#(tAxiData)) axiWriteBeatPipeInQueue <- mkFIFOF;
+    FIFOF#(StreamShifterStream#(tAxiData, Bit#(TLog#(TAdd#(1,TDiv#(SizeOf#(tAxiData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tAxiData), BYTE_WIDTH))))) dataStreamPipeOutQueue  <- mkFIFOF;
+    FIFOF#(PcieLengthAndByteEn) lengthAndByteEnPipeOutQueue <- mkFIFOF;
+
+    Reg#(Bool) isFirstBeatReg <- mkReg(True);
+    Reg#(PcieHeaderFieldLength) lengthReg <- mkReg(0);
+    Reg#(PcieHeaderFieldFirstDwBe) firstDwBeReg <- mkRegU;
+
+
+    function tDwordEn byteEnToDwordEn(tByteEn byteEn);
+        Vector#(szDwordEn, tByteEnForDword) byteEnGroupVec = unpack(pack(byteEn));
+        Vector#(szDwordEn, Bool) dwordEnVec = newVector;
+        for (Integer dwIdx = 0; dwIdx < valueOf(szDwordEn); dwIdx = dwIdx + 1) begin
+            dwordEnVec[dwIdx] = (byteEnGroupVec[dwIdx] != 0);
+        end
+        return unpack(pack(dwordEnVec));
+    endfunction
+
+    function tByteEnForDword byteEnToFirstLastDwBe(tByteEn byteEn, Bool isCalcFirstDwBe, Bool isDwLengthZero, Bool isDwLengthOne);
+        Vector#(szDwordEn, tByteEnForDword) byteEnGroupVec = unpack(pack(byteEn));
+        
+        for (Integer dwIdx = 0; dwIdx < valueOf(szDwordEn); dwIdx = dwIdx + 1) begin
+            if (isCalcFirstDwBe) begin
+                if (msb(byteEnGroupVec[dwIdx]) == 0 || (lsb(byteEnGroupVec[dwIdx]) == 1 && msb(byteEnGroupVec[dwIdx]) == 1)) begin
+                    byteEnGroupVec[dwIdx] = 0;
+                end
+            end
+            else begin
+                if (lsb(byteEnGroupVec[dwIdx]) == 0 || (lsb(byteEnGroupVec[dwIdx]) == 1 && msb(byteEnGroupVec[dwIdx]) == 1)) begin
+                    byteEnGroupVec[dwIdx] = 0;
+                end
+            end
+        end
+
+        tByteEnForDword ret = fold(\| , byteEnGroupVec);
+        if (ret == 0 && !isDwLengthZero) begin
+            ret = -1;
+        end
+
+        // if only have one DW, then the last DW EN is zero
+        if (isDwLengthOne && !isCalcFirstDwBe) begin
+            ret = 0;
+        end
+        return ret;
+    endfunction
+
+    rule preCalcDwordEn;
+        let beat = axiWriteBeatPipeInQueue.first;
+        axiWriteBeatPipeInQueue.deq;
+        
+        let dwordEn = byteEnToDwordEn(beat.wstrb);
+        let byteNum = countOnes(beat.wstrb);
+        let startByteIdx = countZerosMSB(beat.wstrb);  // beat is right aligned
+        let validDwordCnt = countOnes(dwordEn);
+        let lsbInvalidDword = countZerosLSB(dwordEn);
+        let curLength = lengthReg + zeroExtend(pack(validDwordCnt));
+        let isDwLengthZero = dwordEn == 0;
+        let isDwLengthOne = dwordEn == 1;
+
+        let lastDwBe = byteEnToFirstLastDwBe(beat.wstrb, False, isDwLengthZero, isDwLengthOne);
+        let firstDwBe = byteEnToFirstLastDwBe(beat.wstrb, True, isDwLengthZero, isDwLengthOne);
+
+        if (isFirstBeatReg) begin
+            firstDwBeReg <= firstDwBe;
+        end
+
+        if (beat.wlast) begin
+            lengthReg <= 0;
+            let out = PcieLengthAndByteEn {
+                length: curLength,
+                lastDwBe: lastDwBe,
+                firstDwBe: isFirstBeatReg ? firstDwBe : firstDwBeReg
+            };
+            lengthAndByteEnPipeOutQueue.enq(out);
+        end
+        else begin
+            lengthReg <= curLength;
+        end
+
+        StreamShifterStream#(tAxiData, Bit#(TLog#(TAdd#(1,TDiv#(SizeOf#(tAxiData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tAxiData), BYTE_WIDTH)))) ds = StreamShifterStream {
+            data: unpack(swapEndianByte(pack(beat.wdata))),
+            byteNum: pack(byteNum),
+            startByteIdx: truncate(pack(startByteIdx)),
+            isFirst: isFirstBeatReg,
+            isLast: beat.wlast
+        };
+        dataStreamPipeOutQueue.enq(ds);
+
+    endrule
+
+    interface axiWriteBeatPipeIn = toPipeIn(axiWriteBeatPipeInQueue);
+    interface lengthAndByteEnPipeOut = toPipeOut(lengthAndByteEnPipeOutQueue);
+    interface dataStreamPipeOut = toPipeOut(dataStreamPipeOutQueue);
+endmodule
+
+
+interface PcieRequestTlpHeaderGenAndPayloadShift#(type tAxiData);
+    interface AxiSlavePipes#(tAxiData) axiSlavePipes;
+endinterface
+
+
+// module mkPcieRequestTlpHeaderGenAndPayloadShift(PcieRequestTlpHeaderGenAndPayloadShift#(tAxiData)) provisos (
+//         Bits#(tAxiData, szAxiData),
+//         Alias#(Bit#(TDiv#(szAxiData, BYTE_WIDTH)), tByteEn),
+//         Alias#(Bit#(TDiv#(szAxiData, DWORD_WIDTH)), tDwordEn),
+//         Alias#(Bit#(TDiv#(DWORD_WIDTH, BYTE_WIDTH)), tByteEnForDword),
+//         Bits#(tByteEn, szByteEn),
+//         Bits#(tDwordEn, szDwordEn),
+//         Bits#(tByteEnForDword, szByteEnForDword),
+//         Add#(1, b__, szDwordEn),
+//         Mul#(szDwordEn, szByteEnForDword, szByteEn),
+//         Add#(1, b__, TDiv#(szAxiData, DWORD_WIDTH)),
+//         Add#(c__, TLog#(TAdd#(1, szDwordEn)), SizeOf#(PcieHeaderFieldLength)),
+//         Add#(1, a__, TLog#(TAdd#(1, szDwordEn)))
+        
+//     );
+
+
+//     FIFOF#(AxiMmBeatAw)            slaveSideQueueAw   <-  mkFIFOF;
+//     FIFOF#(AxiMmBeatW#(tAxiData))  slaveSideQueueW    <-  mkFIFOF;
+//     FIFOF#(AxiMmBeatB)             slaveSideQueueB    <-  mkFIFOF;
+//     FIFOF#(AxiMmBeatAr)            slaveSideQueueAr   <-  mkFIFOF;
+//     FIFOF#(AxiMmBeatR#(tAxiData))  slaveSideQueueR    <-  mkFIFOF;
+
+
+//     ExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream#(tAxiData) writeStreamMetaExtractor <- mkExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream;
+
+//     mkConnection(writeStreamMetaExtractor.axiWriteBeatPipeIn, toPipeOut(slaveSideQueueW));
+
+
+//     Reg#(Bool) axiWriteToDataStreamIsFirstReg <- mkReg(True);
+//     rule prepareShiftDataStream;
+
+//         let axiBeatIn = writeStreamMetaExtractor.axiWriteBeatPipeOut.first;
+//         writeStreamMetaExtractor.axiWriteBeatPipeOut.deq;
+
+
+//         PcieDataStreamLsbLeft ds = PcieDataStreamLsbLeft {
+
+//         };
+
+//         axiWriteToDataStreamIsFirstReg <= axiBeatIn.wlast;
+
+//     endrule
+
+
+
+
+
+
+
+
+//     interface AxiSlavePipes axiSlavePipes;
+//         interface AxiSlaveWritePipes writePipeIfc;
+//             interface  writeAddrPipeIn  = toPipeIn(slaveSideQueueAw);
+//             interface  writeDataPipeIn  = toPipeIn(slaveSideQueueW);
+//             interface  writeRespPipeOut = toPipeOut(slaveSideQueueB);
+//         endinterface
+
+//         interface AxiSlaveReadPipes readPipeIfc;
+//             interface  readAddrPipeIn  = toPipeIn(slaveSideQueueAr);
+//             interface  readRespPipeOut = toPipeOut(slaveSideQueueR);
+//         endinterface
+//     endinterface
+// endmodule
+
 
 
 interface RTilePcie;
