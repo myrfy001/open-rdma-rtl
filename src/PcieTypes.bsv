@@ -25,6 +25,9 @@ typedef Bit#(PCIE_HEADER_FIELD_REQUESTER_ID_WIDTH) PcieHeaderFieldRequesterId;
 typedef 8 PCIE_HEADER_FIELD_TAG_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_TAG_WIDTH) PcieHeaderFieldTag;
 
+typedef 8 PCIE_HEADER_FIELD_ST_WIDTH;
+typedef Bit#(PCIE_HEADER_FIELD_ST_WIDTH) PcieHeaderFieldSt;
+
 typedef 4 PCIE_HEADER_FIELD_LAST_DW_BE_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_LAST_DW_BE_WIDTH) PcieHeaderFieldLastDwBe;
 
@@ -43,8 +46,16 @@ typedef Bit#(PCIE_HEADER_FIELD_BYTE_COUNT_WIDTH) PcieHeaderFieldByteCount;
 typedef 7 PCIE_HEADER_FIELD_LOWER_ADDRESS_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_LOWER_ADDRESS_WIDTH) PcieHeaderFieldLowerAddress;
 
+typedef 62 PCIE_HEADER_FIELD_64_BIT_ADDR_WIDTH;
+typedef Bit#(PCIE_HEADER_FIELD_64_BIT_ADDR_WIDTH) PcieHeaderField64BitAddr;
+
+typedef 2 PCIE_HEADER_FIELD_PH_WIDTH;
+typedef Bit#(PCIE_HEADER_FIELD_PH_WIDTH) PcieHeaderFieldPh;
+
 typedef 10 PCIE_HEADER_FIELD_EXTENDED_TAG_WIDTH;
 typedef Bit#(PCIE_HEADER_FIELD_EXTENDED_TAG_WIDTH) PcieHeaderFieldExtendedTag;
+
+
 
 typedef struct {
     PcieHeaderFieldFmt      fmt;
@@ -69,6 +80,35 @@ typedef struct {
     PcieHeaderFieldLastDwBe     lastDwBe;
     PcieHeaderFieldFirstDwBe    firstDwBe;
 } PcieTlpHeaderMemoryAccess deriving(Bits, FShow);
+
+typedef struct {
+    PcieTlpHeaderCommon         commonHeader;
+    PcieHeaderFieldRequesterId  requesterId;
+    PcieHeaderFieldTag          tag;
+    PcieHeaderFieldSt           st;
+} PcieTlpHeaderMemoryRead deriving(Bits, FShow);
+
+typedef struct {
+    PcieTlpHeaderCommon         commonHeader;
+    PcieHeaderFieldRequesterId  requesterId;
+    PcieHeaderFieldSt           st;
+    PcieHeaderFieldLastDwBe     lastDwBe;
+    PcieHeaderFieldFirstDwBe    firstDwBe;
+} PcieTlpHeaderMemoryWrite deriving(Bits, FShow);
+
+
+
+typedef struct {
+    PcieTlpHeaderMemoryWrite    memoryWriteHeader;
+    PcieHeaderField64BitAddr    addr;
+    PcieHeaderFieldPh           ph;
+} PcieTlpHeaderMemoryWrite4Dw deriving(Bits, FShow);
+
+typedef struct {
+    PcieTlpHeaderMemoryRead     memoryReadHeader;
+    PcieHeaderField64BitAddr    addr;
+    PcieHeaderFieldPh           ph;
+} PcieTlpHeaderMemoryRead4Dw deriving(Bits, FShow);
 
 typedef struct {
     PcieTlpHeaderCommon         commonHeader;
