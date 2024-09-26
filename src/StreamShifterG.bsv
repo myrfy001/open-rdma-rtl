@@ -56,7 +56,7 @@ typedef struct {
     tByteIdx           startByteIdx;
     Bool               isFirst;
     Bool               isLast;
-} StreamShifterStream#(type tData, type tByteNum, type tByteIdx) deriving (FShow, Bits);
+} StreamShifterStream#(type tData, type tByteNum, type tByteIdx) deriving (FShow, Bits, Eq);
 
 interface StreamShifterG#(type tData, type tByteNum, type tByteIdx);
     interface PipeIn#(tByteNum) offsetPipeIn;
@@ -96,7 +96,7 @@ typedef struct {
 
 
 // ========== IMPORTANT! =======================
-// Must ensure the first beat is RIGHT aligned.
+// Must ensure the stream's lsb is at Left
 // =============================================
 module mkBiDirectionStreamShifterG(StreamShifterG#(tData, tByteNum, tByteIdx)) provisos (
         Bits#(tData, szData),
@@ -497,6 +497,613 @@ module mkBiDirectionStreamShifterG(StreamShifterG#(tData, tByteNum, tByteIdx)) p
         //     toBlue(", interShiftData="), fshow(interShiftData)
         // );
     endrule
+
+    interface offsetPipeIn  = toPipeIn(offsetPipeInQ);
+    interface streamPipeIn  = toPipeIn(streamPipeInQ);
+    interface streamPipeOut = toPipeOut(streamPipeOutQ);
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+typedef enum {
+    UniDirectionStreamShifterRightShiftStateIdle=0,
+    UniDirectionStreamShifterRightShiftStateOutputBeat=1,
+    UniDirectionStreamShifterRightShiftStateOutputExtraBeat=2
+}  UniDirectionStreamShifterRightShiftState deriving(FShow, Eq, Bits);
+
+typedef enum {
+    UniDirectionStreamShifterLeftShiftStateOutputBeat=0,
+    UniDirectionStreamShifterLeftShiftStateOutputExtraBeat=1
+}  UniDirectionStreamShifterLeftShiftState deriving(FShow, Eq, Bits);
+
+typedef struct {
+    tDataStream ds;
+    tByteIdx offset;
+}  UniDirectionStreamShifterPipelineEntry#(type tDataStream, type tByteIdx) deriving(FShow, Eq, Bits);
+
+
+interface UniDirStreamShifter#(type tData);
+    interface PipeIn#(Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))) offsetPipeIn;
+    interface PipeIn#(StreamShifterStream#(tData, Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) streamPipeIn;
+    interface PipeOut#(StreamShifterStream#(tData, Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) streamPipeOut;
+endinterface
+
+
+
+
+module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
+        Bits#(tData, szData),
+        NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
+        NumAlias#(TLog#(szDataInByte), szByteIdx),
+        NumAlias#(TAdd#(1, szByteIdx), szByteNum),
+        Alias#(Bit#(szByteIdx), tByteIdx),
+        Alias#(Bit#(szByteNum), tByteNum),
+        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
+        Alias#(UniDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tUniDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
+        NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
+        Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),
+        FShow#(tData),
+        FShow#(tUniDirectionStreamShifterPipelineEntry),
+        FShow#(Tuple2#(tData, tData))
+    );
+    FIFOF#(tByteIdx) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tDataStream) leftShiftPipeQ <- mkFIFOF;
+
+
+    FIFOF#(tShiftIntermediateData) doLeftShiftPipeQ <- mkFIFOF;
+    FIFOF#(tShiftIntermediateData) doLeftShiftPipeQ2 <- mkFIFOF;
+    FIFOF#(tDataStream) leftShiftResultQ <- mkFIFOF;
+
+
+    Reg#(tUniDirectionStreamShifterPipelineEntry) leftShiftPrevDataReg <- mkRegU;
+    Reg#(UniDirectionStreamShifterLeftShiftState) leftShiftStateReg <- mkReg(UniDirectionStreamShifterLeftShiftStateOutputBeat);
+
+
+    tData zeroData = unpack(0);
+
+    if (valueOf(szByteIdx) > 2) begin
+        rule doLeftShift1;
+            let req = doLeftShiftPipeQ.first;
+            doLeftShiftPipeQ.deq;
+            // only shift by higher 2 bits
+            Bit#(szShiftOffsetForHigherPartShift) shiftCnt = 0;
+            shiftCnt[valueOf(szShiftOffsetForHigherPartShift)-1] = req.offset[valueOf(szByteIdx)-1];
+            shiftCnt[valueOf(szShiftOffsetForHigherPartShift)-2] = req.offset[valueOf(szByteIdx)-2];
+            req.concatData = unpack(pack(req.concatData) << shiftCnt);
+            doLeftShiftPipeQ2.enq(req);
+        endrule
+
+        rule doLeftShift2;
+            let req = doLeftShiftPipeQ2.first;
+            doLeftShiftPipeQ2.deq;
+
+            // only shift by lower bits
+            Bit#(szShiftOffsetForLowerPartShift) shiftCnt = unpack(zeroExtend(pack(req.offset)));
+            shiftCnt = shiftCnt << 3; // convert byte offset to bit offset
+            tData outputData = unpack(truncateLSB(pack(req.concatData) << shiftCnt));  
+            leftShiftResultQ.enq(StreamShifterStream{
+                data: outputData,
+                byteNum: req.meta.byteNum,
+                startByteIdx: req.meta.startByteIdx,
+                isFirst: req.meta.isFirst,
+                isLast: req.meta.isLast
+            });
+        endrule
+    end
+    else begin
+        rule doPanic;
+            immFail("not support too narrow DataStream", $format(""));
+        endrule
+    end
+
+
+    rule shiftLeftOptput if (leftShiftStateReg == UniDirectionStreamShifterLeftShiftStateOutputBeat);
+        let ds = leftShiftPipeQ.first;
+        leftShiftPipeQ.deq;
+
+        let pipelineEntry = UniDirectionStreamShifterPipelineEntry {
+            ds: ds,
+            offset: offsetPipeInQ.first
+        };
+        leftShiftPrevDataReg <= pipelineEntry;     
+
+        let inputBeatCanFitInOutputBeatForNonOnlyBeat = (
+            pipelineEntry.ds.byteNum + unpack(zeroExtend(pipelineEntry.offset)) <= fromInteger(valueOf(szDataInByte)));
+
+        let inputBeatCanFitInOutputBeatForOnlyBeat = (
+            pipelineEntry.ds.byteNum + unpack(zeroExtend(pipelineEntry.offset)) + unpack(zeroExtend(pipelineEntry.ds.startByteIdx)) <= fromInteger(valueOf(szDataInByte)));
+        
+        let isOnlyBeat = pipelineEntry.ds.isFirst && pipelineEntry.ds.isLast;
+        let isFirst = pipelineEntry.ds.isFirst;
+        let isLast = isOnlyBeat ? inputBeatCanFitInOutputBeatForOnlyBeat : inputBeatCanFitInOutputBeatForNonOnlyBeat && pipelineEntry.ds.isLast;
+        
+        let firstBeatShiftWillChangeByteNum = !inputBeatCanFitInOutputBeatForOnlyBeat;
+
+        tByteNum byteNum;
+        if (isFirst) begin
+            if (firstBeatShiftWillChangeByteNum) begin
+                byteNum = fromInteger(valueOf(szDataInByte)) - (zeroExtend(pipelineEntry.offset) + zeroExtend(pipelineEntry.ds.startByteIdx));
+            end
+            else begin
+                byteNum = pipelineEntry.ds.byteNum;
+            end
+        end
+        else begin
+            if (isLast) begin
+                byteNum = pipelineEntry.ds.byteNum + zeroExtend(pipelineEntry.offset);
+            end
+            else begin
+                byteNum = fromInteger(valueOf(szDataInByte));
+                immAssert(
+                    !isFirst && !isLast,
+                    "this branch must output middle beat, but isFirst or isLast is True",
+                    $format("isFirst=", fshow(isFirst), "isLast=", fshow(isLast))
+                );
+            end
+        end
+        let startByteIdx = isFirst ? pipelineEntry.ds.startByteIdx + zeroExtend(pipelineEntry.offset) : 0;
+
+        let interShiftData = ShiftIntermediateData{
+            concatData: pipelineEntry.ds.isFirst ? tuple2(pipelineEntry.ds.data, zeroData) : tuple2(pipelineEntry.ds.data, leftShiftPrevDataReg.ds.data),
+            offset: pipelineEntry.offset,
+            meta: DataStreamMeta{
+                byteNum: byteNum,
+                startByteIdx: startByteIdx,
+                isFirst: isFirst,
+                isLast: isLast
+            }
+        };
+        doLeftShiftPipeQ.enq(interShiftData);
+
+        if ((pipelineEntry.ds.isLast && !inputBeatCanFitInOutputBeatForNonOnlyBeat) || (isOnlyBeat && !inputBeatCanFitInOutputBeatForOnlyBeat)) begin
+            leftShiftStateReg <= UniDirectionStreamShifterLeftShiftStateOutputExtraBeat;
+        end
+
+        if (isLast) begin
+            offsetPipeInQ.deq;
+        end
+        // $display(
+        //     "time=%0t: ", $time, toGreen("shiftLeftOptput"),
+        //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
+        //     toBlue(", leftShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
+        //     toBlue(", interShiftData="), fshow(interShiftData)
+        // );
+    endrule
+
+
+    rule shiftLeftOptputExtra if (leftShiftStateReg == UniDirectionStreamShifterLeftShiftStateOutputExtraBeat);
+
+        tByteNum byteNum = zeroExtend(leftShiftPrevDataReg.offset) - (fromInteger(valueOf(szDataInByte)) - leftShiftPrevDataReg.ds.byteNum - zeroExtend(leftShiftPrevDataReg.ds.startByteIdx));
+
+        let interShiftData = ShiftIntermediateData{
+            concatData: tuple2(zeroData, leftShiftPrevDataReg.ds.data),
+            offset: leftShiftPrevDataReg.offset,
+            meta: DataStreamMeta{
+                byteNum: byteNum,
+                startByteIdx: 0,
+                isFirst: False,
+                isLast: True
+            }
+        };
+        doLeftShiftPipeQ.enq(interShiftData);
+
+        leftShiftStateReg <= UniDirectionStreamShifterLeftShiftStateOutputBeat;
+
+        offsetPipeInQ.deq;
+
+        // $display(
+        //     "time=%0t: ", $time, toGreen("shiftLeftOptputExtra"),
+        //     toBlue(", leftShiftPrevDataReg="), fshow(leftShiftPrevDataReg),
+        //     toBlue(", interShiftData="), fshow(interShiftData)
+        // );
+    endrule
+
+    interface offsetPipeIn  = toPipeIn(offsetPipeInQ);
+    interface streamPipeIn  = toPipeIn(leftShiftPipeQ);
+    interface streamPipeOut = toPipeOut(leftShiftResultQ);
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
+        Bits#(tData, szData),
+        NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
+        NumAlias#(TLog#(szDataInByte), szByteIdx),
+        NumAlias#(TAdd#(1, szByteIdx), szByteNum),
+        Alias#(Bit#(szByteIdx), tByteIdx),
+        Alias#(Bit#(szByteNum), tByteNum),
+        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
+        Alias#(UniDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tUniDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
+        NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
+        Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),
+        FShow#(tData),
+        FShow#(tUniDirectionStreamShifterPipelineEntry),
+        FShow#(tShiftIntermediateData),
+        FShow#(Tuple2#(tData, tData))
+    );
+    FIFOF#(tByteIdx) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tDataStream) rightShiftPipeQ <- mkFIFOF;
+
+    FIFOF#(tShiftIntermediateData) doRightShiftPipeQ <- mkFIFOF;
+    FIFOF#(tShiftIntermediateData) doRightShiftPipeQ2 <- mkFIFOF;
+    FIFOF#(tDataStream) rightShiftResultQ <- mkFIFOF;
+
+
+    Reg#(tUniDirectionStreamShifterPipelineEntry) rightShiftPrevDataReg <- mkRegU;
+    Reg#(UniDirectionStreamShifterRightShiftState) rightShiftStateReg <- mkReg(UniDirectionStreamShifterRightShiftStateIdle);
+
+    tData zeroData = unpack(0);
+
+
+    if (valueOf(szByteIdx) > 2) begin
+        rule doRightShift;
+            let req = doRightShiftPipeQ.first;
+            doRightShiftPipeQ.deq;
+            // only shift by higher 2 bits
+            Bit#(szShiftOffsetForHigherPartShift) shiftCnt = 0;
+            shiftCnt[valueOf(szShiftOffsetForHigherPartShift)-1] = req.offset[valueOf(szByteIdx)-1];
+            shiftCnt[valueOf(szShiftOffsetForHigherPartShift)-2] = req.offset[valueOf(szByteIdx)-2];
+            req.concatData = unpack(pack(req.concatData) >> shiftCnt); 
+            doRightShiftPipeQ2.enq(req);
+        endrule
+
+        rule doRightShift2;
+            let req = doRightShiftPipeQ2.first;
+            doRightShiftPipeQ2.deq;
+            // only shift by lower bits
+            Bit#(szShiftOffsetForLowerPartShift) shiftCnt = unpack(zeroExtend(pack(req.offset)));
+            shiftCnt = shiftCnt << 3; // convert byte offset to bit offset
+            tData outputData = unpack(truncate(pack(req.concatData) >> shiftCnt)); 
+            rightShiftResultQ.enq(StreamShifterStream{
+                data: outputData,
+                byteNum: req.meta.byteNum,
+                startByteIdx: req.meta.startByteIdx,
+                isFirst: req.meta.isFirst,
+                isLast: req.meta.isLast
+            });
+        endrule
+    end
+    else begin
+        rule doPanic;
+            immFail("not support too narrow DataStream", $format(""));
+        endrule
+    end
+
+    
+    // (* conflict_free = "shiftRightIdle, \
+    //                     shiftRightOptput, \
+    //                     shiftRightOptputExtra, \
+    //                     shiftRightOptput, \
+    //                     shiftRightOptputExtra" *)
+    rule shiftRightIdle if (rightShiftStateReg == UniDirectionStreamShifterRightShiftStateIdle);
+
+        let ds = rightShiftPipeQ.first;
+        rightShiftPipeQ.deq;
+
+        let pipelineEntry = UniDirectionStreamShifterPipelineEntry {
+            ds: ds,
+            offset: offsetPipeInQ.first
+        };
+
+        rightShiftPrevDataReg <= pipelineEntry;
+
+        immAssert(pipelineEntry.ds.isFirst, "this rule is only for first beat", $format(""));
+
+        if (pipelineEntry.ds.isLast) begin
+            // only have one beat, no need to concat other beat
+            let interShiftData = ShiftIntermediateData{
+                concatData: tuple2(zeroData, pipelineEntry.ds.data),
+                offset: pipelineEntry.offset,
+                meta: DataStreamMeta{
+                    byteNum: pipelineEntry.ds.byteNum,
+                    startByteIdx: pipelineEntry.ds.startByteIdx - pipelineEntry.offset,
+                    isFirst: True,
+                    isLast: True
+                }
+            };
+            doRightShiftPipeQ.enq(interShiftData);
+            offsetPipeInQ.deq;
+            // $display(
+            //     "time=%0t: ", $time, toGreen("shiftRightIdle forward single beat data"),
+            //     toBlue(", pipelineEntry="), fshow(pipelineEntry)
+            // );
+        end
+        else begin
+            rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateOutputBeat;
+        end
+        // $display(
+        //     "time=%0t: ", $time, toGreen("shiftRightIdle"),
+        //     toBlue(", pipelineEntry="), fshow(pipelineEntry)
+        // );
+    endrule
+
+    rule shiftRightOptput if (rightShiftStateReg == UniDirectionStreamShifterRightShiftStateOutputBeat);
+        let ds = rightShiftPipeQ.first;
+        rightShiftPipeQ.deq;
+
+        let pipelineEntry = UniDirectionStreamShifterPipelineEntry {
+            ds: ds,
+            offset: offsetPipeInQ.first
+        };
+
+        tByteNum byteNum = rightShiftPrevDataReg.ds.byteNum;
+        let inputBeatCanFitInOutputBeat = (pipelineEntry.ds.byteNum <= unpack(zeroExtend(rightShiftPrevDataReg.offset)));
+        let isFirst = rightShiftPrevDataReg.ds.isFirst;
+        let isLast = inputBeatCanFitInOutputBeat && pipelineEntry.ds.isLast;
+        if (inputBeatCanFitInOutputBeat) begin
+            if (rightShiftPrevDataReg.ds.isFirst) begin
+                byteNum = byteNum + pipelineEntry.ds.byteNum;
+            end
+            else begin
+                byteNum = byteNum + pipelineEntry.ds.byteNum - zeroExtend(pipelineEntry.offset);
+            end
+            
+            immAssert(
+                pipelineEntry.ds.isLast,
+                "Since the inputBeatCanFitInOutputBeat is True, the new input beat must be last beat",
+                $format("pipelineEntry=", fshow(pipelineEntry), "rightShiftPrevDataReg=", fshow(rightShiftPrevDataReg))
+            );
+        end
+        else begin
+            if (isFirst) begin
+                byteNum = byteNum + zeroExtend(rightShiftPrevDataReg.offset);
+            end
+            else begin
+                byteNum = fromInteger(valueOf(szDataInByte));
+                immAssert(
+                    !isFirst && !isLast,
+                    "this branch must output middle beat, but isFirst or isLast is True",
+                    $format("isFirst=", fshow(isFirst), "isLast=", fshow(isLast))
+                );
+            end
+        end
+
+
+        let startByteIdx = isFirst ? ( rightShiftPrevDataReg.ds.startByteIdx - pipelineEntry.offset ) : 0;
+
+        let interShiftData = ShiftIntermediateData{
+            concatData: tuple2(pipelineEntry.ds.data, rightShiftPrevDataReg.ds.data),
+            offset: rightShiftPrevDataReg.offset,
+            meta: DataStreamMeta{
+                byteNum: byteNum,
+                startByteIdx: startByteIdx,
+                isFirst: isFirst,
+                isLast: isLast
+            }
+        };
+        doRightShiftPipeQ.enq(interShiftData);
+
+        if (pipelineEntry.ds.isLast && !isLast) begin
+            rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateOutputExtraBeat;
+        end
+        else if (isLast) begin
+            rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateIdle;
+            offsetPipeInQ.deq;
+        end
+        
+        rightShiftPrevDataReg <= pipelineEntry;
+
+        // $display(
+        //     "time=%0t:", $time, " shiftRightOptput",
+        //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
+        //     toBlue(", rightShiftPrevDataReg="), fshow(rightShiftPrevDataReg),
+        //     toBlue(", interShiftData="), fshow(interShiftData)
+        // );
+
+    endrule
+
+    rule shiftRightOptputExtra if (rightShiftStateReg == UniDirectionStreamShifterRightShiftStateOutputExtraBeat);
+
+        let interShiftData = ShiftIntermediateData{
+            concatData: tuple2(zeroData, rightShiftPrevDataReg.ds.data),
+            offset: rightShiftPrevDataReg.offset,
+            meta: DataStreamMeta{
+                byteNum: rightShiftPrevDataReg.ds.byteNum - zeroExtend(rightShiftPrevDataReg.offset),
+                startByteIdx: 0,
+                isFirst: False,
+                isLast: True
+            }
+        };
+        doRightShiftPipeQ.enq(interShiftData);
+        offsetPipeInQ.deq;
+
+        if (rightShiftPipeQ.notEmpty) begin 
+            let ds = rightShiftPipeQ.first;
+            let pipelineEntry = UniDirectionStreamShifterPipelineEntry {
+                ds: ds,
+                offset: offsetPipeInQ.first
+            };
+
+
+            rightShiftPrevDataReg <= pipelineEntry;
+            if (pipelineEntry.ds.isFirst && pipelineEntry.ds.isLast) begin
+                // only have one beat, no need to concat other beat
+                rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateIdle;
+            end
+            else begin
+                rightShiftPipeQ.deq;
+                rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateOutputBeat;
+            end
+        end
+        else begin
+            rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateIdle;
+        end
+        // $display(
+        //     "time=%0t:", $time, " shiftRightOptputExtra",
+        //     toBlue(", rightShiftPrevDataReg="), fshow(rightShiftPrevDataReg),
+        //     toBlue(", interShiftData="), fshow(interShiftData)
+        // );
+    endrule
+
+    interface offsetPipeIn  = toPipeIn(offsetPipeInQ);
+    interface streamPipeIn  = toPipeIn(rightShiftPipeQ);
+    interface streamPipeOut = toPipeOut(rightShiftResultQ);
+endmodule
+
+
+
+// ========== IMPORTANT! =======================
+// Must ensure the stream's lsb is at Right
+// =============================================
+module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData, tByteNum, tByteIdx)) provisos (
+        Bits#(tData, szData),
+        NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
+        NumAlias#(TLog#(szDataInByte), szByteIdx),
+        NumAlias#(TAdd#(1, szByteIdx), szByteNum),
+        Alias#(Bit#(szByteIdx), tByteIdx),
+        Alias#(Bit#(szByteNum), tByteNum),
+        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
+        Alias#(BiDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tBiDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
+        NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
+        Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),
+        FShow#(tData),
+        FShow#(tBiDirectionStreamShifterPipelineEntry),
+        FShow#(Tuple2#(tData, tData))
+    );
+    FIFOF#(tByteNum) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tDataStream) streamPipeInQ <- mkFIFOF;
+    FIFOF#(tDataStream) streamPipeOutQ <- mkFIFOF;
+
+    FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);
+
+
+    UniDirStreamShifter#(tData) rightShifter    <- mkLsbRightStreamRightShifterG;
+    UniDirStreamShifter#(tData) leftShifter     <- mkLsbRightStreamLeftShifterG;
+
+
+    rule doFinalOutput;
+        let isShiftRight = keepOrderQ.first;
+        if (isShiftRight) begin
+            streamPipeOutQ.enq(rightShifter.streamPipeOut.first);
+            rightShifter.streamPipeOut.deq;
+            if (rightShifter.streamPipeOut.first.isLast) begin
+                keepOrderQ.deq;
+            end
+        end
+        else begin
+            streamPipeOutQ.enq(leftShifter.streamPipeOut.first);
+            leftShifter.streamPipeOut.deq;
+            if (leftShifter.streamPipeOut.first.isLast) begin
+                keepOrderQ.deq;
+            end
+        end
+    endrule
+
+    rule decideDirection;
+        let offset = offsetPipeInQ.first;
+        // positive number means shift right and negative means shift left
+        let isNegativeOffset = msb(offset) == 1;
+        let isShiftRight = !isNegativeOffset;
+        let absOffset = getAbsValue(offset);
+
+        let ds = streamPipeInQ.first;
+        streamPipeInQ.deq;
+
+        if (ds.isFirst) begin
+            keepOrderQ.enq(isShiftRight);
+            if (isShiftRight) begin
+                rightShifter.offsetPipeIn.enq(truncate(absOffset));
+            end
+            else begin
+                leftShifter.offsetPipeIn.enq(truncate(absOffset));
+            end
+        end
+
+        if (ds.isLast) begin
+            offsetPipeInQ.deq;
+        end
+
+        if (isShiftRight) begin
+            rightShifter.streamPipeIn.enq(ds);
+        end
+        else begin
+            immAssert(absOffset != 0, "The offset should not be zero, left shift path does not handle 0 offset, 0 offset should be handled by right shift path", $format(""));
+            leftShifter.streamPipeIn.enq(ds);
+        end
+        // $display(
+        //     "time=%0t: ", $time, toGreen("decideDirection"),
+        //     toBlue(", offset="), fshow(offset),
+        //     toBlue(", ds="), fshow(ds)
+        // );
+    endrule
+    
+    
+
+    
 
     interface offsetPipeIn  = toPipeIn(offsetPipeInQ);
     interface streamPipeIn  = toPipeIn(streamPipeInQ);

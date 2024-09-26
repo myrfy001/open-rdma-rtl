@@ -75,7 +75,7 @@ FILE=`ls TestRTilePcieAdaptor.bsv`
 TESTCASE=mkTestRTilePcieAdaptor
 
 # FILE=`ls TestStreamShifterG.bsv`
-# TESTCASE=mkTestBitmapPreMerge
+# TESTCASE=mkTestBiDirectionStreamShifterG
 
 # FILE=`ls TestTop.bsv`
 # TESTCASE=mkTestTop

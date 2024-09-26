@@ -104,7 +104,7 @@ module mkDtldStreamArbiterSlave#(Integer depth)(DtldStreamArbiterSlave#(channelC
 
     rule recvWriteArbitResp if (isWriteFirstBeatReg);
         Maybe#(DtldStreamMeta#(tAddr, tLen)) wmMaybe = tagged Invalid;
-        DtldStreamData#(tData) wd;
+        DtldStreamData#(tData) wd = ?;
         tChannelIdx curChannelIdx = 0;
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (writeArbiter.clients[channelIdx].grant) begin

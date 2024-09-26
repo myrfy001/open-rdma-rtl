@@ -1798,18 +1798,73 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
 endmodule
 
 
+
+
+
+typedef 2 CHANNEL_PER_TLP_HEADER_TX_ARBITTER;
+typedef TDiv#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, CHANNEL_PER_TLP_HEADER_TX_ARBITTER) TLP_HEADER_TX_ARBITTER_COUNT;
+
+interface TlpHeaderAndDataCombinator;
+    interface Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieTlpHeaderBuffer))                           tlpHeaderBufferPipeInVec;
+    interface Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(DtldStreamData#(PcieDataStreamDataLsbRight)))   tlpWriteDataPipeInVec;
+    interface PipeIn#(DtldStreamData#(PcieDataStreamDataLsbRight))                                          tlpCpltDataPipeIn;
+    interface PipeOut#(PcieTxBeat)                                                                          pcieTxPipeOut;
+endinterface
+
+
+module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieTlpHeaderBuffer))                           tlpHeaderBufferPipeInVecInst  = newVector;
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(DtldStreamData#(PcieDataStreamDataLsbRight)))   tlpWriteDataPipeInVecInst     = newVector;
+
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, FIFOF#(PcieTlpHeaderBuffer))                           tlpHeaderBufferPipeInQueueVec  <- replicateM(mkFIFOF);
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, FIFOF#(DtldStreamData#(PcieDataStreamDataLsbRight)))   tlpWriteDataPipeInQueueVec     <- replicateM(mkFIFOF);
+
+    for (Integer arbiterChannelIdx = 0; arbiterChannelIdx < valueOf(TLP_HEADER_TX_ARBITTER_COUNT); arbiterChannelIdx = arbiterChannelIdx + 1) begin
+        tlpHeaderBufferPipeInVecInst[arbiterChannelIdx] = toPipeIn(tlpHeaderBufferPipeInQueueVec[arbiterChannelIdx]);
+        tlpWriteDataPipeInVecInst[arbiterChannelIdx]    = toPipeIn(tlpWriteDataPipeInQueueVec[arbiterChannelIdx]);
+    end
+
+    FIFOF#(DtldStreamData#(PcieDataStreamDataLsbRight)) tlpCpltDataPipeInQueue  <- mkFIFOF;
+    FIFOF#(PcieTxBeat)                                  pcieTxPipeOutQueue      <- mkFIFOF;
+
+
+
+
+
+
+    
+
+    interface tlpHeaderBufferPipeInVec = tlpHeaderBufferPipeInVecInst;
+    interface tlpWriteDataPipeInVec = tlpWriteDataPipeInVecInst;
+
+    interface tlpCpltDataPipeIn = toPipeIn(tlpCpltDataPipeInQueue);
+    interface pcieTxPipeOut     = toPipeOut(pcieTxPipeOutQueue);
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 typedef DtldStreamSlavePipes#(PcieDataStreamDataLsbRight, ADDR, Length) DtldStreamSlavePipesWide;
 
 
 interface RTilePcie;
     interface PipeIn#(PcieRxBeat) pcieRxPipeIn;
+    interface PipeOut#(PcieTxBeat) pcieTxPipeOut;
     interface Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DtldStreamSlavePipesWide)     streamSlaveIfcVec;
 endinterface
 
-module mkRTilePcie(RTilePcie) provisos (
-        NumAlias#(2, nChannelPerArbitter),
-        NumAlias#(TDiv#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, nChannelPerArbitter), nArbiterCount)  
-    );
+module mkRTilePcie(RTilePcie);
     let pcieRxStreamSegmentFork <- mkPcieRxStreamSegmentFork;
 
     Vector#(PCIE_RX_HANDLER_CNT, TlpDemuxAndConvertToMemMapStream) rxTlpHandlerVec <- replicateM(mkTlpDemuxAndConvertToMemMapStream);
@@ -1824,8 +1879,7 @@ module mkRTilePcie(RTilePcie) provisos (
         mkConnection(cpltBufferArbiterVec[channelIdx].dataStreamPipeOut, cpltBufferVec[channelIdx].dataStreamPipeIn);
     end
 
-
-    Vector#(nArbiterCount, DtldStreamArbiterSlave#(nChannelPerArbitter, PcieDataStreamDataLsbRight, ADDR, Length)) arbiterVec <- replicateM(mkDtldStreamArbiterSlave(valueOf(PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT)));
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, DtldStreamArbiterSlave#(CHANNEL_PER_TLP_HEADER_TX_ARBITTER, PcieDataStreamDataLsbRight, ADDR, Length)) arbiterVec <- replicateM(mkDtldStreamArbiterSlave(valueOf(PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT)));
     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DtldStreamSlavePipesWide)     streamSlaveIfcVecInst = newVector;
 
     streamSlaveIfcVecInst[0] = arbiterVec[0].slaveIfcVec[0];
@@ -1833,10 +1887,9 @@ module mkRTilePcie(RTilePcie) provisos (
     streamSlaveIfcVecInst[2] = arbiterVec[1].slaveIfcVec[0];
     streamSlaveIfcVecInst[3] = arbiterVec[1].slaveIfcVec[1];
 
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PcieRequestTlpHeaderGen#(CHANNEL_PER_TLP_HEADER_TX_ARBITTER, PcieDataStreamDataLsbRight, ADDR, Length)) tlpHeaderGenVec <- replicateM(mkPcieRequestTlpHeaderGen);
 
-    Vector#(nArbiterCount, PcieRequestTlpHeaderGen#(nChannelPerArbitter, PcieDataStreamDataLsbRight, ADDR, Length)) tlpHeaderGenVec <- replicateM(mkPcieRequestTlpHeaderGen);
-
-    for (Integer idx = 0; idx < valueOf(PCIE_RX_HANDLER_CNT); idx = idx + 1) begin
+    for (Integer idx = 0; idx < valueOf(TLP_HEADER_TX_ARBITTER_COUNT); idx = idx + 1) begin
         mkConnection(arbiterVec[idx].masterIfc.writePipeIfc.writeMetaPipeOut, tlpHeaderGenVec[idx].dtldStreamSlavePipes.writePipeIfc.writeMetaPipeIn);
         mkConnection(arbiterVec[idx].masterIfc.writePipeIfc.writeDataPipeOut, tlpHeaderGenVec[idx].dtldStreamSlavePipes.writePipeIfc.writeDataPipeIn);
         mkConnection(arbiterVec[idx].masterIfc.readPipeIfc.readMetaPipeOut, tlpHeaderGenVec[idx].dtldStreamSlavePipes.readPipeIfc.readMetaPipeIn);
@@ -1851,6 +1904,16 @@ module mkRTilePcie(RTilePcie) provisos (
         mkConnection(cpltBufferVec[idx * 2 + 0].tagAllocPipeOut, tlpHeaderGenVec[idx].tagAllocPipeInVec[0]);
         mkConnection(cpltBufferVec[idx * 2 + 1].tagAllocPipeOut, tlpHeaderGenVec[idx].tagAllocPipeInVec[1]);
     end
+
+    let tlpHeaderAndDataCombinator <- mkTlpHeaderAndDataCombinator;
+
+
+    
+
+
+
+
+
 
     for (Integer handlerIdx = 0; handlerIdx < valueOf(PCIE_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
         mkConnection(pcieRxStreamSegmentFork.tlpDataStreamPipeOutVec[handlerIdx], rxTlpHandlerVec[handlerIdx].tlpDataStreamPipeIn);
@@ -1868,23 +1931,8 @@ module mkRTilePcie(RTilePcie) provisos (
         end
     end
 
-    for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
-        rule testTemp1;
-            cpltBufferVec[channelIdx].tagAllocPipeIn.enq(PcieCompletionBufferSlotAllocReq{userdata: fromInteger(channelIdx)});
-        endrule
-    end
-
-    for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
-        rule testTemp2;
-            let outputTag = cpltBufferVec[channelIdx].tagAllocPipeOut.first;
-            cpltBufferVec[channelIdx].tagAllocPipeOut.deq;
-            $display("get alloc tag, channelIdx=%d", channelIdx, ", tagValue=", fshow(outputTag));
-        endrule
-    end
-
-    //     interface PipeOut#(PcieHeaderFieldExtendedTag) tagAllocPipeOut;
-    //     interface PipeOut#(PcieDataStreamLsbRight) dataStreamPipeOut;
 
     interface pcieRxPipeIn      = pcieRxStreamSegmentFork.pcieRxPipeIn;
     interface streamSlaveIfcVec = streamSlaveIfcVecInst;
+    interface pcieTxPipeOut     = tlpHeaderAndDataCombinator.pcieTxPipeOut;
 endmodule
