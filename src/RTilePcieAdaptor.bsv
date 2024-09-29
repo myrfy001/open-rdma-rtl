@@ -1579,6 +1579,8 @@ typedef struct {
 interface PcieRequestTlpHeaderGen#(numeric type channelCnt, type tData, type tAddr, type tLen);
     interface DtldStreamSlavePipes#(tData, tAddr, tLen) dtldStreamSlavePipes;
     interface PipeIn#(PcieTlpHeaderCompletion)          cpltTlpHeaderPipeIn;
+    interface PipeIn#(DtldStreamData#(tData))           cpltTlpDataStreamPipeIn;
+    
 
     interface PipeIn#(Bit#(TLog#(channelCnt)))                                  writeSourceChannelIdPipeIn;
     interface PipeIn#(Bit#(TLog#(channelCnt)))                                  readSourceChannelIdPipeIn;
@@ -1587,6 +1589,7 @@ interface PcieRequestTlpHeaderGen#(numeric type channelCnt, type tData, type tAd
     interface Vector#(channelCnt, PipeIn#(PcieHeaderFieldExtendedTag))          tagAllocPipeInVec;
 
     interface PipeOut#(PcieTlpHeaderBuffer)                                     tlpHeaderBufferPipeOut;
+    interface PipeOut#(DtldStreamData#(tData))                                          tlpDataStreamPipeOut;
 endinterface
 
 module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAddr, tLen)) provisos (
@@ -1599,14 +1602,17 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
         Eq#(tAddr),
         Alias#(Bit#(TLog#(channelCnt)), tChannelIdx),
         Add#(b__, PCIE_HEADER_FIELD_64_BIT_ADDR_WIDTH, szAddr),
-        Add#(c__, PCIE_HEADER_FIELD_LENGTH_WIDTH, szAddr)
+        Add#(c__, PCIE_HEADER_FIELD_LENGTH_WIDTH, szAddr),
+        FShow#(DtldStreamData#(tData))
     );
 
 
-    FIFOF#(DtldStreamMeta#(tAddr, tLen))           slaveSideQueueWm    <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                 slaveSideQueueWd    <-  mkFIFOF;
-    FIFOF#(DtldStreamMeta#(tAddr, tLen))           slaveSideQueueRm    <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                 slaveSideQueueRd    <-  mkFIFOF;
+    FIFOF#(DtldStreamMeta#(tAddr, tLen))  slaveSideQueueWm         <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))        slaveSideQueueWd         <- mkFIFOF;
+    FIFOF#(DtldStreamMeta#(tAddr, tLen))  slaveSideQueueRm         <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))        slaveSideQueueRd         <- mkFIFOF;
+
+    FIFOF#(DtldStreamData#(tData)) cpltTlpDataStreamPipeInQueue    <- mkFIFOF;
 
     FIFOF#(tChannelIdx)    writeSourceChannelIdPipeInQueue  <- mkFIFOF;
     FIFOF#(tChannelIdx)    readSourceChannelIdPipeInQueue   <- mkFIFOF;
@@ -1624,6 +1630,10 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
     FIFOF#(PcieTlpHeaderCompletion)     cpltTlpQueue                <- mkFIFOF;
 
     FIFOF#(PcieTlpHeaderBuffer)         arbittedTlpBufferQueue      <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))      arbittedTlpDataStreamQueue  <- mkFIFOF;
+    Reg#(Bool)                          isOutputingPayloadStreamReg <- mkReg(False);
+
+    
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
         tagAllocPipeOutVecInst[channelIdx] = toPipeOut(tagAllocPipeOutQueueVec[channelIdx]);
@@ -1754,20 +1764,86 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
     endrule
 
 
-    rule arbitTlp;
+    // rule genTlpCplt;
+        
+
+    //     // TODO: can reduce the bit width of the add operation.
+    //     tAddr endAddr = rm.addr + unpack(zeroExtend(pack(rm.totalLen))) - 1;
+    //     let startDwordAddr = rm.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+    //     let endDwordAddr = endAddr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+    //     let lengthInDw = endDwordAddr - startDwordAddr + 1;   
+
+
+    //     let commonHeader = PcieTlpHeaderCommon {
+    //         fmt     : `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA,
+    //         typ     : `PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA,
+    //         t9      : unpack(tag[9]),
+    //         tc      : 0,
+    //         t8      : unpack(tag[8]),
+    //         attrh   : False,
+    //         ln      : False,
+    //         th      : False,
+    //         td      : False,
+    //         ep      : False,
+    //         attrl   : 0,
+    //         at      : 0,
+    //         length  : unpack(truncate(pack(lengthInDw)))
+    //     };
+
+    //     let tlp = PcieTlpHeaderCompletion {
+    //         PcieTlpHeaderCommon         commonHeader;
+    //         PcieHeaderFieldCompleterId  completerId;
+    //         PcieHeaderFieldCpltStatus   cpltStatus;
+    //         Bool                        bcm;
+    //         PcieHeaderFieldByteCount    byteCount;
+    //         PcieHeaderFieldRequesterId  requesterId;
+    //         PcieHeaderFieldTag          tag;
+    //         ReservedZero#(1)            rsv1;
+    //         PcieHeaderFieldLowerAddress lowerAddress;
+    //     };
+    // endrule
+
+
+    rule arbitOutputTlp if (!isOutputingPayloadStreamReg);
         // we use a fixed priority here. The MWr is for network packet receive, can't be blocked. so it should have the highest priority.
         // for cplt, it will affect the waiting time of the software, and there is few cplt packet, so it has the middle priority.
         if (writeTlpQueue.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(writeTlpQueue.first)));
             writeTlpQueue.deq;
+            let ds = slaveSideQueueWd.first;
+            slaveSideQueueWd.deq;
+
+
+            arbittedTlpDataStreamQueue.enq(ds);
+            if (!ds.isLast) begin
+                isOutputingPayloadStreamReg <= True;
+            end
         end
         else if (cpltTlpQueue.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(cpltTlpQueue.first)));
             cpltTlpQueue.deq;
+
+            let ds = cpltTlpDataStreamPipeInQueue.first;
+            cpltTlpDataStreamPipeInQueue.deq;
+            arbittedTlpDataStreamQueue.enq(ds);
+            immAssert(
+                ds.isFirst && ds.isLast && ds.byteNum <= 8 && ds.startByteIdx <= 3,
+                "for read cplt, only support ONLY cplt TLP with max payload not exceed 64-bits",
+                $format("ds=", fshow(ds))
+            );
         end
         else if (readTlpQueue.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(readTlpQueue.first)));
             readTlpQueue.deq;
+        end
+    endrule
+
+    rule arbitOutputDataStream if (isOutputingPayloadStreamReg);
+        let ds = slaveSideQueueWd.first;
+        slaveSideQueueWd.deq;
+        arbittedTlpDataStreamQueue.enq(ds);
+        if (ds.isLast) begin
+            isOutputingPayloadStreamReg <= False;
         end
     endrule
 
@@ -1787,68 +1863,667 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
         endinterface
     endinterface
 
-    interface tagAllocPipeOutVec = tagAllocPipeOutVecInst;
-    interface tagAllocPipeInVec  = tagAllocPipeInVecInst;
+    interface cpltTlpDataStreamPipeIn = toPipeIn(cpltTlpDataStreamPipeInQueue);
 
-    interface writeSourceChannelIdPipeIn = toPipeIn(writeSourceChannelIdPipeInQueue);
-    interface readSourceChannelIdPipeIn  = toPipeIn(readSourceChannelIdPipeInQueue);
+    interface tagAllocPipeOutVec            = tagAllocPipeOutVecInst;
+    interface tagAllocPipeInVec             = tagAllocPipeInVecInst;
 
-    interface cpltTlpHeaderPipeIn = toPipeIn(cpltTlpQueue);
-    interface tlpHeaderBufferPipeOut = toPipeOut(arbittedTlpBufferQueue);
+    interface writeSourceChannelIdPipeIn    = toPipeIn(writeSourceChannelIdPipeInQueue);
+    interface readSourceChannelIdPipeIn     = toPipeIn(readSourceChannelIdPipeInQueue);
+
+    interface cpltTlpHeaderPipeIn           = toPipeIn(cpltTlpQueue);
+    interface tlpHeaderBufferPipeOut        = toPipeOut(arbittedTlpBufferQueue);
+    interface tlpDataStreamPipeOut          = toPipeOut(arbittedTlpDataStreamQueue);
 endmodule
 
 
 
+typedef enum {
+    TlpHeaderAndDataCombinatorStateIdle  = 0,
+    TlpHeaderAndDataCombinatorStateSendA = 1,
+    TlpHeaderAndDataCombinatorStateSendB = 2
+} TlpHeaderAndDataCombinatorState deriving(FShow, Eq, Bits);
 
+/*
+    ND = NO Data
+    HN = Has Next beat
+    LL = Last beat Less than half of beat used
+    LM = Last beat More than half of beat used
+*/
+typedef enum {
+    TlpHeaderAndDataCombinatorChannelDataStateND = 0,
+    TlpHeaderAndDataCombinatorChannelDataStateHN = 1,
+    TlpHeaderAndDataCombinatorChannelDataStateLL = 2,
+    TlpHeaderAndDataCombinatorChannelDataStateLM = 3
+} TlpHeaderAndDataCombinatorChannelDataState deriving(FShow, Eq, Bits);
 
 typedef 2 CHANNEL_PER_TLP_HEADER_TX_ARBITTER;
 typedef TDiv#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, CHANNEL_PER_TLP_HEADER_TX_ARBITTER) TLP_HEADER_TX_ARBITTER_COUNT;
 
 interface TlpHeaderAndDataCombinator;
     interface Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieTlpHeaderBuffer))                           tlpHeaderBufferPipeInVec;
-    interface Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(DtldStreamData#(PcieDataStreamDataLsbRight)))   tlpWriteDataPipeInVec;
-    interface PipeIn#(DtldStreamData#(PcieDataStreamDataLsbRight))                                          tlpCpltDataPipeIn;
+    interface Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieStreamData))                                tlpDataStreamPipeInVec;
+    interface PipeIn#(PcieStreamData)                                                                       tlpCpltDataPipeIn;
     interface PipeOut#(PcieTxBeat)                                                                          pcieTxPipeOut;
 endinterface
 
 
 module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
-    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieTlpHeaderBuffer))                           tlpHeaderBufferPipeInVecInst  = newVector;
-    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(DtldStreamData#(PcieDataStreamDataLsbRight)))   tlpWriteDataPipeInVecInst     = newVector;
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieTlpHeaderBuffer))                          tlpHeaderBufferPipeInVecInst   = newVector;
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieStreamData))                               tlpDataStreamPipeInVecInst     = newVector;
 
     Vector#(TLP_HEADER_TX_ARBITTER_COUNT, FIFOF#(PcieTlpHeaderBuffer))                           tlpHeaderBufferPipeInQueueVec  <- replicateM(mkFIFOF);
-    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, FIFOF#(DtldStreamData#(PcieDataStreamDataLsbRight)))   tlpWriteDataPipeInQueueVec     <- replicateM(mkFIFOF);
+    Vector#(TLP_HEADER_TX_ARBITTER_COUNT, FIFOF#(PcieStreamData))                                tlpDataStreamPipeInQueueVec    <- replicateM(mkFIFOF);
 
     for (Integer arbiterChannelIdx = 0; arbiterChannelIdx < valueOf(TLP_HEADER_TX_ARBITTER_COUNT); arbiterChannelIdx = arbiterChannelIdx + 1) begin
         tlpHeaderBufferPipeInVecInst[arbiterChannelIdx] = toPipeIn(tlpHeaderBufferPipeInQueueVec[arbiterChannelIdx]);
-        tlpWriteDataPipeInVecInst[arbiterChannelIdx]    = toPipeIn(tlpWriteDataPipeInQueueVec[arbiterChannelIdx]);
+        tlpDataStreamPipeInVecInst[arbiterChannelIdx]   = toPipeIn(tlpDataStreamPipeInQueueVec[arbiterChannelIdx]);
     end
 
-    FIFOF#(DtldStreamData#(PcieDataStreamDataLsbRight)) tlpCpltDataPipeInQueue  <- mkFIFOF;
+    FIFOF#(PcieStreamData)                              tlpCpltDataPipeInQueue  <- mkFIFOF;
     FIFOF#(PcieTxBeat)                                  pcieTxPipeOutQueue      <- mkFIFOF;
 
+    Reg#(Bool) arbiterNextChannelIsChannelZero <- mkReg(True);
+    Reg#(Bool) currentChannelIsChannelZero <- mkReg(True);
+
+    Reg#(TlpHeaderAndDataCombinatorState) stateReg <- mkReg(TlpHeaderAndDataCombinatorStateIdle);
+
+    Reg#(Maybe#(PcieStreamData)) previousBeatMaybeReg <- mkReg(tagged Invalid);
+
+
+    function Bool isDataStreamBeatUseLessThanHalf(PcieStreamData ds);
+        let zeroBasedByteNum = ds.byteNum - 1;
+        return msb(pack(zeroBasedByteNum) << 1) == 0;
+    endfunction
+
+    function Bool isDataStreamSegment1Or3Used(PcieStreamData ds);
+        let zeroBasedByteNum = ds.byteNum - 1;
+        return msb(pack(zeroBasedByteNum) << 2) == 0;
+    endfunction
+
+
+    rule mixOutputIdle if (stateReg == TlpHeaderAndDataCombinatorStateIdle);
+        let  headerA = unpack(0);
+        let  headerB = unpack(0);
+
+        Bool hasHeaderA = False;
+        Bool hasHeaderB = False;
+        let  payloadDsA = unpack(0);
+        let  payloadDsB = unpack(0);
+        Bool hasPayloadA = False;
+        Bool hasPayloadB = False;
+
+        if (tlpHeaderBufferPipeInQueueVec[0].notEmpty) begin
+            hasHeaderA = True;
+            headerA = tlpHeaderBufferPipeInQueueVec[0].first;
+            let isChannelZeroHasPayload = isPcieTlpHasPayload(headerA);
+            if (isChannelZeroHasPayload) begin
+                payloadDsA = tlpDataStreamPipeInQueueVec[0].first;
+                hasPayloadA = True;
+            end
+        end
+
+        if (tlpHeaderBufferPipeInQueueVec[1].notEmpty) begin
+            hasHeaderB = True;
+            headerB = tlpHeaderBufferPipeInQueueVec[1].first;
+            let isChannelZeroHasPayload = isPcieTlpHasPayload(headerB);
+            if (isChannelZeroHasPayload) begin
+                payloadDsB = tlpDataStreamPipeInQueueVec[1].first;
+                hasPayloadB = True;
+            end
+        end
+        
+        Bool payloadExceedHalfA = !isDataStreamBeatUseLessThanHalf(payloadDsA);
+        Bool payloadExceedHalfB = !isDataStreamBeatUseLessThanHalf(payloadDsB);
+
+        // Bool isPayloadOnlyBeatA = payloadDsA.isFirst && payloadDsA.isLast;
+        // Bool isPayloadOnlyBeatB = payloadDsB.isFirst && payloadDsB.isLast;
+
+        Bool hasMoreDataA = !payloadDsA.isLast;
+        Bool hasMoreDataB = !payloadDsB.isLast;
+
+        Bool isSegment1Or3UsedA = isDataStreamSegment1Or3Used(payloadDsA);
+        Bool isSegment1Or3UsedB = isDataStreamSegment1Or3Used(payloadDsB);
+
+        TlpHeaderAndDataCombinatorChannelDataState channelDataLogicStateA = ?;
+        TlpHeaderAndDataCombinatorChannelDataState channelDataLogicStateB = ?;
+
+        if (!hasPayloadA) begin
+            channelDataLogicStateA = TlpHeaderAndDataCombinatorChannelDataStateND;
+        end
+        else if (hasMoreDataA) begin
+            channelDataLogicStateA = TlpHeaderAndDataCombinatorChannelDataStateHN;
+        end
+        else begin
+            channelDataLogicStateA = payloadExceedHalfA ? TlpHeaderAndDataCombinatorChannelDataStateLM : TlpHeaderAndDataCombinatorChannelDataStateLL;
+        end
+
+        if (!hasPayloadB) begin
+            channelDataLogicStateB = TlpHeaderAndDataCombinatorChannelDataStateND;
+        end
+        else if (hasMoreDataB) begin
+            channelDataLogicStateB = TlpHeaderAndDataCombinatorChannelDataStateHN;
+        end
+        else begin
+            channelDataLogicStateB = payloadExceedHalfB ? TlpHeaderAndDataCombinatorChannelDataStateLM : TlpHeaderAndDataCombinatorChannelDataStateLL;
+        end
 
 
 
+        PcieTlpDataBusSegBundle         dataOut    = unpack(0);
+        PcieTlpHeaderBusSegBundle       headerOut  = unpack(0);
+        SopSignalBundle                 sopOut     = unpack(0);
+        EopSignalBundle                 eopOut     = unpack(0);
+        HvalidSignalBundle              hvalidOut  = unpack(0);
+        DvalidSignalBundle              dvalidOut  = unpack(0);
 
+
+        PcieTlpDataBusSegBundle payloadAsPcieDataBundleA = unpack(payloadDsA.data);
+        PcieTlpDataBusSegBundle payloadAsPcieDataBundleB = unpack(payloadDsB.data);
+
+        if (hasHeaderA) begin
+            headerOut[0] = headerA;
+            tlpHeaderBufferPipeInQueueVec[0].deq;
+            hvalidOut[0] = 1;
+            if (hasPayloadA) begin
+                sopOut[0] = 1;
+                tlpDataStreamPipeInQueueVec[0].deq;
+            end
+
+            dataOut[0] = payloadAsPcieDataBundleA[0];
+            dataOut[1] = payloadAsPcieDataBundleA[1];
+            dvalidOut[0] = pack(hasPayloadA);
+            dvalidOut[1] = pack(payloadExceedHalfA || (!payloadExceedHalfA && isSegment1Or3UsedA));
+
+
+            case (channelDataLogicStateA) 
+                TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                    dataOut[2] = payloadAsPcieDataBundleA[2];
+                    dataOut[3] = payloadAsPcieDataBundleA[3];
+                    dvalidOut[2] = 1; dvalidOut[3] = 1;
+                    stateReg <= TlpHeaderAndDataCombinatorStateSendA;
+                end
+                TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                    dataOut[2] = payloadAsPcieDataBundleA[2];
+                    dataOut[3] = payloadAsPcieDataBundleA[3];
+                    dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedA);
+                    eopOut[2] = pack(!isSegment1Or3UsedA); eopOut[3] = pack(isSegment1Or3UsedA);
+                end
+                TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                    eopOut[0] = pack(!isSegment1Or3UsedA); eopOut[1] = pack(isSegment1Or3UsedA);
+
+                    if (hasHeaderB) begin
+                        headerOut[2] = headerB;
+                        tlpHeaderBufferPipeInQueueVec[1].deq;
+                        hvalidOut[2] = 1;
+                    end
+                    if (hasPayloadB) begin
+                        sopOut[2] = 1;
+                        tlpDataStreamPipeInQueueVec[1].deq;
+                    end
+
+                    case (channelDataLogicStateB)
+                        TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                            dataOut[2] = payloadAsPcieDataBundleB[0];
+                            dataOut[3] = payloadAsPcieDataBundleB[1];
+                            dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedB);
+                            eopOut[2] = pack(!isSegment1Or3UsedB); eopOut[3] = pack(isSegment1Or3UsedB);
+                        end
+                        TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                            dataOut[2] = payloadAsPcieDataBundleB[0];
+                            dataOut[3] = payloadAsPcieDataBundleB[1];
+                            dvalidOut[2] = 1; dvalidOut[3] = 1;
+                            previousBeatMaybeReg <= tagged Valid payloadDsB;
+                            stateReg <= TlpHeaderAndDataCombinatorStateSendB;
+                        end
+                        TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                            dataOut[2] = payloadAsPcieDataBundleB[0];
+                            dataOut[3] = payloadAsPcieDataBundleB[1];
+                            dvalidOut[2] = 1; dvalidOut[3] = 1;
+                            previousBeatMaybeReg <= tagged Valid payloadDsB;
+                            stateReg <= TlpHeaderAndDataCombinatorStateSendB;
+                        end
+                    endcase
+                end
+                default: begin
+                    immFail("Should not reach here", $format(""));
+                end
+            endcase
+
+            let outBeat = PcieTxBeat {
+                data    : dataOut,
+                header  : headerOut,
+                sop     : sopOut,
+                eop     : eopOut,
+                hvalid  : hvalidOut,
+                dvalid  : dvalidOut
+            };
+            pcieTxPipeOutQueue.enq(outBeat);
+        end
+        else if (hasHeaderB) begin
+            headerOut[0] = headerB;
+            tlpHeaderBufferPipeInQueueVec[1].deq;
+            hvalidOut[0] = 1;
+            if (hasPayloadB) begin
+                sopOut[0] = 1;
+                tlpDataStreamPipeInQueueVec[1].deq;
+            end
+
+            dataOut[0] = payloadAsPcieDataBundleB[0];
+            dataOut[1] = payloadAsPcieDataBundleB[1];
+            dvalidOut[0] = pack(hasPayloadB);
+            dvalidOut[1] = pack(payloadExceedHalfB || (!payloadExceedHalfB && isSegment1Or3UsedB));
+
+            case (channelDataLogicStateB) 
+                TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                    dataOut[2] = payloadAsPcieDataBundleB[2];
+                    dataOut[3] = payloadAsPcieDataBundleB[3];
+                    dvalidOut[2] = 1; dvalidOut[3] = 1;
+                    stateReg <= TlpHeaderAndDataCombinatorStateSendB;
+                end
+                TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                    dataOut[2] = payloadAsPcieDataBundleB[2];
+                    dataOut[3] = payloadAsPcieDataBundleB[3];
+                    dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedB);
+                    eopOut[2] = pack(!isSegment1Or3UsedB); eopOut[3] = pack(isSegment1Or3UsedB);
+                end
+                TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                    eopOut[0] = pack(!isSegment1Or3UsedB); eopOut[1] = pack(isSegment1Or3UsedB);
+                end
+            endcase
+
+            let outBeat = PcieTxBeat {
+                data    : dataOut,
+                header  : headerOut,
+                sop     : sopOut,
+                eop     : eopOut,
+                hvalid  : hvalidOut,
+                dvalid  : dvalidOut
+            };
+            pcieTxPipeOutQueue.enq(outBeat);
+        end
+
+
+    endrule
+
+
+    rule mixOutputSendA if (stateReg == TlpHeaderAndDataCombinatorStateSendA);
+
+        PcieTlpDataBusSegBundle payloadAsPcieDataBundleA    = ?;
+        Bool                    payloadExceedHalfA          = ?;
+        Bool                    isSegment1Or3UsedA          = ?;
+        Bool                    hasMoreDataA                = ?;
+
+        let                     prevPayloadDsA                  = fromMaybe(?, previousBeatMaybeReg);
+        PcieTlpDataBusSegBundle previousPayloadAsPcieDataBundle = unpack(prevPayloadDsA.data);
+        Bool                    isPreviousBeatSegment1Or3Used   = isDataStreamSegment1Or3Used(prevPayloadDsA);
+        Bool                    isPreviousPayloadExceedHalf     = !isDataStreamBeatUseLessThanHalf(prevPayloadDsA);
+
+        let newPayloadDsA = unpack(0);
+        if (tlpDataStreamPipeInQueueVec[0].notEmpty) begin
+            newPayloadDsA = tlpDataStreamPipeInQueueVec[0].first;
+            tlpDataStreamPipeInQueueVec[0].deq;
+        end
+        PcieTlpDataBusSegBundle newPayloadAsPcieDataBundle  = unpack(newPayloadDsA.data);
+        Bool                    isNewBeatSegment1Or3Used    = isDataStreamSegment1Or3Used(newPayloadDsA);
+        Bool                    isNewPayloadExceedHalf      = !isDataStreamBeatUseLessThanHalf(newPayloadDsA);
+
+        if (isValid(previousBeatMaybeReg)) begin
+            
+            payloadAsPcieDataBundleA[0] = previousPayloadAsPcieDataBundle[2];
+            payloadAsPcieDataBundleA[1] = previousPayloadAsPcieDataBundle[3];
+
+            if (prevPayloadDsA.isLast) begin
+                payloadExceedHalfA = False;
+                isSegment1Or3UsedA = isPreviousBeatSegment1Or3Used;
+                hasMoreDataA = False;
+            end
+            else begin
+                payloadAsPcieDataBundleA[2] = newPayloadAsPcieDataBundle[0];
+                payloadAsPcieDataBundleA[3] = newPayloadAsPcieDataBundle[1];
+                payloadExceedHalfA = True;
+                hasMoreDataA = isNewPayloadExceedHalf;
+                if (isNewPayloadExceedHalf) begin
+                    isSegment1Or3UsedA = True;  // seg 3 must be used.
+                end
+                else begin
+                    isSegment1Or3UsedA = isNewBeatSegment1Or3Used;
+                end
+            end
+        end
+        else begin
+            payloadAsPcieDataBundleA    = newPayloadAsPcieDataBundle;
+            payloadExceedHalfA          = isNewPayloadExceedHalf;
+            isSegment1Or3UsedA          = isNewBeatSegment1Or3Used;
+            hasMoreDataA                = !newPayloadDsA.isLast;
+        end
+        
+        let  headerB = unpack(0);
+        Bool hasHeaderB     = False;
+        let  payloadDsB     = unpack(0);
+        Bool hasPayloadB    = False;
+
+        if (tlpHeaderBufferPipeInQueueVec[1].notEmpty) begin
+            hasHeaderB = True;
+            headerB = tlpHeaderBufferPipeInQueueVec[1].first;
+            let isChannelZeroHasPayload = isPcieTlpHasPayload(headerB);
+            if (isChannelZeroHasPayload) begin
+                payloadDsB = tlpDataStreamPipeInQueueVec[1].first;
+                hasPayloadB = True;
+            end
+        end        
+        PcieTlpDataBusSegBundle payloadAsPcieDataBundleB = unpack(payloadDsB.data);
+        Bool payloadExceedHalfB = !isDataStreamBeatUseLessThanHalf(payloadDsB);
+        Bool hasMoreDataB = !payloadDsB.isLast;
+        Bool isSegment1Or3UsedB = isDataStreamSegment1Or3Used(payloadDsB);
+
+
+        TlpHeaderAndDataCombinatorChannelDataState channelDataLogicStateA = ?;
+        TlpHeaderAndDataCombinatorChannelDataState channelDataLogicStateB = ?;
+
+        if (hasMoreDataA) begin
+            channelDataLogicStateA = TlpHeaderAndDataCombinatorChannelDataStateHN;
+        end
+        else begin
+            channelDataLogicStateA = payloadExceedHalfA ? TlpHeaderAndDataCombinatorChannelDataStateLM : TlpHeaderAndDataCombinatorChannelDataStateLL;
+        end
+
+        if (!hasPayloadB) begin
+            channelDataLogicStateB = TlpHeaderAndDataCombinatorChannelDataStateND;
+        end
+        else if (hasMoreDataB) begin
+            channelDataLogicStateB = TlpHeaderAndDataCombinatorChannelDataStateHN;
+        end
+        else begin
+            channelDataLogicStateB = payloadExceedHalfB ? TlpHeaderAndDataCombinatorChannelDataStateLM : TlpHeaderAndDataCombinatorChannelDataStateLL;
+        end
+
+
+
+        PcieTlpDataBusSegBundle         dataOut    = unpack(0);
+        PcieTlpHeaderBusSegBundle       headerOut  = unpack(0);
+        SopSignalBundle                 sopOut     = unpack(0);
+        EopSignalBundle                 eopOut     = unpack(0);
+        HvalidSignalBundle              hvalidOut  = unpack(0);
+        DvalidSignalBundle              dvalidOut  = unpack(0);
+
+
+        dataOut[0] = payloadAsPcieDataBundleA[0];
+        dataOut[1] = payloadAsPcieDataBundleA[1];
+        dvalidOut[0] = 1;
+        dvalidOut[1] = pack(payloadExceedHalfA || (!payloadExceedHalfA && isSegment1Or3UsedA));
+
+        case (channelDataLogicStateA) 
+            TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                dataOut[2] = payloadAsPcieDataBundleA[2];
+                dataOut[3] = payloadAsPcieDataBundleA[3];
+                dvalidOut[2] = 1; dvalidOut[3] = 1;
+                if (isValid(previousBeatMaybeReg)) begin
+                    // is the first beat is started at 0, then all the following beat also aligned, no previousBeatReg is needed
+                    // but if the first beat is shared with another channel (not atarted at 0, but started at half of the beat),
+                    // then all the following beat need previousBeatReg to concat the data.
+                    previousBeatMaybeReg <= tagged Valid newPayloadDsA;
+                end
+            end
+            TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                dataOut[2] = payloadAsPcieDataBundleA[2];
+                dataOut[3] = payloadAsPcieDataBundleA[3];
+                dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedA);
+                eopOut[2] = pack(!isSegment1Or3UsedA); eopOut[3] = pack(isSegment1Or3UsedA);
+                previousBeatMaybeReg <= tagged Invalid;
+                stateReg <= TlpHeaderAndDataCombinatorStateIdle;
+            end
+            TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                eopOut[0] = pack(!isSegment1Or3UsedA); eopOut[1] = pack(isSegment1Or3UsedA);
+
+                if (hasHeaderB) begin
+                    headerOut[2] = headerB;
+                    tlpHeaderBufferPipeInQueueVec[1].deq;
+                    hvalidOut[2] = 1;
+                end
+                if (hasPayloadB) begin
+                    sopOut[2] = 1;
+                    tlpDataStreamPipeInQueueVec[1].deq;
+                end
+
+                case (channelDataLogicStateB)
+                    TlpHeaderAndDataCombinatorChannelDataStateND: begin
+                        previousBeatMaybeReg <= tagged Invalid;
+                        stateReg <= TlpHeaderAndDataCombinatorStateIdle;
+                    end
+                    TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                        dataOut[2] = payloadAsPcieDataBundleB[0];
+                        dataOut[3] = payloadAsPcieDataBundleB[1];
+                        dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedB);
+                        eopOut[2] = pack(!isSegment1Or3UsedB); eopOut[3] = pack(isSegment1Or3UsedB);
+                        previousBeatMaybeReg <= tagged Invalid;
+                        stateReg <= TlpHeaderAndDataCombinatorStateIdle;
+                    end
+                    TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                        dataOut[2] = payloadAsPcieDataBundleB[0];
+                        dataOut[3] = payloadAsPcieDataBundleB[1];
+                        dvalidOut[2] = 1; dvalidOut[3] = 1;
+                        previousBeatMaybeReg <= tagged Valid payloadDsB;
+                        stateReg <= TlpHeaderAndDataCombinatorStateSendB;
+                    end
+                    TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                        dataOut[2] = payloadAsPcieDataBundleB[0];
+                        dataOut[3] = payloadAsPcieDataBundleB[1];
+                        dvalidOut[2] = 1; dvalidOut[3] = 1;
+                        previousBeatMaybeReg <= tagged Valid payloadDsB;
+                        stateReg <= TlpHeaderAndDataCombinatorStateSendB;
+                    end
+                endcase
+            end
+            default: begin
+                immFail("Should not reach here", $format(""));
+            end
+        endcase
+
+        let outBeat = PcieTxBeat {
+            data    : dataOut,
+            header  : headerOut,
+            sop     : sopOut,
+            eop     : eopOut,
+            hvalid  : hvalidOut,
+            dvalid  : dvalidOut
+        };
+        pcieTxPipeOutQueue.enq(outBeat);
+    endrule
 
     
 
+
+    rule mixOutputSendB if (stateReg == TlpHeaderAndDataCombinatorStateSendB);
+
+        PcieTlpDataBusSegBundle payloadAsPcieDataBundleB    = ?;
+        Bool                    payloadExceedHalfB          = ?;
+        Bool                    isSegment1Or3UsedB          = ?;
+        Bool                    hasMoreDataB                = ?;
+
+        let                     prevPayloadDsB                  = fromMaybe(?, previousBeatMaybeReg);
+        PcieTlpDataBusSegBundle previousPayloadAsPcieDataBundle = unpack(prevPayloadDsB.data);
+        Bool                    isPreviousBeatSegment1Or3Used   = isDataStreamSegment1Or3Used(prevPayloadDsB);
+        Bool                    isPreviousPayloadExceedHalf     = !isDataStreamBeatUseLessThanHalf(prevPayloadDsB);
+
+        let newPayloadDsB = unpack(0);
+        if (tlpDataStreamPipeInQueueVec[1].notEmpty) begin
+            newPayloadDsB = tlpDataStreamPipeInQueueVec[1].first;
+            tlpDataStreamPipeInQueueVec[1].deq;
+        end
+        PcieTlpDataBusSegBundle newPayloadAsPcieDataBundle  = unpack(newPayloadDsB.data);
+        Bool                    isNewBeatSegment1Or3Used    = isDataStreamSegment1Or3Used(newPayloadDsB);
+        Bool                    isNewPayloadExceedHalf      = !isDataStreamBeatUseLessThanHalf(newPayloadDsB);
+
+        if (isValid(previousBeatMaybeReg)) begin
+            
+            payloadAsPcieDataBundleB[0] = previousPayloadAsPcieDataBundle[2];
+            payloadAsPcieDataBundleB[1] = previousPayloadAsPcieDataBundle[3];
+
+            if (prevPayloadDsB.isLast) begin
+                payloadExceedHalfB = False;
+                isSegment1Or3UsedB = isPreviousBeatSegment1Or3Used;
+                hasMoreDataB = False;
+            end
+            else begin
+                payloadAsPcieDataBundleB[2] = newPayloadAsPcieDataBundle[0];
+                payloadAsPcieDataBundleB[3] = newPayloadAsPcieDataBundle[1];
+                payloadExceedHalfB = True;
+                hasMoreDataB = isNewPayloadExceedHalf;
+                if (isNewPayloadExceedHalf) begin
+                    isSegment1Or3UsedB = True;  // seg 3 must be used.
+                end
+                else begin
+                    isSegment1Or3UsedB = isNewBeatSegment1Or3Used;
+                end
+            end
+        end
+        else begin
+            payloadAsPcieDataBundleB    = newPayloadAsPcieDataBundle;
+            payloadExceedHalfB          = isNewPayloadExceedHalf;
+            isSegment1Or3UsedB          = isNewBeatSegment1Or3Used;
+            hasMoreDataB                = !newPayloadDsB.isLast;
+        end
+        
+        let  headerA = unpack(0);
+        Bool hasHeaderA     = False;
+        let  payloadDsA     = unpack(0);
+        Bool hasPayloadA    = False;
+
+        if (tlpHeaderBufferPipeInQueueVec[0].notEmpty) begin
+            hasHeaderA = True;
+            headerA = tlpHeaderBufferPipeInQueueVec[0].first;
+            let isChannelZeroHasPayload = isPcieTlpHasPayload(headerA);
+            if (isChannelZeroHasPayload) begin
+                payloadDsA = tlpDataStreamPipeInQueueVec[0].first;
+                hasPayloadA = True;
+            end
+        end        
+        PcieTlpDataBusSegBundle payloadAsPcieDataBundleA = unpack(payloadDsA.data);
+        Bool payloadExceedHalfA = !isDataStreamBeatUseLessThanHalf(payloadDsA);
+        Bool hasMoreDataA = !payloadDsA.isLast;
+        Bool isSegment1Or3UsedA = isDataStreamSegment1Or3Used(payloadDsA);
+
+
+        TlpHeaderAndDataCombinatorChannelDataState channelDataLogicStateA = ?;
+        TlpHeaderAndDataCombinatorChannelDataState channelDataLogicStateB = ?;
+
+        if (hasMoreDataB) begin
+            channelDataLogicStateB = TlpHeaderAndDataCombinatorChannelDataStateHN;
+        end
+        else begin
+            channelDataLogicStateB = payloadExceedHalfB ? TlpHeaderAndDataCombinatorChannelDataStateLM : TlpHeaderAndDataCombinatorChannelDataStateLL;
+        end
+
+        if (!hasPayloadA) begin
+            channelDataLogicStateA = TlpHeaderAndDataCombinatorChannelDataStateND;
+        end
+        else if (hasMoreDataA) begin
+            channelDataLogicStateA = TlpHeaderAndDataCombinatorChannelDataStateHN;
+        end
+        else begin
+            channelDataLogicStateA = payloadExceedHalfA ? TlpHeaderAndDataCombinatorChannelDataStateLM : TlpHeaderAndDataCombinatorChannelDataStateLL;
+        end
+
+
+
+        PcieTlpDataBusSegBundle         dataOut    = unpack(0);
+        PcieTlpHeaderBusSegBundle       headerOut  = unpack(0);
+        SopSignalBundle                 sopOut     = unpack(0);
+        EopSignalBundle                 eopOut     = unpack(0);
+        HvalidSignalBundle              hvalidOut  = unpack(0);
+        DvalidSignalBundle              dvalidOut  = unpack(0);
+
+
+        dataOut[0] = payloadAsPcieDataBundleB[0];
+        dataOut[1] = payloadAsPcieDataBundleB[1];
+        dvalidOut[0] = 1;
+        dvalidOut[1] = pack(payloadExceedHalfB || (!payloadExceedHalfB && isSegment1Or3UsedB));
+
+        case (channelDataLogicStateB) 
+            TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                dataOut[2] = payloadAsPcieDataBundleB[2];
+                dataOut[3] = payloadAsPcieDataBundleB[3];
+                dvalidOut[2] = 1; dvalidOut[3] = 1;
+                if (isValid(previousBeatMaybeReg)) begin
+                    // is the first beat is started at 0, then all the following beat also aligned, no previousBeatReg is needed
+                    // but if the first beat is shared with another channel (not atarted at 0, but started at half of the beat),
+                    // then all the following beat need previousBeatReg to concat the data.
+                    previousBeatMaybeReg <= tagged Valid newPayloadDsB;
+                end
+            end
+            TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                dataOut[2] = payloadAsPcieDataBundleB[2];
+                dataOut[3] = payloadAsPcieDataBundleB[3];
+                dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedB);
+                eopOut[2] = pack(!isSegment1Or3UsedB); eopOut[3] = pack(isSegment1Or3UsedB);
+                previousBeatMaybeReg <= tagged Invalid;
+                stateReg <= TlpHeaderAndDataCombinatorStateIdle;
+            end
+            TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                eopOut[0] = pack(!isSegment1Or3UsedB); eopOut[1] = pack(isSegment1Or3UsedB);
+
+                if (hasHeaderA) begin
+                    headerOut[2] = headerA;
+                    tlpHeaderBufferPipeInQueueVec[0].deq;
+                    hvalidOut[2] = 1;
+                end
+                if (hasPayloadA) begin
+                    sopOut[2] = 1;
+                    tlpDataStreamPipeInQueueVec[0].deq;
+                end
+
+                case (channelDataLogicStateA)
+                    TlpHeaderAndDataCombinatorChannelDataStateND: begin
+                        previousBeatMaybeReg <= tagged Invalid;
+                        stateReg <= TlpHeaderAndDataCombinatorStateIdle;
+                    end
+                    TlpHeaderAndDataCombinatorChannelDataStateLL: begin
+                        dataOut[2] = payloadAsPcieDataBundleA[0];
+                        dataOut[3] = payloadAsPcieDataBundleA[1];
+                        dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedA);
+                        eopOut[2] = pack(!isSegment1Or3UsedA); eopOut[3] = pack(isSegment1Or3UsedA);
+                        previousBeatMaybeReg <= tagged Invalid;
+                        stateReg <= TlpHeaderAndDataCombinatorStateIdle;
+                    end
+                    TlpHeaderAndDataCombinatorChannelDataStateLM: begin
+                        dataOut[2] = payloadAsPcieDataBundleA[0];
+                        dataOut[3] = payloadAsPcieDataBundleA[1];
+                        dvalidOut[2] = 1; dvalidOut[3] = 1;
+                        previousBeatMaybeReg <= tagged Valid payloadDsA;
+                        stateReg <= TlpHeaderAndDataCombinatorStateSendA;
+                    end
+                    TlpHeaderAndDataCombinatorChannelDataStateHN: begin
+                        dataOut[2] = payloadAsPcieDataBundleA[0];
+                        dataOut[3] = payloadAsPcieDataBundleA[1];
+                        dvalidOut[2] = 1; dvalidOut[3] = 1;
+                        previousBeatMaybeReg <= tagged Valid payloadDsA;
+                        stateReg <= TlpHeaderAndDataCombinatorStateSendA;
+                    end
+                endcase
+            end
+            default: begin
+                immFail("Should not reach here", $format(""));
+            end
+        endcase
+
+        let outBeat = PcieTxBeat {
+            data    : dataOut,
+            header  : headerOut,
+            sop     : sopOut,
+            eop     : eopOut,
+            hvalid  : hvalidOut,
+            dvalid  : dvalidOut
+        };
+        pcieTxPipeOutQueue.enq(outBeat);
+    endrule
+
     interface tlpHeaderBufferPipeInVec = tlpHeaderBufferPipeInVecInst;
-    interface tlpWriteDataPipeInVec = tlpWriteDataPipeInVecInst;
+    interface tlpDataStreamPipeInVec = tlpDataStreamPipeInVecInst;
 
     interface tlpCpltDataPipeIn = toPipeIn(tlpCpltDataPipeInQueue);
     interface pcieTxPipeOut     = toPipeOut(pcieTxPipeOutQueue);
 endmodule
-
-
-
-
-
-
-
-
-
 
 
 
