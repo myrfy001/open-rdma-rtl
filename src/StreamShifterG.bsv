@@ -6,6 +6,7 @@ import RdmaUtils :: *;
 import PrimUtils :: *;
 
 import DataTypes :: *;
+import DtldStream :: *;
 
 /*
 
@@ -50,18 +51,11 @@ Below is stream that LSB is at left, THIS KIND OF STREAM IS SUPPORTED BY THIS SH
                       ^ startByteIdx = 0
 */
 
-typedef struct {
-    tData              data;
-    tByteNum           byteNum;
-    tByteIdx           startByteIdx;
-    Bool               isFirst;
-    Bool               isLast;
-} StreamShifterStream#(type tData, type tByteNum, type tByteIdx) deriving (FShow, Bits, Eq);
 
-interface StreamShifterG#(type tData, type tByteNum, type tByteIdx);
-    interface PipeIn#(tByteNum) offsetPipeIn;
-    interface PipeIn#(StreamShifterStream#(tData, tByteNum, tByteIdx)) streamPipeIn;
-    interface PipeOut#(StreamShifterStream#(tData, tByteNum, tByteIdx)) streamPipeOut;
+interface StreamShifterG#(type tData);
+    interface PipeIn#(Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) offsetPipeIn;
+    interface PipeIn#(DtldStreamData#(tData))                                   streamPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                                  streamPipeOut;
 endinterface
 
 
@@ -77,37 +71,37 @@ typedef enum {
 } BiDirectionStreamShifterRightShiftState deriving(FShow, Eq, Bits);
 
 typedef struct {
-    tDataStream ds;
-    tByteIdx offset;
-} BiDirectionStreamShifterPipelineEntry#(type tDataStream, type tByteIdx) deriving(FShow, Eq, Bits);
+    DtldStreamData#(tData)                          ds;
+    Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))  offset;
+} BiDirectionStreamShifterPipelineEntry#(type tData) deriving(FShow, Eq, Bits);
 
 typedef struct {
-    tByteNum           byteNum;
-    tByteIdx           startByteIdx;
-    Bool               isFirst;
-    Bool               isLast;
-} DataStreamMeta#(type tByteNum, type tByteIdx) deriving(FShow, Eq, Bits);
+    Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))    byteNum;
+    Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))              startByteIdx;
+    Bool                                                        isFirst;
+    Bool                                                        isLast;
+} DataStreamMeta#(type tData) deriving(FShow, Eq, Bits);
 
 typedef struct {
-    Tuple2#(tData, tData)                   concatData;
-    tByteIdx                                offset;
-    DataStreamMeta#(tByteNum, tByteIdx)     meta;
-} ShiftIntermediateData#(type tData, type tByteNum, type tByteIdx) deriving(FShow, Eq, Bits);
+    Tuple2#(tData, tData)                           concatData;
+    Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))  offset;
+    DataStreamMeta#(tData)                          meta;
+} ShiftIntermediateData#(type tData) deriving(FShow, Eq, Bits);
 
 
 // ========== IMPORTANT! =======================
 // Must ensure the stream's lsb is at Left
 // =============================================
-module mkBiDirectionStreamShifterG(StreamShifterG#(tData, tByteNum, tByteIdx)) provisos (
+module mkBiDirectionStreamShifterG(StreamShifterG#(tData)) provisos (
         Bits#(tData, szData),
         NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
         NumAlias#(TLog#(szDataInByte), szByteIdx),
         NumAlias#(TAdd#(1, szByteIdx), szByteNum),
         Alias#(Bit#(szByteIdx), tByteIdx),
         Alias#(Bit#(szByteNum), tByteNum),
-        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
-        Alias#(BiDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tBiDirectionStreamShifterPipelineEntry),
-        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        Alias#(DtldStreamData#(tData), tDataStream),
+        Alias#(BiDirectionStreamShifterPipelineEntry#(tData), tBiDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData), tShiftIntermediateData),
         NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
         NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
         Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),
@@ -159,7 +153,7 @@ module mkBiDirectionStreamShifterG(StreamShifterG#(tData, tByteNum, tByteIdx)) p
             Bit#(szShiftOffsetForLowerPartShift) shiftCnt = unpack(zeroExtend(pack(req.offset)));
             shiftCnt = shiftCnt << 3; // convert byte offset to bit offset
             tData outputData = unpack(truncateLSB(pack(req.concatData) << shiftCnt));  
-            leftShiftResultQ.enq(StreamShifterStream{
+            leftShiftResultQ.enq(DtldStreamData{
                 data: outputData,
                 byteNum: req.meta.byteNum,
                 startByteIdx: req.meta.startByteIdx,
@@ -193,7 +187,7 @@ module mkBiDirectionStreamShifterG(StreamShifterG#(tData, tByteNum, tByteIdx)) p
             Bit#(szShiftOffsetForLowerPartShift) shiftCnt = unpack(zeroExtend(pack(req.offset)));
             shiftCnt = shiftCnt << 3; // convert byte offset to bit offset
             tData outputData = unpack(truncate(pack(req.concatData) >> shiftCnt)); 
-            rightShiftResultQ.enq(StreamShifterStream{
+            rightShiftResultQ.enq(DtldStreamData{
                 data: outputData,
                 byteNum: req.meta.byteNum,
                 startByteIdx: req.meta.startByteIdx,
@@ -550,15 +544,15 @@ typedef enum {
 }  UniDirectionStreamShifterLeftShiftState deriving(FShow, Eq, Bits);
 
 typedef struct {
-    tDataStream ds;
-    tByteIdx offset;
-}  UniDirectionStreamShifterPipelineEntry#(type tDataStream, type tByteIdx) deriving(FShow, Eq, Bits);
+    DtldStreamData#(tData)                          ds;
+    Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))  offset;
+}  UniDirectionStreamShifterPipelineEntry#(type tData) deriving(FShow, Eq, Bits);
 
 
 interface UniDirStreamShifter#(type tData);
     interface PipeIn#(Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))) offsetPipeIn;
-    interface PipeIn#(StreamShifterStream#(tData, Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) streamPipeIn;
-    interface PipeOut#(StreamShifterStream#(tData, Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))), Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) streamPipeOut;
+    interface PipeIn#(DtldStreamData#(tData)) streamPipeIn;
+    interface PipeOut#(DtldStreamData#(tData)) streamPipeOut;
 endinterface
 
 
@@ -571,9 +565,9 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
         NumAlias#(TAdd#(1, szByteIdx), szByteNum),
         Alias#(Bit#(szByteIdx), tByteIdx),
         Alias#(Bit#(szByteNum), tByteNum),
-        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
-        Alias#(UniDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tUniDirectionStreamShifterPipelineEntry),
-        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        Alias#(DtldStreamData#(tData), tDataStream),
+        Alias#(UniDirectionStreamShifterPipelineEntry#(tData), tUniDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData), tShiftIntermediateData),
         NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
         NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
         Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),
@@ -616,7 +610,7 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
             Bit#(szShiftOffsetForLowerPartShift) shiftCnt = unpack(zeroExtend(pack(req.offset)));
             shiftCnt = shiftCnt << 3; // convert byte offset to bit offset
             tData outputData = unpack(truncateLSB(pack(req.concatData) << shiftCnt));  
-            leftShiftResultQ.enq(StreamShifterStream{
+            leftShiftResultQ.enq(DtldStreamData{
                 data: outputData,
                 byteNum: req.meta.byteNum,
                 startByteIdx: req.meta.startByteIdx,
@@ -782,9 +776,9 @@ endmodule
         NumAlias#(TAdd#(1, szByteIdx), szByteNum),
         Alias#(Bit#(szByteIdx), tByteIdx),
         Alias#(Bit#(szByteNum), tByteNum),
-        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
-        Alias#(UniDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tUniDirectionStreamShifterPipelineEntry),
-        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        Alias#(DtldStreamData#(tData), tDataStream),
+        Alias#(UniDirectionStreamShifterPipelineEntry#(tData), tUniDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData), tShiftIntermediateData),
         NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
         NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
         Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),
@@ -826,7 +820,7 @@ endmodule
             Bit#(szShiftOffsetForLowerPartShift) shiftCnt = unpack(zeroExtend(pack(req.offset)));
             shiftCnt = shiftCnt << 3; // convert byte offset to bit offset
             tData outputData = unpack(truncate(pack(req.concatData) >> shiftCnt)); 
-            rightShiftResultQ.enq(StreamShifterStream{
+            rightShiftResultQ.enq(DtldStreamData{
                 data: outputData,
                 byteNum: req.meta.byteNum,
                 startByteIdx: req.meta.startByteIdx,
@@ -1017,16 +1011,16 @@ endmodule
 // ========== IMPORTANT! =======================
 // Must ensure the stream's lsb is at Right
 // =============================================
-module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData, tByteNum, tByteIdx)) provisos (
+module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
         Bits#(tData, szData),
         NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
         NumAlias#(TLog#(szDataInByte), szByteIdx),
         NumAlias#(TAdd#(1, szByteIdx), szByteNum),
         Alias#(Bit#(szByteIdx), tByteIdx),
         Alias#(Bit#(szByteNum), tByteNum),
-        Alias#(StreamShifterStream#(tData, tByteNum, tByteIdx), tDataStream),
-        Alias#(BiDirectionStreamShifterPipelineEntry#(tDataStream, tByteIdx), tBiDirectionStreamShifterPipelineEntry),
-        Alias#(ShiftIntermediateData#(tData, tByteNum, tByteIdx), tShiftIntermediateData),
+        Alias#(DtldStreamData#(tData), tDataStream),
+        Alias#(BiDirectionStreamShifterPipelineEntry#(tData), tBiDirectionStreamShifterPipelineEntry),
+        Alias#(ShiftIntermediateData#(tData), tShiftIntermediateData),
         NumAlias#(TSub#(TLog#(szData), 2), szShiftOffsetForLowerPartShift),
         NumAlias#(TLog#(szData), szShiftOffsetForHigherPartShift),
         Add#(a__, szByteIdx, szShiftOffsetForLowerPartShift),

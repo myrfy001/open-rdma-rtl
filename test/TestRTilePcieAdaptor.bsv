@@ -17,11 +17,12 @@ import ConnectableF::*;
 
 import PcieTypes :: *;
 import StreamShifterG :: *;
+import DtldStream :: *;
 
 `include "PcieMacros.bsv"
 
 (* doc = "testcase" *)
-module mkTestRTilePcieAdaptor(Empty);
+module mkTestRTilePcieAdaptorRx(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
 
     let dut <- mkRTilePcie;
@@ -77,6 +78,37 @@ module mkTestRTilePcieAdaptor(Empty);
 endmodule
 
 
+(* doc = "testcase" *)
+module mkTestRTilePcieAdaptorTx(Empty);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+
+    let dut <- mkRTilePcie;
+
+    Reg#(Bool) runReg <- mkReg(True);
+    rule injectReadTlp if (runReg);
+        runReg <= False;
+
+        let writeMeta = DtldStreamMemAccessMeta {
+            addr: 0,
+            totalLen: 15
+        };
+        let writeData = DtldStreamData {
+            data: ?,
+            startByteIdx: 0,
+            byteNum: 15,
+            isFirst: True,
+            isLast: True
+        };
+        dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+        dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+    endrule
+
+    rule getOutput;
+        let outBeat = dut.pcieTxPipeOut.first;
+        dut.pcieTxPipeOut.deq;
+        $display(fshow(outBeat));
+    endrule
+endmodule
 
 interface TestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest;
     method Bool getOutput;
@@ -211,3 +243,76 @@ endinterface
 
 //     method getOutput = outReg;
 // endmodule
+
+
+
+
+
+
+
+
+interface TestRTileDmaReadWriteSimple;
+    (* always_ready, always_enabled *)
+    interface RTilePcieAdaptorRx rxRawIfc;
+
+    (* always_ready, always_enabled *)
+    interface RTilePcieAdaptorTx txRawIfc;
+
+    (* always_ready, always_enabled *)
+    method Action startTest(Bool isStart);
+
+endinterface
+
+module mkTestRTileDmaReadWriteSimple(TestRTileDmaReadWriteSimple);
+    let dut <- mkRTilePcie;
+    let rawInterfaceAdaptor <- mkRTilePcieAdaptor;
+
+    mkConnection(rawInterfaceAdaptor.pcieRxPipeOut, dut.pcieRxPipeIn);
+    mkConnection(rawInterfaceAdaptor.pcieTxPipeIn, dut.pcieTxPipeOut);
+
+    Reg#(Bool) isStartedReg <- mkReg(False);
+    Reg#(Bool) arleadyRunReg <- mkReg(False);
+
+    rule doTest if (isStartedReg && !arleadyRunReg);
+        $display("----------------start do test----------------------");
+        arleadyRunReg <= True;
+
+        let writeMeta = DtldStreamMemAccessMeta {
+            addr: 'h0,
+            totalLen: 16
+        };
+        let writeData = DtldStreamData {
+            data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777_88888888_99999999,
+            startByteIdx: 0,
+            byteNum: 16,
+            isFirst: True,
+            isLast: True
+        };
+
+        let readMeta = DtldStreamMemAccessMeta {
+            addr: 0,
+            totalLen: 17
+        };
+
+        // dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+        // dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+        dut.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
+        
+    endrule
+
+    rule getReadResult;
+        let readDs = dut.streamSlaveIfcVec[0].readPipeIfc.readDataPipeOut.first;
+        dut.streamSlaveIfcVec[0].readPipeIfc.readDataPipeOut.deq;
+        $display("----------------read output----------------------\n", fshow(readDs));
+    endrule
+
+    method Action startTest(Bool isStart);
+        if (isStart) begin
+            $display("----------------isStartedReg <= True----------------------");
+            isStartedReg <= True;
+        end
+    endmethod 
+
+    interface rxRawIfc = rawInterfaceAdaptor.rx;
+    interface txRawIfc = rawInterfaceAdaptor.tx;
+endmodule

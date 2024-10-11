@@ -10,7 +10,7 @@ import DataTypes :: *;
 typedef struct {
     tAddr                                               addr;
     tLen                                                totalLen;
-} DtldStreamMeta#(type tAddr, type tLen) deriving(Bits, FShow);
+} DtldStreamMemAccessMeta#(type tAddr, type tLen) deriving(Bits, FShow);
 
 typedef struct {
     tData                                                       data;
@@ -23,13 +23,13 @@ typedef struct {
 
 
 interface DtldStreamMasterWritePipes#(type tData, type tAddr, type tLen);
-    interface PipeOut#(DtldStreamMeta#(tAddr, tLen))    writeMetaPipeOut;
-    interface PipeOut#(DtldStreamData#(tData))       writeDataPipeOut;
+    interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   writeMetaPipeOut;
+    interface PipeOut#(DtldStreamData#(tData))                  writeDataPipeOut;
 endinterface
 
 interface DtldStreamMasterReadPipes#(type tData, type tAddr, type tLen);
-    interface PipeOut#(DtldStreamMeta#(tAddr, tLen))    readMetaPipeOut;
-    interface PipeIn#(DtldStreamData#(tData))        readDataPipeIn;
+    interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
+    interface PipeIn#(DtldStreamData#(tData))                   readDataPipeIn;
 endinterface
 
 interface DtldStreamMasterPipes#(type tData, type tAddr, type tLen);
@@ -38,13 +38,13 @@ interface DtldStreamMasterPipes#(type tData, type tAddr, type tLen);
 endinterface
 
 interface DtldStreamSlaveWritePipes#(type tData, type tAddr, type tLen);
-    interface PipeIn#(DtldStreamMeta#(tAddr, tLen))     writeMetaPipeIn;
-    interface PipeIn#(DtldStreamData#(tData))        writeDataPipeIn;
+    interface PipeIn#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
+    interface PipeIn#(DtldStreamData#(tData))                   writeDataPipeIn;
 endinterface
 
 interface DtldStreamSlaveReadPipes#(type tData, type tAddr, type tLen);
-    interface PipeIn#(DtldStreamMeta#(tAddr, tLen))     readMetaPipeIn;
-    interface PipeOut#(DtldStreamData#(tData))       readDataPipeOut;
+    interface PipeIn#(DtldStreamMemAccessMeta#(tAddr, tLen))     readMetaPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                   readDataPipeOut;
 endinterface
 
 interface DtldStreamSlavePipes#(type tData, type tAddr, type tLen);
@@ -63,23 +63,23 @@ interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAdd
 endinterface
 
 
-module mkDtldStreamArbiterSlave#(Integer depth)(DtldStreamArbiterSlave#(channelCnt, tData, tAddr, tLen)) provisos (
+module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArbiterSlave#(channelCnt, tData, tAddr, tLen)) provisos (
         Bits#(tData, szData),
-        Bits#(DtldStreamMeta#(tAddr, tLen), szMeta),
+        Bits#(DtldStreamMemAccessMeta#(tAddr, tLen), szMeta),
         Alias#(Bit#(TLog#(channelCnt)), tChannelIdx)
     );
 
     Vector#(channelCnt, DtldStreamSlavePipes#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
 
-    Vector#(channelCnt, FIFOF#(DtldStreamMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                  slaveSideQueueVecWd     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                  slaveSideQueueVecRd     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecRd     <- replicateM(mkFIFOF);
 
-    FIFOF#(DtldStreamMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                  masterSideQueueWd   <-  mkFIFOF;
-    FIFOF#(DtldStreamMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                  masterSideQueueRd   <-  mkFIFOF;
+    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkFIFOF;
+    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))                           masterSideQueueRd   <-  mkFIFOF;
 
     FIFOF#(tChannelIdx)     writeSourceChannelIdPipeOutQueue <- mkFIFOF;
     FIFOF#(tChannelIdx)     readSourceChannelIdPipeOutQueue  <- mkFIFOF;
@@ -103,7 +103,7 @@ module mkDtldStreamArbiterSlave#(Integer depth)(DtldStreamArbiterSlave#(channelC
     endrule
 
     rule recvWriteArbitResp if (isWriteFirstBeatReg);
-        Maybe#(DtldStreamMeta#(tAddr, tLen)) wmMaybe = tagged Invalid;
+        Maybe#(DtldStreamMemAccessMeta#(tAddr, tLen)) wmMaybe = tagged Invalid;
         DtldStreamData#(tData) wd = ?;
         tChannelIdx curChannelIdx = 0;
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
@@ -142,7 +142,7 @@ module mkDtldStreamArbiterSlave#(Integer depth)(DtldStreamArbiterSlave#(channelC
     endrule
 
     rule recvReadArbitResp;
-        Maybe#(DtldStreamMeta#(tAddr, tLen)) rmMaybe = tagged Invalid;
+        Maybe#(DtldStreamMemAccessMeta#(tAddr, tLen)) rmMaybe = tagged Invalid;
         tChannelIdx curChannelIdx = 0;
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (readArbiter.clients[channelIdx].grant) begin
@@ -154,22 +154,26 @@ module mkDtldStreamArbiterSlave#(Integer depth)(DtldStreamArbiterSlave#(channelC
 
         if (rmMaybe matches tagged Valid .rm) begin
             masterSideQueueRm.enq(rm);
-            readKeepOrderQueue.enq(curChannelIdx);
+            if (needReadResp) begin
+                readKeepOrderQueue.enq(curChannelIdx);
+            end
             readSourceChannelIdPipeOutQueue.enq(curChannelIdx);
         end
     endrule
 
-    rule forwardReadResp;
-        let rd = masterSideQueueRd.first;
-        masterSideQueueRd.deq;
+    if (needReadResp) begin
+        rule forwardReadResp;
+            let rd = masterSideQueueRd.first;
+            masterSideQueueRd.deq;
 
-        let channelIdx = readKeepOrderQueue.first;
-        slaveSideQueueVecRd[channelIdx].enq(rd);
+            let channelIdx = readKeepOrderQueue.first;
+            slaveSideQueueVecRd[channelIdx].enq(rd);
 
-        if (rd.isLast) begin
-            readKeepOrderQueue.deq;
-        end
-    endrule
+            if (rd.isLast) begin
+                readKeepOrderQueue.deq;
+            end
+        endrule
+    end
 
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin

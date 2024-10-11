@@ -22,7 +22,7 @@ typedef enum {
 } TestBiDirectionStreamShifterState deriving(Bits, Eq);
 
 
-typedef StreamShifterStream#(DATA, ByteEnBitNum, ByteIndexInBeat) DataStreamForTest;
+typedef DtldStreamData#(DATA) DataStreamForTest;
 (* doc = "testcase" *)
 module mkTestBiDirectionStreamShifterG(Empty);
     let inputBeatCountRandomGenPipeOut <- mkRandomLenPipeOut(0, 2);
@@ -38,8 +38,8 @@ module mkTestBiDirectionStreamShifterG(Empty);
     FIFOF#(DataStreamForTest) dutInputQ <- mkSizedFIFOF(10);
     FIFOF#(DataStreamForTest) forwardToBackwardQ <- mkSizedFIFOF(10);
 
-    StreamShifterG#(DATA, ByteEnBitNum, ByteIndexInBeat) forwardShifter <- mkBiDirectionStreamShifterLsbRightG;
-    StreamShifterG#(DATA, ByteEnBitNum, ByteIndexInBeat) backwardShifter <- mkBiDirectionStreamShifterLsbRightG;
+    StreamShifterG#(DATA) forwardShifter <- mkBiDirectionStreamShifterLsbRightG;
+    StreamShifterG#(DATA) backwardShifter <- mkBiDirectionStreamShifterLsbRightG;
 
 
     Reg#(TestBiDirectionStreamShifterState) stateReg <- mkReg(TestBiDirectionStreamShifterStateGenInput);

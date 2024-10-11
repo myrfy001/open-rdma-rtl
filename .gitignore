@@ -1,5 +1,6 @@
 build
 output
+test/cocotb/sim_build
 backend/verilog
 backend/achronix/ace/*/*
 !backend/achronix/ace/*/*.acxprj

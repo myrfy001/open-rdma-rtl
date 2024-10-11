@@ -72,7 +72,7 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestBitmapPreMerge
 
 FILE=`ls TestRTilePcieAdaptor.bsv`
-TESTCASE=mkTestRTilePcieAdaptor
+TESTCASE=mkTestRTilePcieAdaptorTx
 
 # FILE=`ls TestStreamShifterG.bsv`
 # TESTCASE=mkTestBiDirectionStreamShifterG
