@@ -573,8 +573,8 @@ module mkTestBitmapWindowStorageTiming(TestBitmapWindowStorageTiming);
  
     BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage("init_bram_psn_merge_storage.bin");
 
-    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary))) signalKeeperForResp1 <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary))) signalKeeperForResp2 <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary)), Bool) signalKeeperForResp1 <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary)), Bool) signalKeeperForResp2 <- mkForceKeepWideSignals; 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
 
     Reg#(Bool) outReg <- mkRegU;

@@ -183,7 +183,7 @@ module mkTestTopTiming#(
 
     Reg#(Bool) outputSyncReg <- mkSyncRegToCC(False, clkEthNap, rstEthNap);
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, ForceKeepWideSignals#(DataStream)) signalKeeperForRawPacketVec <- replicateM(mkForceKeepWideSignals(clocked_by clkEthNap, reset_by rstEthNap)); 
+    Vector#(HARDWARE_QP_CHANNEL_CNT, ForceKeepWideSignals#(DataStream, Bool)) signalKeeperForRawPacketVec <- replicateM(mkForceKeepWideSignals(clocked_by clkEthNap, reset_by rstEthNap)); 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         mkConnection(dut.otherRawPacketPipeOutVec[idx], signalKeeperForRawPacketVec[idx].bitsPipeIn);
     end

@@ -3,12 +3,18 @@ include ../Makefile.base
 TCLDIR ?= xdc
 CLK ?= rdma_clock
 OOC ?= 1
-VLOGDIR ?= ../src/third_party/verilog
-OUTPUTDIR ?= output
+
+BACKENDDIR ?= $(shell readlink -f ./)
+QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir
+RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
+			$(BACKENDDIR)/../src/verilog/*.v \
+			$(BACKENDDIR)/../src/verilog/**/*.v
+			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
-PARTNAME = xcvu13p-fhgb2104-2-i
-# PARTNAME = xcvu23p-vsva1365-2L-e
+DEVICE ?= AGIC041R29D1E2VB
+FAMILY ?= Agilex 7
+
 
 
 # TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
@@ -47,34 +53,47 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
 # TOPMODULE ?= mkRTilePcieAdaptor
 
+# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+# TOPMODULE ?= mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest
+
 TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-TOPMODULE ?= mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest
+TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
+
+
 
 
 # TARGETFILE ?= ../test/TestTop.bsv
 # TOPMODULE ?= mkTestTopTiming
 
-BACKENDDIR ?= .
+
 MAX_NET_PATH_NUM ?= 10000
 VERILOG_TOPMODULE ?= top
 
 
+export QUARTUS_WORKDIR
+export PROJ_NAME = $(TOPMODULE)
+export REV_NAME = rev1
 export TOP = $(TOPMODULE)
-export DIR_RTL = $(VLOGDIR)
-export DIR_XDC = $(TCLDIR)
-export DIR_OOC_SCRIPTS = $(BACKENDDIR)/ooc_tcl_and_xdc
-export DIR_IPS = $(BACKENDDIR)/ips
-export DIR_IP_GENERATED = $(BUILDDIR)/ips
+export RTL_DIRS
+export DEVICE
+export FAMILY
 export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
-export VERILOG_TOPMODULE
-export TARGET_CLOCKS = $(CLK)
-export DIR_OUTPUT = $(OUTPUTDIR)
-export OOCSYNTH = $(OOC)
-export RUNTO = $(RUNTOPHASE)
-export PART = $(PARTNAME)
-export MAX_NET_PATH_NUM
 
-export DIR_BSV_GENERATED_STUB = $(BACKENDDIR)/verilog/stub
+# export TOP = $(TOPMODULE)
+# export DIR_RTL = $(VLOGDIR)
+# export DIR_XDC = $(TCLDIR)
+# export DIR_OOC_SCRIPTS = $(BACKENDDIR)/ooc_tcl_and_xdc
+# export DIR_IPS = $(BACKENDDIR)/ips
+# export DIR_IP_GENERATED = $(BUILDDIR)/ips
+
+# export VERILOG_TOPMODULE
+# export TARGET_CLOCKS = $(CLK)
+# export DIR_OUTPUT = $(OUTPUTDIR)
+# export OOCSYNTH = $(OOC)
+# export RUNTO = $(RUNTOPHASE)
+# export PART = $(PARTNAME)
+# export MAX_NET_PATH_NUM
+
 
 
 compile:
@@ -92,8 +111,12 @@ vivado: verilog
 vivado_ooc:
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
 
-clean:
-	rm -rf $(BUILDDIR) $(OUTPUTDIR) $(DIR_BSV_GENERATED) $(DIR_BSV_GENERATED_STUB) .Xil *.jou *.log
+quartus:
+	cd quartus && \
+	quartus_sh -t non-project-build.tcl
 
-.PHONY: verilog vivado clean
+clean:
+	rm -rf $(BUILDDIR) $(WORK_DIR) $(DIR_BSV_GENERATED) $(DIR_BSV_GENERATED_STUB) .Xil *.jou *.log
+
+.PHONY: verilog vivado clean quartus
 .DEFAULT_GOAL := verilog

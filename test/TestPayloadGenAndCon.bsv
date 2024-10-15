@@ -182,8 +182,8 @@ module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
     mkConnection(dut.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
     mkConnection(dut.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
 
-    ForceKeepWideSignals#(DataStream) signalKeeperForGen <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Bool) signalKeeperForCon <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(DataStream, Bool) signalKeeperForGen <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bool, Bool) signalKeeperForCon <- mkForceKeepWideSignals; 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
     Reg#(Bool) outReg <- mkRegU;

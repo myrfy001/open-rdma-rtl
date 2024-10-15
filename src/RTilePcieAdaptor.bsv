@@ -98,8 +98,8 @@ typedef Bit#(PCIE_TLP_HEADER_BUFFER_WIDTH) PcieTlpHeaderBuffer;
 typedef Vector#(PCIE_SEGMENT_CNT, PcieTlpHeaderBuffer) PcieTlpHeaderBusSegBundle;
 
 typedef 1024 PCIE_TLP_DATA_BUNDLE_WIDTH;
-typedef TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, PCIE_SEGMENT_CNT) PCIE_TLP_DATA_SEGMENT_WIDTH;
-typedef TDiv#(PCIE_TLP_DATA_SEGMENT_WIDTH, BYTE_WIDTH) PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH;
+typedef TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, PCIE_SEGMENT_CNT) PCIE_TLP_DATA_SEGMENT_WIDTH;    // 256
+typedef TDiv#(PCIE_TLP_DATA_SEGMENT_WIDTH, BYTE_WIDTH) PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH;    // 32
 typedef Bit#(PCIE_TLP_DATA_SEGMENT_WIDTH) PcieTlpDataSegment;
 typedef Vector#(PCIE_SEGMENT_CNT, PcieTlpDataSegment) PcieTlpDataBusSegBundle;
 
@@ -907,14 +907,14 @@ function Maybe#(PcieDataStreamByteCnt) getSignedBiDirByteShiftOffsetFromTlpHeade
             Bit#(TSub#(TLog#(SizeOf#(PcieDataStreamByteIdx)), BYTE_DWORD_CONVERT_SHIFT_NUM)) tmpTruncateVar = truncate(addrDw);
             PcieDataStreamByteCnt targetLowerDwAddr = zeroExtend(tmpTruncateVar);
 
-            return tagged Valid ((targetLowerDwAddr - sourceLowerDwAddr) << valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
+            return tagged Valid ((sourceLowerDwAddr - targetLowerDwAddr) << valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
         end
         else if (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA) begin
             PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(tlpBuffer));
 
             PcieDataStreamByteCnt targetLowerDwAddr = zeroExtend(tlpHeader.lowerAddress) >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
 
-            return tagged Valid ((targetLowerDwAddr - sourceLowerDwAddr) << valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
+            return tagged Valid ((sourceLowerDwAddr - targetLowerDwAddr) << valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
         end
         else begin
             return tagged Invalid;
@@ -1012,6 +1012,12 @@ module mkTlpDemuxAndConvertToMemMapStream(TlpDemuxAndConvertToMemMapStream);
             tlpDataDispatchMetaQueue.enq(dispatchMeta);
         end
         tlpHeaderForDispatchPipeQueue.enq(tlpHeaderWithMeta);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkTlpDemuxAndConvertToMemMapStream calcMetaData"),
+            toBlue(", dispatchMeta="), fshow(dispatchMeta),
+            toBlue(", signedShiftOffset="), fshow(signedShiftOffset)
+        );
     endrule
 
     rule dispatchOutputDataStream;
@@ -1103,10 +1109,10 @@ typedef Bit#(PCIE_MIN_RCB_BIT_WIDTH) PcieRcbDataBlock;
 typedef TAdd#(1, TSub#(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE, PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE)) PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT;
 typedef 8 PCIE_COMPLETION_BUFFER_INTERNAL_BUFFER_ROW_PER_SLOT;
 
-typedef PCIE_EXTENDED_TAG_HIGH_PART_WIDTH PCIE_COMPLETION_BUFFER_TAG_SLOT_INDEX_WIDTH;
-typedef TLog#(PCIE_COMPLETION_BUFFER_INTERNAL_BUFFER_ROW_PER_SLOT) PCIE_COMPLETION_BUFFER_TAG_SLOT_INNER_ROW_INDEX_WIDTH;
+typedef PCIE_EXTENDED_TAG_HIGH_PART_WIDTH PCIE_COMPLETION_BUFFER_TAG_SLOT_INDEX_WIDTH;   // 8
+typedef TLog#(PCIE_COMPLETION_BUFFER_INTERNAL_BUFFER_ROW_PER_SLOT) PCIE_COMPLETION_BUFFER_TAG_SLOT_INNER_ROW_INDEX_WIDTH;  // 3
 
-typedef TAdd#(PCIE_COMPLETION_BUFFER_TAG_SLOT_INDEX_WIDTH, PCIE_COMPLETION_BUFFER_TAG_SLOT_INNER_ROW_INDEX_WIDTH) PCIE_COMPLETION_BUFFER_INNER_STORAGE_ROW_INDEX_WIDTH;
+typedef TAdd#(PCIE_COMPLETION_BUFFER_TAG_SLOT_INDEX_WIDTH, PCIE_COMPLETION_BUFFER_TAG_SLOT_INNER_ROW_INDEX_WIDTH) PCIE_COMPLETION_BUFFER_INNER_STORAGE_ROW_INDEX_WIDTH;  // 11
 
 typedef Bit#(PCIE_COMPLETION_BUFFER_TAG_SLOT_INDEX_WIDTH)           PcieCompletionBufferSlotIdx;
 typedef Bit#(TLog#(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE)) PcieCompletionBufferSlotCnt;
@@ -1114,21 +1120,26 @@ typedef Bit#(TLog#(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE)) PcieCompleti
 typedef Bit#(PCIE_COMPLETION_BUFFER_TAG_SLOT_INNER_ROW_INDEX_WIDTH) PcieCompletionBufferSlotInnerRowIdx;
 typedef Bit#(PCIE_COMPLETION_BUFFER_INNER_STORAGE_ROW_INDEX_WIDTH)  PcieCompletionBufferInnerStorageRowIdx;
 
+typedef Bit#(TLog#(PCIE_HEADER_FIELD_FIRST_DW_BE_WIDTH))            InvalidByteNumInDw;
 
 typedef struct {
-    PcieCompletionBufferSlotUserData userdata;
+    PcieCompletionBufferSlotUserData    userdata;
+    InvalidByteNumInDw                  firstDwInvalidByteNum;
+    InvalidByteNumInDw                  lastDwInvalidByteNum;
 } PcieCompletionBufferSlotAllocReq deriving(Bits, FShow);
 
 typedef struct {
-    PcieCompletionBufferSlotUserData        userdata;
-    PcieCompletionBufferSlotInnerRowIdx     writePtr;
-    PcieCompletionBufferSlotIdx             slotIdx;
-    Bool                                    isCompleted;
-    Bool                                    isFirstBeat;
-    Bool                                    isFirstRow;
-    PcieDataStreamByteIdx                   startByteIdx;
-    PcieDataStreamByteCnt                   firstBeatByteNum;
-    PcieDataStreamByteCnt                   lastBeatByteNum;
+    PcieCompletionBufferSlotUserData                    userdata;                   // 32
+    PcieCompletionBufferSlotInnerRowIdx                 writePtr;                   // 3
+    PcieCompletionBufferSlotIdx                         slotIdx;                    // 8
+    Bool                                                isCompleted; 
+    Bool                                                isFirstBeat;
+    Bool                                                isFirstRow;
+    PcieDataStreamByteIdx                               startByteIdx;               // 7
+    PcieDataStreamByteCnt                               firstBeatByteNum;           // 8
+    PcieDataStreamByteCnt                               lastBeatByteNum;            // 8
+    InvalidByteNumInDw                                  firstDwInvalidByteNum;      // 2
+    InvalidByteNumInDw                                  lastDwInvalidByteNum;       // 2
 } PcieCompletionBufferSlotMeta deriving(Bits, FShow);
 
 // typedef struct {
@@ -1247,15 +1258,17 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
             tagAllocPipeInQueue.deq;
 
             let newSlot = PcieCompletionBufferSlotMeta {
-                userdata: req.userdata,
-                writePtr: 0,
-                slotIdx: headReg,
-                isCompleted: False,
-                isFirstBeat: True,
-                isFirstRow: True,
-                startByteIdx: 0,
-                firstBeatByteNum: 0,
-                lastBeatByteNum: 0
+                userdata:               req.userdata,
+                writePtr:               0,
+                slotIdx:                headReg,
+                isCompleted:            False,
+                isFirstBeat:            True,
+                isFirstRow:             True,
+                startByteIdx:           0,
+                firstBeatByteNum:       0,
+                lastBeatByteNum:        0,
+                firstDwInvalidByteNum:  req.firstDwInvalidByteNum,
+                lastDwInvalidByteNum:   req.lastDwInvalidByteNum
             };
             
             PcieHeaderFieldExtendedTag tag = unpack({pack(headReg), pack(channelIdx)});
@@ -1431,10 +1444,10 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
 
             let isOnly = curSlotMeta.writePtr == 0;
             let dataStreamMeta = DataStreamMeta {
-                byteNum: curSlotMeta.firstBeatByteNum,
-                startByteIdx: curSlotMeta.startByteIdx,
-                isFirst: True,
-                isLast: isOnly
+                byteNum:        isOnly ? curSlotMeta.firstBeatByteNum - zeroExtend(curSlotMeta.firstDwInvalidByteNum) - zeroExtend(curSlotMeta.lastDwInvalidByteNum) : curSlotMeta.firstBeatByteNum - zeroExtend(curSlotMeta.firstDwInvalidByteNum),
+                startByteIdx:   curSlotMeta.startByteIdx + zeroExtend(curSlotMeta.firstDwInvalidByteNum),
+                isFirst:        True,
+                isLast:         isOnly
             };
             outputStreamMetaPipelineQueue.enq(dataStreamMeta);
 
@@ -1442,6 +1455,7 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
                 outputSlotMetaForSendReadReqPipelineQueue.deq;
                 newCompleteSlotSignal[2] <= True;
                 needIncrTailPtr = True;
+
             end
         end
         else begin
@@ -1452,7 +1466,7 @@ module mkPcieCompletionBuffer#(DispatchChannelIdx channelIdx)(PcieCompletionBuff
 
             let isLast = newPtr == curReadOutReqPtrTargetReg;
             let dataStreamMeta = DataStreamMeta {
-                byteNum: isLast ? curSlotMeta.lastBeatByteNum : fromInteger(valueOf(PCIE_TLP_DATA_BUNDLE_BYTE_CNT)),
+                byteNum: isLast ? curSlotMeta.lastBeatByteNum - zeroExtend(curSlotMeta.lastDwInvalidByteNum) : fromInteger(valueOf(PCIE_TLP_DATA_BUNDLE_BYTE_CNT)),
                 startByteIdx: 0,
                 isFirst: False,
                 isLast: isLast
@@ -1618,6 +1632,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
         Bits#(tAddr, szAddr),
         Bits#(tLen,  szLen),
         Add#(a__, szLen, szAddr),
+        Add#(d__, 2, szAddr),
         Arith#(tAddr),
         Bitwise#(tAddr),
         Eq#(tAddr),
@@ -1655,6 +1670,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
     Reg#(Bool)                          isOutputingPayloadStreamReg <- mkReg(False);
 
     
+    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))  tagAllocToReadTlpGenPipelineQ         <- mkFIFOF;
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
         tagAllocPipeOutVecInst[channelIdx] = toPipeOut(tagAllocPipeOutQueueVec[channelIdx]);
@@ -1727,18 +1743,29 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen#(channelCnt, tData, tAd
     
 
     rule sendGenPcieTagReq;
-        PcieCompletionBufferSlotAllocReq req = ?;
+        let rm = slaveSideQueueRm.first;
+        slaveSideQueueRm.deq;
 
         let channelIdx = readSourceChannelIdPipeInQueue.first;
         readSourceChannelIdPipeInQueue.deq;
 
+        tAddr endAddr = rm.addr + unpack(zeroExtend(pack(rm.totalLen))) - 1; 
+
+        let req = PcieCompletionBufferSlotAllocReq {
+            userdata: ?,
+            firstDwInvalidByteNum: truncate(pack(rm.addr)),
+            lastDwInvalidByteNum: maxBound - truncate(pack(endAddr))
+        };
+
         tagAllocPipeOutQueueVec[channelIdx].enq(req);
         readTagAllocKeepOrderQueue.enq(channelIdx);
+        tagAllocToReadTlpGenPipelineQ.enq(rm);
     endrule
 
     rule genTlpMrd;
-        let rm = slaveSideQueueRm.first;
-        slaveSideQueueRm.deq;
+        
+        let rm = tagAllocToReadTlpGenPipelineQ.first;
+        tagAllocToReadTlpGenPipelineQ.deq;
 
         let channelIdx = readTagAllocKeepOrderQueue.first;
         readTagAllocKeepOrderQueue.deq;
@@ -2042,6 +2069,8 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
         PcieTlpDataBusSegBundle payloadAsPcieDataBundleA = unpack(payloadDsA.data);
         PcieTlpDataBusSegBundle payloadAsPcieDataBundleB = unpack(payloadDsB.data);
 
+        
+
         if (hasHeaderA) begin
             headerOut[0] = headerA;
             tlpHeaderBufferPipeInQueueVec[0].deq;
@@ -2057,6 +2086,12 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
             dvalidOut[1] = pack(hasPayloadA && (payloadExceedHalfA || (!payloadExceedHalfA && isSegment1Or3UsedA)));
 
 
+            $display(
+                "time=%0t:", $time, toGreen(" mkTlpHeaderAndDataCombinator mixOutputIdle"),
+                toBlue(", channelDataLogicStateA="), fshow(channelDataLogicStateA),
+                toBlue(", payloadAsPcieDataBundleA="), fshow(payloadAsPcieDataBundleA) 
+            );
+
             case (channelDataLogicStateA) 
                 TlpHeaderAndDataCombinatorChannelDataStateHN: begin
                     dataOut[2] = payloadAsPcieDataBundleA[2];
@@ -2070,8 +2105,13 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
                     dvalidOut[2] = 1; dvalidOut[3] = pack(isSegment1Or3UsedA);
                     eopOut[2] = pack(!isSegment1Or3UsedA); eopOut[3] = pack(isSegment1Or3UsedA);
                 end
-                TlpHeaderAndDataCombinatorChannelDataStateLL: begin
-                    eopOut[0] = pack(!isSegment1Or3UsedA); eopOut[1] = pack(isSegment1Or3UsedA);
+                TlpHeaderAndDataCombinatorChannelDataStateLL, TlpHeaderAndDataCombinatorChannelDataStateND: begin
+                    if (channelDataLogicStateA == TlpHeaderAndDataCombinatorChannelDataStateLL) begin
+                        eopOut[0] = pack(!isSegment1Or3UsedA); eopOut[1] = pack(isSegment1Or3UsedA);
+                    end
+                    else begin
+                        eopOut[0] = 1;
+                    end
 
                     if (hasHeaderB) begin
                         headerOut[2] = headerB;
@@ -2082,6 +2122,12 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
                     if (hasPayloadB) begin
                         tlpDataStreamPipeInQueueVec[1].deq;
                     end
+
+                    $display(
+                        "time=%0t:", $time, toGreen(" mkTlpHeaderAndDataCombinator mixOutputIdle"),
+                        toBlue(", channelDataLogicStateB="), fshow(channelDataLogicStateB),
+                        toBlue(", payloadAsPcieDataBundleB="), fshow(payloadAsPcieDataBundleB) 
+                    );
 
                     case (channelDataLogicStateB)
                         TlpHeaderAndDataCombinatorChannelDataStateLL: begin
@@ -2108,9 +2154,6 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
                             eopOut[2] = 1;
                         end
                     endcase
-                end
-                TlpHeaderAndDataCombinatorChannelDataStateND: begin
-                    eopOut[0] = 1;
                 end
             endcase
 
@@ -2344,7 +2387,7 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
                 endcase
             end
             TlpHeaderAndDataCombinatorChannelDataStateND: begin
-                eopOut[0] = 1;
+                immFail("should not reach here. In this state, channel A must have data", $format(""));
             end
         endcase
 
@@ -2532,7 +2575,7 @@ module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
                 endcase
             end
             TlpHeaderAndDataCombinatorChannelDataStateND: begin
-                eopOut[0] = 1;
+                immFail("should not reach here. In this state, channel A must have data", $format(""));
             end
         endcase
 

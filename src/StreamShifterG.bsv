@@ -1089,7 +1089,7 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
             leftShifter.streamPipeIn.enq(ds);
         end
         // $display(
-        //     "time=%0t: ", $time, toGreen("decideDirection"),
+        //     "time=%0t: ", $time, toGreen("mkBiDirectionStreamShifterLsbRightG decideDirection"),
         //     toBlue(", offset="), fshow(offset),
         //     toBlue(", ds="), fshow(ds)
         // );

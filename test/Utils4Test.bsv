@@ -270,23 +270,32 @@ endmodule
 
 // this interface is used in timing test, it will reduce a wide signal into a single bit, and keep all
 // input signale not optmized away by backend tools when doing synthesize and PnR timing measurement.
-interface ForceKeepWideSignals#(type tData);
-    method Bool out;
+interface ForceKeepWideSignals#(type tData, type tOut);
+    method tOut out;
     interface PipeIn#(tData) bitsPipeIn;
 endinterface
 
-module mkForceKeepWideSignals(ForceKeepWideSignals#(tData)) provisos (Bits#(tData, szData));
+module mkForceKeepWideSignals(ForceKeepWideSignals#(tData, tOut)) provisos (
+        Bits#(tData, szData),
+        Bits#(tOut, szOut),
+        NumAlias#(TDiv#(szData, szOut), nSegWidth)
+    );
     
     FIFOF#(tData) inQ <- mkFIFOF;
     Reg#(tData) prevDataReg <- mkReg(unpack(0));
-    Reg#(Bool) outReg <- mkRegU;
+    Reg#(tOut) outReg <- mkRegU;
 
     rule doReduce;
         let inData = inQ.first;
         inQ.deq;
         let tmp = (pack(prevDataReg) ^ pack(inData));
         prevDataReg <= unpack(tmp << 1);
-        outReg <= msb(tmp) == 1;
+
+        Bit#(szOut) outBuf = 0;
+        for (Integer idx = 0; idx < valueOf(szOut); idx = idx + 1) begin
+            outBuf[idx] = tmp[fromInteger(idx * valueOf(nSegWidth))];
+        end
+        outReg <= unpack(outBuf);
     endrule
 
     method out = outReg;
