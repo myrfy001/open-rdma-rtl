@@ -1,6 +1,6 @@
 build
 output
-quartus_workdir
+quartus_workdir*
 test/cocotb/sim_build
 backend/verilog
 backend/achronix/ace/*/*

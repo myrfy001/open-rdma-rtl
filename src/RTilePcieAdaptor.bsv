@@ -205,7 +205,7 @@ interface RTilePcieAdaptor;
     interface PipeIn#(PcieTxBeat) pcieTxPipeIn;
 endinterface
 
-
+(* synthesize *)
 module mkRTilePcieAdaptor(RTilePcieAdaptor);
 
     PcieCreditCounterSink#(CreditCount, HeaderCreditUpdateCnt) rxCreditPH <- mkPcieCreditCounterSink(784);
@@ -1535,6 +1535,7 @@ interface DataStreamArbiterForCompletionBuffer;
     interface PipeOut#(MemoeyMapAlignedDataStreamWithMetadata) dataStreamPipeOut;
 endinterface
 
+(* synthesize *)
 module mkDataStreamArbiterForCompletionBuffer(DataStreamArbiterForCompletionBuffer);
     Vector#(PCIE_RX_HANDLER_CNT, PipeIn#(MemoeyMapAlignedDataStreamWithMetadata)) dataStreamPipeInVecInst = newVector;
     Vector#(PCIE_RX_HANDLER_CNT, FIFOF#(MemoeyMapAlignedDataStreamWithMetadata)) dataStreamPipeInQueueVec <- replicateM(mkFIFOF);
@@ -1955,7 +1956,7 @@ interface TlpHeaderAndDataCombinator;
     interface PipeOut#(PcieTxBeat)                                                                          pcieTxPipeOut;
 endinterface
 
-
+(* synthesize *)
 module mkTlpHeaderAndDataCombinator(TlpHeaderAndDataCombinator);
     Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieTlpHeaderBuffer))                          tlpHeaderBufferPipeInVecInst   = newVector;
     Vector#(TLP_HEADER_TX_ARBITTER_COUNT, PipeIn#(PcieStreamData))                               tlpDataStreamPipeInVecInst     = newVector;
@@ -2611,6 +2612,8 @@ interface RTilePcie;
     interface Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DtldStreamSlavePipesWide)     streamSlaveIfcVec;
 endinterface
 
+
+(* synthesize *)
 module mkRTilePcie(RTilePcie);
     let pcieRxStreamSegmentFork <- mkPcieRxStreamSegmentFork;
 
@@ -2622,9 +2625,7 @@ module mkRTilePcie(RTilePcie);
 
     for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
         cpltBufferVec[channelIdx] <- mkPcieCompletionBuffer(fromInteger(channelIdx));
-
         mkConnection(cpltBufferArbiterVec[channelIdx].dataStreamPipeOut, cpltBufferVec[channelIdx].dataStreamPipeIn);
-        
     end
 
     Vector#(TLP_HEADER_TX_ARBITTER_COUNT, DtldStreamArbiterSlave#(CHANNEL_PER_TLP_HEADER_TX_ARBITTER, PcieDataStreamDataLsbRight, ADDR, Length)) arbiterVec <- replicateM(mkDtldStreamArbiterSlave(valueOf(PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT), False));

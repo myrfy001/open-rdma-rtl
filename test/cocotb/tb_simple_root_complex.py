@@ -146,8 +146,8 @@ async def small_desc_fp_test(dut):
 
     mem = tb.rc.mem_pool.alloc_region(1024*1024)
     mem_base = mem.get_absolute_address(0)
-    for idx, data in enumerate(range(256)):
-        mem[mem_base+idx] = data
+    for idx, data in enumerate(len(mem)):
+        mem[mem_base+idx] = data & 0xFF
 
     dut.startTest_isStart.value = 1
     await RisingEdge(tb.clock)

@@ -18,6 +18,7 @@ import ConnectableF::*;
 import PcieTypes :: *;
 import StreamShifterG :: *;
 import DtldStream :: *;
+import AddressChunker :: *;
 
 `include "PcieMacros.bsv"
 
@@ -437,6 +438,10 @@ interface TestRTileDmaReadWriteSimple;
 
 endinterface
 
+// since the beat size is a const value, so no need to return value dynamically. Only need a placeholder to satify function signature.
+typedef 128                              RTILE_DATA_BUS_BYTE_WIDTH;
+typedef TLog#(RTILE_DATA_BUS_BYTE_WIDTH) RTILE_BEAT_ALIGN_BIT_NUM;   // 7
+
 module mkTestRTileDmaReadWriteSimple(TestRTileDmaReadWriteSimple);
     let dut <- mkRTilePcie;
     let rawInterfaceAdaptor <- mkRTilePcieAdaptor;
@@ -447,50 +452,117 @@ module mkTestRTileDmaReadWriteSimple(TestRTileDmaReadWriteSimple);
     Reg#(Bool) isStartedReg <- mkReg(False);
     Reg#(Word) runStepReg   <- mkReg(0);
 
+    Vector#(NUMERIC_TYPE_FOUR, PipeOut#(Length)) readAddrRandPipeOutVec <- replicateM(mkRandomLenPipeOut(0, 1024*1024-1));
+    Vector#(NUMERIC_TYPE_FOUR, PipeOut#(Length)) readLenRandPipeOutVec <- replicateM(mkRandomLenPipeOut(1, 512+100));
+
+    Vector#(NUMERIC_TYPE_FOUR, PipeOut#(Length)) writeAddrRandPipeOutVec <- replicateM(mkRandomLenPipeOut(0, 1024*1024-1));
+    Vector#(NUMERIC_TYPE_FOUR, PipeOut#(Length)) writeLenRandPipeOutVec <- replicateM(mkRandomLenPipeOut(1, 512+100));
+
+    function Tuple2#(ADDR, ADDR) alignAddrForRtileBeat(ADDR addr, BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+        Bit#(RTILE_BEAT_ALIGN_BIT_NUM) zeroPadding = 0;
+        ADDR alignedAddr = unpack({addr[valueOf(ADDR_WIDTH)-1 : valueOf(RTILE_BEAT_ALIGN_BIT_NUM)], zeroPadding});
+        ADDR addrRemainder = unpack({zeroPadding, addr[valueOf(RTILE_BEAT_ALIGN_BIT_NUM) - 1 : 0]});
+        return tuple2(alignedAddr, addrRemainder);
+    endfunction
+
+    function Tuple2#(Length, Length) devideLengthForRtileBeat(Length len, BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+        Bit#(RTILE_BEAT_ALIGN_BIT_NUM) zeroPadding = 0;
+        Length dividedLen = {zeroPadding, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : valueOf(RTILE_BEAT_ALIGN_BIT_NUM)]};
+        Length divideRemainder = {zeroPadding, len[valueOf(RTILE_BEAT_ALIGN_BIT_NUM) - 1 : 0]};
+        return tuple2(dividedLen, divideRemainder);
+    endfunction
+
+    function Bool isAddrAndLengthLowerPartSumOverflowForRtileBeat(Length len, BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+        Bit#(RTILE_BEAT_ALIGN_BIT_NUM) lowerBits = len[valueOf(RTILE_BEAT_ALIGN_BIT_NUM)-1 : 0];
+        return len[valueOf(RTILE_BEAT_ALIGN_BIT_NUM)] == 1 && !isZeroR(lowerBits);
+    endfunction
+
+    function Length getChunkSizeForRtileBeat(BeatAddressChunkTypeDontCarePlaceHolder _dontcare);
+        return fromInteger(valueOf(RTILE_DATA_BUS_BYTE_WIDTH));
+    endfunction
+
+
+    Vector#(NUMERIC_TYPE_FOUR, AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH))) readAddrChunkerVec <- replicateM(
+        mkAddressChunkMetaCalculator(
+            alignAddrForRtileBeat,
+            devideLengthForRtileBeat,
+            isAddrAndLengthLowerPartSumOverflowForRtileBeat,
+            getChunkSizeForRtileBeat
+        )); 
+
+    
+
+
+    Vector#(256, Byte) linerIncrByteVec = reverse(genVector);
+    let linerIncrByteVecAsBit = pack(linerIncrByteVec);
+
     rule doTest if (isStartedReg && runStepReg < 1000);
         if (runStepReg == 0) begin
             $display("%t, ----------------start do test----------------------", $time);
         end
         runStepReg <= runStepReg + 1;
 
-        let writeMeta = DtldStreamMemAccessMeta {
-            addr: 'h0,
-            totalLen: 16
-        };
-        let writeData = DtldStreamData {
-            data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777_88888888_99999999,
-            startByteIdx: 0,
-            byteNum: 16,
-            isFirst: True,
-            isLast: True
-        };
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx=idx + 1) begin
+            let readAddr = readAddrRandPipeOutVec[idx].first;
+            readAddrRandPipeOutVec[idx].deq;
 
-        let readMeta = DtldStreamMemAccessMeta {
-            addr: 4,
-            totalLen: 17
-        };
+            let readLen = readLenRandPipeOutVec[idx].first;
+            readLenRandPipeOutVec[idx].deq;
 
-        case (runStepReg)
-            0: begin
-                dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+            let writeAddr = writeAddrRandPipeOutVec[idx].first;
+            writeAddrRandPipeOutVec[idx].deq;
 
-                dut.streamSlaveIfcVec[1].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                dut.streamSlaveIfcVec[1].writePipeIfc.writeDataPipeIn.enq(writeData);
+            let writeLen = writeLenRandPipeOutVec[idx].first;
+            writeLenRandPipeOutVec[idx].deq;
 
-                dut.streamSlaveIfcVec[2].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                dut.streamSlaveIfcVec[2].writePipeIfc.writeDataPipeIn.enq(writeData);
-
-                dut.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                dut.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
+            if (curWriteReqMetaMaybeVec[idx] matches tagged Valid .curWriteReqMeta) begin
+                if (writeLen <= 512) begin
+                    let writeMeta = DtldStreamMemAccessMeta {
+                        addr: writeAddr,
+                        totalLen: writeLen
+                    };
+                    let writeData = DtldStreamData {
+                        data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777_88888888_99999999,
+                        startByteIdx: 0,
+                        byteNum: 16,
+                        isFirst: True,
+                        isLast: True
+                    };
+                end
             end
-            100: begin
-                dut.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                dut.streamSlaveIfcVec[1].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                dut.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                dut.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
+            else begin
+                // if ()
             end
-        endcase
+
+            if (readLen <= 512) begin
+                let readMeta = DtldStreamMemAccessMeta {
+                    addr: 4,
+                    totalLen: 17
+                };
+            end
+
+            case (runStepReg)
+                0: begin
+                    dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+                    dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+
+                    dut.streamSlaveIfcVec[1].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+                    dut.streamSlaveIfcVec[1].writePipeIfc.writeDataPipeIn.enq(writeData);
+
+                    dut.streamSlaveIfcVec[2].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+                    dut.streamSlaveIfcVec[2].writePipeIfc.writeDataPipeIn.enq(writeData);
+
+                    dut.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+                    dut.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
+                end
+                100: begin
+                    dut.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
+                    dut.streamSlaveIfcVec[1].readPipeIfc.readMetaPipeIn.enq(readMeta);
+                    dut.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
+                    dut.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
+                end
+            endcase
+        end
         
     endrule
 

@@ -5,7 +5,7 @@ CLK ?= rdma_clock
 OOC ?= 1
 
 BACKENDDIR ?= $(shell readlink -f ./)
-QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir
+QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
 RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			$(BACKENDDIR)/../src/verilog/*.v \
 			$(BACKENDDIR)/../src/verilog/**/*.v
@@ -56,8 +56,11 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOPMODULE ?= mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest
 
-TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
+# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+# TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
+
+TARGETFILE ?= ../test/TestFTilePcieAdaptor.bsv
+TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
 
 
 

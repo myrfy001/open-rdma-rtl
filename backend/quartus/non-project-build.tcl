@@ -3,20 +3,32 @@ package require ::quartus::project
 load_package flow
 
 set quartus_work_dir 		$::env(QUARTUS_WORKDIR)
-set project_name  	$::env(PROJ_NAME)
-set revision_name   $::env(REV_NAME)
-set top_module 		$::env(TOP)
-set rtl_dirs 		$::env(RTL_DIRS)
-set device 			$::env(DEVICE)
-set family 			$::env(FAMILY)
+set project_name  			$::env(PROJ_NAME)
+set revision_name   		$::env(REV_NAME)
+set top_module 				$::env(TOP)
+set rtl_dirs 				$::env(RTL_DIRS)
+set device 					$::env(DEVICE)
+set family 					$::env(FAMILY)
 
 
 proc addFilesToProj {dir_list} {
+	global $quartus_work_dir
+
+	set verilog_snapshot_dir "$quartus_work_dir/verilog_snapshot_dir"
+	file mkdir $verilog_snapshot_dir
+
+	set snapshot_file_list {}
+
 	foreach dir $dir_list {
-		foreach file [ glob -- $dir] {
-			set_global_assignment -name VERILOG_FILE $file
-			puts "add file to project: $file"
+		foreach filename [ glob -- $dir] {
+			set filename_without_path [file tail filename]
+			puts "add file to project: $filename"
+			lappend $snapshot_file_list "$verilog_snapshot_dir/$filename_without_path"
 		}
+	}
+
+	foreach filename snapshot_file_list {
+		set_global_assignment -name VERILOG_FILE $filename
 	}
 }
 
