@@ -21,6 +21,103 @@ import DtldStream :: *;
 import AddressChunker :: *;
 
 
+module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
+    let dut <- mkFtileMacRxPingPongSingleChannelProcessor;
+
+    Reg#(Byte) injectStepReg <- mkReg(0);
+    Reg#(Word) checkStepReg <- mkReg(0);
+
+    rule injectBeat if (injectStepReg <= 2);
+        injectStepReg <= injectStepReg + 1;
+        let inputMeta = ?;
+        case (injectStepReg)
+            0: begin
+                // normal case, output one packet
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1}),
+                    eop         : unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            1: begin
+                // normal case, output one packet, but has empty field at head and tail
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+        endcase
+        dut.metaPipeIn.enq(inputMeta);
+    endrule
+
+    rule checkBeat;
+        checkStepReg <= checkStepReg + 1;
+        let startStepOffset = 1;
+
+        let outMeta0 = ?;
+        let outMeta1 = ?;
+        let outMeta2 = ?;
+        let overflowFlag = ?;
+
+        if (dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty) begin
+            dut.metaMaybePipeOutVec[0].deq; 
+            dut.metaMaybePipeOutVec[1].deq;
+            dut.metaMaybePipeOutVec[2].deq;
+            dut.packetNumOverflowAffectNextBeatPipeOut.deq;
+            outMeta0 = fromMaybe(?, dut.metaMaybePipeOutVec[0].first);
+            outMeta1 = fromMaybe(?, dut.metaMaybePipeOutVec[1].first);
+            outMeta2 = fromMaybe(?, dut.metaMaybePipeOutVec[2].first);
+            overflowFlag = dut.packetNumOverflowAffectNextBeatPipeOut.first;
+        end
+
+        case (checkStepReg)
+            (1 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error at step 15",
+                    $format("")
+                );
+            end
+            (1 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && !isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 15 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True,
+                    "check error",
+                    $format("")
+                );
+            end
+            (2 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (2 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && !isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 1 && 
+                    outMeta0.zeroBasedValidSegCnt == 12 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True,
+                    "check error",
+                    $format("outMeta0=", fshow(outMeta0), "outMeta1=", fshow(outMeta1), "outMeta2=", fshow(outMeta2))
+                );
+            end
+        endcase
+
+        if (checkStepReg > 200) begin
+            $finish(1);
+        end
+    endrule
+endmodule
+
 
 interface TestFtileMacAdaptorTimingTest;
     method Bit#(128) getOutput;

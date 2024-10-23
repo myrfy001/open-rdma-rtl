@@ -71,8 +71,11 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestGearBoxArbiter.bsv`
 # TESTCASE=mkTestBitmapPreMerge
 
-FILE=`ls TestRTilePcieAdaptor.bsv`
-TESTCASE=mkTestRTilePcieAdaptorTx
+# FILE=`ls TestRTilePcieAdaptor.bsv`
+# TESTCASE=mkTestRTilePcieAdaptorTx
+
+FILE=`ls TestFTileMacAdaptor.bsv`
+TESTCASE=mkTestFtileMacRxPingPongSingleChannelProcessor
 
 # FILE=`ls TestStreamShifterG.bsv`
 # TESTCASE=mkTestBiDirectionStreamShifterG
@@ -80,6 +83,8 @@ TESTCASE=mkTestRTilePcieAdaptorTx
 # FILE=`ls TestTop.bsv`
 # TESTCASE=mkTestTop
 # TESTCASE=mkTestTopNoMockHost
+
+
 
 
 
