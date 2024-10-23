@@ -212,6 +212,7 @@ endmodule
 
 
 typedef 3 FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT;
+typedef Bit#(TLog#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT)) FtileMacRxPingPongMetaOutputChannelIdx;
 typedef 4 FTILE_MAC_RX_HANDLER_CNT;
 typedef TLog#(FTILE_MAC_RX_HANDLER_CNT) FTILE_MAC_RX_HANDLER_IDX_WIDTH;
 typedef Bit#(FTILE_MAC_RX_HANDLER_IDX_WIDTH) FtileMacRxHandlerIdx;
@@ -243,19 +244,21 @@ typedef struct {
 } FtileMacRxPingPongSingleChannelProcessorOutputMeta deriving(FShow, Bits);
 
 interface FtileMacRxPingPongSingleChannelProcessor;
-    interface PipeIn#(FtileMacRxPingPongSingleChannelProcessorInputMeta)    metaPipeIn;
+    interface PipeIn#(FtileMacRxPingPongSingleChannelProcessorInputMeta)                        metaPipeIn;
     interface Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
-                      PipeOut#(FtileMacRxPingPongSingleChannelProcessorOutputMeta))  metaPipeOutVec;
+                      PipeOut#(Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)))     metaMaybePipeOutVec;
+    interface PipeOut#(Bool)                                                                    packetNumOverflowInCurrentBeatPipeOut;
 endinterface
 
-
+(* synthesize *)
 module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChannelProcessor);
     FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta) metaPipeInQueue <- mkFIFOF;
-    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeOutQueueVec <- replicateM(mkFIFOF);
-    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, PipeOut#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeOutVecInst = newVector;
+    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FIFOF#(Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta))) metaMaybePipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, PipeOut#(Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta))) metaMaybePipeOutVecInst = newVector;
+    FIFOF#(Bool) packetNumOverflowInCurrentBeatPipeOutQueue <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT); idx = idx + 1) begin
-        metaPipeOutVecInst[idx] = toPipeOut(metaPipeOutQueueVec[idx]);
+        metaMaybePipeOutVecInst[idx] = toPipeOut(metaMaybePipeOutQueueVec[idx]);
     end
 
     Reg#(Bool)                                              isIdleReg                   <- mkReg(True);
@@ -263,22 +266,30 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
     Reg#(Bool)                                              currentPacketHasErrorReg    <- mkReg(False);
     Reg#(FtileMacSegmentIdx)                                curProcessingSegIdxReg      <- mkReg(0);
     Reg#(FtileMacSegmentIdx)                                curSegNumForThisPacketReg   <- mkReg(0);
+    Reg#(FtileMacRxPingPongMetaOutputChannelIdx)            curOutChannelIdxReg         <- mkReg(0);
+    Reg#(Bool)                                              isPacketNotEndReg           <- mkReg(False);
+    Reg#(Bool)                                              isPacketNumOverflowReg      <- mkReg(False);
 
     rule handle;
         let currentMeta;
         let curProcessingSegIdx;
         let curSegNumForThisPacket;
+        let curOutChannelIdx;
+        let isPacketNumOverflow;
         if (isIdleReg) begin
-            currentMeta             = curProcessingMetaReg;
-            curProcessingSegIdx     = 0;
-            curSegNumForThisPacket  = 0;
-        end
-        else begin
             currentMeta                 = metaPipeInQueue.first;
             metaPipeInQueue.deq;
-
+            curProcessingSegIdx     = 0;
+            curSegNumForThisPacket  = 0;
+            curOutChannelIdx        = 0;
+            isPacketNumOverflow     = False;
+        end
+        else begin
+            currentMeta                 = curProcessingMetaReg;
             curProcessingSegIdx         = curProcessingSegIdxReg;
             curSegNumForThisPacket      = curSegNumForThisPacketReg;
+            curOutChannelIdx            = curOutChannelIdxReg;
+            isPacketNumOverflow         = isPacketNumOverflowReg;
         end
 
         FtileMacSegmentIdx              start_seg_idx               = curProcessingSegIdx;              
@@ -286,8 +297,9 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
         FtileMacEopEmpty                last_seg_empty_byte_cnt     = truncate(pack(currentMeta.eop_empty));    
         Bool                            isFirst                     = unpack(lsb(currentMeta.sop));                    
         Bool                            isLast                      = unpack(lsb(currentMeta.eop));                     
-        Bool                            isError = ?;                    
+        Bool                            isError                     = unpack(lsb(currentMeta.fcs_error));                    
         
+
 
         let outPacketMeta = FtileMacRxPingPongSingleChannelProcessorOutputMeta {
             buffer_addr                 : currentMeta.buffer_addr,
@@ -299,6 +311,77 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             isError                     : isError
         };
 
+        
+        let isPacketNotEnd = isPacketNotEndReg;
+        case ({pack(isLast), pack(isFirst)})
+            2'b00: begin // middle or empty, depending on isPacketNotEnd
+                if (isPacketNotEnd) begin
+                    curSegNumForThisPacket = curSegNumForThisPacket + 1;
+                end
+            end
+            2'b01: begin // first
+                immAssert(
+                    !isPacketNotEnd,
+                    "isPacketNotEnd should be False for first packet here.",
+                    $format("")
+                );
+                isPacketNotEnd = True;
+                curSegNumForThisPacket = curSegNumForThisPacket + 1;
+            end
+            2'b10: begin // last
+                immAssert(
+                    isPacketNotEnd,
+                    "isPacketNotEnd should be True for last packet here.",
+                    $format("")
+                );
+                isPacketNotEnd = False;
+                curSegNumForThisPacket = 0;
+            end
+            2'b11: begin // only
+                immAssert(
+                    !isPacketNotEnd,
+                    "isPacketNotEnd should be False for only packet here.",
+                    $format("")
+                );
+                isPacketNotEnd = False;
+                curSegNumForThisPacket = 0;
+            end
+        endcase
+
+        Bool isLastSegInThisBeat = curProcessingSegIdxReg == fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT) - 1);
+        Bool needEnqueueOutputMeta = isLastSegInThisBeat || isLast;
+        if (needEnqueueOutputMeta) begin
+            if (curOutChannelIdx == fromInteger(valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT)-1)) begin
+                isPacketNumOverflow = True;
+            end
+
+            if (isLastSegInThisBeat) begin
+                packetNumOverflowInCurrentBeatPipeOutQueue.enq(isPacketNumOverflow);
+                if (!isPacketNumOverflow) begin
+                    case (curOutChannelIdx)
+                        0: begin
+                            metaMaybePipeOutQueueVec[0].enq(tagged Valid outPacketMeta);
+                            metaMaybePipeOutQueueVec[1].enq(tagged Invalid);
+                            metaMaybePipeOutQueueVec[2].enq(tagged Invalid);
+                        end
+                        1: begin
+                            metaMaybePipeOutQueueVec[1].enq(tagged Valid outPacketMeta);
+                            metaMaybePipeOutQueueVec[2].enq(tagged Invalid);
+                        end
+                        2: begin
+                            metaMaybePipeOutQueueVec[2].enq(tagged Valid outPacketMeta);
+                        end
+                    endcase
+                    curOutChannelIdx = curOutChannelIdx + 1;
+                end
+            end
+            else begin
+                if (!isPacketNumOverflow) begin
+                    metaMaybePipeOutQueueVec[curOutChannelIdx].enq(tagged Valid outPacketMeta);
+                    curOutChannelIdx = curOutChannelIdx + 1;
+                end
+            end
+        end
 
         currentMeta.eop_empty   = unpack(pack(currentMeta.eop_empty) >> valueOf(FTILE_MAC_EOP_EMPTY_WIDTH));
         currentMeta.sop         = unpack(pack(currentMeta.sop)       >> valueOf(SizeOf#(Bool)));        
@@ -308,12 +391,20 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
         if (curProcessingSegIdx == maxBound) begin
             isIdleReg <= True;
         end
+
+        curProcessingSegIdxReg      <= curProcessingSegIdx + 1;
+        curProcessingMetaReg        <= currentMeta;
+        curSegNumForThisPacketReg   <= curSegNumForThisPacket;
+        curOutChannelIdxReg         <= curOutChannelIdx;
+        isPacketNumOverflowReg      <= isPacketNumOverflow;
+        isPacketNotEndReg           <= isPacketNotEnd;
     endrule
 
 
 
     interface metaPipeIn = toPipeIn(metaPipeInQueue);
-    interface metaPipeOutVec = metaPipeOutVecInst;
+    interface metaMaybePipeOutVec = metaMaybePipeOutVecInst;
+    interface packetNumOverflowInCurrentBeatPipeOut = toPipeOut(packetNumOverflowInCurrentBeatPipeOutQueue);
 endmodule
 
 
