@@ -60,7 +60,7 @@ FAMILY ?= Agilex 7
 # TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
 
 TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
+TOPMODULE ?= mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest
 
 
 

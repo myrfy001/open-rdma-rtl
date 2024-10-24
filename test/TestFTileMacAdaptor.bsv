@@ -538,6 +538,68 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
 endmodule
 
 
+
+interface TestFtileMacRxPingPongSingleChannelProcessorTimingTest;
+    method Bit#(128) getOutput;
+endinterface
+
+
+(* synthesize *)
+module mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest(TestFtileMacRxPingPongSingleChannelProcessorTimingTest);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+    Reg#(Bool) runReg <- mkReg(True);
+    Reg#(Bit#(128)) outReg <- mkReg(0);
+
+    let dut <- mkFtileMacRxPingPongSingleChannelProcessor;
+
+    ForceKeepWideSignals#(Bit#(128), Bit#(128)) signalKeeperForOutput   <- mkForceKeepWideSignals; 
+    
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+
+
+    rule injectInput if (runReg);
+        let randValue1 <- randSource1.get;
+        let inputMeta = unpack(truncate(randValue1));
+        dut.metaPipeIn.enq(inputMeta);
+    endrule
+
+    rule handleDutOutput;
+        dut.metaMaybePipeOutVec[0].deq; 
+        dut.metaMaybePipeOutVec[1].deq;
+        dut.metaMaybePipeOutVec[2].deq;
+        dut.packetNumOverflowAffectNextBeatPipeOut.deq;
+
+        let outMeta0 = dut.metaMaybePipeOutVec[0].first;
+        let outMeta1 = dut.metaMaybePipeOutVec[1].first;
+        let outMeta2 = dut.metaMaybePipeOutVec[2].first;
+        let overflowFlag = dut.packetNumOverflowAffectNextBeatPipeOut.first;
+
+        signalKeeperForOutput.bitsPipeIn.enq(zeroExtend({pack(outMeta0), pack(outMeta1), pack(outMeta2), pack(overflowFlag)}));
+    endrule
+
+    rule forwardOutput;
+        outReg <= signalKeeperForOutput.out;
+    endrule
+
+
+
+    method getOutput = outReg;
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 interface TestFtileMacAdaptorTimingTest;
     method Bit#(128) getOutput;
 endinterface

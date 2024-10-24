@@ -11,8 +11,7 @@ set device 					$::env(DEVICE)
 set family 					$::env(FAMILY)
 
 
-proc addFilesToProj {dir_list} {
-	global $quartus_work_dir
+proc addFilesToProj {quartus_work_dir dir_list} {
 
 	set verilog_snapshot_dir "$quartus_work_dir/verilog_snapshot_dir"
 	file mkdir $verilog_snapshot_dir
@@ -21,14 +20,20 @@ proc addFilesToProj {dir_list} {
 
 	foreach dir $dir_list {
 		foreach filename [ glob -- $dir] {
-			set filename_without_path [file tail filename]
-			puts "add file to project: $filename"
-			lappend $snapshot_file_list "$verilog_snapshot_dir/$filename_without_path"
+			set filename_without_path [file tail $filename]
+			set snapshot_file_name "$verilog_snapshot_dir/$filename_without_path"
+
+			# create snapshot of RTL files, so different compile version won't affact each other
+			file copy -force $filename $snapshot_file_name
+
+			puts "add file to RTL snapshot: $filename"
+			lappend snapshot_file_list $snapshot_file_name
 		}
 	}
 
-	foreach filename snapshot_file_list {
+	foreach filename $snapshot_file_list {
 		set_global_assignment -name VERILOG_FILE $filename
+		puts "add file to project: $filename"
 	}
 }
 
@@ -62,7 +67,7 @@ set need_to_close_project 1
 
 # Make assignments
 if {$make_assignments} {
-	addFilesToProj $rtl_dirs
+	addFilesToProj $quartus_work_dir $rtl_dirs
 
 	set_global_assignment -name TOP_LEVEL_ENTITY $top_module
 	set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
