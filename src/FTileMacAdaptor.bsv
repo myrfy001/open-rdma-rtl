@@ -288,6 +288,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
         let startSegIdx;
         let isFirstForOutput;
         let hasMetEopButNotSop;
+        let tmpMetaBufferVec;
         if (isIdleReg) begin
             isIdleReg <= False;
             currentMeta                 = metaPipeInQueue.first;
@@ -299,6 +300,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             startSegIdx             = 0;
             isFirstForOutput        = False;
             hasMetEopButNotSop      = False;
+            tmpMetaBufferVec        = replicate(tagged Invalid);
         end
         else begin
             currentMeta                         = curProcessingMetaReg;
@@ -309,6 +311,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             startSegIdx                         = curFirstSegIdxForThisPacketReg;
             isFirstForOutput                    = isFirstForOutputReg;
             hasMetEopButNotSop                  = hasMetEopButNotSopReg;
+            tmpMetaBufferVec                    = outputMetaTmpBufferVecReg;
         end
             
         FtileMacEopEmpty                lastSegEmptyByteCnt         = truncate(pack(currentMeta.eopEmpty));    
@@ -320,7 +323,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
         
         case ({pack(eopFlag), pack(sopFlag)})
             2'b00: begin // middle or empty
-                zeroBasedValidSegCntForPacket = zeroBasedValidSegCntForPacket + 1;
+                // Nothing to do
             end
             2'b01: begin // first
                 zeroBasedValidSegCntForPacket = 0;
@@ -329,14 +332,13 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
                 hasMetEopButNotSop = False;
             end
             2'b10: begin // last
-                zeroBasedValidSegCntForPacket = zeroBasedValidSegCntForPacket + 1;
                 hasMetEopButNotSop = True;
             end
             2'b11: begin // only
-                zeroBasedValidSegCntForPacket = 0;
-                startSegIdx = curProcessingSegIdx;
-                isFirstForOutput = True;
-                hasMetEopButNotSop = True;
+                immFail(
+                    "should not reach here. FTile can't output sop and eop in the same segment",
+                    $format("")
+                );
             end
         endcase
 
@@ -350,18 +352,19 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             isError                     : isError
         };
 
+        zeroBasedValidSegCntForPacket = zeroBasedValidSegCntForPacket + 1;
+
         Bool isLastSegInThisBeat = curProcessingSegIdxReg == fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT) - 1);
         Bool needOutputOutputMeta = (isLastSegInThisBeat && !hasMetEopButNotSop) || eopFlag;
-        let tmpMetaBufferVec = outputMetaTmpBufferVecReg;
-
+        
+        
         if (needOutputOutputMeta) begin
-            if (curOutChannelIdx == fromInteger(valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT)-1)) begin
+            if (curOutChannelIdx == fromInteger(valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT))) begin
                 isPacketNumOverflow = True;
             end
             
             if (!isPacketNumOverflow) begin
                 tmpMetaBufferVec[curOutChannelIdx] = tagged Valid outPacketMeta;
-                outputMetaTmpBufferVecReg <= tmpMetaBufferVec;
                 curOutChannelIdx = curOutChannelIdx + 1;
 
                 $display(
@@ -402,6 +405,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
         isPacketNumOverflowReg              <= isPacketNumOverflow;
         isFirstForOutputReg                 <= isFirstForOutput;
         hasMetEopButNotSopReg               <= hasMetEopButNotSop;
+        outputMetaTmpBufferVecReg           <= tmpMetaBufferVec;
 
         $display(
             "time=%0t:", $time, toGreen(" mkFtileMacRxPingPongSingleChannelProcessor handle"),

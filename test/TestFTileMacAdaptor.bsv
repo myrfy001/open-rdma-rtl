@@ -24,14 +24,14 @@ import AddressChunker :: *;
 module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
     let dut <- mkFtileMacRxPingPongSingleChannelProcessor;
 
-    Reg#(Byte) injectStepReg <- mkReg(0);
+    Reg#(Byte) injectStepReg <- mkReg(1);
     Reg#(Word) checkStepReg <- mkReg(0);
 
-    rule injectBeat if (injectStepReg <= 2);
+    rule injectBeat if (injectStepReg <= 15);
         injectStepReg <= injectStepReg + 1;
         let inputMeta = ?;
         case (injectStepReg)
-            0: begin
+            1: begin
                 // normal case, output one packet
                 inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
                     bufferAddr  : zeroExtend(injectStepReg),
@@ -41,13 +41,146 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
                 };
             end
-            1: begin
+            2: begin
                 // normal case, output one packet, but has empty field at head and tail
                 inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
                     bufferAddr  : zeroExtend(injectStepReg),
                     eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
                     sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0}),
                     eop         : unpack({1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            3: begin
+                // normal case, output one packet, but has empty field at head, and not reach eop inn this beat
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            4: begin
+                // normal case, output one packet, but no sop, only have eop, so it's a packet with previous beat
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            5: begin
+                // normal case, output two packet
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            6: begin
+                // normal case, output two packet, but has gap between them
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            7: begin
+                // normal case, output three packet, has gap between them
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0}),
+                    eop         : unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            8: begin
+                // normal case, output three packet, has gap between them, first one is a eop, last one is a sop
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            9: begin
+                // normal case, output one packet, no sop or eop, it's middle packet
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            10: begin
+                // abnormal case, output four packet, with last segment invalid. won't affact next beat.
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            11: begin
+                // abnormal case, output four packet, with last segment just eop. won't affact next beat.
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1}),
+                    eop         : unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            12: begin
+                // abnormal case, output four packet, with last segment not eop. will affact next beat, should output overflow True
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            13: begin
+                // abnormal case, output four packet, with first packet continous from previous beat,
+                // and last segment not eop. will affact next beat, should output overflow True
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            14: begin
+                // abnormal case, output five packet, with first packet continous from previous beat,
+                // and last segment not eop. will affact next beat, should output overflow True
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    eop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
+                    fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
+                };
+            end
+            15: begin
+                // abnormal case, output five packet, with first packet continous from previous beat,
+                // and last segment eop. will not affact next beat, should output overflow False
+                inputMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+                    bufferAddr  : zeroExtend(injectStepReg),
+                    eopEmpty    : unpack({3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0, 3'd0}),       
+                    sop         : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0}),
+                    eop         : unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0}),
                     fcsError    : unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0})
                 };
             end
@@ -90,14 +223,14 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta0.zeroBasedValidSegCnt == 15 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True,
                     "check error",
-                    $format("")
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (2 * 16 - 1 + startStepOffset): begin
                 immAssert(
                     !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
                     "check error",
-                    $format("")
+                    $format("outMeta0=", fshow(outMeta0), "outMeta1=", fshow(outMeta1), "outMeta2=", fshow(outMeta2))
                 );
             end
             (2 * 16 + startStepOffset): begin
@@ -107,10 +240,296 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta0.zeroBasedValidSegCnt == 12 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True,
                     "check error",
-                    $format("outMeta0=", fshow(outMeta0), "outMeta1=", fshow(outMeta1), "outMeta2=", fshow(outMeta2))
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (3 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (3 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && !isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 1 && 
+                    outMeta0.zeroBasedValidSegCnt == 14 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (4 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (4 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && !isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 4 &&
+                    outMeta0.isFirst == False && outMeta0.isLast == True,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (5 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (5 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 1 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 3 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (6 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (6 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 1 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 4 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (7 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (7 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 1 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 4 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 14 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (8 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (8 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 2 &&
+                    outMeta0.isFirst == False && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 4 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 14 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == False &&
+                    overflowFlag == False,
+                    "check error",$format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (9 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (9 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && !isValid(dut.metaMaybePipeOutVec[1].first) && !isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 15 &&
+                    outMeta0.isFirst == False && outMeta0.isLast == False &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (10 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (10 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 2 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 5 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (11 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (11 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 2 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 5 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (12 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (12 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == True && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 2 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 5 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == True,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (13 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (13 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == False && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 2 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 5 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == True,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (14 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (14 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == False && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 2 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 5 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == True,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
+                );
+            end
+            (15 * 16 - 1 + startStepOffset): begin
+                immAssert(
+                    !dut.metaMaybePipeOutVec[0].notEmpty && !dut.metaMaybePipeOutVec[1].notEmpty && !dut.metaMaybePipeOutVec[2].notEmpty && !dut.packetNumOverflowAffectNextBeatPipeOut.notEmpty,
+                    "check error",
+                    $format("")
+                );
+            end
+            (15 * 16 + startStepOffset): begin
+                immAssert(
+                    isValid(dut.metaMaybePipeOutVec[0].first) && isValid(dut.metaMaybePipeOutVec[1].first) && isValid(dut.metaMaybePipeOutVec[2].first) &&
+                    outMeta0.startSegIdx == 0 && 
+                    outMeta0.zeroBasedValidSegCnt == 1 &&
+                    outMeta0.isFirst == False && outMeta0.isLast == True &&
+                    outMeta1.startSegIdx == 2 && 
+                    outMeta1.zeroBasedValidSegCnt == 1 &&
+                    outMeta1.isFirst == True && outMeta1.isLast == True &&
+                    outMeta2.startSegIdx == 5 && 
+                    outMeta2.zeroBasedValidSegCnt == 1 &&
+                    outMeta2.isFirst == True && outMeta2.isLast == True &&
+                    overflowFlag == False,
+                    "check error",
+                    $format("outMeta0=", fshow(dut.metaMaybePipeOutVec[0].first), "outMeta1=", fshow(dut.metaMaybePipeOutVec[1].first), "outMeta2=", fshow(dut.metaMaybePipeOutVec[2].first), "overflowFlag=", fshow(overflowFlag))
                 );
             end
         endcase
+        
 
         if (checkStepReg > 200) begin
             $finish(1);
