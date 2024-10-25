@@ -46,17 +46,17 @@ typedef Bit#(FTILE_TX_MAC_ERROR_WIDTH) FtileTxMacError;
 typedef Vector#(FTILE_MAC_SEGMENT_CNT, FtileTxMacError) SegmentTxMacErrorSignalBundle;
 
 
-typedef 1024 FTILE_MAC_TLP_DATA_BUNDLE_WIDTH;
-typedef TDiv#(FTILE_MAC_TLP_DATA_BUNDLE_WIDTH, FTILE_MAC_SEGMENT_CNT)   FTILE_MAC_TLP_DATA_SEGMENT_WIDTH;    // 64
-typedef TDiv#(FTILE_MAC_TLP_DATA_SEGMENT_WIDTH, BYTE_WIDTH)             FTILE_MAC_TLP_DATA_SEGMENT_BYTE_WIDTH;    // 8
-typedef Bit#(FTILE_MAC_TLP_DATA_SEGMENT_WIDTH)                          FtileMacTlpDataSegment;
-typedef Vector#(FTILE_MAC_SEGMENT_CNT, FtileMacTlpDataSegment)          FtileMacTlpDataBusSegBundle;
+typedef 1024 FTILE_MAC_DATA_BUNDLE_WIDTH;
+typedef TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, FTILE_MAC_SEGMENT_CNT)       FTILE_MAC_DATA_SEGMENT_WIDTH;    // 64
+typedef TDiv#(FTILE_MAC_DATA_SEGMENT_WIDTH, BYTE_WIDTH)                 FTILE_MAC_TLP_DATA_SEGMENT_BYTE_WIDTH;    // 8
+typedef Bit#(FTILE_MAC_DATA_SEGMENT_WIDTH)                              FtileMacDataSegment;
+typedef Vector#(FTILE_MAC_SEGMENT_CNT, FtileMacDataSegment)             FtileMacDataBusSegBundle;
 
 
 typedef Bit#(TLog#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT)) DispatchChannelIdx;
 
 typedef struct {
-    FtileMacTlpDataBusSegBundle     data;
+    FtileMacDataBusSegBundle        data;
     SegmentInframeSignalBundle      inframe;
     SegmentEopEmptySignalBundle     eop_empty;
     SegmentSopSignalBundle          sop;
@@ -67,7 +67,7 @@ typedef struct {
 } FtileMacRxBeat deriving (Bits, FShow);
 
 typedef struct {
-    FtileMacTlpDataBusSegBundle     data;
+    FtileMacDataBusSegBundle        data;
     SegmentInframeSignalBundle      inframe;
     SegmentEopEmptySignalBundle     eop_empty;
     SegmentSopSignalBundle          sop;
@@ -82,7 +82,7 @@ interface FTileMacAdaptorRx;
     // input port
     (* prefix="" *)
     method Action setRxInputData(
-        FtileMacTlpDataBusSegBundle     data,
+        FtileMacDataBusSegBundle        data,
         Bool                            valid,
         SegmentInframeSignalBundle      inframe,
         SegmentEopEmptySignalBundle     eop_empty,
@@ -102,7 +102,7 @@ interface FTileMacAdaptorTx;
     method Action setTxInputData(Bool ready);
 
     // output port
-    method FtileMacTlpDataBusSegBundle      data;
+    method FtileMacDataBusSegBundle         data;
     method Bool                             valid;
     method SegmentInframeSignalBundle       inframe;
     method SegmentEopEmptySignalBundle      eop_empty;
@@ -145,7 +145,7 @@ module mkFTileMacAdaptor(FTileMacAdaptor);
     interface FTileMacAdaptorRx rx;
         // input port
         method Action setRxInputData(
-            FtileMacTlpDataBusSegBundle     data,
+            FtileMacDataBusSegBundle        data,
             Bool                            valid,
             SegmentInframeSignalBundle      inframe,
             SegmentEopEmptySignalBundle     eop_empty,
@@ -197,7 +197,7 @@ module mkFTileMacAdaptor(FTileMacAdaptor);
 
         // output port
         
-        method FtileMacTlpDataBusSegBundle      data        = txValid ? ftileMacTxPipeInQueue.first.data        : unpack(0);
+        method FtileMacDataBusSegBundle         data        = txValid ? ftileMacTxPipeInQueue.first.data        : unpack(0);
         method SegmentInframeSignalBundle       inframe     = txValid ? ftileMacTxPipeInQueue.first.inframe     : unpack(0);
         method SegmentEopEmptySignalBundle      eop_empty   = txValid ? ftileMacTxPipeInQueue.first.eop_empty   : unpack(0);
         method SegmentTxMacErrorSignalBundle    error       = txValid ? ftileMacTxPipeInQueue.first.error       : unpack(0);
@@ -213,7 +213,11 @@ endmodule
 
 typedef 3 FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT;
 typedef Bit#(TLog#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT)) FtileMacRxPingPongMetaOutputChannelIdx;
-typedef 4 FTILE_MAC_RX_HANDLER_CNT;
+
+typedef 4 FTILE_MAC_USER_LOGIC_CHANNEL_CNT;
+typedef 256 FTILE_MAC_USER_LOGIC_DATA_WIDTH;
+
+typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT FTILE_MAC_RX_HANDLER_CNT;
 typedef TLog#(FTILE_MAC_RX_HANDLER_CNT) FTILE_MAC_RX_HANDLER_IDX_WIDTH;
 typedef Bit#(FTILE_MAC_RX_HANDLER_IDX_WIDTH) FtileMacRxHandlerIdx;
 
@@ -241,27 +245,27 @@ typedef struct {
     Bool                            isFirst;                    // 1
     Bool                            isLast;                     // 1
     Bool                            isError;                    // 1
+} FtileMacRxPingPongSingleChannelOutputPacketMeta deriving(FShow, Bits);
+
+typedef struct {
+    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
+            Maybe#(FtileMacRxPingPongSingleChannelOutputPacketMeta))    packetMetaVector;
+    Bool                                                                packetNumOverflowAffectNextBeat;
 } FtileMacRxPingPongSingleChannelProcessorOutputMeta deriving(FShow, Bits);
 
+
 interface FtileMacRxPingPongSingleChannelProcessor;
-    interface PipeIn#(FtileMacRxPingPongSingleChannelProcessorInputMeta)                        metaPipeIn;
-    interface Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
-                      PipeOut#(Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)))     metaMaybePipeOutVec;
-    interface PipeOut#(Bool)                                                                    packetNumOverflowAffectNextBeatPipeOut;
+    interface PipeIn#(FtileMacRxPingPongSingleChannelProcessorInputMeta)                        beatMetaPipeIn;
+    interface PipeOut#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)                      packetsMetaPipeOut;
 endinterface
 
 (* synthesize *)
 module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChannelProcessor);
-    FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta) metaPipeInQueue <- mkFIFOF;
-    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FIFOF#(Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta))) metaMaybePipeOutQueueVec <- replicateM(mkFIFOF);
-    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, PipeOut#(Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta))) metaMaybePipeOutVecInst = newVector;
-    FIFOF#(Bool) packetNumOverflowAffectNextBeatPipeOutQueue <- mkFIFOF;
+    FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta)  beatMetaPipeInQueue      <- mkFIFOF;
+    FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) packetsMetaPipeOutQueue  <- mkFIFOF;
 
-    Reg#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta))) outputMetaTmpBufferVecReg<- mkReg(replicate(tagged Invalid));
+    Reg#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, Maybe#(FtileMacRxPingPongSingleChannelOutputPacketMeta))) outputMetaTmpBufferVecReg<- mkReg(replicate(tagged Invalid));
 
-    for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT); idx = idx + 1) begin
-        metaMaybePipeOutVecInst[idx] = toPipeOut(metaMaybePipeOutQueueVec[idx]);
-    end
 
     Reg#(Bool)                                              isIdleReg                               <- mkReg(True);
     Reg#(FtileMacRxPingPongSingleChannelProcessorInputMeta) curProcessingMetaReg                    <- mkRegU;
@@ -291,8 +295,8 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
         let tmpMetaBufferVec;
         if (isIdleReg) begin
             isIdleReg <= False;
-            currentMeta                 = metaPipeInQueue.first;
-            metaPipeInQueue.deq;
+            currentMeta             = beatMetaPipeInQueue.first;
+            beatMetaPipeInQueue.deq;
             curProcessingSegIdx     = 0;
             zeroBasedValidSegCntForPacket  = 0;
             curOutChannelIdx        = 0;
@@ -342,7 +346,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             end
         endcase
 
-        let outPacketMeta = FtileMacRxPingPongSingleChannelProcessorOutputMeta {
+        let outPacketMeta = FtileMacRxPingPongSingleChannelOutputPacketMeta {
             bufferAddr                  : currentMeta.bufferAddr,
             startSegIdx                 : startSegIdx,
             zeroBasedValidSegCnt        : zeroBasedValidSegCntForPacket,
@@ -381,11 +385,21 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             // (i.e., the last overflow packet end before the last segment). For example, for a 16-seg beat,
             // there are 4 eop in seg 2, 4, 6, 8, and seg 9-15 doesn't have data, in this case, the beat is 
             // overflowed, but the seg 15 is not eop. In this case, the error should not affact next beat.
-            packetNumOverflowAffectNextBeatPipeOutQueue.enq(hasMetEopButNotSop ? False : isPacketNumOverflow);
+            Bool packetNumOverflowAffectNextBeat = hasMetEopButNotSop ? False : isPacketNumOverflow;
+            
+            Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
+                Maybe#(FtileMacRxPingPongSingleChannelOutputPacketMeta))    packetMetaVector = newVector;
 
             for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT); idx = idx + 1) begin
-                metaMaybePipeOutQueueVec[idx].enq(tmpMetaBufferVec[idx]);
+                packetMetaVector[idx] = tmpMetaBufferVec[idx];
             end
+
+            let outputMeta = FtileMacRxPingPongSingleChannelProcessorOutputMeta {
+                packetMetaVector: packetMetaVector,
+                packetNumOverflowAffectNextBeat: packetNumOverflowAffectNextBeat
+            }; 
+
+            packetsMetaPipeOutQueue.enq(outputMeta);
         end
 
         currentMeta.eopEmpty    = unpack(pack(currentMeta.eopEmpty)  >> valueOf(FTILE_MAC_EOP_EMPTY_WIDTH));
@@ -422,9 +436,73 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
 
 
 
-    interface metaPipeIn = toPipeIn(metaPipeInQueue);
-    interface metaMaybePipeOutVec = metaMaybePipeOutVecInst;
-    interface packetNumOverflowAffectNextBeatPipeOut = toPipeOut(packetNumOverflowAffectNextBeatPipeOutQueue);
+    interface beatMetaPipeIn = toPipeIn(beatMetaPipeInQueue);
+    interface packetsMetaPipeOut = toPipeOut(packetsMetaPipeOutQueue);
+endmodule
+
+
+typedef FTILE_MAC_SEGMENT_CNT FTILE_MAC_RX_PING_PONG_CHANNEL_CNT;
+typedef Bit#(TLog#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT)) FtileMacRxPingPongChannelIdx;
+
+typedef struct {
+    FtileMaxRxBramBufferAddr addr;
+    FtileMacDataBusSegBundle data;
+} FtileMacRxBramBufferWriteReq deriving (FShow, Bits);
+
+
+interface FtileMacRxBeatFork;
+    interface PipeIn#(FtileMacRxBeat)                                                           rxBetaPipeIn;
+    interface Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
+                      PipeOut#(FtileMacRxPingPongSingleChannelProcessorInputMeta))              rxPingPongChannelMetaPipeOutVec;
+    interface PipeOut#(FtileMacRxBramBufferWriteReq)                                            rxBramWriteReqPipeOut;
+endinterface
+
+
+(* synthesize *)
+module mkFtileMacRxBeatFork(FtileMacRxBeatFork);
+    
+    FIFOF#(FtileMacRxBeat)                                                  rxBetaPipeInQueue                   <- mkFIFOF;
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
+            PipeOut#(FtileMacRxPingPongSingleChannelProcessorInputMeta))    rxPingPongChannelMetaPipeOutVecInst = newVector;
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
+            FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta))      rxPingPongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
+    FIFOF#(FtileMacRxBramBufferWriteReq)                                    rxBramWriteReqPipeOutQueue          <- mkFIFOF;
+
+    Reg#(FtileMaxRxBramBufferAddr) addrPtrReg <- mkReg(0);
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+        rxPingPongChannelMetaPipeOutVecInst[idx] = toPipeOut(rxPingPongChannelMetaPipeOutQueueVec[idx]);
+    end
+
+    Reg#(FtileMacRxPingPongChannelIdx) channelIdxReg <- mkReg(0);
+
+    rule handleInputBeat;
+        let rxBeat = rxBetaPipeInQueue.first;
+        rxBetaPipeInQueue.deq;
+        
+        let outMeta = FtileMacRxPingPongSingleChannelProcessorInputMeta {
+            bufferAddr      : addrPtrReg,
+            eopEmpty        : rxBeat.eop_empty,  
+            sop             : rxBeat.sop,       
+            eop             : rxBeat.eop,       
+            fcsError        : rxBeat.fcs_error  
+        };
+        rxPingPongChannelMetaPipeOutQueueVec[channelIdxReg].enq(outMeta);
+
+        let bramWriteReq = FtileMacRxBramBufferWriteReq {
+            addr    : addrPtrReg,
+            data    : rxBeat.data
+        };
+        rxBramWriteReqPipeOutQueue.enq(bramWriteReq);
+
+        addrPtrReg      <= addrPtrReg    + 1;
+        channelIdxReg   <= channelIdxReg + 1;
+    endrule
+    
+
+    interface rxBetaPipeIn                      = toPipeIn(rxBetaPipeInQueue);
+    interface rxPingPongChannelMetaPipeOutVec   = rxPingPongChannelMetaPipeOutVecInst;
+    interface rxBramWriteReqPipeOut             = toPipeOut(rxBramWriteReqPipeOutQueue);
 endmodule
 
 
@@ -433,17 +511,42 @@ endmodule
 
 
 
+interface FTileMac;
+    interface PipeIn#(FtileMacRxBeat) ftilemacRxPipeIn;
+    interface PipeOut#(FtileMacTxBeat) ftilemacTxPipeOut;
+endinterface
 
 
+(* synthesize *)
+module mkFTileMac(FTileMac);
+    // FIFOF#(FtileMacRxBeat) ftilemacRxPipeInQueue    <- mkFIFOF;
+    FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue   <- mkFIFOF;
+
+    let ftileMacRxBeatFork <- mkFtileMacRxBeatFork;
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FtileMacRxPingPongSingleChannelProcessor) pingPongChannelVec <- replicateM(mkFtileMacRxPingPongSingleChannelProcessor); 
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+        mkConnection(ftileMacRxBeatFork.rxPingPongChannelMetaPipeOutVec[idx], pingPongChannelVec[idx].beatMetaPipeIn);
+    end
+
+    interface ftilemacRxPipeIn  = ftileMacRxBeatFork.rxBetaPipeIn;
+    interface ftilemacTxPipeOut = toPipeOut(ftilemacTxPipeOutQueue);
+endmodule
+
+// typedef Vector#(
+//     FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
+//     FtileMacRxPingPongSingleChannelProcessorOutputChannelBundle) FtileMacRxPingPongChannelMetaJoinInputIfc;
+
+// interface FtileMacRxPingPongChannelMetaJoin;
+//     interface FtileMacRxPingPongChannelMetaJoinInputIfc metaPipeInVec;
+// endinterface
 
 
-
-
-
-
-
-
-
+// module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
+//     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT,
+//             Vector#FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
+//             Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(replicateM(mkFIFOF));
+// endmodule
 
 
 // typedef 3 FTILE_MAC_TX_MAX_PACKET_CNT;
@@ -458,11 +561,11 @@ endmodule
 // } RawFtileMacRxStreamWithMeta deriving(Bits, FShow);
 
 
-// typedef Bit#(FTILE_MAC_TLP_DATA_BUNDLE_WIDTH) FtileMacDataStreamDataLsbRight;
-// typedef Bit#(FTILE_MAC_TLP_DATA_BUNDLE_WIDTH) FtileMacDataStreamDataLsbLeft;
-// typedef TDiv#(FTILE_MAC_TLP_DATA_BUNDLE_WIDTH, BYTE_WIDTH) FTILE_MAC_TLP_DATA_BUNDLE_BYTE_CNT;
+// typedef Bit#(FTILE_MAC_DATA_BUNDLE_WIDTH) FtileMacDataStreamDataLsbRight;
+// typedef Bit#(FTILE_MAC_DATA_BUNDLE_WIDTH) FtileMacDataStreamDataLsbLeft;
+// typedef TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, BYTE_WIDTH) FTILE_MAC_TLP_DATA_BUNDLE_BYTE_CNT;
 // typedef Bit#(TAdd#(1, TLog#(FTILE_MAC_TLP_DATA_BUNDLE_BYTE_CNT))) FtileMacDataStreamByteCnt;
-// typedef Bit#(TLog#(TDiv#(FTILE_MAC_TLP_DATA_BUNDLE_WIDTH, BYTE_WIDTH))) FtileMacDataStreamByteIdx;
+// typedef Bit#(TLog#(TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, BYTE_WIDTH))) FtileMacDataStreamByteIdx;
 
 // typedef DtldStreamData#(FtileMacDataStreamDataLsbRight) FtileMacDataStreamLsbRight;
 // typedef DtldStreamData#(FtileMacDataStreamDataLsbLeft) FtileMacDataStreamLsbLeft;
@@ -1988,7 +2091,7 @@ endmodule
 
 
 
-//         FtileMacTlpDataBusSegBundle         dataOut    = unpack(0);
+//         FtileMacDataBusSegBundle         dataOut    = unpack(0);
 //         FtileMacTlpHeaderBusSegBundle       headerOut  = unpack(0);
 //         SopSignalBundle                 sopOut     = unpack(0);
 //         EopSignalBundle                 eopOut     = unpack(0);
@@ -1996,8 +2099,8 @@ endmodule
 //         DvalidSignalBundle              dvalidOut  = unpack(0);
 
 
-//         FtileMacTlpDataBusSegBundle payloadAsFtileMacDataBundleA = unpack(payloadDsA.data);
-//         FtileMacTlpDataBusSegBundle payloadAsFtileMacDataBundleB = unpack(payloadDsB.data);
+//         FtileMacDataBusSegBundle payloadAsFtileMacDataBundleA = unpack(payloadDsA.data);
+//         FtileMacDataBusSegBundle payloadAsFtileMacDataBundleB = unpack(payloadDsB.data);
 
         
 
@@ -2149,13 +2252,13 @@ endmodule
 
 //     rule mixOutputSendA if (stateReg == TlpHeaderAndDataCombinatorStateSendA);
 
-//         FtileMacTlpDataBusSegBundle payloadAsFtileMacDataBundleA    = ?;
+//         FtileMacDataBusSegBundle payloadAsFtileMacDataBundleA    = ?;
 //         Bool                    payloadExceedHalfA          = ?;
 //         Bool                    isSegment1Or3UsedA          = ?;
 //         Bool                    hasMoreDataA                = ?;
 
 //         let                     prevPayloadDsA                  = fromMaybe(?, previousBeatMaybeReg);
-//         FtileMacTlpDataBusSegBundle previousPayloadAsFtileMacDataBundle = unpack(prevPayloadDsA.data);
+//         FtileMacDataBusSegBundle previousPayloadAsFtileMacDataBundle = unpack(prevPayloadDsA.data);
 //         Bool                    isPreviousBeatSegment1Or3Used   = isDataStreamSegment1Or3Used(prevPayloadDsA);
 //         Bool                    isPreviousPayloadExceedHalf     = !isDataStreamBeatUseLessThanHalf(prevPayloadDsA);
 
@@ -2164,7 +2267,7 @@ endmodule
 //             newPayloadDsA = tlpDataStreamPipeInQueueVec[0].first;
 //             tlpDataStreamPipeInQueueVec[0].deq;
 //         end
-//         FtileMacTlpDataBusSegBundle newPayloadAsFtileMacDataBundle  = unpack(newPayloadDsA.data);
+//         FtileMacDataBusSegBundle newPayloadAsFtileMacDataBundle  = unpack(newPayloadDsA.data);
 //         Bool                    isNewBeatSegment1Or3Used    = isDataStreamSegment1Or3Used(newPayloadDsA);
 //         Bool                    isNewPayloadExceedHalf      = !isDataStreamBeatUseLessThanHalf(newPayloadDsA);
 
@@ -2212,7 +2315,7 @@ endmodule
 //                 hasPayloadB = True;
 //             end
 //         end        
-//         FtileMacTlpDataBusSegBundle payloadAsFtileMacDataBundleB = unpack(payloadDsB.data);
+//         FtileMacDataBusSegBundle payloadAsFtileMacDataBundleB = unpack(payloadDsB.data);
 //         Bool payloadExceedHalfB = !isDataStreamBeatUseLessThanHalf(payloadDsB);
 //         Bool hasMoreDataB = !payloadDsB.isLast;
 //         Bool isSegment1Or3UsedB = isDataStreamSegment1Or3Used(payloadDsB);
@@ -2240,7 +2343,7 @@ endmodule
 
 
 
-//         FtileMacTlpDataBusSegBundle         dataOut    = unpack(0);
+//         FtileMacDataBusSegBundle         dataOut    = unpack(0);
 //         FtileMacTlpHeaderBusSegBundle       headerOut  = unpack(0);
 //         SopSignalBundle                 sopOut     = unpack(0);
 //         EopSignalBundle                 eopOut     = unpack(0);
@@ -2337,13 +2440,13 @@ endmodule
 
 //     rule mixOutputSendB if (stateReg == TlpHeaderAndDataCombinatorStateSendB);
 
-//         FtileMacTlpDataBusSegBundle payloadAsFtileMacDataBundleB    = ?;
+//         FtileMacDataBusSegBundle payloadAsFtileMacDataBundleB    = ?;
 //         Bool                    payloadExceedHalfB          = ?;
 //         Bool                    isSegment1Or3UsedB          = ?;
 //         Bool                    hasMoreDataB                = ?;
 
 //         let                     prevPayloadDsB                  = fromMaybe(?, previousBeatMaybeReg);
-//         FtileMacTlpDataBusSegBundle previousPayloadAsFtileMacDataBundle = unpack(prevPayloadDsB.data);
+//         FtileMacDataBusSegBundle previousPayloadAsFtileMacDataBundle = unpack(prevPayloadDsB.data);
 //         Bool                    isPreviousBeatSegment1Or3Used   = isDataStreamSegment1Or3Used(prevPayloadDsB);
 //         Bool                    isPreviousPayloadExceedHalf     = !isDataStreamBeatUseLessThanHalf(prevPayloadDsB);
 
@@ -2352,7 +2455,7 @@ endmodule
 //             newPayloadDsB = tlpDataStreamPipeInQueueVec[1].first;
 //             tlpDataStreamPipeInQueueVec[1].deq;
 //         end
-//         FtileMacTlpDataBusSegBundle newPayloadAsFtileMacDataBundle  = unpack(newPayloadDsB.data);
+//         FtileMacDataBusSegBundle newPayloadAsFtileMacDataBundle  = unpack(newPayloadDsB.data);
 //         Bool                    isNewBeatSegment1Or3Used    = isDataStreamSegment1Or3Used(newPayloadDsB);
 //         Bool                    isNewPayloadExceedHalf      = !isDataStreamBeatUseLessThanHalf(newPayloadDsB);
 
@@ -2400,7 +2503,7 @@ endmodule
 //                 hasPayloadA = True;
 //             end
 //         end        
-//         FtileMacTlpDataBusSegBundle payloadAsFtileMacDataBundleA = unpack(payloadDsA.data);
+//         FtileMacDataBusSegBundle payloadAsFtileMacDataBundleA = unpack(payloadDsA.data);
 //         Bool payloadExceedHalfA = !isDataStreamBeatUseLessThanHalf(payloadDsA);
 //         Bool hasMoreDataA = !payloadDsA.isLast;
 //         Bool isSegment1Or3UsedA = isDataStreamSegment1Or3Used(payloadDsA);
@@ -2428,7 +2531,7 @@ endmodule
 
 
 
-//         FtileMacTlpDataBusSegBundle         dataOut    = unpack(0);
+//         FtileMacDataBusSegBundle         dataOut    = unpack(0);
 //         FtileMacTlpHeaderBusSegBundle       headerOut  = unpack(0);
 //         SopSignalBundle                 sopOut     = unpack(0);
 //         EopSignalBundle                 eopOut     = unpack(0);
@@ -2527,94 +2630,6 @@ endmodule
 //     interface ftilemacTxPipeOut     = toPipeOut(ftilemacTxPipeOutQueue);
 // endmodule
 
-
-
-
-
-
-// typedef DtldStreamSlavePipes#(FtileMacDataStreamDataLsbRight, ADDR, Length) DtldStreamSlavePipesWide;
-
-
-// interface FTileMac;
-//     interface PipeIn#(FtileMacRxBeat) ftilemacRxPipeIn;
-//     interface PipeOut#(FtileMacTxBeat) ftilemacTxPipeOut;
-//     interface Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DtldStreamSlavePipesWide)     streamSlaveIfcVec;
-// endinterface
-
-
-// (* synthesize *)
-// module mkFTileMac(FTileMac);
-//     let ftilemacRxStreamSegmentFork <- mkFtileMacRxStreamSegmentFork;
-
-//     Vector#(FTILE_MAC_RX_HANDLER_CNT, TlpDemuxAndConvertToMemMapStream) rxTlpHandlerVec <- replicateM(mkTlpDemuxAndConvertToMemMapStream);
-
-//     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, FtileMacCompletionBuffer) cpltBufferVec = newVector;
-
-//     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DataStreamArbiterForCompletionBuffer) cpltBufferArbiterVec <- replicateM(mkDataStreamArbiterForCompletionBuffer);
-
-//     for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
-//         cpltBufferVec[channelIdx] <- mkFtileMacCompletionBuffer(fromInteger(channelIdx));
-//         mkConnection(cpltBufferArbiterVec[channelIdx].dataStreamPipeOut, cpltBufferVec[channelIdx].dataStreamPipeIn);
-//     end
-
-//     Vector#(TLP_HEADER_TX_ARBITTER_COUNT, DtldStreamArbiterSlave#(CHANNEL_PER_TLP_HEADER_TX_ARBITTER, FtileMacDataStreamDataLsbRight, ADDR, Length)) arbiterVec <- replicateM(mkDtldStreamArbiterSlave(valueOf(FTILE_MAC_COMPLETION_BUFFER_TAG_SLOT_COUNT), False));
-//     Vector#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT, DtldStreamSlavePipesWide)     streamSlaveIfcVecInst = newVector;
-
-//     streamSlaveIfcVecInst[0] = arbiterVec[0].slaveIfcVec[0];
-//     streamSlaveIfcVecInst[1] = arbiterVec[0].slaveIfcVec[1];
-//     streamSlaveIfcVecInst[2] = arbiterVec[1].slaveIfcVec[0];
-//     streamSlaveIfcVecInst[3] = arbiterVec[1].slaveIfcVec[1];
-//     // Since the read data pipeout doesn't come from arbiter, but from the cplt buffer, so only overwrite this interface
-//     streamSlaveIfcVecInst[0].readPipeIfc.readDataPipeOut = cpltBufferVec[0].dataStreamPipeOut;
-//     streamSlaveIfcVecInst[1].readPipeIfc.readDataPipeOut = cpltBufferVec[1].dataStreamPipeOut;
-//     streamSlaveIfcVecInst[2].readPipeIfc.readDataPipeOut = cpltBufferVec[2].dataStreamPipeOut;
-//     streamSlaveIfcVecInst[3].readPipeIfc.readDataPipeOut = cpltBufferVec[3].dataStreamPipeOut;
-
-//     Vector#(TLP_HEADER_TX_ARBITTER_COUNT, FtileMacRequestTlpHeaderGen#(CHANNEL_PER_TLP_HEADER_TX_ARBITTER, FtileMacDataStreamDataLsbRight, ADDR, Length)) tlpHeaderGenVec <- replicateM(mkFtileMacRequestTlpHeaderGen);
-//     let tlpHeaderAndDataCombinator <- mkTlpHeaderAndDataCombinator;
-
-//     for (Integer idx = 0; idx < valueOf(TLP_HEADER_TX_ARBITTER_COUNT); idx = idx + 1) begin
-//         mkConnection(arbiterVec[idx].masterIfc.writePipeIfc.writeMetaPipeOut, tlpHeaderGenVec[idx].dtldStreamSlavePipes.writePipeIfc.writeMetaPipeIn);
-//         mkConnection(arbiterVec[idx].masterIfc.writePipeIfc.writeDataPipeOut, tlpHeaderGenVec[idx].dtldStreamSlavePipes.writePipeIfc.writeDataPipeIn);
-//         mkConnection(arbiterVec[idx].masterIfc.readPipeIfc.readMetaPipeOut, tlpHeaderGenVec[idx].dtldStreamSlavePipes.readPipeIfc.readMetaPipeIn);
-//         // read resp comes back out of order and handled by cplt buffer, so doesn't need go back through this arbiter.
-//         // mkConnection(arbiterVec[idx].masterIfc.readPipeIfc.readDataPipeIn, tlpHeaderGenVec[idx].dtldStreamSlavePipes.readPipeIfc.readDataPipeOut);
-
-//         mkConnection(arbiterVec[idx].writeSourceChannelIdPipeOut, tlpHeaderGenVec[idx].writeSourceChannelIdPipeIn);
-//         mkConnection(arbiterVec[idx].readSourceChannelIdPipeOut, tlpHeaderGenVec[idx].readSourceChannelIdPipeIn);
-
-//         mkConnection(tlpHeaderGenVec[idx].tagAllocPipeOutVec[0], cpltBufferVec[idx * 2 + 0].tagAllocPipeIn);
-//         mkConnection(tlpHeaderGenVec[idx].tagAllocPipeOutVec[1], cpltBufferVec[idx * 2 + 1].tagAllocPipeIn);
-
-//         mkConnection(cpltBufferVec[idx * 2 + 0].tagAllocPipeOut, tlpHeaderGenVec[idx].tagAllocPipeInVec[0]);
-//         mkConnection(cpltBufferVec[idx * 2 + 1].tagAllocPipeOut, tlpHeaderGenVec[idx].tagAllocPipeInVec[1]);
-
-//         mkConnection(tlpHeaderGenVec[idx].tlpHeaderBufferPipeOut, tlpHeaderAndDataCombinator.tlpHeaderBufferPipeInVec[idx]);
-//         mkConnection(tlpHeaderGenVec[idx].tlpDataStreamPipeOut, tlpHeaderAndDataCombinator.tlpDataStreamPipeInVec[idx]);
-//     end
-
-
-//     for (Integer handlerIdx = 0; handlerIdx < valueOf(FTILE_MAC_RX_HANDLER_CNT); handlerIdx = handlerIdx + 1) begin
-//         mkConnection(ftilemacRxStreamSegmentFork.tlpDataStreamPipeOutVec[handlerIdx], rxTlpHandlerVec[handlerIdx].tlpDataStreamPipeIn);
-//         mkConnection(ftilemacRxStreamSegmentFork.tlpHeaderPipeOutVec[handlerIdx], rxTlpHandlerVec[handlerIdx].tlpHeaderPipeIn);
-
-//         for (Integer channelIdx = 0; channelIdx < valueOf(GEARBOX_LOGIC_SIDE_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
-
-//             mkConnection(rxTlpHandlerVec[handlerIdx].tlpCpltDataStreamPipeOutVec[channelIdx], cpltBufferArbiterVec[channelIdx].dataStreamPipeInVec[handlerIdx]);
-        
-//             rule discardTlpHeader;
-                
-//                 rxTlpHandlerVec[handlerIdx].tlpCpltHeaderPipeOutVec[channelIdx].deq;
-                
-//             endrule
-//         end
-//     end
-
-
-//     interface ftilemacRxPipeIn      = ftilemacRxStreamSegmentFork.ftilemacRxPipeIn;
-//     interface streamSlaveIfcVec = streamSlaveIfcVecInst;
-//     interface ftilemacTxPipeOut     = tlpHeaderAndDataCombinator.ftilemacTxPipeOut;
-// endmodule
 
 
 
