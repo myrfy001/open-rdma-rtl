@@ -198,95 +198,95 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
         let overflowFlag = ?;
         let packestMeta = ?;
 
-        if (dut.packetsMetaPipeOut.notEmpty) begin
-            dut.packetsMetaPipeOut.deq; 
-            packestMeta = dut.packetsMetaPipeOut.first;
+        if (dut.packetsChunkMetaPipeOut.notEmpty) begin
+            dut.packetsChunkMetaPipeOut.deq; 
+            packestMeta = dut.packetsChunkMetaPipeOut.first;
 
-            outMeta0 = fromMaybe(?, packestMeta.packetMetaVector[0]);
-            outMeta1 = fromMaybe(?, packestMeta.packetMetaVector[1]);
-            outMeta2 = fromMaybe(?, packestMeta.packetMetaVector[2]);
+            outMeta0 = fromMaybe(?, packestMeta.packetChunkMetaVector[0]);
+            outMeta1 = fromMaybe(?, packestMeta.packetChunkMetaVector[1]);
+            outMeta2 = fromMaybe(?, packestMeta.packetChunkMetaVector[2]);
             overflowFlag = packestMeta.packetNumOverflowAffectNextBeat;
         end
 
         case (checkStepReg)
             (1 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (1 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && !isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && !isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 15 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (2 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("outMeta0=", fshow(outMeta0), "outMeta1=", fshow(outMeta1), "outMeta2=", fshow(outMeta2))
                 );
             end
             (2 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && !isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && !isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 1 && 
                     outMeta0.zeroBasedValidSegCnt == 12 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (3 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (3 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && !isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && !isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 1 && 
                     outMeta0.zeroBasedValidSegCnt == 14 &&
                     outMeta0.isFirst == True && outMeta0.isLast == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (4 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (4 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && !isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && !isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 4 &&
                     outMeta0.isFirst == False && outMeta0.isLast == True,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (5 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (5 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 1 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True &&
@@ -295,19 +295,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta1.isFirst == True && outMeta1.isLast == True &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (6 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (6 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 1 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True &&
@@ -316,19 +316,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta1.isFirst == True && outMeta1.isLast == True &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (7 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (7 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 1 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True &&
@@ -340,19 +340,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (8 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (8 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 2 &&
                     outMeta0.isFirst == False && outMeta0.isLast == True &&
@@ -363,37 +363,37 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.zeroBasedValidSegCnt == 1 &&
                     outMeta2.isFirst == True && outMeta2.isLast == False &&
                     overflowFlag == False,
-                    "check error",$format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    "check error",$format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (9 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (9 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && !isValid(packestMeta.packetMetaVector[1]) && !isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && !isValid(packestMeta.packetChunkMetaVector[1]) && !isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 15 &&
                     outMeta0.isFirst == False && outMeta0.isLast == False &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (10 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (10 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True &&
@@ -405,19 +405,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (11 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (11 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True &&
@@ -429,19 +429,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (12 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (12 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == True && outMeta0.isLast == True &&
@@ -453,19 +453,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == True,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (13 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (13 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == False && outMeta0.isLast == True &&
@@ -477,19 +477,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == True,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (14 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (14 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == False && outMeta0.isLast == True &&
@@ -501,19 +501,19 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == True,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (15 * 16 - 1 + startStepOffset): begin
                 immAssert(
-                    !dut.packetsMetaPipeOut.notEmpty,
+                    !dut.packetsChunkMetaPipeOut.notEmpty,
                     "check error",
                     $format("")
                 );
             end
             (15 * 16 + startStepOffset): begin
                 immAssert(
-                    isValid(packestMeta.packetMetaVector[0]) && isValid(packestMeta.packetMetaVector[1]) && isValid(packestMeta.packetMetaVector[2]) &&
+                    isValid(packestMeta.packetChunkMetaVector[0]) && isValid(packestMeta.packetChunkMetaVector[1]) && isValid(packestMeta.packetChunkMetaVector[2]) &&
                     outMeta0.startSegIdx == 0 && 
                     outMeta0.zeroBasedValidSegCnt == 1 &&
                     outMeta0.isFirst == False && outMeta0.isLast == True &&
@@ -525,7 +525,7 @@ module mkTestFtileMacRxPingPongSingleChannelProcessor(Empty);
                     outMeta2.isFirst == True && outMeta2.isLast == True &&
                     overflowFlag == False,
                     "check error",
-                    $format("outMeta0=", fshow(packestMeta.packetMetaVector[0]), "outMeta1=", fshow(packestMeta.packetMetaVector[1]), "outMeta2=", fshow(packestMeta.packetMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
+                    $format("outMeta0=", fshow(packestMeta.packetChunkMetaVector[0]), "outMeta1=", fshow(packestMeta.packetChunkMetaVector[1]), "outMeta2=", fshow(packestMeta.packetChunkMetaVector[2]), "overflowFlag=", fshow(overflowFlag))
                 );
             end
             (16 * 16 + startStepOffset): begin
@@ -563,9 +563,9 @@ module mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest(TestFtileMacRxPi
     endrule
 
     rule handleDutOutput;
-        dut.packetsMetaPipeOut.deq;
+        dut.packetsChunkMetaPipeOut.deq;
 
-        signalKeeperForOutput.bitsPipeIn.enq(zeroExtend(pack(dut.packetsMetaPipeOut.first)));
+        signalKeeperForOutput.bitsPipeIn.enq(zeroExtend(pack(dut.packetsChunkMetaPipeOut.first)));
     endrule
 
     rule forwardOutput;

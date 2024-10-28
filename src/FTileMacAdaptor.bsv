@@ -217,9 +217,8 @@ typedef Bit#(TLog#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT)) FtileMacRxPingPongMeta
 typedef 4 FTILE_MAC_USER_LOGIC_CHANNEL_CNT;
 typedef 256 FTILE_MAC_USER_LOGIC_DATA_WIDTH;
 
-typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT FTILE_MAC_RX_HANDLER_CNT;
-typedef TLog#(FTILE_MAC_RX_HANDLER_CNT) FTILE_MAC_RX_HANDLER_IDX_WIDTH;
-typedef Bit#(FTILE_MAC_RX_HANDLER_IDX_WIDTH) FtileMacRxHandlerIdx;
+typedef TLog#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT) FTILE_MAC_USER_LOGIC_CHANNEL_IDX_WIDTH;
+typedef Bit#(FTILE_MAC_USER_LOGIC_CHANNEL_IDX_WIDTH) FtileMacUserLogicChannelIdx;
 
 typedef 1024 FTILE_MAC_RX_BRAM_BUFFER_DEPTH;
 typedef TLog#(FTILE_MAC_RX_BRAM_BUFFER_DEPTH) FTILE_MAC_RX_BRAM_BUFFER_ADDR_WIDTH;
@@ -245,26 +244,25 @@ typedef struct {
     Bool                            isFirst;                    // 1
     Bool                            isLast;                     // 1
     Bool                            isError;                    // 1
-} FtileMacRxPingPongSingleChannelOutputPacketMeta deriving(FShow, Bits);
+} FtileMacRxPacketChunkMeta deriving(FShow, Bits);
 
 typedef struct {
-    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
-            Maybe#(FtileMacRxPingPongSingleChannelOutputPacketMeta))    packetMetaVector;
-    Bool                                                                packetNumOverflowAffectNextBeat;
+    Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, Maybe#(FtileMacRxPacketChunkMeta))    packetChunkMetaVector;
+    Bool                                                                                packetNumOverflowAffectNextBeat;
 } FtileMacRxPingPongSingleChannelProcessorOutputMeta deriving(FShow, Bits);
 
 
 interface FtileMacRxPingPongSingleChannelProcessor;
     interface PipeIn#(FtileMacRxPingPongSingleChannelProcessorInputMeta)                        beatMetaPipeIn;
-    interface PipeOut#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)                      packetsMetaPipeOut;
+    interface PipeOut#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)                      packetsChunkMetaPipeOut;
 endinterface
 
 (* synthesize *)
 module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChannelProcessor);
-    FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta)  beatMetaPipeInQueue      <- mkFIFOF;
-    FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) packetsMetaPipeOutQueue  <- mkFIFOF;
+    FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta)  beatMetaPipeInQueue          <- mkFIFOF;
+    FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) packetsChunkMetaPipeOutQueue <- mkFIFOF;
 
-    Reg#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, Maybe#(FtileMacRxPingPongSingleChannelOutputPacketMeta))) outputMetaTmpBufferVecReg<- mkReg(replicate(tagged Invalid));
+    Reg#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, Maybe#(FtileMacRxPacketChunkMeta))) outputMetaTmpBufferVecReg<- mkReg(replicate(tagged Invalid));
 
 
     Reg#(Bool)                                              isIdleReg                               <- mkReg(True);
@@ -346,7 +344,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             end
         endcase
 
-        let outPacketMeta = FtileMacRxPingPongSingleChannelOutputPacketMeta {
+        let outPacketMeta = FtileMacRxPacketChunkMeta {
             bufferAddr                  : currentMeta.bufferAddr,
             startSegIdx                 : startSegIdx,
             zeroBasedValidSegCnt        : zeroBasedValidSegCntForPacket,
@@ -388,18 +386,18 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
             Bool packetNumOverflowAffectNextBeat = hasMetEopButNotSop ? False : isPacketNumOverflow;
             
             Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
-                Maybe#(FtileMacRxPingPongSingleChannelOutputPacketMeta))    packetMetaVector = newVector;
+                Maybe#(FtileMacRxPacketChunkMeta))    packetChunkMetaVector = newVector;
 
             for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT); idx = idx + 1) begin
-                packetMetaVector[idx] = tmpMetaBufferVec[idx];
+                packetChunkMetaVector[idx] = tmpMetaBufferVec[idx];
             end
 
             let outputMeta = FtileMacRxPingPongSingleChannelProcessorOutputMeta {
-                packetMetaVector: packetMetaVector,
+                packetChunkMetaVector: packetChunkMetaVector,
                 packetNumOverflowAffectNextBeat: packetNumOverflowAffectNextBeat
             }; 
 
-            packetsMetaPipeOutQueue.enq(outputMeta);
+            packetsChunkMetaPipeOutQueue.enq(outputMeta);
         end
 
         currentMeta.eopEmpty    = unpack(pack(currentMeta.eopEmpty)  >> valueOf(FTILE_MAC_EOP_EMPTY_WIDTH));
@@ -437,7 +435,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
 
 
     interface beatMetaPipeIn = toPipeIn(beatMetaPipeInQueue);
-    interface packetsMetaPipeOut = toPipeOut(packetsMetaPipeOutQueue);
+    interface packetsChunkMetaPipeOut = toPipeOut(packetsChunkMetaPipeOutQueue);
 endmodule
 
 
@@ -533,20 +531,93 @@ module mkFTileMac(FTileMac);
     interface ftilemacTxPipeOut = toPipeOut(ftilemacTxPipeOutQueue);
 endmodule
 
-// typedef Vector#(
-//     FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
-//     FtileMacRxPingPongSingleChannelProcessorOutputChannelBundle) FtileMacRxPingPongChannelMetaJoinInputIfc;
-
-// interface FtileMacRxPingPongChannelMetaJoin;
-//     interface FtileMacRxPingPongChannelMetaJoinInputIfc metaPipeInVec;
-// endinterface
+typedef Vector#(
+    FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
+    PipeIn#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) FtileMacRxPingPongChannelMetaJoinInputIfc;
 
 
-// module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
-//     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT,
-//             Vector#FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, 
-//             Maybe#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(replicateM(mkFIFOF));
-// endmodule
+// each beat(packet chunk) is 128B, for 4kB packet, it uses about 32 chunk meta. To buffer about 4 4kB packet, use a 128 depth.
+typedef 128 PACKET_CHUNK_META_OUTPUT_BUFFER_DEPTH;
+
+// to select the most empty channel to dispatch, need to track the segment count in each output channel. Each 4kB packet has 512 8Byte segments,
+// so, we decide to use a max counter value that can hold about four 4kB packets, that is 512 * 4 = 2048
+typedef TLog#(2048) PACKET_BEAT_SEG_COUNTER_MAX_VALUE_WIDTH;
+typedef Bit#(PACKET_BEAT_SEG_COUNTER_MAX_VALUE_WIDTH) PacketBeatSegCnt;
+
+typedef struct {
+    FtileMacUserLogicChannelIdx         targetChannelIdx;
+    Maybe#(FtileMacRxPacketChunkMeta)   packetChunkMetaMaybe;
+} FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry deriving(Bits, FShow);
+
+interface FtileMacRxPingPongChannelMetaJoin;
+    interface FtileMacRxPingPongChannelMetaJoinInputIfc metaPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxPacketChunkMeta)) packetChunkMetaPipeOutVec;
+endinterface
+
+(* synthesize *)
+module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
+
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(mkFIFOF);
+    FtileMacRxPingPongChannelMetaJoinInputIfc metaPipeInVecInst = newVector; 
+
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxPacketChunkMeta))    packetChunkMetaPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxPacketChunkMeta))  packetChunkMetaPipeOutVecInst  = newVector; 
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+        metaPipeInVecInst[idx] = toPipeIn(metaPipeInQueueVec[idx]);
+    end
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+        packetChunkMetaPipeOutVecInst[idx] = toPipeOut(packetChunkMetaPipeOutQueueVec[idx]);
+    end
+
+
+    Reg#(FtileMacRxPingPongChannelIdx) pingPongChannelIdxReg <- mkReg(0);
+
+    Reg#(Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacUserLogicChannelIdx)) curUserLogicChannelDispatchOrderReg <- mkReg(vec(0, 1, 2, 3));
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Reg#(Bool)) outputChannelErrorFlagRegVec <- replicateM(mkReg(False));
+
+
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxPacketChunkMeta)) packetChunkMetaOutputBufferVec <- replicateM(mkSizedFIFOF(valueOf(PACKET_CHUNK_META_OUTPUT_BUFFER_DEPTH)));
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Count#(PacketBeatSegCnt)) outputChannelBufferUsedSegCounterVec <- replicateM(mkCount(0));
+
+    // Pipeline FIFOs
+    FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) selectedPingPongOutputChannelMetaPipelineQ <- mkFIFOF;
+    FIFOF#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry)) dispatchPacketChunkMetaPipelineQ <- mkFIFOF;
+
+    rule selectandForwardPingPongChannel;
+        pingPongChannelIdxReg <= pingPongChannelIdxReg + 1;
+
+        let pingPongOutputMeta = metaPipeInQueueVec[pingPongChannelIdxReg].first;
+        metaPipeInQueueVec[pingPongChannelIdxReg].deq;
+
+        selectedPingPongOutputChannelMetaPipelineQ.enq(pingPongOutputMeta);
+    endrule
+
+    rule dispatchToOutputChannel;
+        let pipelineInputEntry = dispatchPacketChunkMetaPipelineQ.first;
+        dispatchPacketChunkMetaPipelineQ.deq;
+
+        for (Integer userChannelIdx = 0; userChannelIdx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); userChannelIdx = userChannelIdx + 1) begin
+            Maybe#(FtileMacRxPacketChunkMeta) metaToOutputMaybe = tagged Invalid;
+            
+            for (Integer srcIdx = 0; srcIdx < valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT); srcIdx = srcIdx + 1) begin
+                let dispatchTargetInfo = pipelineInputEntry[srcIdx];
+                if (dispatchTargetInfo.targetChannelIdx == fromInteger(userChannelIdx)) begin
+                    metaToOutputMaybe = dispatchTargetInfo.packetChunkMetaMaybe;
+                end
+            end
+
+            if (metaToOutputMaybe matches tagged Valid .metaToOutput) begin
+                packetChunkMetaOutputBufferVec[userChannelIdx].enq(metaToOutput);
+                outputChannelBufferUsedSegCounterVec[userChannelIdx].incr(zeroExtend(metaToOutput.zeroBasedValidSegCnt)+1);
+            end            
+        end 
+    endrule
+
+    interface metaPipeInVec             = metaPipeInVecInst;
+    interface packetChunkMetaPipeOutVec = packetChunkMetaPipeOutVecInst;
+endmodule
 
 
 // typedef 3 FTILE_MAC_TX_MAX_PACKET_CNT;
