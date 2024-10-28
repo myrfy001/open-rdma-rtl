@@ -571,8 +571,10 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
         packetChunkMetaPipeOutVecInst[idx] = toPipeOut(packetChunkMetaPipeOutQueueVec[idx]);
     end
 
-
-    Reg#(FtileMacRxPingPongChannelIdx) pingPongChannelIdxReg <- mkReg(0);
+    Reg#(FtileMacUserLogicChannelIdx)  currentOutputChannelIdxReg       <- mkReg(0);
+    Reg#(Bool)                         isCurrentPacketNotEndReg         <- mkReg(False);
+    Reg#(Bool)                         isCurrentPacketShouldSkipReg     <- mkReg(False);
+    Reg#(FtileMacRxPingPongChannelIdx) pingPongChannelIdxReg            <- mkReg(0);
 
     Reg#(Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacUserLogicChannelIdx)) curUserLogicChannelDispatchOrderReg <- mkReg(vec(0, 1, 2, 3));
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Reg#(Bool)) outputChannelErrorFlagRegVec <- replicateM(mkReg(False));
@@ -585,7 +587,85 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
     FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) selectedPingPongOutputChannelMetaPipelineQ <- mkFIFOF;
     FIFOF#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry)) dispatchPacketChunkMetaPipelineQ <- mkFIFOF;
 
-    rule selectandForwardPingPongChannel;
+    rule generateNextDispatchOrderByBufferUsage;
+        // we set the current channel's used seg num to max so that it won't be selected for next dispatch.
+        Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)) bitonicSortStep1Vec = vec (
+            tuple2(0, currentOutputChannelIdxReg == 0 ? maxBound : outputChannelBufferUsedSegCounterVec[0]),
+            tuple2(1, currentOutputChannelIdxReg == 1 ? maxBound : outputChannelBufferUsedSegCounterVec[1]),
+            tuple2(2, currentOutputChannelIdxReg == 2 ? maxBound : outputChannelBufferUsedSegCounterVec[2]),
+            tuple2(3, currentOutputChannelIdxReg == 3 ? maxBound : outputChannelBufferUsedSegCounterVec[3])
+        );
+
+        // first swap
+        Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)) bitonicSortStep2Vec = newVector;
+        if (tpl_2(bitonicSortStep1Vec[0]) > tpl_2(bitonicSortStep1Vec[1])) begin
+            bitonicSortStep2Vec[1] = bitonicSortStep1Vec[0];
+            bitonicSortStep2Vec[0] = bitonicSortStep1Vec[1];
+        end
+        else begin
+            bitonicSortStep2Vec[0] = bitonicSortStep1Vec[0];
+            bitonicSortStep2Vec[1] = bitonicSortStep1Vec[1];
+        end
+
+        if (tpl_2(bitonicSortStep1Vec[2]) > tpl_2(bitonicSortStep1Vec[3])) begin
+            bitonicSortStep2Vec[2] = bitonicSortStep1Vec[2];
+            bitonicSortStep2Vec[3] = bitonicSortStep1Vec[3];
+        end
+        else begin
+            bitonicSortStep2Vec[3] = bitonicSortStep1Vec[2];
+            bitonicSortStep2Vec[2] = bitonicSortStep1Vec[3];
+        end
+
+        // second swap
+        Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)) bitonicSortStep3Vec = newVector;
+        if (tpl_2(bitonicSortStep2Vec[0]) > tpl_2(bitonicSortStep2Vec[2])) begin
+            bitonicSortStep3Vec[2] = bitonicSortStep2Vec[0];
+            bitonicSortStep3Vec[0] = bitonicSortStep2Vec[2];
+        end
+        else begin
+            bitonicSortStep3Vec[0] = bitonicSortStep2Vec[0];
+            bitonicSortStep3Vec[2] = bitonicSortStep2Vec[2];
+        end
+
+        if (tpl_2(bitonicSortStep2Vec[1]) > tpl_2(bitonicSortStep2Vec[3])) begin
+            bitonicSortStep3Vec[3] = bitonicSortStep2Vec[1];
+            bitonicSortStep3Vec[1] = bitonicSortStep2Vec[3];
+        end
+        else begin
+            bitonicSortStep3Vec[1] = bitonicSortStep2Vec[1];
+            bitonicSortStep3Vec[3] = bitonicSortStep2Vec[3];
+        end
+
+        // third swap
+        Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)) bitonicSortStep4Vec = newVector;
+        if (tpl_2(bitonicSortStep3Vec[0]) > tpl_2(bitonicSortStep3Vec[1])) begin
+            bitonicSortStep4Vec[1] = bitonicSortStep3Vec[0];
+            bitonicSortStep4Vec[0] = bitonicSortStep3Vec[1];
+        end
+        else begin
+            bitonicSortStep4Vec[0] = bitonicSortStep3Vec[0];
+            bitonicSortStep4Vec[1] = bitonicSortStep3Vec[1];
+        end
+
+        if (tpl_2(bitonicSortStep3Vec[2]) > tpl_2(bitonicSortStep3Vec[3])) begin
+            bitonicSortStep4Vec[3] = bitonicSortStep3Vec[2];
+            bitonicSortStep4Vec[2] = bitonicSortStep3Vec[3];
+        end
+        else begin
+            bitonicSortStep4Vec[2] = bitonicSortStep3Vec[2];
+            bitonicSortStep4Vec[3] = bitonicSortStep3Vec[3];
+        end
+
+        curUserLogicChannelDispatchOrderReg <= vec(
+            tpl_1(bitonicSortStep4Vec[0]),
+            tpl_1(bitonicSortStep4Vec[1]),
+            tpl_1(bitonicSortStep4Vec[2]),
+            tpl_1(bitonicSortStep4Vec[3])
+        );
+
+    endrule
+
+    rule selectAndForwardPingPongChannel;
         pingPongChannelIdxReg <= pingPongChannelIdxReg + 1;
 
         let pingPongOutputMeta = metaPipeInQueueVec[pingPongChannelIdxReg].first;
@@ -594,7 +674,111 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
         selectedPingPongOutputChannelMetaPipelineQ.enq(pingPongOutputMeta);
     endrule
 
-    rule dispatchToOutputChannel;
+    rule forwardPacketsInOnePingPongChannelToFourOutputChannels;
+
+        Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry) outputEntryVec = newVector;
+
+        let inputPingPongMeta = selectedPingPongOutputChannelMetaPipelineQ.first;
+        selectedPingPongOutputChannelMetaPipelineQ.deq;
+
+        immAssert(
+            isValid(inputPingPongMeta.packetChunkMetaVector[0]),
+            "the input Vector's first element should not be Invalid",
+            $format("")
+        );
+
+        for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT); idx = idx + 1) begin
+            outputEntryVec[idx].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[idx];
+        end
+
+        let isCurrentPacketNotEnd       = isCurrentPacketNotEndReg;
+        let isCurrentPacketShouldSkip   = isCurrentPacketShouldSkipReg;
+        let currentOutputChannelIdx     = currentOutputChannelIdxReg;
+
+        // There is at most 3 packet to handle here.
+        // Now handle the first one.
+        let firstInputMeta = fromMaybe(?, inputPingPongMeta.packetChunkMetaVector[0]);
+        if (isCurrentPacketNotEnd) begin
+            if (isCurrentPacketShouldSkip) begin
+                outputEntryVec[0].packetChunkMetaMaybe = tagged Invalid;
+            end
+            else begin
+                outputEntryVec[0].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[0];
+                outputEntryVec[0].targetChannelIdx = currentOutputChannelIdx;
+            end
+            if (firstInputMeta.isLast) begin
+                isCurrentPacketShouldSkip   = False;
+                isCurrentPacketNotEnd       = False;
+            end
+        end
+        else begin
+            immAssert(
+                firstInputMeta.isFirst && !isCurrentPacketShouldSkip,
+                "if the packet has finished in previous beat, then this must be first. And for a first beat, isCurrentPacketShouldSkip must already be set to False in previous beat",
+                $format("firstInputMeta=", fshow(firstInputMeta), "isCurrentPacketShouldSkip=", fshow(isCurrentPacketShouldSkip))
+            );
+
+            currentOutputChannelIdx = curUserLogicChannelDispatchOrderReg[0];
+            outputEntryVec[0].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[0];
+            outputEntryVec[0].targetChannelIdx = currentOutputChannelIdx;
+            if (firstInputMeta.isLast) begin
+                isCurrentPacketNotEnd       = False;
+            end
+            else begin
+                isCurrentPacketNotEnd       = True;
+            end
+        end
+
+        // Now handle the second one.
+        if (inputPingPongMeta.packetChunkMetaVector[1] matches tagged Valid .secondInputMeta) begin
+            immAssert(
+                !isCurrentPacketNotEnd,
+                "since the second meta is valid, the previous packet must be eop",
+                $format("firstInputMeta=", fshow(firstInputMeta), "secondInputMeta=", fshow(secondInputMeta))
+            );
+
+            currentOutputChannelIdx = curUserLogicChannelDispatchOrderReg[1];
+            outputEntryVec[1].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[1];
+            outputEntryVec[1].targetChannelIdx = currentOutputChannelIdx;
+            if (secondInputMeta.isLast) begin
+                isCurrentPacketNotEnd       = False;
+            end
+            else begin
+                isCurrentPacketNotEnd       = True;
+            end
+        end
+
+        // Now handle the third one.
+        if (inputPingPongMeta.packetChunkMetaVector[2] matches tagged Valid .thirdInputMeta) begin
+            immAssert(
+                !isCurrentPacketNotEnd,
+                "since the third meta is valid, the previous packet must be eop",
+                $format("thirdInputMeta=", fshow(thirdInputMeta))
+            );
+
+            currentOutputChannelIdx = curUserLogicChannelDispatchOrderReg[2];
+            outputEntryVec[2].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[2];
+            outputEntryVec[2].targetChannelIdx = currentOutputChannelIdx;
+            if (thirdInputMeta.isLast) begin
+                isCurrentPacketNotEnd       = False;
+            end
+            else begin
+                isCurrentPacketNotEnd       = True;
+            end
+        end
+        
+        if (inputPingPongMeta.packetNumOverflowAffectNextBeat) begin
+            isCurrentPacketShouldSkip = True;
+        end
+
+
+        isCurrentPacketNotEndReg <= isCurrentPacketNotEnd;
+        isCurrentPacketShouldSkipReg <= isCurrentPacketShouldSkip;
+
+        dispatchPacketChunkMetaPipelineQ.enq(outputEntryVec);
+    endrule
+
+    rule dispatchToOutputBuffer;
         let pipelineInputEntry = dispatchPacketChunkMetaPipelineQ.first;
         dispatchPacketChunkMetaPipelineQ.deq;
 
