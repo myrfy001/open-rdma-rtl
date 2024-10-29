@@ -580,7 +580,196 @@ endmodule
 
 
 
+module mkTestFtileMacRxPingPongChannelMetaJoin(Empty);
 
+    let ftileMacRxBeatFork <- mkFtileMacRxBeatFork;
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FtileMacRxPingPongSingleChannelProcessor) pingPongChannelVec <- replicateM(mkFtileMacRxPingPongSingleChannelProcessor); 
+    let ftileMacRxBeatJoin <- mkFtileMacRxPingPongChannelMetaJoin;
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+        mkConnection(ftileMacRxBeatFork.rxPingPongChannelMetaPipeOutVec[idx], pingPongChannelVec[idx].beatMetaPipeIn);
+        mkConnection(pingPongChannelVec[idx].packetsChunkMetaPipeOut, ftileMacRxBeatJoin.metaPipeInVec[idx]);
+    end
+
+    Reg#(Word) injectStepReg <- mkReg(1);
+    Reg#(Word) checkStepReg <- mkReg(0);
+
+    Reg#(Word) totalRecvPacketCntReg <- mkReg(0);
+    Reg#(Word) totalRecvSegmentCntReg <- mkReg(0);
+
+    rule discard;
+        ftileMacRxBeatFork.rxBramWriteReqPipeOut.deq;
+    endrule
+
+    rule injectBeat;
+        injectStepReg <= injectStepReg + 1;
+        FtileMacRxBeat inputBeat = ?;
+        case (injectStepReg)
+            // normal case, for the 1st to 4th beat, each beat has one or two packet.
+            1: begin
+                // 1 packet, 10 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            2: begin
+                // 2 packet, 9 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.eop       = unpack({1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            3: begin
+                // 1 packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            4: begin
+                // one packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+
+            // normal case, for the 1st to 5th beat, each beat has one or two packet, but some packet will span multi beat
+            31: begin
+                // 2 packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            32: begin
+                // 1 packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            33: begin
+                // 1 packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            34: begin
+                // 2 packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            35: begin
+                // 3 packet, 16 seg
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0});
+                inputBeat.eop       = unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+
+            // abnormal case
+            100: begin
+                // 3 packet, but middle packet is error, so only 2 packet should be output, valid seg cnt = 11
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            101: begin
+                // 4 packet, overflow but not affact next beat.  so only 3 packet should be output, valid seg cnt = 6
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            102: begin
+                // 4 packet, overflow and will affact next beat.  so only 3 packet should be output, valid seg cnt = 6
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0, 1'b1, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            103: begin
+                // 1 packet, but is affacted by previous overflow, should be dropped
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.eop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+            104: begin
+                // 3 packet, but first packet is affacted by previous overflow. so only 2 packet should be output, valid seg cnt = 14
+                inputBeat.sop       = unpack({1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0});
+                inputBeat.eop       = unpack({1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b1, 1'b0});
+                inputBeat.fcs_error = 0;
+                ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+            end
+        endcase
+    endrule
+
+    rule checkBeat;
+        checkStepReg <= checkStepReg + 1;
+
+        Word totalRecvPacketCnt  = totalRecvPacketCntReg;
+        Word totalRecvSegmentCnt = totalRecvSegmentCntReg;
+
+        for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            if (ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx].notEmpty) begin
+                let outputMeta = ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx].first;
+                ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx].deq;
+                totalRecvPacketCnt = totalRecvPacketCnt + 1;
+                totalRecvSegmentCnt = totalRecvSegmentCnt + zeroExtend(outputMeta.zeroBasedValidSegCnt) + 1;
+                $display("time=%0t:", $time, "idx=%d", idx , "outputMeta=", fshow(outputMeta));
+            end
+        end
+
+
+
+        case (checkStepReg)
+            30: begin
+                immAssert(
+                    totalRecvPacketCnt == 6 && totalRecvSegmentCnt == 51,
+                    "packet num or seg num wrong",
+                    $format("totalRecvPacketCnt=", fshow(totalRecvPacketCnt), ", totalRecvSegmentCnt=", fshow(totalRecvSegmentCnt))
+                );
+                // reset counter
+                totalRecvPacketCnt = 0;
+                totalRecvSegmentCnt = 0;
+            end
+            100: begin
+                immAssert(
+                    totalRecvPacketCnt == 9 && totalRecvSegmentCnt == 80,
+                    "packet num or seg num wrong",
+                    $format("totalRecvPacketCnt=", fshow(totalRecvPacketCnt), ", totalRecvSegmentCnt=", fshow(totalRecvSegmentCnt))
+                );
+                // reset counter
+                totalRecvPacketCnt = 0;
+                totalRecvSegmentCnt = 0;
+            end
+            150: begin
+                immAssert(
+                    totalRecvPacketCnt == 10 && totalRecvSegmentCnt == 37,
+                    "packet num or seg num wrong",
+                    $format("totalRecvPacketCnt=", fshow(totalRecvPacketCnt), ", totalRecvSegmentCnt=", fshow(totalRecvSegmentCnt))
+                );
+                // reset counter
+                totalRecvPacketCnt = 0;
+                totalRecvSegmentCnt = 0;
+            end
+            2000: begin
+                $finish;
+            end
+        endcase
+
+
+        totalRecvPacketCntReg   <= totalRecvPacketCnt;
+        totalRecvSegmentCntReg  <= totalRecvSegmentCnt;
+    endrule
+endmodule
 
 
 
