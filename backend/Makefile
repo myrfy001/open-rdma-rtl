@@ -62,9 +62,11 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest
 
-TARGETFILE ?= ../src/FTileMacAdaptor.bsv
-TOPMODULE ?= mkFtileMacRxPingPongChannelMetaJoin
+# TARGETFILE ?= ../src/FTileMacAdaptor.bsv
+# TOPMODULE ?= mkFtileMacRxPingPongChannelMetaJoin
 
+TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+TOPMODULE ?= mkTestFtileMacRxPingPongChannelMetaJoinTimingTest
 
 
 

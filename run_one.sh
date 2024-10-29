@@ -74,8 +74,11 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestRTilePcieAdaptor.bsv`
 # TESTCASE=mkTestRTilePcieAdaptorTx
 
+# FILE=`ls TestFTileMacAdaptor.bsv`
+# TESTCASE=mkTestFtileMacRxPingPongSingleChannelProcessor
+
 FILE=`ls TestFTileMacAdaptor.bsv`
-TESTCASE=mkTestFtileMacRxPingPongSingleChannelProcessor
+TESTCASE=mkTestFtileMacRxPingPongChannelMetaJoin
 
 # FILE=`ls TestStreamShifterG.bsv`
 # TESTCASE=mkTestBiDirectionStreamShifterG

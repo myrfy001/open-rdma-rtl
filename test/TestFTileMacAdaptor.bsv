@@ -774,7 +774,67 @@ endmodule
 
 
 
+interface TestFtileMacRxPingPongChannelMetaJoinTimingTest;
+    method Bit#(128) getOutput;
+endinterface
 
+
+(* synthesize *)
+module mkTestFtileMacRxPingPongChannelMetaJoinTimingTest(TestFtileMacRxPingPongChannelMetaJoinTimingTest);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+    Reg#(Bool) runReg <- mkReg(True);
+    Reg#(Bit#(128)) outReg <- mkReg(0);
+
+    let ftileMacRxBeatFork <- mkFtileMacRxBeatFork;
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FtileMacRxPingPongSingleChannelProcessor) pingPongChannelVec <- replicateM(mkFtileMacRxPingPongSingleChannelProcessor); 
+    let ftileMacRxBeatJoin <- mkFtileMacRxPingPongChannelMetaJoin;
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+        mkConnection(ftileMacRxBeatFork.rxPingPongChannelMetaPipeOutVec[idx], pingPongChannelVec[idx].beatMetaPipeIn);
+        mkConnection(pingPongChannelVec[idx].packetsChunkMetaPipeOut, ftileMacRxBeatJoin.metaPipeInVec[idx]);
+    end
+
+    ForceKeepWideSignals#(Bit#(128), Bit#(128)) signalKeeperForOutput   <- mkForceKeepWideSignals; 
+    
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+    let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
+
+
+    rule discard;
+        ftileMacRxBeatFork.rxBramWriteReqPipeOut.deq;
+    endrule
+
+    rule injectInput if (runReg);
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        let randValue3 <- randSource3.get;
+
+        let inputBeat = unpack(truncate({randValue1, randValue2, randValue3}));
+        ftileMacRxBeatFork.rxBetaPipeIn.enq(inputBeat);
+    endrule
+
+    rule handleDutOutput;
+        FtileMacRxPacketChunkMeta outputMeta = ?;
+        for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            if (ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx].notEmpty) begin
+                outputMeta = unpack(pack(outputMeta) ^ pack(ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx].first));
+                ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx].deq;
+            end
+        end
+
+        signalKeeperForOutput.bitsPipeIn.enq(zeroExtend(pack(outputMeta)));
+    endrule
+
+    rule forwardOutput;
+        outReg <= signalKeeperForOutput.out;
+    endrule
+
+
+
+    method getOutput = outReg;
+endmodule
 
 
 

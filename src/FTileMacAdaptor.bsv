@@ -557,7 +557,7 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
         packetChunkMetaPipeOutVecInst[idx] = toPipeOut(packetChunkMetaPipeOutQueueVec[idx]);
     end
 
-    Reg#(FtileMacUserLogicChannelIdx)  currentOutputChannelIdxReg[2]    <- mkCReg(2, 0);
+    Reg#(FtileMacUserLogicChannelIdx)  currentOutputChannelIdxReg       <- mkReg(0);
     Reg#(Bool)                         isCurrentPacketNotEndReg         <- mkReg(False);
     Reg#(Bool)                         isCurrentPacketShouldSkipReg     <- mkReg(False);
     Reg#(FtileMacRxPingPongChannelIdx) pingPongChannelIdxReg            <- mkReg(0);
@@ -569,18 +569,19 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxPacketChunkMeta)) packetChunkMetaOutputBufferVec <- replicateM(mkSizedFIFOF(valueOf(PACKET_CHUNK_META_OUTPUT_BUFFER_DEPTH)));
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Count#(PacketBeatSegCnt)) outputChannelBufferUsedSegCounterVec <- replicateM(mkCount(0));
 
-    // Pipeline FIFOs
+    // Pipeline FIFOs and Regs
     FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) selectedPingPongOutputChannelMetaPipelineQ <- mkFIFOF;
     FIFOF#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry)) dispatchPacketChunkMetaPipelineQ <- mkFIFOF;
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(Bool)) discardOrOutputSignalPipelineQueueVec <- replicateM(mkFIFOF);
 
-    rule generateNextDispatchOrderByBufferUsage;
-        // we set the current channel's used seg num to max so that it won't be selected for next dispatch.
+    Reg#(Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)))  bitonicSortPipelineReg <- mkRegU;
+
+    rule generateNextDispatchOrderByBufferUsageStage1;
         Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)) bitonicSortStep1Vec = vec (
-            tuple2(0, currentOutputChannelIdxReg[1] == 0 ? maxBound : outputChannelBufferUsedSegCounterVec[0]),
-            tuple2(1, currentOutputChannelIdxReg[1] == 1 ? maxBound : outputChannelBufferUsedSegCounterVec[1]),
-            tuple2(2, currentOutputChannelIdxReg[1] == 2 ? maxBound : outputChannelBufferUsedSegCounterVec[2]),
-            tuple2(3, currentOutputChannelIdxReg[1] == 3 ? maxBound : outputChannelBufferUsedSegCounterVec[3])
+            tuple2(0, outputChannelBufferUsedSegCounterVec[0]),
+            tuple2(1, outputChannelBufferUsedSegCounterVec[1]),
+            tuple2(2, outputChannelBufferUsedSegCounterVec[2]),
+            tuple2(3, outputChannelBufferUsedSegCounterVec[3])
         );
 
         // first swap
@@ -603,7 +604,12 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
             bitonicSortStep2Vec[2] = bitonicSortStep1Vec[3];
         end
 
+        bitonicSortPipelineReg <= bitonicSortStep2Vec;
+    endrule
+
+    rule generateNextDispatchOrderByBufferUsageStage2;
         // second swap
+        let bitonicSortStep2Vec = bitonicSortPipelineReg;
         Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)) bitonicSortStep3Vec = newVector;
         if (tpl_2(bitonicSortStep2Vec[0]) > tpl_2(bitonicSortStep2Vec[2])) begin
             bitonicSortStep3Vec[2] = bitonicSortStep2Vec[0];
@@ -686,7 +692,14 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
 
         let isCurrentPacketNotEnd       = isCurrentPacketNotEndReg;
         let isCurrentPacketShouldSkip   = isCurrentPacketShouldSkipReg;
-        let currentOutputChannelIdx     = currentOutputChannelIdxReg[0];
+        let currentOutputChannelIdx     = currentOutputChannelIdxReg;
+
+        Vector#(TSub#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, 1), FtileMacUserLogicChannelIdx) dispatchOrderWithoutCurrentChannel = case (currentOutputChannelIdx)
+            curUserLogicChannelDispatchOrderReg[0]: vec(curUserLogicChannelDispatchOrderReg[1], curUserLogicChannelDispatchOrderReg[2], curUserLogicChannelDispatchOrderReg[3]);
+            curUserLogicChannelDispatchOrderReg[1]: vec(curUserLogicChannelDispatchOrderReg[0], curUserLogicChannelDispatchOrderReg[2], curUserLogicChannelDispatchOrderReg[3]);
+            curUserLogicChannelDispatchOrderReg[2]: vec(curUserLogicChannelDispatchOrderReg[0], curUserLogicChannelDispatchOrderReg[1], curUserLogicChannelDispatchOrderReg[3]);
+            curUserLogicChannelDispatchOrderReg[3]: vec(curUserLogicChannelDispatchOrderReg[0], curUserLogicChannelDispatchOrderReg[1], curUserLogicChannelDispatchOrderReg[2]);
+        endcase;
         
         let isFirstPacketUseNewChannel  = False;
 
@@ -713,7 +726,7 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
                 $format("firstInputMeta=", fshow(firstInputMeta), "isCurrentPacketShouldSkip=", fshow(isCurrentPacketShouldSkip))
             );
 
-            currentOutputChannelIdx = curUserLogicChannelDispatchOrderReg[0];
+            currentOutputChannelIdx = dispatchOrderWithoutCurrentChannel[0];
             isFirstPacketUseNewChannel = True;
             outputEntryVec[0].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[0];
             outputEntryVec[0].targetChannelIdx = currentOutputChannelIdx;
@@ -733,7 +746,7 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
                 $format("firstInputMeta=", fshow(firstInputMeta), "secondInputMeta=", fshow(secondInputMeta))
             );
 
-            currentOutputChannelIdx = isFirstPacketUseNewChannel ? curUserLogicChannelDispatchOrderReg[1] : curUserLogicChannelDispatchOrderReg[0];
+            currentOutputChannelIdx = isFirstPacketUseNewChannel ? dispatchOrderWithoutCurrentChannel[1] : dispatchOrderWithoutCurrentChannel[0];
             outputEntryVec[1].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[1];
             outputEntryVec[1].targetChannelIdx = currentOutputChannelIdx;
             if (secondInputMeta.isLast) begin
@@ -752,7 +765,7 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
                 $format("thirdInputMeta=", fshow(thirdInputMeta))
             );
 
-            currentOutputChannelIdx = isFirstPacketUseNewChannel ? curUserLogicChannelDispatchOrderReg[2] : curUserLogicChannelDispatchOrderReg[1];
+            currentOutputChannelIdx = isFirstPacketUseNewChannel ? dispatchOrderWithoutCurrentChannel[2] : dispatchOrderWithoutCurrentChannel[1];
             outputEntryVec[2].packetChunkMetaMaybe = inputPingPongMeta.packetChunkMetaVector[2];
             outputEntryVec[2].targetChannelIdx = currentOutputChannelIdx;
             if (thirdInputMeta.isLast) begin
@@ -769,7 +782,7 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
         end
 
 
-        currentOutputChannelIdxReg[0] <= currentOutputChannelIdx;
+        currentOutputChannelIdxReg <= currentOutputChannelIdx;
         isCurrentPacketNotEndReg <= isCurrentPacketNotEnd;
         isCurrentPacketShouldSkipReg <= isCurrentPacketShouldSkip;
 
