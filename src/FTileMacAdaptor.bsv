@@ -50,6 +50,7 @@ typedef Vector#(FTILE_MAC_SEGMENT_CNT, FtileTxMacError) SegmentTxMacErrorSignalB
 typedef 1024 FTILE_MAC_DATA_BUNDLE_WIDTH;
 typedef TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, FTILE_MAC_SEGMENT_CNT)       FTILE_MAC_DATA_SEGMENT_WIDTH;    // 64
 typedef TDiv#(FTILE_MAC_DATA_SEGMENT_WIDTH, BYTE_WIDTH)                 FTILE_MAC_TLP_DATA_SEGMENT_BYTE_WIDTH;    // 8
+typedef TLog#(FTILE_MAC_TLP_DATA_SEGMENT_BYTE_WIDTH)                    FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM; // 3
 typedef Bit#(FTILE_MAC_DATA_SEGMENT_WIDTH)                              FtileMacDataSegment;
 typedef Vector#(FTILE_MAC_SEGMENT_CNT, FtileMacDataSegment)             FtileMacDataBusSegBundle;
 
@@ -845,7 +846,183 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
 endmodule
 
 
+typedef DtldStreamData#(DATA) FtileMacRxUserStream;
+typedef TDiv#(SizeOf#(FtileMacDataBusSegBundle), SizeOf#(DATA)) RTILE_RX_BRAM_BLOCK_CNT;   // 4
+typedef TDiv#(SizeOf#(DATA), FTILE_MAC_DATA_SEGMENT_WIDTH) RTILE_GEAR_BOX_SEG_CNT_PER_OUTPUT_BEAT;  // 4
 
+typedef struct {
+    Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT))    startBramBlockIdx;
+    Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT))    endBramBlockIdx;
+    FtileMacSegmentIdx                      firstOutputBeatShiftSegCnt;
+    ByteEnBitNum                            firstOutputBeatByteNum;
+    ByteEnBitNum                            lastOutputBeatByteNum;
+    Bool                                    isFirst;             
+    Bool                                    isLast;                    
+} FtileMacRxGearBoxMeta deriving(Bits, FShow);
+
+interface FtileMacRxPayloadStorageAndGearBox;
+    interface PipeIn#(FtileMacRxBramBufferWriteReq)     rxBramWriteReqPipeIn;
+    interface PipeIn#(FtileMacRxPacketChunkMeta)        packetChunkMetaPipeIn;
+    interface PipeOut#(FtileMacRxUserStream)            streamPipeOut;
+endinterface
+
+module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
+    FIFOF#(FtileMacRxBramBufferWriteReq)    rxBramWriteReqPipeInQ   <- mkFIFOF;
+    FIFOF#(FtileMacRxPacketChunkMeta)       packetChunkMetaPipeInQ  <- mkFIFOF;
+
+    Vector#(RTILE_RX_BRAM_BLOCK_CNT, AutoInferBramQueuedOutput#(FtileMaxRxBramBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+
+    UniDirStreamShifter#(DATA) outputShifter <- mkLsbRightStreamRightShifterG;
+
+    Reg#(FtileMaxRxBramBufferAddr)                  curReadAddrReg          <- mkRegU;
+    Reg#(Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT)))      curReadBramBlockIdxReg  <- mkRegU;
+    Reg#(Bool)                                      isReadIdleReg           <- mkReg(True);
+
+    Reg#(Vector#(RTILE_RX_BRAM_BLOCK_CNT, DATA)) readBackDataVecReg <- mkRegU;
+
+    // Pipeline Queue
+    FIFOF#(FtileMacRxGearBoxMeta)           packetChunkMetaPipelineQ  <- mkSizedFIFOF(4); 
+
+    rule handleWriteReq;
+        let req = rxBramWriteReqPipeInQ.first;
+        rxBramWriteReqPipeInQ.deq;
+
+        for (Integer idx = 0; idx < valueOf(RTILE_RX_BRAM_BLOCK_CNT); idx = idx + 1) begin
+            dataStreamStorageVec[idx].write(req.addr, {req.data[idx * 4 + 3], req.data[idx * 4 + 2], req.data[idx * 4 + 1], req.data[idx * 4 + 0]});
+        end
+    endrule
+
+    rule handleReadReq;
+        let rawReq = packetChunkMetaPipeInQ.first;
+        packetChunkMetaPipeInQ.deq;
+        
+
+        for (Integer idx = 0; idx < valueOf(RTILE_RX_BRAM_BLOCK_CNT); idx = idx + 1) begin
+            dataStreamStorageVec[idx].putReadReq(rawReq.bufferAddr);
+        end
+
+        let endSegIdx                                            = rawReq.startSegIdx + rawReq.zeroBasedValidSegCnt;
+        Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT)) startBramBlockIdx   = truncateLSB(rawReq.startSegIdx);
+        Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT)) endBramBlockIdx     = truncateLSB(endSegIdx);
+
+        ByteEnBitNum lastOutputBeatByteNum = ?;
+        ByteEnBitNum firstOutputBeatByteNum = ?;
+
+        if (startBramBlockIdx == endBramBlockIdx) begin
+            lastOutputBeatByteNum = ((zeroExtend(rawReq.zeroBasedValidSegCnt) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - zeroExtend(rawReq.lastSegEmptyByteCnt);
+            firstOutputBeatByteNum = lastOutputBeatByteNum;
+        end
+        else begin
+            Bit#(TLog#(RTILE_GEAR_BOX_SEG_CNT_PER_OUTPUT_BEAT)) zeroBasedSegCntInFirstBlock = maxBound - truncate(rawReq.startSegIdx);
+            Bit#(TLog#(RTILE_GEAR_BOX_SEG_CNT_PER_OUTPUT_BEAT)) zeroBasedSegCntInLastBlock = truncate(endSegIdx);
+    
+            firstOutputBeatByteNum = ((zeroExtend(zeroBasedSegCntInFirstBlock) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM));
+            lastOutputBeatByteNum = ((zeroExtend(zeroBasedSegCntInLastBlock) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - zeroExtend(rawReq.lastSegEmptyByteCnt);        
+        end
+
+        let meta = FtileMacRxGearBoxMeta {
+            startBramBlockIdx           : startBramBlockIdx,
+            endBramBlockIdx             : endBramBlockIdx,
+            firstOutputBeatShiftSegCnt  : rawReq.startSegIdx,
+            firstOutputBeatByteNum      : firstOutputBeatByteNum,
+            lastOutputBeatByteNum       : lastOutputBeatByteNum,
+            isFirst                     : rawReq.isFirst,
+            isLast                      : rawReq.isLast
+        };
+        packetChunkMetaPipelineQ.enq(meta);
+    endrule
+
+    rule handleReadResp;
+        let meta = packetChunkMetaPipelineQ.first;
+
+        if (isReadIdleReg) begin
+            Vector#(RTILE_RX_BRAM_BLOCK_CNT, DATA) readBackDataVec = newVector;
+            for (Integer idx = 0; idx < valueOf(RTILE_RX_BRAM_BLOCK_CNT); idx = idx + 1) begin
+                readBackDataVec[idx] = dataStreamStorageVec[idx].readRespPipeOut.first;
+                dataStreamStorageVec[idx].readRespPipeOut.deq;
+            end
+
+
+            let isLastBlock = meta.startBramBlockIdx == meta.endBramBlockIdx;
+            let isFirst     = meta.isFirst;
+            let isLast      = isLastBlock && meta.isLast;
+
+            let byteNum = ?;
+            if (isFirst) begin
+                byteNum = meta.firstOutputBeatByteNum;
+            end
+            else if (isLast) begin
+                byteNum = meta.lastOutputBeatByteNum;
+            end
+            else begin
+                byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+            end
+
+            let startByteIdx = isFirst ? zeroExtend(meta.firstOutputBeatShiftSegCnt) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM) : 0;
+            let ds = FtileMacRxUserStream {
+                data        : readBackDataVec[meta.startBramBlockIdx],
+                byteNum     : byteNum,
+                startByteIdx: startByteIdx,
+                isFirst     : isFirst,
+                isLast      : isLast
+            };
+            
+            readBackDataVecReg <= readBackDataVec;
+            curReadBramBlockIdxReg <= meta.startBramBlockIdx + 1;
+
+            outputShifter.streamPipeIn.enq(ds);
+            outputShifter.offsetPipeIn.enq(startByteIdx);
+
+            if (!isLastBlock) begin
+                isReadIdleReg <= False;
+            end
+            else begin
+                packetChunkMetaPipelineQ.deq;
+            end
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp"),
+                toBlue(", ds="), fshow(ds)
+            );
+        end
+        else begin
+            let isLastBlock = curReadBramBlockIdxReg == meta.endBramBlockIdx;
+            let isLast      = isLastBlock && meta.isLast;
+
+            let byteNum = ?;
+            if (isLast) begin
+                byteNum = meta.lastOutputBeatByteNum;
+            end
+            else begin
+                byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+            end
+
+            let ds = FtileMacRxUserStream {
+                data        : readBackDataVecReg[curReadBramBlockIdxReg],
+                byteNum     : byteNum,
+                startByteIdx: 0,
+                isFirst     : False,
+                isLast      : isLast
+            };
+            outputShifter.streamPipeIn.enq(ds);
+
+            curReadBramBlockIdxReg <= curReadBramBlockIdxReg + 1;
+
+            if (isLastBlock) begin
+                isReadIdleReg <= True;
+                packetChunkMetaPipelineQ.deq;
+            end
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp"),
+                toBlue(", ds="), fshow(ds)
+            );
+        end
+    endrule
+
+
+    interface rxBramWriteReqPipeIn = toPipeIn(rxBramWriteReqPipeInQ);
+    interface packetChunkMetaPipeIn = toPipeIn(packetChunkMetaPipeInQ);
+    interface streamPipeOut = outputShifter.streamPipeOut;
+endmodule
 
 
 

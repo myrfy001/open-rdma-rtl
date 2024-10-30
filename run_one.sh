@@ -77,8 +77,12 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestFTileMacAdaptor.bsv`
 # TESTCASE=mkTestFtileMacRxPingPongSingleChannelProcessor
 
+# FILE=`ls TestFTileMacAdaptor.bsv`
+# TESTCASE=mkTestFtileMacRxPingPongChannelMetaJoin
+
 FILE=`ls TestFTileMacAdaptor.bsv`
-TESTCASE=mkTestFtileMacRxPingPongChannelMetaJoin
+TESTCASE=mkTestFtileMacRxPayloadStorageAndGearBox
+
 
 # FILE=`ls TestStreamShifterG.bsv`
 # TESTCASE=mkTestBiDirectionStreamShifterG

@@ -732,44 +732,7 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
     interface streamPipeOut = toPipeOut(leftShiftResultQ);
 endmodule
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
+module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
         Bits#(tData, szData),
         NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
         NumAlias#(TLog#(szDataInByte), szByteIdx),
@@ -811,6 +774,10 @@ endmodule
             shiftCnt[valueOf(szShiftOffsetForHigherPartShift)-2] = req.offset[valueOf(szByteIdx)-2];
             req.concatData = unpack(pack(req.concatData) >> shiftCnt); 
             doRightShiftPipeQ2.enq(req);
+            // $display(
+            //     "time=%0t: ", $time, toGreen("mkLsbRightStreamRightShifterG doRightShift"),
+            //     toBlue(", req="), fshow(req)
+            // );
         endrule
 
         rule doRightShift2;
@@ -827,6 +794,10 @@ endmodule
                 isFirst: req.meta.isFirst,
                 isLast: req.meta.isLast
             });
+            // $display(
+            //     "time=%0t: ", $time, toGreen("mkLsbRightStreamRightShifterG doRightShift2"),
+            //     toBlue(", req="), fshow(req)
+            // );
         endrule
     end
     else begin
@@ -950,7 +921,7 @@ endmodule
         rightShiftPrevDataReg <= pipelineEntry;
 
         // $display(
-        //     "time=%0t:", $time, " shiftRightOptput",
+        //     "time=%0t:", $time, toGreen(" shiftRightOptput"),
         //     toBlue(", pipelineEntry="), fshow(pipelineEntry),
         //     toBlue(", rightShiftPrevDataReg="), fshow(rightShiftPrevDataReg),
         //     toBlue(", interShiftData="), fshow(interShiftData)
@@ -995,7 +966,7 @@ endmodule
             rightShiftStateReg <= UniDirectionStreamShifterRightShiftStateIdle;
         end
         // $display(
-        //     "time=%0t:", $time, " shiftRightOptputExtra",
+        //     "time=%0t:", $time, toGreen(" shiftRightOptputExtra"),
         //     toBlue(", rightShiftPrevDataReg="), fshow(rightShiftPrevDataReg),
         //     toBlue(", interShiftData="), fshow(interShiftData)
         // );

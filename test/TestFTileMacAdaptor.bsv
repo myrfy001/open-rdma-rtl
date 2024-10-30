@@ -4,6 +4,7 @@ import Vector :: *;
 import BuildVector :: *;
 import PAClib :: *; 
 import GetPut :: *;
+import StmtFSM :: * ;
 
 import PrimUtils :: *;
 
@@ -835,6 +836,100 @@ module mkTestFtileMacRxPingPongChannelMetaJoinTimingTest(TestFtileMacRxPingPongC
 
     method getOutput = outReg;
 endmodule
+
+
+
+module mkTestFtileMacRxPayloadStorageAndGearBox(Empty);
+
+    let dut <- mkFtileMacRxPayloadStorageAndGearBox;
+
+    Reg#(Word) injectStepReg <- mkReg(1);
+    Reg#(Word) checkStepReg <- mkReg(0);
+
+    
+
+    Stmt injectProc = seq
+        action
+            // Case 1
+            FtileMacRxPacketChunkMeta req = ?;
+            req.startSegIdx             = 0;
+            req.zeroBasedValidSegCnt    = 15;
+            req.lastSegEmptyByteCnt     = 2;
+            req.isFirst                 = True;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+        action
+            // Case 2
+            FtileMacRxPacketChunkMeta req = ?;
+            req.startSegIdx             = 0;
+            req.zeroBasedValidSegCnt    = 1;
+            req.lastSegEmptyByteCnt     = 2;
+            req.isFirst                 = True;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+        // action
+        //     // Case 3
+        //     FtileMacRxPacketChunkMeta req = ?;
+        //     req.startSegIdx             = 0;
+        //     req.zeroBasedValidSegCnt    = 1;
+        //     req.lastSegEmptyByteCnt     = 2;
+        //     req.isFirst                 = True;
+        //     req.isLast                  = True;
+        //     dut.packetChunkMetaPipeIn.enq(req);
+        // endaction
+    endseq;
+
+
+    let outPipeOut = dut.streamPipeOut;
+    Stmt checkProc = (seq
+        // Case 1
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 30, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+
+        // Case 2
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 14, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+
+        // // Case 3
+        // action
+        //     dut.streamPipeOut.deq;
+        //     immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 14, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        // endaction
+        $finish;
+    endseq);
+
+    FSM injectFSM <- mkFSM(injectProc);
+    FSM checkFSM  <- mkFSM(checkProc);
+    
+    Reg#(Bool) goingReg <- mkReg(False);
+
+    rule start (!goingReg);
+        goingReg <= True;
+        injectFSM.start;
+        checkFSM.start;
+    endrule
+endmodule
+
+
+
 
 
 
