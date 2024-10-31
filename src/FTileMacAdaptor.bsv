@@ -513,11 +513,6 @@ endmodule
 
 
 
-
-
-
-
-
 typedef Vector#(
     FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
     PipeIn#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) FtileMacRxPingPongChannelMetaJoinInputIfc;
@@ -1048,27 +1043,46 @@ endmodule
 
 interface FTileMac;
     interface PipeIn#(FtileMacRxBeat) ftilemacRxPipeIn;
-    interface PipeOut#(FtileMacTxBeat) ftilemacTxPipeOut;
+    // interface PipeOut#(FtileMacTxBeat) ftilemacTxPipeOut;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVec;
 endinterface
 
 
 (* synthesize *)
 module mkFTileMac(FTileMac);
     // FIFOF#(FtileMacRxBeat) ftilemacRxPipeInQueue    <- mkFIFOF;
-    FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue   <- mkFIFOF;
+    // FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue   <- mkFIFOF;
+
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVecInst = newVector;
 
     let ftileMacRxBeatFork <- mkFtileMacRxBeatFork;
     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FtileMacRxPingPongSingleChannelProcessor) pingPongChannelVec <- replicateM(mkFtileMacRxPingPongSingleChannelProcessor); 
     let ftileMacRxBeatJoin <- mkFtileMacRxPingPongChannelMetaJoin;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacRxPayloadStorageAndGearBox) storageAndGearBoxVec <- replicateM(mkFtileMacRxPayloadStorageAndGearBox);
+
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         mkConnection(ftileMacRxBeatFork.rxPingPongChannelMetaPipeOutVec[idx], pingPongChannelVec[idx].beatMetaPipeIn);
         mkConnection(pingPongChannelVec[idx].packetsChunkMetaPipeOut, ftileMacRxBeatJoin.metaPipeInVec[idx]);
     end
 
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+        mkConnection(ftileMacRxBeatJoin.packetChunkMetaPipeOutVec[idx], storageAndGearBoxVec[idx].packetChunkMetaPipeIn);
+        ftilemacRxStreamPipeOutVecInst[idx] = storageAndGearBoxVec[idx].streamPipeOut;
+    end
 
-    interface ftilemacRxPipeIn  = ftileMacRxBeatFork.rxBetaPipeIn;
-    interface ftilemacTxPipeOut = toPipeOut(ftilemacTxPipeOutQueue);
+    rule forwardBramWriteReq;
+        for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+           storageAndGearBoxVec[idx].rxBramWriteReqPipeIn.enq(ftileMacRxBeatFork.rxBramWriteReqPipeOut.first);
+        end
+        ftileMacRxBeatFork.rxBramWriteReqPipeOut.deq;
+    endrule
+    
+
+
+    interface ftilemacRxPipeIn              = ftileMacRxBeatFork.rxBetaPipeIn;
+    // interface ftilemacTxPipeOut             = toPipeOut(ftilemacTxPipeOutQueue);
+    interface ftilemacRxStreamPipeOutVec    = ftilemacRxStreamPipeOutVecInst;
 endmodule
 
 
