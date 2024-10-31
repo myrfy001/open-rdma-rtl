@@ -858,7 +858,7 @@ module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoI
 
     FIFOF#(Bit#(0)) hasPendingReadReqSignalQueue <- mkUGFIFOF;
     FIFOF#(tData)   outputQ <- mkUGSizedFIFOF(3);
-    FIFOF#(Bit#(0)) backPreasureQueue <- mkSizedFIFOF(3);
+    Count#(Bit#(2)) backPreasureCounter <- mkCount(0);
     
 
     (* no_implicit_conditions, fire_when_enabled *)
@@ -879,13 +879,20 @@ module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoI
         storage.write(addr, data);
     endmethod
 
-    method Action putReadReq(tAddr addr);
+    method Action putReadReq(tAddr addr) if (backPreasureCounter != 3);
         storage.putReadReq(addr);
         hasPendingReadReqSignalQueue.enq(0);
-        backPreasureQueue.enq(0);
+        backPreasureCounter.incr(1);
     endmethod
 
-    interface readRespPipeOut = ugToPipeOut(outputQ);
+    interface PipeOut readRespPipeOut;
+        method Bool notEmpty = outputQ.notEmpty;
+        method tData first  = outputQ.first;
+        method Action deq if (outputQ.notEmpty);
+            outputQ.deq;
+            backPreasureCounter.decr(1);
+        endmethod
+    endinterface
 endmodule
 
 typedef enum {

@@ -849,9 +849,19 @@ module mkTestFtileMacRxPayloadStorageAndGearBox(Empty);
     
 
     Stmt injectProc = seq
+        dut.rxBramWriteReqPipeIn.enq(FtileMacRxBramBufferWriteReq{
+            addr: 0,
+            data: unpack({64'hF, 64'hE, 64'hD, 64'hC, 64'hB, 64'hA, 64'h9, 64'h8, 64'h7, 64'h6, 64'h5, 64'h4, 64'h3, 64'h2, 64'h1, 64'h0})
+        });
+        dut.rxBramWriteReqPipeIn.enq(FtileMacRxBramBufferWriteReq{
+            addr: 1,
+            data: unpack({64'h0, 64'h1, 64'h2, 64'h3, 64'h4, 64'h5, 64'h6, 64'h7, 64'h8, 64'h9, 64'hA, 64'hB, 64'hC, 64'hD, 64'hE, 64'hF})
+        });
+
+        // Case 1
         action
-            // Case 1
             FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 1;
             req.startSegIdx             = 0;
             req.zeroBasedValidSegCnt    = 15;
             req.lastSegEmptyByteCnt     = 2;
@@ -859,9 +869,11 @@ module mkTestFtileMacRxPayloadStorageAndGearBox(Empty);
             req.isLast                  = True;
             dut.packetChunkMetaPipeIn.enq(req);
         endaction
+
+        // Case 2
         action
-            // Case 2
             FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 0;
             req.startSegIdx             = 0;
             req.zeroBasedValidSegCnt    = 1;
             req.lastSegEmptyByteCnt     = 2;
@@ -869,16 +881,96 @@ module mkTestFtileMacRxPayloadStorageAndGearBox(Empty);
             req.isLast                  = True;
             dut.packetChunkMetaPipeIn.enq(req);
         endaction
-        // action
-        //     // Case 3
-        //     FtileMacRxPacketChunkMeta req = ?;
-        //     req.startSegIdx             = 0;
-        //     req.zeroBasedValidSegCnt    = 1;
-        //     req.lastSegEmptyByteCnt     = 2;
-        //     req.isFirst                 = True;
-        //     req.isLast                  = True;
-        //     dut.packetChunkMetaPipeIn.enq(req);
-        // endaction
+
+        // Case 3
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 1;
+            req.startSegIdx             = 1;
+            req.zeroBasedValidSegCnt    = 1;
+            req.lastSegEmptyByteCnt     = 2;
+            req.isFirst                 = True;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+
+        // Case 4
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 0;
+            req.startSegIdx             = 3;
+            req.zeroBasedValidSegCnt    = 4;
+            req.lastSegEmptyByteCnt     = 2;
+            req.isFirst                 = True;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+
+        // Case 5
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 1;
+            req.startSegIdx             = 3;
+            req.zeroBasedValidSegCnt    = 0;
+            req.lastSegEmptyByteCnt     = 1;
+            req.isFirst                 = True;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+
+        // Case 6
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 0;
+            req.startSegIdx             = 15;
+            req.zeroBasedValidSegCnt    = 0;
+            req.lastSegEmptyByteCnt     = ?;
+            req.isFirst                 = True;
+            req.isLast                  = False;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 1;
+            req.startSegIdx             = 0;
+            req.zeroBasedValidSegCnt    = 0;
+            req.lastSegEmptyByteCnt     = 7;
+            req.isFirst                 = False;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+
+        // Case 7
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 0;
+            req.startSegIdx             = 11;
+            req.zeroBasedValidSegCnt    = 4;
+            req.lastSegEmptyByteCnt     = ?;
+            req.isFirst                 = True;
+            req.isLast                  = False;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 1;
+            req.startSegIdx             = 0;
+            req.zeroBasedValidSegCnt    = 15;
+            req.lastSegEmptyByteCnt     = ?;
+            req.isFirst                 = False;
+            req.isLast                  = False;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
+        action
+            FtileMacRxPacketChunkMeta req = ?;
+            req.bufferAddr              = 0;
+            req.startSegIdx             = 0;
+            req.zeroBasedValidSegCnt    = 4;
+            req.lastSegEmptyByteCnt     = 3;
+            req.isFirst                 = False;
+            req.isLast                  = True;
+            dut.packetChunkMetaPipeIn.enq(req);
+        endaction
     endseq;
 
 
@@ -887,32 +979,92 @@ module mkTestFtileMacRxPayloadStorageAndGearBox(Empty);
         // Case 1
         action
             dut.streamPipeOut.deq;
-            immAssert(outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            immAssert(outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'hF, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
         endaction
         action
             dut.streamPipeOut.deq;
-            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'hB, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
         endaction
         action
             dut.streamPipeOut.deq;
-            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'h7, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
         endaction
         action
             dut.streamPipeOut.deq;
-            immAssert(!outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 30, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            immAssert(!outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 30 && outPipeOut.first.data[3:0] == 4'h3, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 1 pass");
         endaction
 
         // Case 2
         action
             dut.streamPipeOut.deq;
-            immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 14, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 14 && outPipeOut.first.data[3:0] == 4'h0, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 2 pass");
         endaction
 
-        // // Case 3
-        // action
-        //     dut.streamPipeOut.deq;
-        //     immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 14, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
-        // endaction
+        // Case 3
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 14 && outPipeOut.first.data[3:0] == 4'hE, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 3 pass");
+        endaction
+
+        // Case 4
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'h3, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 6 && outPipeOut.first.data[3:0] == 4'h7, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 4 pass");
+        endaction
+
+        // Case 5
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 7 && outPipeOut.first.data[3:0] == 4'hC, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 5 pass");
+        endaction
+
+        // Case 6
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 9 && outPipeOut.first.data[3:0] == 4'hF && outPipeOut.first.data[64+3:64+0] == 4'hF, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 6 pass");
+        endaction
+
+        // Case 7
+        action
+            dut.streamPipeOut.deq;
+            immAssert(outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'hB, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'hF, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'hC, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'h8, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'h4, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && !outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 32 && outPipeOut.first.data[3:0] == 4'h0, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+        endaction
+        action
+            dut.streamPipeOut.deq;
+            immAssert(!outPipeOut.first.isFirst && outPipeOut.first.isLast && outPipeOut.first.startByteIdx == 0 && outPipeOut.first.byteNum == 13 && outPipeOut.first.data[3:0] == 4'h3, "assert Fail", $format("dsOut=", fshow(outPipeOut.first)));
+            $display("Case 7 pass");
+        endaction
+
         $finish;
     endseq);
 

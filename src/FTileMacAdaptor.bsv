@@ -883,6 +883,15 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
     // Pipeline Queue
     FIFOF#(FtileMacRxGearBoxMeta)           packetChunkMetaPipelineQ  <- mkSizedFIFOF(4); 
 
+
+    // rule debug;
+    //     $display(
+    //         "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox debug"),
+    //         toBlue(", dataStreamStorageVec[0].notEmpty="), fshow(dataStreamStorageVec[0].readRespPipeOut.notEmpty),
+    //         toBlue(", packetChunkMetaPipelineQ.notEmpty="), fshow(packetChunkMetaPipelineQ.notEmpty)
+    //     );
+    // endrule
+
     rule handleWriteReq;
         let req = rxBramWriteReqPipeInQ.first;
         rxBramWriteReqPipeInQ.deq;
@@ -909,7 +918,7 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
         ByteEnBitNum firstOutputBeatByteNum = ?;
 
         if (startBramBlockIdx == endBramBlockIdx) begin
-            lastOutputBeatByteNum = ((zeroExtend(rawReq.zeroBasedValidSegCnt) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - zeroExtend(rawReq.lastSegEmptyByteCnt);
+            lastOutputBeatByteNum = ((zeroExtend(rawReq.zeroBasedValidSegCnt) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - (rawReq.isLast ? zeroExtend(rawReq.lastSegEmptyByteCnt) : 0);
             firstOutputBeatByteNum = lastOutputBeatByteNum;
         end
         else begin
@@ -917,7 +926,7 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
             Bit#(TLog#(RTILE_GEAR_BOX_SEG_CNT_PER_OUTPUT_BEAT)) zeroBasedSegCntInLastBlock = truncate(endSegIdx);
     
             firstOutputBeatByteNum = ((zeroExtend(zeroBasedSegCntInFirstBlock) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM));
-            lastOutputBeatByteNum = ((zeroExtend(zeroBasedSegCntInLastBlock) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - zeroExtend(rawReq.lastSegEmptyByteCnt);        
+            lastOutputBeatByteNum = ((zeroExtend(zeroBasedSegCntInLastBlock) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - (rawReq.isLast ? zeroExtend(rawReq.lastSegEmptyByteCnt) : 0);        
         end
 
         let meta = FtileMacRxGearBoxMeta {
@@ -930,6 +939,10 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
             isLast                      : rawReq.isLast
         };
         packetChunkMetaPipelineQ.enq(meta);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadReq"),
+        //     toBlue(", meta="), fshow(meta)
+        // );
     endrule
 
     rule handleReadResp;
@@ -971,7 +984,10 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
             curReadBramBlockIdxReg <= meta.startBramBlockIdx + 1;
 
             outputShifter.streamPipeIn.enq(ds);
-            outputShifter.offsetPipeIn.enq(startByteIdx);
+
+            if (isFirst) begin
+                outputShifter.offsetPipeIn.enq(startByteIdx);
+            end
 
             if (!isLastBlock) begin
                 isReadIdleReg <= False;
@@ -980,8 +996,9 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
                 packetChunkMetaPipelineQ.deq;
             end
             $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp"),
-                toBlue(", ds="), fshow(ds)
+                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp - FIRST"),
+                toBlue(", ds="), fshow(ds),
+                toBlue(", meta="), fshow(meta)
             );
         end
         else begin
@@ -1012,8 +1029,9 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
                 packetChunkMetaPipelineQ.deq;
             end
             $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp"),
-                toBlue(", ds="), fshow(ds)
+                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp - MORE"),
+                toBlue(", ds="), fshow(ds),
+                toBlue(", isLastBlock="), fshow(isLastBlock)
             );
         end
     endrule
