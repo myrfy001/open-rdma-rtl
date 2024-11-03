@@ -12,7 +12,7 @@ RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
-DEVICE ?= AGIC041R29D1E2VB
+DEVICE ?= AGIB027R29B1E2V
 FAMILY ?= Agilex 7
 
 
@@ -68,8 +68,20 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestFtileMacRxPingPongChannelMetaJoinTimingTest
 
+# TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+# TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
+
+# TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+# TOPMODULE ?= mkTestRotateTimingTest
+
+# TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+# TOPMODULE ?= mkTestMimoTimingTest
+
 TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
+TOPMODULE ?= mkTestFtileMacTxPingPongDispatchTimingTest
+
+
+
 
 
 

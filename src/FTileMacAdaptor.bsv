@@ -6,6 +6,8 @@ import BRAMCore :: *;
 import Arbiter :: * ;
 import Connectable :: *;
 import ConfigReg :: *;
+import MIMO :: *;
+import Reserved :: *;
 
 import DataTypes :: *;
 import RdmaHeaders :: *;
@@ -222,7 +224,7 @@ typedef 256 FTILE_MAC_USER_LOGIC_DATA_WIDTH;
 typedef TLog#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT) FTILE_MAC_USER_LOGIC_CHANNEL_IDX_WIDTH;
 typedef Bit#(FTILE_MAC_USER_LOGIC_CHANNEL_IDX_WIDTH) FtileMacUserLogicChannelIdx;
 
-typedef 1024 FTILE_MAC_RX_BRAM_BUFFER_DEPTH;
+typedef 512 FTILE_MAC_RX_BRAM_BUFFER_DEPTH;
 typedef TLog#(FTILE_MAC_RX_BRAM_BUFFER_DEPTH) FTILE_MAC_RX_BRAM_BUFFER_ADDR_WIDTH;
 typedef Bit#(FTILE_MAC_RX_BRAM_BUFFER_ADDR_WIDTH) FtileMaxRxBramBufferAddr;
 
@@ -842,6 +844,7 @@ endmodule
 
 
 typedef DtldStreamData#(DATA) FtileMacRxUserStream;
+typedef FtileMacRxUserStream FtileMacTxUserStream;
 typedef TDiv#(SizeOf#(FtileMacDataBusSegBundle), SizeOf#(DATA)) RTILE_RX_BRAM_BLOCK_CNT;   // 4
 typedef TDiv#(SizeOf#(DATA), FTILE_MAC_DATA_SEGMENT_WIDTH) RTILE_GEAR_BOX_SEG_CNT_PER_OUTPUT_BEAT;  // 4
 
@@ -1039,6 +1042,393 @@ endmodule
 
 
 
+typedef 512 FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_DEPTH;
+typedef TLog#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_DEPTH) FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_ADDR_WIDTH;
+typedef Bit#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_ADDR_WIDTH) FtileMacTxChannelBufferAddr;
+
+// input DATA is buffered in a BRAM, each BRAM row has an address, and we further divide one row into segemnts, and give each segment and index.
+// in this way, the higher part of the address is BRAM row address, and the lower part of the address is the segment index inside a row;
+typedef TLog#(TDiv#(SizeOf#(DATA), FTILE_MAC_DATA_SEGMENT_WIDTH)) FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH;
+typedef Bit#(FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH) FtileMacTxChannelBufferRowSegIdx;
+
+typedef TAdd#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_ADDR_WIDTH, FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH) FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_SEG_ADDR_WIDTH;
+typedef Bit#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_SEG_ADDR_WIDTH) FtileMacTxChannelBufferSegAddr;
+typedef FtileMacTxChannelBufferSegAddr FtileMacTxChannelBufferSegCnt;  // infact, we can redefine it to a shorter type to just hold a 4kB packte and addtional header part.
+
+
+typedef struct {
+    FtileMacTxChannelBufferSegAddr startSegAddr;
+    FtileMacTxChannelBufferSegCnt  segCnt;
+    FtileMacEopEmpty               eopEmpty;
+} FtileMacTxBufferRange deriving(Bits, FShow);
+
+typedef struct {
+    FtileMacUserLogicChannelIdx         srcChannelIdx;
+    FtileMacTxChannelBufferSegAddr      startSegAddr;
+    FtileMacTxChannelBufferSegCnt       segCnt;
+    FtileMacEopEmpty                    eopEmpty;
+    FtileMacTxChannelBufferRowSegIdx    destSegOffset;
+    ReservedZero#(3)                    reserved;           // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
+} FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset deriving(Bits, FShow);
+
+typedef struct {
+    FtileMacUserLogicChannelIdx         srcChannelIdx;
+    FtileMacTxChannelBufferSegAddr      startSegAddr;
+    FtileMacTxChannelBufferRowSegIdx    zeroBasedSegCnt;
+    FtileMacEopEmpty                    eopEmpty;
+    FtileMacTxChannelBufferRowSegIdx    destSegOffset;
+    Bool                                isLast;
+} FtileMacTxPingPongChannelMetaEntry deriving(Bits, FShow);
+
+
+typedef 2 FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT;  // since the beta width is 1024 bits(128 bytes), and min eth packet is 64 bytes.
+typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT FTILE_MAC_TX_PING_PONG_CHANNEL_CNT;
+
+typedef Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, Maybe#(FtileMacTxPingPongChannelMetaEntry)) FtileMacTxPingPongChannelMetaBundle;
+
+interface FtileMacTxPingPongFork;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxBufferRange)) packetMetaPipeInVec;
+    interface Vector$(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(FtileMacTxPingPongChannelMetaBundle))  pingpongChannelMetaPipeOutVec;
+endinterface
+
+module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxBufferRange)) packetMetaPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkFIFOF);
+
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutVecInst = newVector;
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
+    
+
+    for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+        packetMetaPipeInVecInst[idx] = toPipeIn(packetMetaPipeInQueueVec[idx]);
+    end
+
+    for (Integer idx=0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+        pingpongChannelMetaPipeOutVecInst[idx] = toPipeOut(pingpongChannelMetaPipeOutQueueVec[idx]);
+    end
+
+
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Reg#(Maybe#(FtileMacTxBufferRange))) curDataRangeRegVec <- replicateM(mkReg(tagged Invalid));
+    Reg#(FtileMacUserLogicChannelIdx) curInputRoundRobinIdxReg <- mkReg(0);
+    Reg#(FtileMacTxChannelBufferRowSegIdx) prevDestSegOffsetReg <- mkReg(0);
+
+    let mimoCfg = MIMOConfiguration {
+        unguarded: False,
+        bram_based: False
+    };
+    MIMO#(
+        FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT,
+            FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT,
+            TMul#(2, FTILE_MAC_USER_LOGIC_CHANNEL_CNT),
+            FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset
+    ) selectedInputChannelMetaMIMO <- mkMIMO(mimoCfg);
+    
+    Reg#(Bool) isDispatchIdelReg <- mkReg(True);
+    Reg#(FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset) curDispatchMetaReg <- mkRegU;
+
+    // Pipeline Queues
+    FIFOF#(Tuple2#(
+        Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset),
+        LUInt#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT)
+    ))  mimoInputPipelineQueue <- mkFIFOF;
+
+
+    rule prepareRoundRobinChannelOrder;
+        Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset) vecToEnq = newVector;
+        let curInputRoundRobinIdx = curInputRoundRobinIdxReg;
+        let prevDestSegOffset = prevDestSegOffsetReg;
+        let enqCnt = 0;
+        case ({ pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].notEmpty),
+                pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].notEmpty),
+                pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].notEmpty),
+                pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].notEmpty)
+            }) matches
+            4'b0000: begin
+            end
+            4'b0001: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+3,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
+                enqCnt = 1;
+            end
+            4'b0010: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+2,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt,
+                    eopEmpty        : inMeta0.eopEmpty, 
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
+                enqCnt = 1;
+            end
+            4'b0011: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+2,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
+                vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+3,
+                    startSegAddr    : inMeta1.startSegAddr, 
+                    segCnt          : inMeta1.segCnt, 
+                    eopEmpty        : inMeta1.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
+                
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
+                enqCnt = 2;
+            end
+            4'b0100: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+1,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 2;
+                enqCnt = 1;
+            end
+            4'b0101: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+1,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
+                vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+3,
+                    startSegAddr    : inMeta1.startSegAddr, 
+                    segCnt          : inMeta1.segCnt, 
+                    eopEmpty        : inMeta1.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
+                
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
+                enqCnt = 2;
+            end
+            4'b011?: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+1,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
+                vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+2,
+                    startSegAddr    : inMeta1.startSegAddr, 
+                    segCnt          : inMeta1.segCnt, 
+                    eopEmpty        : inMeta1.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
+                
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
+                enqCnt = 2;
+            end
+            4'b1000: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+0,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt,
+                    eopEmpty        : inMeta0.eopEmpty, 
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 1;
+                enqCnt = 1;
+            end
+            4'b1001: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+0,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
+                vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+3,
+                    startSegAddr    : inMeta1.startSegAddr, 
+                    segCnt          : inMeta1.segCnt, 
+                    eopEmpty        : inMeta1.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
+                
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
+                enqCnt = 2;
+            end
+            4'b101?: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+0,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
+                vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+2,
+                    startSegAddr    : inMeta1.startSegAddr, 
+                    segCnt          : inMeta1.segCnt, 
+                    eopEmpty        : inMeta1.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
+                
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
+                enqCnt = 2;
+            end
+            4'b11??: begin
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
+                vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+0,
+                    startSegAddr    : inMeta0.startSegAddr, 
+                    segCnt          : inMeta0.segCnt, 
+                    eopEmpty        : inMeta0.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
+
+                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
+                vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
+                    srcChannelIdx   : curInputRoundRobinIdx+1,
+                    startSegAddr    : inMeta1.startSegAddr, 
+                    segCnt          : inMeta1.segCnt, 
+                    eopEmpty        : inMeta1.eopEmpty,
+                    destSegOffset   : prevDestSegOffset,
+                    reserved        : unpack(0)
+                };
+                prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
+                
+                curInputRoundRobinIdx = curInputRoundRobinIdx + 2;
+                enqCnt = 2;
+            end
+        endcase
+
+        curInputRoundRobinIdxReg <= curInputRoundRobinIdx;
+        prevDestSegOffsetReg <= prevDestSegOffset;
+
+        if (enqCnt != 0) begin
+            selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+        end
+
+        // mimoInputPipelineQueue.enq(tuple2(vecToEnq, enqCnt));
+    endrule
+
+    // rule forwardRoundRobinResultToMimoBuffer;
+    //     let {vecToEnq, enqCnt} = mimoInputPipelineQueue.first;
+    //     mimoInputPipelineQueue.deq;
+    //     if (enqCnt != 0) begin
+    //         selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+    //     end
+    // endrule
+
+
+    rule dispatch;
+        FtileMacTxPingPongChannelMetaBundle outputMetaBundle = replicate(tagged Invalid);
+
+        if (isDispatchIdelReg) begin
+            if (selectedInputChannelMetaMIMO.deqReadyN(1)) begin
+                let firstMeta = selectedInputChannelMetaMIMO.first[0];
+                if (firstMeta.segCnt < fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT))) begin
+                    outputMetaBundle[0] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
+                        srcChannelIdx: firstMeta.srcChannelIdx,
+                        startSegAddr:,
+                        zeroBasedSegCnt:,
+                        eopEmpty:,
+                        destSegOffset:,
+                        isLast: True
+                    };
+                end
+            end
+        end
+    endrule
+
+    interface packetMetaPipeInVec = packetMetaPipeInVecInst;
+    interface pingpongChannelMetaPipeOutVec = pingpongChannelMetaPipeOutVecInst;
+endmodule
+
+// interface FtileMacTxPayloadStorageAndGearBox;
+//     interface PipeOut#(FtileMacDataBusSegBundle)        txDataBusSegBundlePipeOut;
+//     // interface PipeOut#(FtileMacTxPacketChunkMeta)       packetChunkMetaPipeOut;
+//     interface PipeIn#(FtileMacTxUserStream)             streamPipeIn;
+// endinterface
+
+
+// (* synthesize *)
+// module mkFtileMacTxPayloadStorageAndGearBox(FtileMacTxPayloadStorageAndGearBox);
+
+// endmodule
 
 
 interface FTileMac;

@@ -5,6 +5,7 @@ import BuildVector :: *;
 import PAClib :: *; 
 import GetPut :: *;
 import StmtFSM :: * ;
+import MIMO :: *;
 
 import PrimUtils :: *;
 
@@ -1238,5 +1239,173 @@ module mkTestFtileMacAdaptorTimingTest(TestFtileMacAdaptorTimingTest);
 
 
 
+    method getOutput = outReg;
+endmodule
+
+
+
+interface TestRotateTimingTest;
+    method Bit#(128) getOutput;
+endinterface
+
+(* synthesize *)
+module mkTestRotateTimingTest(TestRotateTimingTest);
+    Reg#(Bit#(128)) outReg <- mkReg(0);
+    Reg#(Bit#(10)) stepCounterReg <- mkReg(0);
+    Reg#(Bit#(2))  rotReg <- mkReg(0);
+
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+
+    Reg#(Vector#(32, Bit#(64))) testReg <- mkRegU;
+    ForceKeepWideSignals#(Bit#(2048), Bit#(128)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
+
+    rule test;
+        stepCounterReg <= stepCounterReg + 1;
+        rotReg <= rotReg + 1;
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        if (stepCounterReg == 0) begin
+            testReg <= unpack({0, randValue1, randValue2});
+        end
+        else begin
+            let t = testReg;
+            case (rotReg)
+                0: begin
+                    t = shiftInAt0(t, unpack(truncate(randValue2)));
+                end
+                1: begin
+                    t = shiftInAt0(t, unpack(truncate(randValue2)));
+                    t = shiftInAt0(t, unpack(truncate(randValue1)));
+                end
+                2: begin
+                    t = shiftInAt0(t, unpack(truncate(randValue2)));
+                    t = shiftInAt0(t, unpack(truncate(randValue1)));
+                    t = shiftInAt0(t, unpack(truncateLSB(randValue2)));
+                end
+                3: begin
+                    t = shiftInAt0(t, unpack(truncate(randValue2)));
+                    t = shiftInAt0(t, unpack(truncate(randValue1)));
+                    t = shiftInAt0(t, unpack(truncateLSB(randValue2)));
+                    t = shiftInAt0(t, unpack(truncateLSB(randValue1)));
+                end 
+            endcase
+            testReg <= t;
+            
+        end
+        signalKeeperForTxBusOutput.bitsPipeIn.enq(pack(testReg));
+    endrule
+
+
+
+    rule handleOutput;
+        outReg <= zeroExtend({signalKeeperForTxBusOutput.out});
+    endrule
+
+    method getOutput = outReg;
+endmodule
+
+
+
+interface TestMimoTimingTest;
+    method Bit#(128) getOutput;
+endinterface
+
+(* synthesize *)
+module mkTestMimoTimingTest(TestMimoTimingTest);
+    Reg#(Bit#(128)) outReg <- mkReg(0);
+    Reg#(Bit#(10)) stepCounterReg <- mkReg(0);
+    Reg#(Bit#(2))  rotReg <- mkReg(0);
+
+    let mimoCfg = MIMOConfiguration {
+        unguarded: True,
+        bram_based: False
+    };
+
+    MIMO#(2, 2, 4, Bit#(256)) dut <- mkMIMO(mimoCfg);
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+
+    ForceKeepWideSignals#(Bit#(512), Bit#(128)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
+
+    rule test;
+        stepCounterReg <= stepCounterReg + 1;
+        rotReg <= rotReg + 1;
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        
+        LUInt#(2) cntEnq = unpack(truncate(randValue1));
+        if (dut.enqReadyN(cntEnq)) begin
+            dut.enq(cntEnq, vec(truncate(randValue1), truncateLSB(randValue1)));
+        end
+
+        LUInt#(2) cntDeq = unpack(truncate(randValue2));
+        if (dut.deqReadyN(cntDeq)) begin
+            dut.deq(cntDeq);
+            signalKeeperForTxBusOutput.bitsPipeIn.enq(pack(dut.first));
+        end
+    endrule
+
+
+
+    rule handleOutput;
+        outReg <= zeroExtend({signalKeeperForTxBusOutput.out});
+    endrule
+
+    method getOutput = outReg;
+endmodule
+
+
+
+interface TestFtileMacTxPingPongDispatchTimingTest;
+    method Bit#(128) getOutput;
+endinterface
+
+(* synthesize *)
+module mkTestFtileMacTxPingPongDispatchTimingTest(TestFtileMacTxPingPongDispatchTimingTest);
+    Reg#(Bit#(128)) outReg <- mkReg(0);
+    Reg#(Bit#(10)) stepCounterReg <- mkReg(0);
+    Reg#(Bit#(2))  rotReg <- mkReg(0);
+
+    ForceKeepWideSignals#(Bit#(256), Bit#(128)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
+
+    let dut <- mkFtileMacTxPingPongDispatch;
+    
+
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+
+    rule inject;
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+
+        if (randValue1[0] == 1) begin
+            dut.packetMetaPipeInVec[0].enq(unpack(truncate(randValue1)));
+        end
+        if (randValue1[1] == 1) begin
+            dut.packetMetaPipeInVec[1].enq(unpack(truncateLSB(randValue1)));
+        end
+        if (randValue1[2] == 1) begin
+            dut.packetMetaPipeInVec[2].enq(unpack(truncate(randValue2)));
+        end
+        if (randValue1[3] == 1) begin
+            dut.packetMetaPipeInVec[3].enq(unpack(truncateLSB(randValue2)));
+        end
+    endrule
+
+    rule deq;
+        let t = dut.tmpPipeOut.first;
+        dut.tmpPipeOut.deq;
+        signalKeeperForTxBusOutput.bitsPipeIn.enq(zeroExtend(pack(t)));
+    endrule
+
+
+
+    rule handleOutput;
+        outReg <= zeroExtend({signalKeeperForTxBusOutput.out});
+    endrule
+    
     method getOutput = outReg;
 endmodule

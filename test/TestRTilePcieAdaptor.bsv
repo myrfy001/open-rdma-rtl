@@ -482,89 +482,89 @@ module mkTestRTileDmaReadWriteSimple(TestRTileDmaReadWriteSimple);
     endfunction
 
 
-    Vector#(NUMERIC_TYPE_FOUR, AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH))) readAddrChunkerVec <- replicateM(
-        mkAddressChunkMetaCalculator(
-            alignAddrForRtileBeat,
-            devideLengthForRtileBeat,
-            isAddrAndLengthLowerPartSumOverflowForRtileBeat,
-            getChunkSizeForRtileBeat
-        )); 
+    // Vector#(NUMERIC_TYPE_FOUR, AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH))) readAddrChunkerVec <- replicateM(
+    //     mkAddressChunkMetaCalculator(
+    //         alignAddrForRtileBeat,
+    //         devideLengthForRtileBeat,
+    //         isAddrAndLengthLowerPartSumOverflowForRtileBeat,
+    //         getChunkSizeForRtileBeat
+    //     )); 
 
     
 
 
-    Vector#(256, Byte) linerIncrByteVec = reverse(genVector);
-    let linerIncrByteVecAsBit = pack(linerIncrByteVec);
+    // Vector#(256, Byte) linerIncrByteVec = reverse(genVector);
+    // let linerIncrByteVecAsBit = pack(linerIncrByteVec);
 
-    rule doTest if (isStartedReg && runStepReg < 1000);
-        if (runStepReg == 0) begin
-            $display("%t, ----------------start do test----------------------", $time);
-        end
-        runStepReg <= runStepReg + 1;
+    // rule doTest if (isStartedReg && runStepReg < 1000);
+    //     if (runStepReg == 0) begin
+    //         $display("%t, ----------------start do test----------------------", $time);
+    //     end
+    //     runStepReg <= runStepReg + 1;
 
-        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx=idx + 1) begin
-            let readAddr = readAddrRandPipeOutVec[idx].first;
-            readAddrRandPipeOutVec[idx].deq;
+    //     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx=idx + 1) begin
+    //         let readAddr = readAddrRandPipeOutVec[idx].first;
+    //         readAddrRandPipeOutVec[idx].deq;
 
-            let readLen = readLenRandPipeOutVec[idx].first;
-            readLenRandPipeOutVec[idx].deq;
+    //         let readLen = readLenRandPipeOutVec[idx].first;
+    //         readLenRandPipeOutVec[idx].deq;
 
-            let writeAddr = writeAddrRandPipeOutVec[idx].first;
-            writeAddrRandPipeOutVec[idx].deq;
+    //         let writeAddr = writeAddrRandPipeOutVec[idx].first;
+    //         writeAddrRandPipeOutVec[idx].deq;
 
-            let writeLen = writeLenRandPipeOutVec[idx].first;
-            writeLenRandPipeOutVec[idx].deq;
+    //         let writeLen = writeLenRandPipeOutVec[idx].first;
+    //         writeLenRandPipeOutVec[idx].deq;
 
-            if (curWriteReqMetaMaybeVec[idx] matches tagged Valid .curWriteReqMeta) begin
-                if (writeLen <= 512) begin
-                    let writeMeta = DtldStreamMemAccessMeta {
-                        addr: writeAddr,
-                        totalLen: writeLen
-                    };
-                    let writeData = DtldStreamData {
-                        data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777_88888888_99999999,
-                        startByteIdx: 0,
-                        byteNum: 16,
-                        isFirst: True,
-                        isLast: True
-                    };
-                end
-            end
-            else begin
-                // if ()
-            end
+    //         if (curWriteReqMetaMaybeVec[idx] matches tagged Valid .curWriteReqMeta) begin
+    //             if (writeLen <= 512) begin
+    //                 let writeMeta = DtldStreamMemAccessMeta {
+    //                     addr: writeAddr,
+    //                     totalLen: writeLen
+    //                 };
+    //                 let writeData = DtldStreamData {
+    //                     data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777_88888888_99999999,
+    //                     startByteIdx: 0,
+    //                     byteNum: 16,
+    //                     isFirst: True,
+    //                     isLast: True
+    //                 };
+    //             end
+    //         end
+    //         else begin
+    //             // if ()
+    //         end
 
-            if (readLen <= 512) begin
-                let readMeta = DtldStreamMemAccessMeta {
-                    addr: 4,
-                    totalLen: 17
-                };
-            end
+    //         if (readLen <= 512) begin
+    //             let readMeta = DtldStreamMemAccessMeta {
+    //                 addr: 4,
+    //                 totalLen: 17
+    //             };
+    //         end
 
-            case (runStepReg)
-                0: begin
-                    dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                    dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+    //         case (runStepReg)
+    //             0: begin
+    //                 dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+    //                 dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
 
-                    dut.streamSlaveIfcVec[1].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                    dut.streamSlaveIfcVec[1].writePipeIfc.writeDataPipeIn.enq(writeData);
+    //                 dut.streamSlaveIfcVec[1].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+    //                 dut.streamSlaveIfcVec[1].writePipeIfc.writeDataPipeIn.enq(writeData);
 
-                    dut.streamSlaveIfcVec[2].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                    dut.streamSlaveIfcVec[2].writePipeIfc.writeDataPipeIn.enq(writeData);
+    //                 dut.streamSlaveIfcVec[2].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+    //                 dut.streamSlaveIfcVec[2].writePipeIfc.writeDataPipeIn.enq(writeData);
 
-                    dut.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-                    dut.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
-                end
-                100: begin
-                    dut.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                    dut.streamSlaveIfcVec[1].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                    dut.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                    dut.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
-                end
-            endcase
-        end
+    //                 dut.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+    //                 dut.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
+    //             end
+    //             100: begin
+    //                 dut.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
+    //                 dut.streamSlaveIfcVec[1].readPipeIfc.readMetaPipeIn.enq(readMeta);
+    //                 dut.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
+    //                 dut.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
+    //             end
+    //         endcase
+    //     end
         
-    endrule
+    // endrule
 
     rule getReadResult;
         let readDs = dut.streamSlaveIfcVec[0].readPipeIfc.readDataPipeOut.first;
