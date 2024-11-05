@@ -1359,19 +1359,19 @@ endmodule
 
 
 
-interface TestFtileMacTxPingPongDispatchTimingTest;
+interface TestFtileMacTxPingPongForkTimingTest;
     method Bit#(128) getOutput;
 endinterface
 
 (* synthesize *)
-module mkTestFtileMacTxPingPongDispatchTimingTest(TestFtileMacTxPingPongDispatchTimingTest);
+module mkTestFtileMacTxPingPongForkTimingTest(TestFtileMacTxPingPongForkTimingTest);
     Reg#(Bit#(128)) outReg <- mkReg(0);
     Reg#(Bit#(10)) stepCounterReg <- mkReg(0);
     Reg#(Bit#(2))  rotReg <- mkReg(0);
 
-    ForceKeepWideSignals#(Bit#(256), Bit#(128)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(512), Bit#(128)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
 
-    let dut <- mkFtileMacTxPingPongDispatch;
+    let dut <- mkFtileMacTxPingPongFork;
     
 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
@@ -1396,9 +1396,25 @@ module mkTestFtileMacTxPingPongDispatchTimingTest(TestFtileMacTxPingPongDispatch
     endrule
 
     rule deq;
-        let t = dut.tmpPipeOut.first;
-        dut.tmpPipeOut.deq;
-        signalKeeperForTxBusOutput.bitsPipeIn.enq(zeroExtend(pack(t)));
+        Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FtileMacTxPingPongChannelMetaBundle) res = newVector;
+        if (dut.pingpongChannelMetaPipeOutVec[0].notEmpty) begin
+            res[0] = dut.pingpongChannelMetaPipeOutVec[0].first;
+            dut.pingpongChannelMetaPipeOutVec[0].deq;
+        end
+        if (dut.pingpongChannelMetaPipeOutVec[1].notEmpty) begin
+            res[1] = dut.pingpongChannelMetaPipeOutVec[1].first;
+            dut.pingpongChannelMetaPipeOutVec[1].deq;
+        end
+        if (dut.pingpongChannelMetaPipeOutVec[2].notEmpty) begin
+            res[2] = dut.pingpongChannelMetaPipeOutVec[2].first;
+            dut.pingpongChannelMetaPipeOutVec[2].deq;
+        end
+        if (dut.pingpongChannelMetaPipeOutVec[3].notEmpty) begin
+            res[3] = dut.pingpongChannelMetaPipeOutVec[3].first;
+            dut.pingpongChannelMetaPipeOutVec[3].deq;
+        end
+
+        signalKeeperForTxBusOutput.bitsPipeIn.enq(zeroExtend(pack(res)));
     endrule
 
 
