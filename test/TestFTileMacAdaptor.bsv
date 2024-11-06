@@ -1101,7 +1101,7 @@ module mkTestFtileMacAdaptorTimingTest(TestFtileMacAdaptorTimingTest);
     let dut <- mkFTileMacAdaptor;
 
     mkConnection(dut.ftilemacRxPipeOut, ftileMac.ftilemacRxPipeIn);
-    // mkConnection(dut.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
+    mkConnection(dut.ftilemacTxPipeIn, ftileMac.ftilemacTxPipeOut);
 
 
     ForceKeepWideSignals#(Bit#(2048), Bit#(32)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
@@ -1130,42 +1130,26 @@ module mkTestFtileMacAdaptorTimingTest(TestFtileMacAdaptorTimingTest);
     Reg#(Bit#(512)) rxBusOutputSignalReg <- mkReg(0);
     Reg#(Bit#(2048)) txBusOutputSignalReg <- mkReg(0);
 
-    // rule injectUserLogicReq if (runReg);
+    rule injectUserLogicReq if (runReg);
         
-    //     let randValue1 <- randSource1.get;
-    //     let randValue2 <- randSource2.get;
-    //     let randValue3 <- randSource3.get;
-    //     let randValue4 <- randSource4.get;
-    //     let randValue5 <- randSource5.get;
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        let randValue3 <- randSource3.get;
+        let randValue4 <- randSource4.get;
+        let randValue5 <- randSource5.get;
 
 
-    //     let writeMeta = unpack(truncate(randValue1));
+        let writeStream1 = unpack(truncate(randValue1));
+        let writeStream2 = unpack(truncate(randValue2));
+        let writeStream3 = unpack(truncate(randValue3));
+        let writeStream4 = unpack(truncate(randValue4));
 
-    //     let writeData = unpack(truncate({randValue2, randValue3, randValue4}));
-
-    //     let readMeta = unpack(truncate(randValue5));
-
-    //     // write req
-    //     rtilePcie.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-    //     rtilePcie.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
-
-    //     rtilePcie.streamSlaveIfcVec[1].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-    //     rtilePcie.streamSlaveIfcVec[1].writePipeIfc.writeDataPipeIn.enq(writeData);
-
-    //     rtilePcie.streamSlaveIfcVec[2].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-    //     rtilePcie.streamSlaveIfcVec[2].writePipeIfc.writeDataPipeIn.enq(writeData);
-
-    //     rtilePcie.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-    //     rtilePcie.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
-
-    //     // read req
-    //     rtilePcie.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
-    //     rtilePcie.streamSlaveIfcVec[1].readPipeIfc.readMetaPipeIn.enq(readMeta);
-    //     rtilePcie.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
-    //     rtilePcie.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
-
-
-    // endrule
+        // write req
+        ftileMac.ftilemacTxStreamPipeInVec[0].enq(writeStream1);
+        ftileMac.ftilemacTxStreamPipeInVec[1].enq(writeStream2);
+        ftileMac.ftilemacTxStreamPipeInVec[2].enq(writeStream3);
+        ftileMac.ftilemacTxStreamPipeInVec[3].enq(writeStream4);
+    endrule
 
     rule updateBusSignalReg;
         let randValue6 <- randSource6.get;
@@ -1204,19 +1188,17 @@ module mkTestFtileMacAdaptorTimingTest(TestFtileMacAdaptorTimingTest);
         dut.tx.setTxInputData(ready);
     endrule
 
-    // // rule handleTxBusOutputSignals;
-    // //     txBusOutputSignalReg <= zeroExtend({
-    // //         pack(dut.tx.hcrdt_init_ack),
-    // //         pack(dut.tx.dcrdt_init_ack),
-    // //         pack(dut.tx.hdr),
-    // //         pack(dut.tx.data),
-    // //         pack(dut.tx.sop),
-    // //         pack(dut.tx.eop),
-    // //         pack(dut.tx.hvalid),
-    // //         pack(dut.tx.dvalid)
-    // //     });
-    // //     signalKeeperForTxBusOutput.bitsPipeIn.enq(zeroExtend(pack(txBusOutputSignalReg)));
-    // // endrule
+    rule handleTxBusOutputSignals;
+        txBusOutputSignalReg <= zeroExtend({
+            pack(dut.tx.data),
+            pack(dut.tx.valid),
+            pack(dut.tx.inframe),
+            pack(dut.tx.eop_empty),
+            pack(dut.tx.error),
+            pack(dut.tx.skip_crc)
+        });
+        signalKeeperForTxBusOutput.bitsPipeIn.enq(zeroExtend(pack(txBusOutputSignalReg)));
+    endrule
 
     rule handleUSerlogicReadOutput;
         Vector#(NUMERIC_TYPE_FOUR, FtileMacRxUserStream) resultVec = newVector;
