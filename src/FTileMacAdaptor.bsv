@@ -1050,13 +1050,18 @@ typedef Bit#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_ADDR_WIDTH) FtileMacTxChann
 
 // input DATA is buffered in a BRAM, each BRAM row has an address, and we further divide one row into segemnts, and give each segment and index.
 // in this way, the higher part of the address is BRAM row address, and the lower part of the address is the segment index inside a row;
-typedef TLog#(TDiv#(SizeOf#(DATA), FTILE_MAC_DATA_SEGMENT_WIDTH)) FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH;
+typedef TDiv#(SizeOf#(DATA), FTILE_MAC_DATA_SEGMENT_WIDTH) FTILE_MAC_TX_SEG_CNT_PER_USER_INPUT_BEAT;
+typedef TLog#(FTILE_MAC_TX_SEG_CNT_PER_USER_INPUT_BEAT) FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH;
 typedef Bit#(FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH) FtileMacTxChannelBufferRowSegIdx;
+typedef FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH   FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET;
 
 typedef TAdd#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_ADDR_WIDTH, FTILE_MAC_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH) FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_SEG_ADDR_WIDTH;
 typedef Bit#(FTILE_MAC_TX_SINGLE_USER_CHANNEL_BUFFER_SEG_ADDR_WIDTH) FtileMacTxChannelBufferSegAddr;
 typedef FtileMacTxChannelBufferSegAddr FtileMacTxChannelBufferSegCnt;  // infact, we can redefine it to a shorter type to just hold a 4kB packte and addtional header part.
 
+// BRAM width is 32 bytes, a 4kB packet need 128 beat, and we need to add some beat for headers, so next 2^n value is 256.
+typedef 256 FTILE_MAC_TX_MAX_STORAGE_ROW_CNT_PER_PACKET;
+typedef Bit#(TLog#(FTILE_MAC_TX_MAX_STORAGE_ROW_CNT_PER_PACKET)) FtileMacTxBufRowCntPerPacket;
 
 typedef struct {
     FtileMacTxChannelBufferSegAddr startSegAddr;
@@ -1084,9 +1089,77 @@ typedef struct {
 } FtileMacTxPingPongChannelMetaEntry deriving(Bits, FShow);
 
 
+interface FtileMacTxUserInputChannel;
+    interface PipeIn#(FtileMacTxUserStream)         streamPipeIn;
+    interface PipeOut#(FtileMacTxBufferRange)       packetMetaPipeOut;
+
+    interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxBramBufferReadReq))  bramReadReqPipeInVec;
+    interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA))  bramReadRespPipeOutVec;
+endinterface
+
+// (* synthesize *)
+module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
+    FIFOF#(FtileMacTxUserStream)    streamPipeInQueue       <- mkFIFOF;
+    FIFOF#(FtileMacTxBufferRange)   packetMetaPipeOutQueue  <- mkFIFOF;
+
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkFIFOF);
+
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA)) bramReadRespPipeOutVecInst = newVector;
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(DATA)) bramReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
+
+    for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+        bramReadReqPipeInVecInst[idx] = toPipeIn(bramReadReqPipeInQueueVec[idx]);
+        bramReadRespPipeOutVecInst[idx] = toPipeOut(bramReadRespPipeOutQueueVec[idx]);
+    end
+
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, AutoInferBramQueuedOutput#(FtileMacTxChannelBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+    
+    Reg#(FtileMacTxChannelBufferAddr)    curRowAddrReg  <- mkReg(0);
+    Reg#(FtileMacTxChannelBufferSegCnt)  curSegCntReg   <- mkReg(0);
+
+    rule handle;
+        let ds = streamPipeInQueue.first;
+        streamPipeInQueue.deq;
+
+        let curSegCnt = curSegCntReg;
+        if (!ds.isLast) begin
+            curSegCnt = curSegCnt + fromInteger(valueOf(FTILE_MAC_TX_SEG_CNT_PER_USER_INPUT_BEAT));
+        end
+        else begin
+            curSegCnt = curSegCnt + zeroExtend(ds.byteNum >> valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) + 1;
+
+            let zeroBasedByteNum = ds.byteNum - 1;
+            FtileMacEopEmpty byteNumLowerBits = truncate(zeroBasedByteNum);
+
+            let outputEntry = FtileMacTxBufferRange {
+                startSegAddr: zeroExtend(curRowAddrReg) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET),
+                segCnt: curSegCnt,
+                eopEmpty: fromInteger(valueOf(FTILE_MAC_TLP_DATA_SEGMENT_BYTE_WIDTH)-1) - byteNumLowerBits
+            };
+            packetMetaPipeOutQueue.enq(outputEntry);
+            curSegCnt = 0;
+        end
+
+        for (Integer idx = 0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+            dataStreamStorageVec[idx].write(curRowAddrReg, ds.data);
+        end
+        curRowAddrReg   <= curRowAddrReg + 1;
+        curSegCntReg    <= curSegCnt;
+    endrule
+
+    interface streamPipeIn              = toPipeIn(streamPipeInQueue);
+    interface packetMetaPipeOut         = toPipeOut(packetMetaPipeOutQueue);
+    interface bramReadReqPipeInVec      = bramReadReqPipeInVecInst;
+    interface bramReadRespPipeOutVec    = bramReadRespPipeOutVecInst;
+endmodule
+
+
+
 typedef 2 FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT;  // since the beta width is 1024 bits(128 bytes), and min eth packet is 64 bytes.
 typedef 3 FTILE_MAC_TX_MAX_PACKET_PER_BEAT;
-typedef TSub#(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT, 1) FTILE_MAC_TX_MAX_OVERFLOW_SEG_CNT_PER_BEAT;
+typedef TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, SizeOf#(DATA)) FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT;  // 4
+// typedef TSub#(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT, 1) FTILE_MAC_TX_MAX_OVERFLOW_SEG_CNT_PER_BEAT;
 typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT FTILE_MAC_TX_PING_PONG_CHANNEL_CNT;
 typedef Bit#(TLog#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT)) FtileMacTxOutputBeatNewPacketIndex;
 
@@ -1119,7 +1192,6 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
     Reg#(FtileMacUserLogicChannelIdx) curInputRoundRobinIdxReg <- mkReg(0);
     Reg#(FtileMacUserLogicChannelIdx) curOutputRoundRobinIdxReg <- mkReg(0);
     Reg#(FtileMacTxChannelBufferRowSegIdx) prevDestSegOffsetReg <- mkReg(0);
-    Reg#(FtileMacTxChannelBufferRowSegIdx) prevBeatSegOverflowCntReg <- mkReg(0);
 
     let mimoCfg = MIMOConfiguration {
         unguarded: False,
@@ -1139,8 +1211,9 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
     FIFOF#(Tuple2#(
         Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset),
         LUInt#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT)
-    ))  mimoInputPipelineQueue <- mkFIFOF;
+    ))  mimoInputPipelineQueue <- mkLFIFOF;
 
+    FIFOF#(Tuple2#(FtileMacUserLogicChannelIdx, FtileMacTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
 
     rule prepareRoundRobinChannelOrder;
         Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset) vecToEnq = newVector;
@@ -1403,18 +1476,17 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
     // endrule
 
 
-    function FtileMacSegmentCnt roundUpUsedSegCount(FtileMacSegmentCnt inputCnt);
+    function FtileMacTxBufRowCntPerPacket roundUpSegCountToInputBeatCount(FtileMacTxChannelBufferSegCnt inputCnt);
         // each user input 256-bit beat has 4 64-bit segment.
         // if we use only one segment, we also need to read 4 segment from BRAM
-        return ((inputCnt >> 2) + 1) << 2;
+        return truncate((inputCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) + 1);
     endfunction
 
     rule dispatch;
         FtileMacTxPingPongChannelMetaBundle outputMetaBundle = replicate(tagged Invalid);
 
         if (curMetaMaybeReg matches tagged Valid .curMeta) begin
-            let                 prevBeatSegOverflowCnt  = prevBeatSegOverflowCntReg;
-            FtileMacSegmentCnt  curBeatUsedSegCnt       = zeroExtend(prevBeatSegOverflowCnt);
+
 
             let onePacketMetaAvailable      = True;
             let twoPacketMetaAvailable      = selectedInputChannelMetaMIMO.deqReadyN(1);
@@ -1424,30 +1496,31 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             let packetTwoMeta   = selectedInputChannelMetaMIMO.first[0];
             let packetThreeMeta = selectedInputChannelMetaMIMO.first[1];
 
+            FtileMacTxBufRowCntPerPacket packetOneStorgeRowCnt = roundUpSegCountToInputBeatCount(packetOneMeta.segCnt);
+            FtileMacTxBufRowCntPerPacket packetTwoStorgeRowCnt = roundUpSegCountToInputBeatCount(packetTwoMeta.segCnt);
+            FtileMacTxBufRowCntPerPacket packetThreeStorgeRowCnt = roundUpSegCountToInputBeatCount(packetThreeMeta.segCnt);
+
             // I don't want to define a new type, but I need to make sure that the add will not overflow. So we pre-allocate three signal will bigger size.
-            Bit#(TAdd#(2, SizeOf#(FtileMacTxChannelBufferSegCnt))) zeroPacketSegCnt   = zeroExtend(curBeatUsedSegCnt);
-            Bit#(TAdd#(2, SizeOf#(FtileMacTxChannelBufferSegCnt))) onePacketSegCnt    = zeroExtend(packetOneMeta.segCnt) + zeroExtend(curBeatUsedSegCnt);
-            Bit#(TAdd#(2, SizeOf#(FtileMacTxChannelBufferSegCnt))) twoPacketSegCnt    = zeroExtend(packetOneMeta.segCnt) + zeroExtend(packetTwoMeta.segCnt) + zeroExtend(curBeatUsedSegCnt);
-            Bit#(TAdd#(2, SizeOf#(FtileMacTxChannelBufferSegCnt))) threePacketSegCnt  = zeroExtend(packetOneMeta.segCnt) + zeroExtend(packetTwoMeta.segCnt) + zeroExtend(packetThreeMeta.segCnt) + zeroExtend(curBeatUsedSegCnt);
+            Bit#(TAdd#(2, SizeOf#(FtileMacTxBufRowCntPerPacket))) zeroPacketStorgeRowCnt   = 0;
+            Bit#(TAdd#(2, SizeOf#(FtileMacTxBufRowCntPerPacket))) onePacketStorgeRowCnt    = zeroExtend(packetOneStorgeRowCnt);
+            Bit#(TAdd#(2, SizeOf#(FtileMacTxBufRowCntPerPacket))) twoPacketStorgeRowCnt    = zeroExtend(packetOneStorgeRowCnt) + zeroExtend(packetTwoStorgeRowCnt);
+            Bit#(TAdd#(2, SizeOf#(FtileMacTxBufRowCntPerPacket))) threePacketStorgeRowCnt  = zeroExtend(packetOneStorgeRowCnt) + zeroExtend(packetTwoStorgeRowCnt) + zeroExtend(packetThreeStorgeRowCnt);
 
             let beatWillHoldOnePacket   = onePacketMetaAvailable;
-            let beatWillHoldTwoPacket   = twoPacketMetaAvailable   && onePacketSegCnt < fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT));
-            let beatWillHoldThreePacket = threePacketMetaAvailable && twoPacketSegCnt < fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT));
+            let beatWillHoldTwoPacket   = twoPacketMetaAvailable   && onePacketStorgeRowCnt < fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
+            let beatWillHoldThreePacket = threePacketMetaAvailable && twoPacketStorgeRowCnt < fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
 
-            FtileMacSegmentCnt segLeftForPacketOne     = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)) - zeroPacketSegCnt);
-            FtileMacSegmentCnt segLeftForPacketTwo     = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)) - onePacketSegCnt);
-            FtileMacSegmentCnt segLeftForPacketThree   = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)) - twoPacketSegCnt);
-            FtileMacSegmentIdx zeroBasedSegLeftForPacketOne     = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)) - zeroPacketSegCnt - 1);
-            FtileMacSegmentIdx zeroBasedSegLeftForPacketTwo     = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)) - onePacketSegCnt - 1);
-            FtileMacSegmentIdx zeroBasedSegLeftForPacketThree   = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)) - twoPacketSegCnt - 1);
+            FtileMacTxBufRowCntPerPacket storgeRowCntLeftForPacketOne     = truncate(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - zeroPacketStorgeRowCnt);
+            FtileMacTxBufRowCntPerPacket storgeRowCntLeftForPacketTwo     = truncate(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - onePacketStorgeRowCnt);
+            FtileMacTxBufRowCntPerPacket storgeRowCntLeftForPacketThree   = truncate(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - twoPacketStorgeRowCnt);
+            
+            FtileMacTxBufRowCntPerPacket zeroBasedStorgeRowCntLeftForPacketOne     = truncate(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - zeroPacketStorgeRowCnt - 1);
+            FtileMacTxBufRowCntPerPacket zeroBasedStorgeRowCntLeftForPacketTwo     = truncate(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - onePacketStorgeRowCnt - 1);
+            FtileMacTxBufRowCntPerPacket zeroBasedStorgeRowCntLeftForPacketThree   = truncate(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - twoPacketStorgeRowCnt - 1);
 
-            FtileMacTxChannelBufferSegCnt segLeftToCheckIfPacketOneWillEndInThisBeat   = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT) + valueOf(FTILE_MAC_TX_MAX_OVERFLOW_SEG_CNT_PER_BEAT)) - zeroPacketSegCnt);
-            FtileMacTxChannelBufferSegCnt segLeftToCheckIfPacketTwoWillEndInThisBeat   = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT) + valueOf(FTILE_MAC_TX_MAX_OVERFLOW_SEG_CNT_PER_BEAT)) - onePacketSegCnt);
-            FtileMacTxChannelBufferSegCnt segLeftToCheckIfPacketThreeWillEndInThisBeat = truncate(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT) + valueOf(FTILE_MAC_TX_MAX_OVERFLOW_SEG_CNT_PER_BEAT)) - twoPacketSegCnt);
-
-            let packetOneWillEndInThisBeat   = packetOneMeta.segCnt     <= segLeftToCheckIfPacketOneWillEndInThisBeat;
-            let packetTwoWillEndInThisBeat   = packetTwoMeta.segCnt     <= segLeftToCheckIfPacketTwoWillEndInThisBeat;
-            let packetThreeWillEndInThisBeat = packetThreeMeta.segCnt   <= segLeftToCheckIfPacketThreeWillEndInThisBeat;
+            let packetOneWillEndInThisBeat   = packetOneStorgeRowCnt     <= zeroExtend(storgeRowCntLeftForPacketOne[2:0]);
+            let packetTwoWillEndInThisBeat   = packetTwoStorgeRowCnt     <= zeroExtend(storgeRowCntLeftForPacketTwo[2:0]);
+            let packetThreeWillEndInThisBeat = packetThreeStorgeRowCnt   <= zeroExtend(storgeRowCntLeftForPacketThree[2:0]);
 
             if (beatWillHoldThreePacket) begin
                 outputMetaBundle[0] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
@@ -1471,7 +1544,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 outputMetaBundle[2] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
                     srcChannelIdx   : packetThreeMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetThreeMeta.startSegAddr),
-                    zeroBasedSegCnt : packetThreeWillEndInThisBeat ? truncate(packetThreeMeta.segCnt-1) : zeroBasedSegLeftForPacketThree,
+                    zeroBasedSegCnt : packetThreeWillEndInThisBeat ? truncate(packetThreeMeta.segCnt-1) : truncate(storgeRowCntLeftForPacketThree >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET) - 1),
                     eopEmpty        : packetThreeMeta.eopEmpty,
                     destSegOffset   : ?,
                     isLast          : packetThreeWillEndInThisBeat
@@ -1486,9 +1559,8 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 end
                 else begin
                     let nextCurMeta = packetThreeMeta;
-                    nextCurMeta.segCnt = nextCurMeta.segCnt - zeroExtend(roundUpUsedSegCount(segLeftForPacketThree));
+                    nextCurMeta.segCnt = nextCurMeta.segCnt - zeroExtend(storgeRowCntLeftForPacketThree >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
                     curMetaMaybeReg <= tagged Valid nextCurMeta;
-                    prevBeatSegOverflowCnt = truncate(packetOneMeta.segCnt + packetTwoMeta.segCnt + zeroExtend(roundUpUsedSegCount(segLeftForPacketThree)) - fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)));
                 end
             end
             else if (beatWillHoldTwoPacket) begin
@@ -1504,7 +1576,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 outputMetaBundle[1] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
                     srcChannelIdx   : packetTwoMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetTwoMeta.startSegAddr),
-                    zeroBasedSegCnt : packetTwoWillEndInThisBeat ? truncate(packetTwoMeta.segCnt-1) : zeroBasedSegLeftForPacketTwo,
+                    zeroBasedSegCnt : packetTwoWillEndInThisBeat ? truncate(packetTwoMeta.segCnt-1) : truncate(storgeRowCntLeftForPacketTwo >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET) - 1),
                     eopEmpty        : packetTwoMeta.eopEmpty,
                     destSegOffset   : ?,
                     isLast          : packetTwoWillEndInThisBeat
@@ -1518,16 +1590,15 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 end
                 else begin
                     let nextCurMeta = packetTwoMeta;
-                    nextCurMeta.segCnt = nextCurMeta.segCnt - zeroExtend(roundUpUsedSegCount(segLeftForPacketTwo));
+                    nextCurMeta.segCnt = nextCurMeta.segCnt - zeroExtend(storgeRowCntLeftForPacketTwo >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
                     curMetaMaybeReg <= tagged Valid nextCurMeta;
-                    prevBeatSegOverflowCnt = truncate(packetOneMeta.segCnt + zeroExtend(roundUpUsedSegCount(segLeftForPacketTwo)) - fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)));
                 end
             end
             else if (beatWillHoldOnePacket) begin
                 outputMetaBundle[0] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
                     srcChannelIdx   : packetOneMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetOneMeta.startSegAddr),
-                    zeroBasedSegCnt : packetOneWillEndInThisBeat ? truncate(packetOneMeta.segCnt - 1) : fromInteger(valueOf(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT))-1,
+                    zeroBasedSegCnt : packetOneWillEndInThisBeat ? truncate(packetOneMeta.segCnt - 1) : fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT) - 1),
                     eopEmpty        : packetOneMeta.eopEmpty,
                     destSegOffset   : ?,
                     isLast          : packetOneWillEndInThisBeat
@@ -1541,22 +1612,26 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                     let nextCurMeta = packetOneMeta;
                     nextCurMeta.segCnt = nextCurMeta.segCnt - fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT));
                     curMetaMaybeReg <= tagged Valid nextCurMeta;
-                    prevBeatSegOverflowCnt = prevBeatSegOverflowCnt;  // in this case, full beat, overflow cnt will not change
                 end
             end
-            pingpongChannelMetaPipeOutQueueVec[curOutputRoundRobinIdxReg].enq(outputMetaBundle);
+            outputTimingFixPipelineQueue.enq(tuple2(curOutputRoundRobinIdxReg, outputMetaBundle));
             curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
-            prevBeatSegOverflowCntReg <= prevBeatSegOverflowCnt;
         end
         else begin
             if (selectedInputChannelMetaMIMO.deqReadyN(1)) begin
                 curMetaMaybeReg <= tagged Valid selectedInputChannelMetaMIMO.first[0];
                 selectedInputChannelMetaMIMO.deq(1);
-                prevBeatSegOverflowCntReg <= 0;
             end 
         end
     endrule
 
+    rule forwardOutput;
+        let {curOutputRoundRobinIdx, outputMetaBundle} = outputTimingFixPipelineQueue.first;
+        outputTimingFixPipelineQueue.deq;
+        pingpongChannelMetaPipeOutQueueVec[curOutputRoundRobinIdx].enq(outputMetaBundle);
+    endrule
+
+    
     interface packetMetaPipeInVec = packetMetaPipeInVecInst;
     interface pingpongChannelMetaPipeOutVec = pingpongChannelMetaPipeOutVecInst;
 endmodule
@@ -1708,31 +1783,22 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         let outputBeatEmptySegCnt   = outputBeatEmptySegCntReg;
 
         Vector#(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT, FtileMacDataSegment) readRespAsSegBundle = unpack(readResp);
+        outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[0]);
+        outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[1]);
+        outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[2]);
+        outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[3]);
+
         case (bramReadBeatMeta.zeroBasedValidSegCnt)
             0: begin
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[0]);
-
-                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 1'b0: 1'b1, truncateLSB(outputEntry.inFrameSignal)};
+                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0000: 4'b0001, truncateLSB(outputEntry.inFrameSignal)};
             end
             1: begin
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[0]);
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[1]);
-
-                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 2'b01: 2'b11, truncateLSB(outputEntry.inFrameSignal)};
+                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0001: 4'b0011, truncateLSB(outputEntry.inFrameSignal)};
             end
             2: begin
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[0]);
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[1]);
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[2]);
-
-                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 3'b011: 3'b111, truncateLSB(outputEntry.inFrameSignal)};
+                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0011: 4'b0111, truncateLSB(outputEntry.inFrameSignal)};
             end
             3: begin
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[0]);
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[1]);
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[2]);
-                outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[3]);
-
                 outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0111: 4'b1111, truncateLSB(outputEntry.inFrameSignal)};
             end
         endcase
@@ -1764,21 +1830,15 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
     // interface txBramWriteReqPipeInVec   = txBramWriteReqPipeInVecInst;
 endmodule
 
-
-
-
-// interface FtileMacTxPayloadStorageAndGearBox;
-//     interface PipeOut#(FtileMacDataBusSegBundle)        txDataBusSegBundlePipeOut;
-//     // interface PipeOut#(FtileMacTxPacketChunkMeta)       packetChunkMetaPipeOut;
-//     interface PipeIn#(FtileMacTxUserStream)             streamPipeIn;
+// interface FtileMacTxPingPongJoin;
+//     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxBufferRange)) packetMetaPipeInVec;
+//     interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(FtileMacTxPingPongChannelMetaBundle))  pingpongChannelMetaPipeOutVec;
 // endinterface
 
-
 // (* synthesize *)
-// module mkFtileMacTxPayloadStorageAndGearBox(FtileMacTxPayloadStorageAndGearBox);
+// module mkFtileMacTxPingPongJoin(FtileMacTxPingPongJoin);
 
 // endmodule
-
 
 interface FTileMac;
     interface PipeIn#(FtileMacRxBeat) ftilemacRxPipeIn;
