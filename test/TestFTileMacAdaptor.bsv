@@ -1407,3 +1407,67 @@ module mkTestFtileMacTxPingPongForkTimingTest(TestFtileMacTxPingPongForkTimingTe
     
     method getOutput = outReg;
 endmodule
+
+
+
+module mkTestFtileTx(Empty);
+
+    Reg#(Word) injectStepReg <- mkReg(1);
+    Reg#(Word) checkStepReg <- mkReg(0);
+
+
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacTxUserInputChannel) txInputChannelVec <- replicateM(mkFtileMacTxUserInputChannel);
+    let ftileMacTxBeatFork <- mkFtileMacTxPingPongFork;
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FtileMacTxPingPongSingleChannel) txPingPongChannelVec <- replicateM(mkFtileMacTxPingPongSingleChannel);
+    let ftileMacTxBeatJoin <- mkFtileMacTxPingPongJoin;
+
+    for (Integer inputChannelIdx = 0; inputChannelIdx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); inputChannelIdx = inputChannelIdx + 1) begin
+        for (Integer pingpongChannelIdx = 0; pingpongChannelIdx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); pingpongChannelIdx = pingpongChannelIdx + 1) begin
+            mkConnection(txPingPongChannelVec[pingpongChannelIdx].bramReadReqPipeOutVec[inputChannelIdx], txInputChannelVec[inputChannelIdx].bramReadReqPipeInVec[pingpongChannelIdx]);
+            mkConnection(txInputChannelVec[inputChannelIdx].bramReadRespPipeOutVec[pingpongChannelIdx], txPingPongChannelVec[pingpongChannelIdx].bramReadRespPipeInVec[inputChannelIdx]);
+        end
+    end
+
+
+    for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+        mkConnection(txInputChannelVec[idx].packetMetaPipeOut, ftileMacTxBeatFork.packetMetaPipeInVec[idx]);
+        mkConnection(ftileMacTxBeatFork.pingpongChannelMetaPipeOutVec[idx], txPingPongChannelVec[idx].metaPipeIn);
+        mkConnection(txPingPongChannelVec[idx].beatPipeOut, ftileMacTxBeatJoin.pingpongBeatPipeInVec[idx]);
+    end
+
+    
+
+    Stmt injectProc = seq
+        action
+            txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111, byteNum: 32, startByteIdx: 0, isFirst: True, isLast: False});
+            txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h33333333_33333333_33333333_33333333_33333333_33333333_33333333_33333333, byteNum: 32, startByteIdx: 0, isFirst: True, isLast: False});
+        endaction
+        action
+            txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h22222222_22222222_22222222_22222222_22222222_22222222_22222222_22222222, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: True});
+            txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h44444444_44444444_44444444_44444444_44444444_44444444_44444444_44444444, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: True});
+        endaction
+    endseq;
+
+
+    let outPipeOut = ftileMacTxBeatJoin.ftilemacTxPipeOut;
+    Stmt checkProc = (seq
+        // Case 1
+        action
+            outPipeOut.deq;
+            $display(fshow(outPipeOut.first));
+        endaction
+
+        $finish;
+    endseq);
+
+    FSM injectFSM <- mkFSM(injectProc);
+    FSM checkFSM  <- mkFSM(checkProc);
+    
+    Reg#(Bool) goingReg <- mkReg(False);
+
+    rule start (!goingReg);
+        goingReg <= True;
+        injectFSM.start;
+        checkFSM.start;
+    endrule
+endmodule

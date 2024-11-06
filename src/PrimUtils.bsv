@@ -743,7 +743,15 @@ module mkAutoInferBramSingleClockWrBSV#(Bool bypassWriteData, String initFile)(A
         Bounded#(tAddr),
         Literal#(tAddr)
     );
-    RegFile#(tAddr, tData) storage <- mkRegFileWCFLoadBin(initFile, 0, maxBound);
+    RegFile#(tAddr, tData) storage;
+    
+    if (initFile != "") begin
+        storage <- mkRegFileWCFLoadBin(initFile, 0, maxBound);
+    end
+    else begin
+        storage <- mkRegFileWCF(0, maxBound);
+    end
+
     Reg#(tData) tReg <- mkRegU;
 
     RWire#(Tuple2#(tAddr, tData)) writeReqWire <- mkRWire;

@@ -1115,20 +1115,29 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, AutoInferBramQueuedOutput#(FtileMacTxChannelBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
     
-    Reg#(FtileMacTxChannelBufferAddr)    curRowAddrReg  <- mkReg(0);
-    Reg#(FtileMacTxChannelBufferSegCnt)  curSegCntReg   <- mkReg(0);
+    Reg#(FtileMacTxChannelBufferAddr)    curRowAddrReg      <- mkReg(0);
+    Reg#(FtileMacTxChannelBufferAddr)    startRowAddrReg    <- mkReg(0);
+    Reg#(FtileMacTxChannelBufferSegCnt)  curSegCntReg       <- mkReg(0);
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         rule handleStorageReadReq;
             let req = bramReadReqPipeInQueueVec[idx].first;
             bramReadReqPipeInQueueVec[idx].deq;
             dataStreamStorageVec[idx].putReadReq(req.addr);
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadReq [idx=%d]"), idx,
+                toBlue(", req="), fshow(req)
+            );
         endrule
 
         rule handleStorageReadResp;
             let resp = dataStreamStorageVec[idx].readRespPipeOut.first;
             dataStreamStorageVec[idx].readRespPipeOut.deq;
             bramReadRespPipeOutQueueVec[idx].enq(resp);
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadResp [idx=%d]"), idx,
+                toBlue(", resp="), fshow(resp)
+            );
         endrule
     end
 
@@ -1148,20 +1157,25 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             FtileMacEopEmpty byteNumLowerBits = truncate(zeroBasedByteNum);
 
             let outputEntry = FtileMacTxBufferRange {
-                startSegAddr: zeroExtend(curRowAddrReg) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET),
+                startSegAddr: zeroExtend(startRowAddrReg) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET),
                 segCnt: curSegCnt, 
                 isStorageRowCountSmall: (curSegCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)),
                 eopEmpty: fromInteger(valueOf(FTILE_MAC_TLP_DATA_SEGMENT_BYTE_WIDTH)-1) - byteNumLowerBits
             };
             packetMetaPipeOutQueue.enq(outputEntry);
             curSegCnt = 0;
+            startRowAddrReg <= curRowAddrReg + 1;
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleMetaCalc"),
+                toBlue(", outputEntry="), fshow(outputEntry)
+            );
         end
 
         for (Integer idx = 0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
             dataStreamStorageVec[idx].write(curRowAddrReg, ds.data);
         end
-        curRowAddrReg   <= curRowAddrReg + 1;
-        curSegCntReg    <= curSegCnt;
+        curRowAddrReg <= curRowAddrReg + 1;
+        curSegCntReg  <= curSegCnt;
     endrule
 
     interface streamPipeIn              = toPipeIn(streamPipeInQueue);
