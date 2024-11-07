@@ -1514,6 +1514,11 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
 
         if (enqCnt != 0) begin
             selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork prepareRoundRobinChannelOrder"),
+                toBlue(", enqCnt="), fshow(enqCnt),
+                toBlue(", vecToEnq="), fshow(vecToEnq)
+            );
         end
 
         // mimoInputPipelineQueue.enq(tuple2(vecToEnq, enqCnt));
@@ -1538,12 +1543,12 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             let threePacketMetaAvailable    = selectedInputChannelMetaMIMO.deqReadyN(2);
 
             let packetOneMeta   = curMeta;
-            let packetTwoMeta   = selectedInputChannelMetaMIMO.first[0];
-            let packetThreeMeta = selectedInputChannelMetaMIMO.first[1];
+            let packetTwoMeta   = twoPacketMetaAvailable ? selectedInputChannelMetaMIMO.first[0] : ?;
+            let packetThreeMeta = threePacketMetaAvailable ? selectedInputChannelMetaMIMO.first[1] : ?;
 
-            FtileMacTxSmallBramRowCnt packetOneSmallBramRowCnt   = truncate(packetOneMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
-            FtileMacTxSmallBramRowCnt packetTwoSmallBramRowCnt   = truncate(packetTwoMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
-            FtileMacTxSmallBramRowCnt packetThreeSmallBramRowCnt = truncate(packetThreeMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
+            FtileMacTxSmallBramRowCnt packetOneSmallBramRowCnt   = truncate((packetOneMeta.segCnt - 1) >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) + 1;
+            FtileMacTxSmallBramRowCnt packetTwoSmallBramRowCnt   = truncate((packetTwoMeta.segCnt - 1)  >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) + 1;
+            FtileMacTxSmallBramRowCnt packetThreeSmallBramRowCnt = truncate((packetThreeMeta.segCnt - 1) >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) + 1;
 
             FtileMacTxSmallBramRowCntSumResult onePacketSmallBramRowCntSum   =                               zeroExtend(packetOneSmallBramRowCnt);
             FtileMacTxSmallBramRowCntSumResult twoPacketSmallBramRowCntSum   = onePacketSmallBramRowCntSum + zeroExtend(packetTwoSmallBramRowCnt);
@@ -1557,9 +1562,22 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             let beatWillHoldTwoPacket   = twoPacketMetaAvailable   && packetOneMeta.isStorageRowCountSmall && onePacketSmallBramRowCntSum < fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
             let beatWillHoldThreePacket = threePacketMetaAvailable && packetOneMeta.isStorageRowCountSmall && packetTwoMeta.isStorageRowCountSmall && twoPacketSmallBramRowCntSum < fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
 
-            FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketOne     = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(onePacketSmallBramRowCntSum);
-            FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketTwo     = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(twoPacketSmallBramRowCntSum);
-            FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketThree   = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(threePacketSmallBramRowCntSum);
+            FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketOne     = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
+            FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketTwo     = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(onePacketSmallBramRowCntSum);
+            FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketThree   = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(twoPacketSmallBramRowCntSum);
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch"),
+                toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
+                toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
+                toBlue(", packetThreeSmallBramRowCnt="), fshow(packetThreeSmallBramRowCnt),
+                toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
+                toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
+                toBlue(", threePacketSmallBramRowCntSum="), fshow(threePacketSmallBramRowCntSum),
+                toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
+                toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo),
+                toBlue(", smallStorgeRowCntLeftForPacketThree="), fshow(smallStorgeRowCntLeftForPacketThree)
+            );
 
             if (beatWillHoldThreePacket) begin
                 outputMetaBundle[0] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
@@ -1583,7 +1601,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 outputMetaBundle[2] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
                     srcChannelIdx   : packetThreeMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetThreeMeta.startSegAddr),
-                    zeroBasedSegCnt : packetThreeWillEndInThisBeat ? truncate(packetThreeMeta.segCnt-1) : (zeroExtend(smallStorgeRowCntLeftForPacketThree) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET) - 1),
+                    zeroBasedSegCnt : packetThreeWillEndInThisBeat ? truncate(packetThreeMeta.segCnt-1) : ((zeroExtend(smallStorgeRowCntLeftForPacketThree) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) - 1),
                     eopEmpty        : packetThreeMeta.eopEmpty,
                     destSegOffset   : ?,
                     isLast          : packetThreeWillEndInThisBeat
@@ -1597,9 +1615,11 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                     immFail("should not reach here, each packet is at least 64 Byte, 3 packet can't end in single 128 Byte", $format(""));
                 end
                 else begin
-                    let nextCurMeta = packetThreeMeta;
-                    nextCurMeta.segCnt = nextCurMeta.segCnt - (zeroExtend(smallStorgeRowCntLeftForPacketThree) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
-                    nextCurMeta.isStorageRowCountSmall = (nextCurMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
+                    let nextCurMeta                     = packetThreeMeta;
+                    let segCntDelta                     = zeroExtend(smallStorgeRowCntLeftForPacketThree) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET);
+                    nextCurMeta.startSegAddr            = nextCurMeta.startSegAddr + segCntDelta;
+                    nextCurMeta.segCnt                  = nextCurMeta.segCnt - segCntDelta;
+                    nextCurMeta.isStorageRowCountSmall  = (nextCurMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
                     curMetaMaybeReg <= tagged Valid nextCurMeta;
                 end
             end
@@ -1616,7 +1636,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 outputMetaBundle[1] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
                     srcChannelIdx   : packetTwoMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetTwoMeta.startSegAddr),
-                    zeroBasedSegCnt : packetTwoWillEndInThisBeat ? truncate(packetTwoMeta.segCnt-1) : (zeroExtend(smallStorgeRowCntLeftForPacketTwo) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET) - 1),
+                    zeroBasedSegCnt : packetTwoWillEndInThisBeat ? truncate(packetTwoMeta.segCnt-1) : ((zeroExtend(smallStorgeRowCntLeftForPacketTwo) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) - 1),
                     eopEmpty        : packetTwoMeta.eopEmpty,
                     destSegOffset   : ?,
                     isLast          : packetTwoWillEndInThisBeat
@@ -1629,9 +1649,11 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                     curMetaMaybeReg <= tagged Invalid;
                 end
                 else begin
-                    let nextCurMeta = packetTwoMeta;
-                    nextCurMeta.segCnt = nextCurMeta.segCnt - (zeroExtend(smallStorgeRowCntLeftForPacketTwo) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET));
-                    nextCurMeta.isStorageRowCountSmall = (nextCurMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
+                    let nextCurMeta                     = packetTwoMeta;
+                    let segCntDelta                     = zeroExtend(smallStorgeRowCntLeftForPacketTwo) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET);
+                    nextCurMeta.startSegAddr            = nextCurMeta.startSegAddr + segCntDelta;
+                    nextCurMeta.segCnt                  = nextCurMeta.segCnt - segCntDelta;
+                    nextCurMeta.isStorageRowCountSmall  = (nextCurMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
                     curMetaMaybeReg <= tagged Valid nextCurMeta;
                 end
             end
@@ -1639,7 +1661,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 outputMetaBundle[0] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
                     srcChannelIdx   : packetOneMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetOneMeta.startSegAddr),
-                    zeroBasedSegCnt : packetOneWillEndInThisBeat ? truncate(packetOneMeta.segCnt - 1) : (zeroExtend(smallStorgeRowCntLeftForPacketOne) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET) - 1),
+                    zeroBasedSegCnt : packetOneWillEndInThisBeat ? truncate(packetOneMeta.segCnt - 1) : ((zeroExtend(smallStorgeRowCntLeftForPacketOne) << valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) - 1),
                     eopEmpty        : packetOneMeta.eopEmpty,
                     destSegOffset   : ?,
                     isLast          : packetOneWillEndInThisBeat
@@ -1650,13 +1672,25 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                     curMetaMaybeReg <= tagged Invalid;
                 end
                 else begin
-                    let nextCurMeta = packetOneMeta;
-                    nextCurMeta.segCnt = nextCurMeta.segCnt - fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT));
-                    nextCurMeta.isStorageRowCountSmall = (nextCurMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
+                    let nextCurMeta                     = packetOneMeta;
+                    let segCntDelta                     = fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT));
+                    nextCurMeta.startSegAddr            = nextCurMeta.startSegAddr + segCntDelta;
+                    nextCurMeta.segCnt                  = nextCurMeta.segCnt - segCntDelta;
+                    nextCurMeta.isStorageRowCountSmall  = (nextCurMeta.segCnt >> valueOf(FTILE_MAC_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
                     curMetaMaybeReg <= tagged Valid nextCurMeta;
                 end
             end
+            else begin
+                immFail("should not reach here", $format(""));
+            end
+
             outputTimingFixPipelineQueue.enq(tuple2(curOutputRoundRobinIdxReg, outputMetaBundle));
+            $display(
+                "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch final output"),
+                toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
+                toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
+            );
+
             curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
         end
         else begin
@@ -1728,13 +1762,6 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         bramReadReqPipeOutVecInst[idx] = toPipeOut(bramReadReqPipeOutQueueVec[idx]);
         bramReadRespPipeInVecInst[idx] = toPipeIn(bramReadRespPipeInQueueVec[idx]);
     end
-
-    // Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacRxBramBufferWriteReq))   txBramWriteReqPipeInVecInst = newVector;
-    // Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxBramBufferWriteReq))    txBramWriteReqPipeInQueueVec <- replicateM(mkFIFOF);
-    // for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
-    //     txBramWriteReqPipeInVecInst[idx] = toPipeIn(txBramWriteReqPipeInQueueVec[idx]);
-    // end
-
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, AutoInferBramQueuedOutput#(FtileMacTxBramBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
     

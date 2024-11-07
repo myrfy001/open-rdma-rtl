@@ -1438,20 +1438,40 @@ module mkTestFtileTx(Empty);
     
 
     Stmt injectProc = seq
-        action
-            txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111, byteNum: 32, startByteIdx: 0, isFirst: True, isLast: False});
-            txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h33333333_33333333_33333333_33333333_33333333_33333333_33333333_33333333, byteNum: 32, startByteIdx: 0, isFirst: True, isLast: False});
-        endaction
-        action
-            txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h22222222_22222222_22222222_22222222_22222222_22222222_22222222_22222222, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: True});
-            txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h44444444_44444444_44444444_44444444_44444444_44444444_44444444_44444444, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: True});
-        endaction
+        par
+            seq
+                txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h11111117_11111116_11111115_11111114_11111113_11111112_11111111_11111110, byteNum: 32, startByteIdx: 0, isFirst: True,  isLast: False});
+                txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h22222227_22222226_22222225_22222224_22222223_22222222_22222221_22222220, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: True});
+                // txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'hDDDDDDD7_DDDDDDD6_DDDDDDD5_DDDDDDD4_DDDDDDD3_DDDDDDD2_DDDDDDD1_DDDDDDD0, byteNum: 32, startByteIdx: 0, isFirst: True,  isLast: False});
+                // txInputChannelVec[0].streamPipeIn.enq(FtileMacTxUserStream {data: 256'hEEEEEEE7_EEEEEEE6_EEEEEEE5_EEEEEEE4_EEEEEEE3_EEEEEEE2_EEEEEEE1_EEEEEEE0, byteNum: 5,  startByteIdx: 0, isFirst: False, isLast: True});
+            endseq
+            seq
+                txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h33333337_33333336_33333335_33333334_33333333_33333332_33333331_33333330, byteNum: 32, startByteIdx: 0, isFirst: True,  isLast: False});
+                txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h44444447_44444446_44444445_44444444_44444443_44444442_44444441_44444440, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: False});
+                txInputChannelVec[1].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h55555557_55555556_55555555_55555554_55555553_55555552_55555551_55555550, byteNum: 2,  startByteIdx: 0, isFirst: False, isLast: True});
+            endseq
+            // seq
+            //     txInputChannelVec[2].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h66666667_66666666_66666665_66666664_66666663_66666662_66666661_66666660, byteNum: 32, startByteIdx: 0, isFirst: True,  isLast: False});
+            //     txInputChannelVec[2].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h77777777_77777776_77777775_77777774_77777773_77777772_77777771_77777770, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: False});
+            //     txInputChannelVec[2].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h88888887_88888886_88888885_88888884_88888883_88888882_88888881_88888880, byteNum: 16, startByteIdx: 0, isFirst: False, isLast: True});
+            // endseq
+            // seq
+            //     txInputChannelVec[3].streamPipeIn.enq(FtileMacTxUserStream {data: 256'h99999997_99999996_99999995_99999994_99999993_99999992_99999991_99999990, byteNum: 32, startByteIdx: 0, isFirst: True,  isLast: False});
+            //     txInputChannelVec[3].streamPipeIn.enq(FtileMacTxUserStream {data: 256'hAAAAAAA7_AAAAAAA6_AAAAAAA5_AAAAAAA4_AAAAAAA3_AAAAAAA2_AAAAAAA1_AAAAAAA0, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: False});
+            //     txInputChannelVec[3].streamPipeIn.enq(FtileMacTxUserStream {data: 256'hBBBBBBB7_BBBBBBB6_BBBBBBB5_BBBBBBB4_BBBBBBB3_BBBBBBB2_BBBBBBB1_BBBBBBB0, byteNum: 32, startByteIdx: 0, isFirst: False, isLast: False});
+            //     txInputChannelVec[3].streamPipeIn.enq(FtileMacTxUserStream {data: 256'hCCCCCCC7_CCCCCCC6_CCCCCCC5_CCCCCCC4_CCCCCCC3_CCCCCCC2_CCCCCCC1_CCCCCCC0, byteNum: 19, startByteIdx: 0, isFirst: False, isLast: True});
+            // endseq
+        endpar
     endseq;
 
 
     let outPipeOut = ftileMacTxBeatJoin.ftilemacTxPipeOut;
     Stmt checkProc = (seq
         // Case 1
+        action
+            outPipeOut.deq;
+            $display(fshow(outPipeOut.first));
+        endaction
         action
             outPipeOut.deq;
             $display(fshow(outPipeOut.first));
