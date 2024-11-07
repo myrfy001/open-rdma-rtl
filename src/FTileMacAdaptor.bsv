@@ -1193,6 +1193,7 @@ typedef TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, SizeOf#(DATA)) FTILE_MAC_TX_INPUT_BRA
 typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT FTILE_MAC_TX_PING_PONG_CHANNEL_CNT;
 typedef Bit#(TLog#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT)) FtileMacTxOutputBeatNewPacketIndex;
 
+typedef Bit#(TLog#(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) FtileMacTxBramRowIndexInOutputBeat;
 typedef TAdd#(1, TLog#(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) FTILE_MAC_TX_SMALL_BRAM_ROW_COUNT_WIDTH;
 typedef TAdd#(1, TLog#(FTILE_MAC_TX_SMALL_BRAM_ROW_COUNT_WIDTH)) FTILE_MAC_TX_SMALL_BRAM_ROW_COUNT_SUM_RESULT_WIDTH;
 typedef Bit#(FTILE_MAC_TX_SMALL_BRAM_ROW_COUNT_WIDTH) FtileMacTxSmallBramRowCnt;
@@ -1768,13 +1769,14 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
     Reg#(Maybe#(FtileMacTxPingPongChannelMetaEntry)) curMetaEntryMaybeReg <- mkReg(tagged Invalid);
     Reg#(FtileMacTxPingPongChannelMetaBundle) curInputMetaBundleReg <- mkRegU;
 
-    Reg#(FtileMacSegmentCnt) outputBeatEmptySegCntReg <- mkReg(fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT)));
+    Reg#(FtileMacTxBramRowIndexInOutputBeat) outputBeatEmptyStorageRowCntReg <- mkReg(fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)-1));
 
 
     Reg#(FtileMacTxPingPongChannelOutputEntry) outputEntryReg <- mkReg(unpack(0));
 
     // Pipeline FIFOs
     FIFOF#(FtileMacTxPingPongChannelBramReadPipelineEntry) bramReadPipelineQueue <- mkSizedFIFOF(8);
+    FIFOF#(Tuple2#(FtileMacTxBramRowIndexInOutputBeat, FtileMacTxPingPongChannelOutputEntry))  finalShiftPipelineQueue <- mkLFIFOF;
 
     rule sendBramReadReq;
         let zeroBasedValidSegCnt = ?;
@@ -1782,11 +1784,12 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         if (curMetaEntryMaybeReg matches tagged Valid .curMetaEntry) begin
             let metaBundle = metaPipeInQueue.first;
 
-            let isLast = curMetaEntry.zeroBasedSegCnt <= fromInteger(valueOf(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT)-1);
+            let isCurMetaEntryLast = (curMetaEntry.zeroBasedSegCnt <= fromInteger(valueOf(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT)-1));
+            let isPacketLast = isCurMetaEntryLast && curMetaEntry.isLast;
             let haveNextValidPacketMeta = isValid(curInputMetaBundleReg[0]);
-            let isOutputBeatLast = isLast && !haveNextValidPacketMeta;
+            let isOutputBeatLast = isCurMetaEntryLast && !haveNextValidPacketMeta;
 
-            if (!isLast) begin
+            if (!isPacketLast) begin
                 zeroBasedValidSegCnt = fromInteger(valueOf(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT)-1);
             end
             else begin
@@ -1798,12 +1801,12 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
                 srcChannelIdx       : curMetaEntry.srcChannelIdx,
                 zeroBasedValidSegCnt: zeroBasedValidSegCnt,
                 eopEmpty            : curMetaEntry.eopEmpty,
-                isLast              : isLast,
+                isLast              : isPacketLast,
                 isOutputBeatLast    : isOutputBeatLast
             });
 
             let nextCurMetaEntryMaybe;
-            if (!isLast) begin
+            if (!isCurMetaEntryLast) begin
                 let nextCurMetaEntry = curMetaEntry;
                 nextCurMetaEntry.zeroBasedSegCnt = nextCurMetaEntry.zeroBasedSegCnt - fromInteger(valueOf(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT));
                 nextCurMetaEntry.startRowAddr = nextCurMetaEntry.startRowAddr + 1;
@@ -1839,11 +1842,16 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         let bramReadBeatMeta = bramReadPipelineQueue.first;
         bramReadPipelineQueue.deq;
 
+        $display(
+            "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel handleBramReadResp"),
+            toBlue(", bramReadBeatMeta="), fshow(bramReadBeatMeta)
+        );
+
         let readResp = bramReadRespPipeInQueueVec[bramReadBeatMeta.srcChannelIdx].first;
         bramReadRespPipeInQueueVec[bramReadBeatMeta.srcChannelIdx].deq;
 
-        let outputEntry             = outputEntryReg;
-        let outputBeatEmptySegCnt   = outputBeatEmptySegCntReg;
+        let outputEntry                     = outputEntryReg;
+        let outputBeatEmptyStorageRowCnt    = outputBeatEmptyStorageRowCntReg;
 
         Vector#(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT, FtileMacDataSegment) readRespAsSegBundle = unpack(readResp);
         outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, readRespAsSegBundle[0]);
@@ -1853,24 +1861,24 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
 
         case (bramReadBeatMeta.zeroBasedValidSegCnt)
             0: begin
-                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0000: 4'b0001, truncateLSB(outputEntry.inFrameSignal)};
-                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.eopEmpty);
+                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0000: 4'b1111, truncateLSB(outputEntry.inFrameSignal)};
+                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.isLast ? bramReadBeatMeta.eopEmpty : unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
             end
             1: begin
-                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0001: 4'b0011, truncateLSB(outputEntry.inFrameSignal)};
+                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0001: 4'b1111, truncateLSB(outputEntry.inFrameSignal)};
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
-                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.eopEmpty);
+                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.isLast ? bramReadBeatMeta.eopEmpty : unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
             end
             2: begin
-                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0011: 4'b0111, truncateLSB(outputEntry.inFrameSignal)};
+                outputEntry.inFrameSignal = {bramReadBeatMeta.isLast ? 4'b0011: 4'b1111, truncateLSB(outputEntry.inFrameSignal)};
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
-                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.eopEmpty);
+                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.isLast ? bramReadBeatMeta.eopEmpty : unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
             end
             3: begin
@@ -1878,20 +1886,62 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
                 outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
-                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.eopEmpty);
+                outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, bramReadBeatMeta.isLast ? bramReadBeatMeta.eopEmpty : unpack(0));
             end
         endcase
+    
 
-        outputBeatEmptySegCnt = outputBeatEmptySegCnt - zeroExtend(bramReadBeatMeta.zeroBasedValidSegCnt) - 1;
-
-        outputEntryReg <= outputEntry;
         if (bramReadBeatMeta.isOutputBeatLast) begin
-            beatPipeOutQueue.enq(outputEntry);
-            outputBeatEmptySegCntReg <= fromInteger(valueOf(FTILE_MAC_SEGMENT_CNT));
+            finalShiftPipelineQueue.enq(tuple2(outputBeatEmptyStorageRowCnt, outputEntry));
+            outputBeatEmptyStorageRowCntReg <= fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)-1);
         end
         else begin
-            outputBeatEmptySegCntReg <= outputBeatEmptySegCnt;
+            outputBeatEmptyStorageRowCntReg <= outputBeatEmptyStorageRowCnt - 1;
         end
+        outputEntryReg <= outputEntry;
+    endrule
+
+    rule finalShift;
+        FtileMacTxBramRowIndexInOutputBeat      outputBeatEmptyStorageRowCnt;
+        FtileMacTxPingPongChannelOutputEntry    outputEntry;
+
+        {outputBeatEmptyStorageRowCnt, outputEntry} = finalShiftPipelineQueue.first;
+        finalShiftPipelineQueue.deq;
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel finalShift"),
+            toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
+            toBlue(", outputEntry="), fshow(outputEntry)
+        );
+
+        case (outputBeatEmptyStorageRowCnt)
+            0: begin
+                // nothing to do
+            end
+            1: begin
+                for (Integer idx = 0; idx < 4; idx = idx + 1) begin
+                    outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, unpack(0));
+                    outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
+                    outputEntry.inFrameSignal = {1'b0, truncateLSB(outputEntry.inFrameSignal)};
+                end
+                
+            end
+            2: begin
+                for (Integer idx = 0; idx < 8; idx = idx + 1) begin
+                    outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, unpack(0));
+                    outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
+                    outputEntry.inFrameSignal = {1'b0, truncateLSB(outputEntry.inFrameSignal)};
+                end
+            end
+            3: begin
+                for (Integer idx = 0; idx < 12; idx = idx + 1) begin
+                    outputEntry.dataBuf = shiftInAtN(outputEntry.dataBuf, unpack(0));
+                    outputEntry.eopEmptySignal = shiftInAtN(outputEntry.eopEmptySignal, unpack(0));
+                    outputEntry.inFrameSignal = {1'b0, truncateLSB(outputEntry.inFrameSignal)};
+                end
+            end
+        endcase
+        beatPipeOutQueue.enq(outputEntry);
     endrule
 
    
