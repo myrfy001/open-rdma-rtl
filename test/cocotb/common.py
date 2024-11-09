@@ -1,11 +1,12 @@
 import os
 from collections import deque
+from abc import ABC
 
 import asyncio
 
 import cocotb
 from cocotb.triggers import RisingEdge, ReadWrite
-import cocotb.utils
+from cocotb.binary import BinaryValue
 
 
 def gen_rtl_file_list(top_paths):
@@ -84,14 +85,55 @@ class BluespecActionMethod(BluespecActionValueMethod):
         self.return_value_signal = None
 
 
-class BluespecDataStream:
+class BluespecType(ABC):
+    def pack(self) -> int:
+        return 0
 
+    def unpack(self, val):
+        pass
+
+    def width(self):
+        pass
+
+
+class BluespecBits(BluespecType):
+    def __init__(self, value=None, width=None):
+        self._inner = BinaryValue(value, n_bits=width)
+
+    def pack(self):
+        return self._inner.integer
+
+    def width(self):
+        return self._inner.n_bits
+
+
+class BluespecStruct(BluespecType):
+    def __init__(self, **members):
+        self.members = members
+        self._width = 0
+        for member in members.values():
+            self._width += member.width()
+
+    def pack(self):
+        packed_val = 0
+        for member in self.members.values():
+            member_packed_val = member.pack()
+            packed_val = (packed_val << member.width()) | member_packed_val
+        return packed_val
+
+    def width(self):
+        return self._width
+
+
+class BluespecDataStream256(BluespecStruct):
     def __init__(self, data, byte_num, start_byte_index, is_first, is_last):
-        self.data = data
-        self.byte_num = byte_num
-        self.start_byte_index = start_byte_index
-        self.is_first = is_first
-        self.is_last = is_last
+        data = BluespecBits(data, width=256)
+        byte_num = BluespecBits(byte_num, width=6)
+        start_byte_index = BluespecBits(start_byte_index, width=5)
+        is_first = BluespecBits(is_first, width=1)
+        is_last = BluespecBits(is_last, width=1)
+        super().__init__(data=data, byte_num=byte_num,
+                         start_byte_index=start_byte_index, is_first=is_first, is_last=is_last)
 
 
 class BluespecPipeOut:
@@ -107,45 +149,14 @@ class BluespecPipeOut:
         self.bsv_deq = BluespecActionMethod(
             dut, signal_base_name + "_deq", clk)
 
-        # self.not_empty_signal_name = signal_base_name + "_notEmpty"
-        # self.not_empty_rdy_signal_name = "RDY_" + self.not_empty_signal_name
-
-        # self.first_signal_name = signal_base_name + "_first"
-        # self.first_rdy_signal_name = "RDY_ " + self.first_signal_name
-
-        # self.deq_signal_name = signal_base_name + "_deq"
-        # self.deq_rdy_signal_name = "RDY_" + self.deq_signal_name
-        # self.deq_en_signal_name = "EN_" + self.deq_signal_name
-
     async def not_empty(self):
         return await self.bsv_not_empty()
-        # not_empty_signal = getattr(self.dut, self.not_empty_signal_name)
-        # return not_empty_signal.value
 
     async def deq(self):
         await self.bsv_deq()
-        # deq_rdy_signal = getattr(self.dut, self.deq_rdy_signal_name)
-        # deq_en_signal = getattr(self.dut, self.deq_en_signal_name)
-
-        # async def _deassert_en_signal():
-        #     print("_deassert_en_signal in pipe out run")
-        #     await RisingEdge(self.clk)
-        #     deq_en_signal.value = 0
-        #     print("_deassert_en_signal pipe out set en to 0")
-
-        # while not deq_rdy_signal.value:
-        #     print("pipeout deq waiting ready signal")
-        #     await RisingEdge(deq_rdy_signal)
-        # deq_en_signal.value = 1
-        # await cocotb.start(_deassert_en_signal())
 
     async def first(self):
         return await self.bsv_first()
-        # first_rdy_signal = getattr(self.dut, self.first_rdy_signal_name)
-        # first_signal = getattr(self.dut, self.first_signal_name)
-        # while not first_rdy_signal.value:
-        #     await RisingEdge(first_rdy_signal)
-        # return first_signal.value
 
 
 class BluespecPipeIn:
@@ -159,37 +170,8 @@ class BluespecPipeIn:
         self.bsv_enq = BluespecActionMethod(
             dut, signal_base_name + "_enq", clk)
 
-        # self.not_full_signal_name = signal_base_name + "_notFull"
-        # self.not_full_rdy_signal_name = "RDY_" + self.not_full_signal_name
-
-        # self.enq_signal_name = signal_base_name + "_enq"
-        # self.enq_data_signal_name = self.enq_signal_name + "_data"
-        # self.enq_rdy_signal_name = "RDY_" + self.enq_signal_name
-        # self.enq_en_signal_name = "EN_" + self.enq_signal_name
-
     async def not_full(self):
         return await self.bsv_not_full()
-        # not_full_signal = getattr(self.dut, self.not_full_signal_name)
-        # return not_full_signal.value
 
     async def enq(self, data):
         await self.bsv_enq(data=data)
-        # enq_data_signal = getattr(self.dut, self.enq_data_signal_name)
-        # enq_rdy_signal = getattr(self.dut, self.enq_rdy_signal_name)
-        # enq_en_signal = getattr(self.dut, self.enq_en_signal_name)
-
-        # async def _deassert_en_signal():
-        #     print("_deassert_en_signal in pipe in run, ",
-        #           cocotb.utils.get_sim_time(units='ns'))
-        #     await RisingEdge(self.clk)
-        #     enq_en_signal.value = 0
-        #     print("_deassert_en_signal pipe in set en to 0 ",
-        #           cocotb.utils.get_sim_time(units='ns'))
-
-        # while not enq_rdy_signal.value:
-        #     await RisingEdge(enq_rdy_signal)
-        # enq_en_signal.value = 1
-        # enq_data_signal.value = data
-        # print("aaaaaaa=", cocotb.utils.get_sim_time(units='ns'))
-        # await cocotb.start(_deassert_en_signal())
-        # print("bbbbbbb=", cocotb.utils.get_sim_time(units='ns'))

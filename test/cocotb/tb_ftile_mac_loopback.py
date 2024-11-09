@@ -15,7 +15,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut
+from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BluespecDataStream256
 
 
 class TB(object):
@@ -28,70 +28,76 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
 
-        self.pipeIn = BluespecPipeIn(dut, "pipeIn", self.clock)
-        self.pipeOut = BluespecPipeOut(dut, "pipeOut", self.clock)
+        self.txChannels = []
+        self.rxChannels = []
+        for idx in range(4):
+            self.txChannels.append(BluespecPipeIn(
+                dut, f"ftilemacTxStreamPipeInVec_{idx}", self.clock))
+            self.rxChannels.append(BluespecPipeOut(
+                dut, f"ftilemacRxStreamPipeOutVec_{idx}", self.clock))
+
         self.resetn.setimmediatevalue(0)
 
     async def gen_reset(self):
         self.resetn.value = 0
+        await RisingEdge(self.clock)
         await RisingEdge(self.clock)
         self.resetn.value = 1
         await RisingEdge(self.clock)
         self.log.info("Generated FTile RST_N")
 
 
-@cocotb.test(timeout_time=15, timeout_unit="ns")
+def genRandomPacket():
+    cur_packet_size = 0
+    target_packet_size = 0
+    while True:
+        if target_packet_size == 0:
+            target_packet_size = random.randint(64, 5120)
+
+        byte_left = target_packet_size - cur_packet_size
+        byte_num = min(32, byte_left)
+        is_first = cur_packet_size == 0
+        is_last = byte_left <= 32
+        ds = BluespecDataStream256(
+            data=bytes([random.randint(0, 255) for _ in range(byte_num)]),
+            byte_num=byte_num,
+            start_byte_index=0,
+            is_first=is_first,
+            is_last=is_last
+        )
+
+        if is_last:
+            cur_packet_size = 0
+            target_packet_size = 0
+        else:
+            cur_packet_size = cur_packet_size + byte_num
+
+        yield ds
+
+
+@cocotb.test(timeout_time=1500, timeout_unit="ns")
 async def small_desc_fp_test(dut):
-    # print("-=----------")
+
     tb = TB(dut)
-    # print("00000000")
+
     await cocotb.start(Clock(tb.clock, 2, "ns").start())
     await tb.gen_reset()
 
-    async def _enq():
-        await tb.pipeIn.enq(10)
-        await RisingEdge(tb.clock)
-        # await tb.pipeIn.enq(9)
-        # await RisingEdge(tb.clock)
-        # await tb.pipeIn.enq(8)
-        # await RisingEdge(tb.clock)
-        # await tb.pipeIn.enq(7)
+    async def gen_send_packet():
+        ds_generators = [genRandomPacket() for _ in range(4)]
+        while True:
+            for channel_idx in range(4):
+                if await tb.txChannels[channel_idx].not_full():
+                    if (random.random() < 0.05):
+                        # make some bubles
+                        continue
+                    ds = next(ds_generators[channel_idx])
+                    await tb.txChannels[channel_idx].enq(ds.pack())
+            await RisingEdge(tb.clock)
 
-    cocotb.start_soon(_enq())
+    await cocotb.start_soon(gen_send_packet())
 
-    await RisingEdge(tb.clock)
-    await RisingEdge(tb.clock)
-    await RisingEdge(tb.clock)
-    print("time1=", cocotb.utils.get_sim_time(units='ns'))
-    await tb.pipeOut.deq()
-    print("time2=", cocotb.utils.get_sim_time(units='ns'))
-    ret = await tb.pipeOut.first()
-    print("ret=", ret, "time3=", cocotb.utils.get_sim_time(units='ns'))
-
-    await RisingEdge(tb.clock)
-    print("time4=", cocotb.utils.get_sim_time(units='ns'))
-    # await RisingEdge(tb.clock)
-    # print("time5=", cocotb.utils.get_sim_time(units='ns'))
-
-    await tb.pipeOut.deq()
-    print("time6=", cocotb.utils.get_sim_time(units='ns'))
-    ret = await tb.pipeOut.first()
-    print("ret=", ret, "time7=", cocotb.utils.get_sim_time(units='ns'))
-
-    # await RisingEdge(tb.clock)
-    # await tb.pipeOut.deq()
-    # ret = await tb.pipeOut.first()
-    # print("ret=", ret)
-
-    # await RisingEdge(tb.clock)
-    # await tb.pipeOut.deq()
-    # ret = await tb.pipeOut.first()
-    # print("ret=", ret)
-
-    # await RisingEdge(tb.clock)
-    # await tb.pipeOut.deq()
-    # ret = await tb.pipeOut.first()
-    # print("ret=", ret)
+    await Timer(1000, "ns")
 
 
 def test_ftile_mac():

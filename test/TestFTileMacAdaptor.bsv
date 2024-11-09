@@ -1530,69 +1530,39 @@ module mkTestFtileTx(Empty);
 endmodule
 
 
-
 interface TestFtileMacCocotbLoopBackTest;
-    interface PipeIn#(Bit#(10))   pipeIn;
-    interface PipeOut#(Bit#(10))   pipeOut;
-    method Bit#(5) test(Bool a, Bit#(10) b);
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxUserStream))   ftilemacTxStreamPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVec;
 endinterface
 
 (* synthesize *)
 module mkTestFtileMacCocotbLoopBackTest(TestFtileMacCocotbLoopBackTest);
-    FIFOF#(Bit#(10)) q <- mkFIFOF;
     
-    rule debug;
-        $display("time=%t", $time, ", q.notEmpty=", fshow(q.notEmpty), ", q.notFull=", fshow(q.notFull));
+    let dut <- mkFTileMac;
+    let busAdapter <- mkFTileMacAdaptor;
+
+    mkConnection(busAdapter.ftilemacRxPipeOut, dut.ftilemacRxPipeIn);
+    mkConnection(busAdapter.ftilemacTxPipeIn, dut.ftilemacTxPipeOut);
+    
+
+    rule loopBack1;
+        busAdapter.rx.setRxInputData(
+            busAdapter.tx.data,
+            busAdapter.tx.valid,
+            busAdapter.tx.inframe,
+            busAdapter.tx.eop_empty,
+            unpack(0),
+            unpack(0),
+            unpack(0)
+        );
     endrule
 
-    method Bit#(5) test(Bool a, Bit#(10) b);
-        // $display(fshow(a), fshow(b));
-        return truncate(b) + zeroExtend(pack(a));
-    endmethod
-    interface pipeIn = toPipeIn(q);
-    interface pipeOut = toPipeOut(q);
+    rule loopBack2;
+        busAdapter.tx.setTxInputData(
+            busAdapter.rx.ready
+        );
+    endrule
+
+    interface ftilemacTxStreamPipeInVec = dut.ftilemacTxStreamPipeInVec;
+    interface ftilemacRxStreamPipeOutVec = dut.ftilemacRxStreamPipeOutVec;
 endmodule
-
-
-
-
-
-
-
-
-// interface TestFtileMacCocotbLoopBackTest;
-//     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxUserStream))   ftilemacTxStreamPipeInVec;
-//     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVec;
-// endinterface
-
-// (* synthesize *)
-// module mkTestFtileMacCocotbLoopBackTest(TestFtileMacCocotbLoopBackTest);
-    
-//     let dut <- mkFTileMac;
-//     let busAdapter <- mkFTileMacAdaptor;
-
-//     mkConnection(busAdapter.ftilemacRxPipeOut, dut.ftilemacRxPipeIn);
-//     mkConnection(busAdapter.ftilemacTxPipeIn, dut.ftilemacTxPipeOut);
-    
-
-//     rule loopBack1;
-//         busAdapter.rx.setRxInputData(
-//             busAdapter.tx.data,
-//             busAdapter.tx.valid,
-//             busAdapter.tx.inframe,
-//             busAdapter.tx.eop_empty,
-//             unpack(0),
-//             unpack(0),
-//             unpack(0)
-//         );
-//     endrule
-
-//     rule loopBack2;
-//         busAdapter.tx.setTxInputData(
-//             busAdapter.rx.ready
-//         );
-//     endrule
-
-//     interface ftilemacTxStreamPipeInVec = dut.ftilemacTxStreamPipeInVec;
-//     interface ftilemacRxStreamPipeOutVec = dut.ftilemacRxStreamPipeOutVec;
-// endmodule
