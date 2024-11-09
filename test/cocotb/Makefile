@@ -10,9 +10,13 @@ GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 # TOP_MODULE ?= mkRTilePcieWithRawIfc
 # TB_FILE = tb_simple_root_complex.py
 
-TOP_BSV_SRC_FILE ?= ../test/TestRTilePcieAdaptor.bsv
-TOP_MODULE ?= mkTestRTileDmaReadWriteSimple
-TB_FILE = tb_simple_root_complex.py
+# TOP_BSV_SRC_FILE ?= ../test/TestRTilePcieAdaptor.bsv
+# TOP_MODULE ?= mkTestRTileDmaReadWriteSimple
+# TB_FILE = tb_simple_root_complex.py
+
+TOP_BSV_SRC_FILE ?= ../test/TestFTileMacAdaptor.bsv
+TOP_MODULE ?= mkTestFtileMacCocotbLoopBackTest
+TB_FILE = tb_ftile_mac_loopback.py
 
 TOP_FILE = $(TOP_MODULE).v
 VLOG_FILE = $(TB_DIR)/$(TOP_FILE)

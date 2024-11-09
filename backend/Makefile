@@ -77,9 +77,11 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestMimoTimingTest
 
-TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-TOPMODULE ?= mkTestFtileMacTxPingPongForkTimingTest
+# TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+# TOPMODULE ?= mkTestFtileMacTxPingPongForkTimingTest
 
+TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+TOPMODULE ?= mkTestFtileMacCocotbLoopBackTest
 
 
 

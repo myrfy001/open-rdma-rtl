@@ -16,6 +16,8 @@ from cocotb.clock import Clock
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.intel.rtile import RTilePcieDevice, RTileRxBus, RTileTxBus
 
+from common import gen_rtl_file_list
+
 
 class TB(object):
     def __init__(self, dut, msix=False):
@@ -155,19 +157,6 @@ async def small_desc_fp_test(dut):
     await RisingEdge(tb.clock)
 
     await Timer(1000, units='ns')
-
-
-def gen_rtl_file_list(top_paths):
-    fileset = set()
-    filelist = []
-    for top_path in top_paths.split(":"):
-        for (dirpath, dirnames, filenames) in os.walk(top_path):
-            for filename in filenames:
-                if filename.endswith(".v") or filename.endswith(".sv"):
-                    if filename not in fileset:
-                        filelist.append(os.path.join(dirpath, filename))
-                        fileset.add(filename)
-    return filelist
 
 
 def test_dma():
