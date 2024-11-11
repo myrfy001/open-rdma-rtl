@@ -1,5 +1,5 @@
 import os
-from collections import deque
+from collections import deque, OrderedDict
 from abc import ABC
 
 import asyncio
@@ -97,26 +97,49 @@ class BluespecType(ABC):
 
 
 class BluespecBits(BluespecType):
-    def __init__(self, value=None, width=None):
-        self._inner = BinaryValue(value, n_bits=width)
+    _width = 0
+
+    def __init__(self, value=None):
+        if not isinstance(value, BluespecBits):
+            self._inner = BinaryValue(
+                value, n_bits=self._width, bigEndian=False)
+        else:
+            self._inner = BinaryValue(
+                value.pack(), n_bits=value.width(), bigEndian=False)
 
     def pack(self):
         return self._inner.integer
 
-    def width(self):
-        return self._inner.n_bits
+    @classmethod
+    def unpack(cls, val):
+        return cls(val)
+
+    @classmethod
+    def width(cls):
+        return cls._width
+
+    def __str__(self):
+        return str(hex(self._inner.integer))
+
+    def __call__(self):
+        return self.pack()
 
 
 class BluespecStruct(BluespecType):
-    def __init__(self, **members):
-        self.members = members
+    _members_def = OrderedDict()
+
+    def __init__(self, *members):
+        self._members = OrderedDict()
         self._width = 0
-        for member in members.values():
-            self._width += member.width()
+
+        for ((member_name, member_type), member_inst) in zip(self._members_def.items(), members):
+            assert isinstance(member_inst, member_type)
+            self._members[member_name] = member_inst
+            self._width += member_type.width()
 
     def pack(self):
         packed_val = 0
-        for member in self.members.values():
+        for member in self._members.values():
             member_packed_val = member.pack()
             packed_val = (packed_val << member.width()) | member_packed_val
         return packed_val
@@ -124,16 +147,67 @@ class BluespecStruct(BluespecType):
     def width(self):
         return self._width
 
+    def __getattr__(self, name):
+        if name in self._members:
+            return self._members[name]
+        return super().__getattribute__(name)
+
+    @classmethod
+    def unpack(cls, val):
+        args = []
+        for member_type in reversed(cls._members_def.values()):
+            mask = (1 << member_type.width()) - 1
+            member_val = val & mask
+            args.append(member_type.unpack(member_val))
+            val = val >> member_type.width()
+
+        args.reverse()
+        ret = cls(*args)
+        return ret
+
+
+class BluespecBool(BluespecBits):
+    _width = 1
+
+
+class BlueRdmaData256(BluespecBits):
+    _width = 256
+
+
+class BlueRdmaData256ByteNum(BluespecBits):
+    _width = 6
+
+
+class BlueRdmaData256ByteIndex(BluespecBits):
+    _width = 5
+
 
 class BluespecDataStream256(BluespecStruct):
+    _members_def = OrderedDict(
+        data=BlueRdmaData256,
+        byte_num=BlueRdmaData256ByteNum,
+        start_byte_index=BlueRdmaData256ByteIndex,
+        is_first=BluespecBool,
+        is_last=BluespecBool
+    )
+
     def __init__(self, data, byte_num, start_byte_index, is_first, is_last):
-        data = BluespecBits(data, width=256)
-        byte_num = BluespecBits(byte_num, width=6)
-        start_byte_index = BluespecBits(start_byte_index, width=5)
-        is_first = BluespecBits(is_first, width=1)
-        is_last = BluespecBits(is_last, width=1)
-        super().__init__(data=data, byte_num=byte_num,
-                         start_byte_index=start_byte_index, is_first=is_first, is_last=is_last)
+        data = BlueRdmaData256(data)
+        byte_num = BlueRdmaData256ByteNum(byte_num)
+        start_byte_index = BlueRdmaData256ByteIndex(start_byte_index)
+        is_first = BluespecBool(is_first)
+        is_last = BluespecBool(is_last)
+        super().__init__(data, byte_num, start_byte_index, is_first, is_last)
+
+    def __str__(self):
+        return (
+            f"< BluespecDataStream256 "
+            f"data={self.data}, "
+            f"byte_num={self.byte_num}, "
+            f"start_byte_index={self.start_byte_index}, "
+            f"is_first={self.is_first}, "
+            f"is_last={self.is_last} >"
+        )
 
 
 class BluespecPipeOut:

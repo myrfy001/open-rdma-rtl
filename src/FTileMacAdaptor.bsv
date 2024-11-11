@@ -142,6 +142,10 @@ module mkFTileMacAdaptor(FTileMacAdaptor);
     rule deq;
         if (txValid && ftileMacTxPipeInQueue.notEmpty) begin
             ftileMacTxPipeInQueue.deq;
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFTileMacAdaptor handshake tx packet"),
+            //     toBlue(", beat="), fshow(ftileMacTxPipeInQueue.first)
+            // );
         end
     endrule
 
@@ -186,6 +190,7 @@ module mkFTileMacAdaptor(FTileMacAdaptor);
                 );
 
                 ftileMacRxPipeOutQueue.enq(beat);
+                previousRxBeatLastInframeSignalReg <= unpack(msb(inframe));
             end
         endmethod
 
@@ -501,10 +506,10 @@ module mkFtileMacRxBeatFork(FtileMacRxBeatFork);
         addrPtrReg      <= addrPtrReg    + 1;
         channelIdxReg   <= channelIdxReg + 1;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkFtileMacRxBeatFork handleInputBeat"),
-            toBlue(", channelIdxReg="), fshow(channelIdxReg)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacRxBeatFork handleInputBeat"),
+        //     toBlue(", channelIdxReg="), fshow(channelIdxReg)
+        // );
     endrule
     
 
@@ -669,6 +674,11 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
         metaPipeInQueueVec[pingPongChannelIdxReg].deq;
 
         selectedPingPongOutputChannelMetaPipelineQ.enq(pingPongOutputMeta);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacRxPingPongChannelMetaJoin selectAndForwardPingPongChannel"),
+        //     toBlue(", pingPongOutputMeta="), fshow(pingPongOutputMeta)
+        // );
     endrule
 
     rule forwardPacketsInOnePingPongChannelToFourOutputChannels;
@@ -786,13 +796,13 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
 
         dispatchPacketChunkMetaPipelineQ.enq(outputEntryVec);
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkFtileMacRxPingPongChannelMetaJoin forwardPacketsInOnePingPongChannelToFourOutputChannels"),
-            toBlue(", inputPingPongMeta="), fshow(inputPingPongMeta), 
-            toBlue(", outputEntryVec="), fshow(outputEntryVec),
-            toBlue(", isCurrentPacketNotEndReg="), fshow(isCurrentPacketNotEndReg),
-            toBlue(", isCurrentPacketNotEnd="), fshow(isCurrentPacketNotEnd)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacRxPingPongChannelMetaJoin forwardPacketsInOnePingPongChannelToFourOutputChannels"),
+        //     toBlue(", inputPingPongMeta="), fshow(inputPingPongMeta), 
+        //     toBlue(", outputEntryVec="), fshow(outputEntryVec),
+        //     toBlue(", isCurrentPacketNotEndReg="), fshow(isCurrentPacketNotEndReg),
+        //     toBlue(", isCurrentPacketNotEnd="), fshow(isCurrentPacketNotEnd)
+        // );
     endrule
 
     rule dispatchToOutputBuffer;
@@ -815,9 +825,20 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
                 if (metaToOutput.isLast) begin
                     let needDiscard = metaToOutput.isError;
                     discardOrOutputSignalPipelineQueueVec[userChannelIdx].enq(needDiscard);
+                    // $display(
+                    //     "time=%0t:", $time, toGreen(" mkFtileMacRxPingPongChannelMetaJoin dispatchToOutputBuffer reach packet tail"),
+                    //     toBlue(", userChannelIdx="), $format("%d", userChannelIdx),
+                    //     toBlue(", pipelineInputEntry="), fshow(pipelineInputEntry),
+                    //     toBlue(", needDiscard="), fshow(needDiscard)
+                    // );
                 end
             end            
         end 
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacRxPingPongChannelMetaJoin dispatchToOutputBuffer"),
+        //     toBlue(", pipelineInputEntry="), fshow(pipelineInputEntry)
+        // );
     endrule
 
     for (Integer userChannelIdx = 0; userChannelIdx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); userChannelIdx = userChannelIdx + 1) begin
@@ -993,11 +1014,11 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
             else begin
                 packetChunkMetaPipelineQ.deq;
             end
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp - FIRST"),
-                toBlue(", ds="), fshow(ds),
-                toBlue(", meta="), fshow(meta)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp - FIRST"),
+            //     toBlue(", ds="), fshow(ds),
+            //     toBlue(", meta="), fshow(meta)
+            // );
         end
         else begin
             let isLastBlock = curReadBramBlockIdxReg == meta.endBramBlockIdx;
@@ -1026,11 +1047,11 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
                 isReadIdleReg <= True;
                 packetChunkMetaPipelineQ.deq;
             end
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp - MORE"),
-                toBlue(", ds="), fshow(ds),
-                toBlue(", isLastBlock="), fshow(isLastBlock)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleReadResp - MORE"),
+            //     toBlue(", ds="), fshow(ds),
+            //     toBlue(", isLastBlock="), fshow(isLastBlock)
+            // );
         end
     endrule
 
@@ -1124,20 +1145,20 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             let req = bramReadReqPipeInQueueVec[idx].first;
             bramReadReqPipeInQueueVec[idx].deq;
             dataStreamStorageVec[idx].putReadReq(req.addr);
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadReq [idx=%d]"), idx,
-                toBlue(", req="), fshow(req)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadReq [idx=%d]"), idx,
+            //     toBlue(", req="), fshow(req)
+            // );
         endrule
 
         rule handleStorageReadResp;
             let resp = dataStreamStorageVec[idx].readRespPipeOut.first;
             dataStreamStorageVec[idx].readRespPipeOut.deq;
             bramReadRespPipeOutQueueVec[idx].enq(resp);
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadResp [idx=%d]"), idx,
-                toBlue(", resp="), fshow(resp)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadResp [idx=%d]"), idx,
+            //     toBlue(", resp="), fshow(resp)
+            // );
         endrule
     end
 
@@ -1165,10 +1186,10 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             packetMetaPipeOutQueue.enq(outputEntry);
             curSegCnt = 0;
             startRowAddrReg <= curRowAddrReg + 1;
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleMetaCalc"),
-                toBlue(", outputEntry="), fshow(outputEntry)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleMetaCalc"),
+            //     toBlue(", outputEntry="), fshow(outputEntry)
+            // );
         end
 
         for (Integer idx = 0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
@@ -1515,11 +1536,11 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
 
         if (enqCnt != 0) begin
             selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork prepareRoundRobinChannelOrder"),
-                toBlue(", enqCnt="), fshow(enqCnt),
-                toBlue(", vecToEnq="), fshow(vecToEnq)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork prepareRoundRobinChannelOrder"),
+            //     toBlue(", enqCnt="), fshow(enqCnt),
+            //     toBlue(", vecToEnq="), fshow(vecToEnq)
+            // );
         end
 
         // mimoInputPipelineQueue.enq(tuple2(vecToEnq, enqCnt));
@@ -1567,18 +1588,18 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketTwo     = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(onePacketSmallBramRowCntSum);
             FtileMacTxSmallBramRowCnt smallStorgeRowCntLeftForPacketThree   = fromInteger(valueOf(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(twoPacketSmallBramRowCntSum);
 
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch"),
-                toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
-                toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
-                toBlue(", packetThreeSmallBramRowCnt="), fshow(packetThreeSmallBramRowCnt),
-                toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
-                toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
-                toBlue(", threePacketSmallBramRowCntSum="), fshow(threePacketSmallBramRowCntSum),
-                toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
-                toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo),
-                toBlue(", smallStorgeRowCntLeftForPacketThree="), fshow(smallStorgeRowCntLeftForPacketThree)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch"),
+            //     toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
+            //     toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
+            //     toBlue(", packetThreeSmallBramRowCnt="), fshow(packetThreeSmallBramRowCnt),
+            //     toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
+            //     toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
+            //     toBlue(", threePacketSmallBramRowCntSum="), fshow(threePacketSmallBramRowCntSum),
+            //     toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
+            //     toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo),
+            //     toBlue(", smallStorgeRowCntLeftForPacketThree="), fshow(smallStorgeRowCntLeftForPacketThree)
+            // );
 
             if (beatWillHoldThreePacket) begin
                 outputMetaBundle[0] = tagged Valid FtileMacTxPingPongChannelMetaEntry {
@@ -1686,11 +1707,11 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             end
 
             outputTimingFixPipelineQueue.enq(tuple2(curOutputRoundRobinIdxReg, outputMetaBundle));
-            $display(
-                "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch final output"),
-                toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
-                toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch final output"),
+            //     toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
+            //     toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
+            // );
 
             curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
         end
@@ -1842,10 +1863,10 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         let bramReadBeatMeta = bramReadPipelineQueue.first;
         bramReadPipelineQueue.deq;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel handleBramReadResp"),
-            toBlue(", bramReadBeatMeta="), fshow(bramReadBeatMeta)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel handleBramReadResp"),
+        //     toBlue(", bramReadBeatMeta="), fshow(bramReadBeatMeta)
+        // );
 
         let readResp = bramReadRespPipeInQueueVec[bramReadBeatMeta.srcChannelIdx].first;
         bramReadRespPipeInQueueVec[bramReadBeatMeta.srcChannelIdx].deq;
@@ -1908,11 +1929,11 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         {outputBeatEmptyStorageRowCnt, outputEntry} = finalShiftPipelineQueue.first;
         finalShiftPipelineQueue.deq;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel finalShift"),
-            toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
-            toBlue(", outputEntry="), fshow(outputEntry)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel finalShift"),
+        //     toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
+        //     toBlue(", outputEntry="), fshow(outputEntry)
+        // );
 
         case (outputBeatEmptyStorageRowCnt)
             0: begin

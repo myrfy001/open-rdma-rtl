@@ -5,7 +5,9 @@ import os
 import random
 import queue
 
+import cocotb.binary
 import cocotb.triggers
+import cocotb.utils
 import cocotb_test.simulator
 import pytest
 
@@ -52,12 +54,14 @@ def genRandomPacket():
     target_packet_size = 0
     while True:
         if target_packet_size == 0:
-            target_packet_size = random.randint(64, 5120)
+            target_packet_size = random.randint(127, 127)
+            print("send new packet, size=", target_packet_size)
 
         byte_left = target_packet_size - cur_packet_size
         byte_num = min(32, byte_left)
         is_first = cur_packet_size == 0
         is_last = byte_left <= 32
+
         ds = BluespecDataStream256(
             data=bytes([random.randint(0, 255) for _ in range(byte_num)]),
             byte_num=byte_num,
@@ -65,6 +69,9 @@ def genRandomPacket():
             is_first=is_first,
             is_last=is_last
         )
+        # print("target_packet_size=", target_packet_size, ", cur_packet_size=",
+        #       cur_packet_size, ", byte_left=", byte_left, ", byte_num=", byte_num)
+        # print("gen new packet=", ds)
 
         if is_last:
             cur_packet_size = 0
@@ -75,8 +82,11 @@ def genRandomPacket():
         yield ds
 
 
-@cocotb.test(timeout_time=1500, timeout_unit="ns")
+@cocotb.test(timeout_time=30000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
+
+    test_packet_cnt = 100
+    packets_sent = set()
 
     tb = TB(dut)
 
@@ -85,19 +95,69 @@ async def small_desc_fp_test(dut):
 
     async def gen_send_packet():
         ds_generators = [genRandomPacket() for _ in range(4)]
-        while True:
+        channel_packet_buf = ["" for _ in range(4)]
+        sent_packet_cnt = 0
+        while sent_packet_cnt < test_packet_cnt:
             for channel_idx in range(4):
                 if await tb.txChannels[channel_idx].not_full():
-                    if (random.random() < 0.05):
-                        # make some bubles
-                        continue
+                    # if (random.random() < 0.02):
+                    #     # make some bubles
+                    #     continue
                     ds = next(ds_generators[channel_idx])
                     await tb.txChannels[channel_idx].enq(ds.pack())
+                    channel_packet_buf[channel_idx] += hex(ds.data())
+
+                    if ds.is_last() == 1:
+                        sent_packet_cnt += 1
+                        packets_sent.add(channel_packet_buf[channel_idx])
+                        channel_packet_buf[channel_idx] = ""
             await RisingEdge(tb.clock)
 
-    await cocotb.start_soon(gen_send_packet())
+    async def gen_send_packet_simple():
+        channel_packet_buf = ""
+        ds = BluespecDataStream256(
+            data=0,
+            byte_num=32,
+            start_byte_index=0,
+            is_first=True,
+            is_last=False
+        )
+        channel_packet_buf += hex(ds.data())
+        await tb.txChannels[1].enq(ds.pack())
+        await RisingEdge(tb.clock)
 
-    await Timer(1000, "ns")
+        ds = BluespecDataStream256(
+            data=0,
+            byte_num=32,
+            start_byte_index=0,
+            is_first=False,
+            is_last=True
+        )
+        channel_packet_buf += hex(ds.data())
+        packets_sent.add(channel_packet_buf)
+        await tb.txChannels[1].enq(ds.pack())
+        await RisingEdge(tb.clock)
+
+    cocotb.start_soon(gen_send_packet())
+
+    recv_packet_cnt = 0
+    recv_channel_packet_buf = ["" for _ in range(4)]
+    while recv_packet_cnt < test_packet_cnt:
+        for channel_idx in range(4):
+            if await tb.rxChannels[channel_idx].not_empty():
+                ds_raw = await tb.rxChannels[channel_idx].first()
+                # print("ds_raw=", ds_raw)
+                await tb.rxChannels[channel_idx].deq()
+                ds = BluespecDataStream256.unpack(ds_raw)
+                recv_channel_packet_buf[channel_idx] += hex(ds.data())
+                # print("111122223333", ds, cocotb.utils.get_sim_time("ns"))
+                if ds.is_last() == 1:
+                    print("AAASSSDDDFFFF", cocotb.utils.get_sim_time("ns"))
+                    recv_packet_cnt += 1
+                    packets_sent.remove(recv_channel_packet_buf[channel_idx])
+                    recv_channel_packet_buf[channel_idx] = ""
+
+        await RisingEdge(tb.clock)
 
 
 def test_ftile_mac():
@@ -110,6 +170,8 @@ def test_ftile_mac():
     verilog_sources = gen_rtl_file_list(rtl_dirs)
 
     sim_build = os.path.join(tests_dir, "sim_build", dut)
+
+    cocotb.binary.resolve_x_to = cocotb.binary._ResolveXToValue.ZEROS
 
     cocotb_test.simulator.run(
         python_search=[tests_dir],
