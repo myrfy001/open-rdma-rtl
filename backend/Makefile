@@ -68,8 +68,8 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestFtileMacRxPingPongChannelMetaJoinTimingTest
 
-# TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
+TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestRotateTimingTest
@@ -80,8 +80,8 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestFtileMacTxPingPongForkTimingTest
 
-TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-TOPMODULE ?= mkTestFtileMacCocotbLoopBackTest
+# TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
+# TOPMODULE ?= mkTestFtileMacCocotbLoopBackTest
 
 
 

@@ -918,6 +918,11 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
         for (Integer idx = 0; idx < valueOf(RTILE_RX_BRAM_BLOCK_CNT); idx = idx + 1) begin
             dataStreamStorageVec[idx].write(req.addr, {req.data[idx * 4 + 3], req.data[idx * 4 + 2], req.data[idx * 4 + 1], req.data[idx * 4 + 0]});
         end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacRxPayloadStorageAndGearBox handleWriteReq"),
+        //     toBlue(", req="), fshow(req)
+        // );
     endrule
 
     rule handleReadReq;
@@ -1140,6 +1145,25 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
     Reg#(FtileMacTxChannelBufferAddr)    startRowAddrReg    <- mkReg(0);
     Reg#(FtileMacTxChannelBufferSegCnt)  curSegCntReg       <- mkReg(0);
 
+    // rule debug;
+    //     if (!streamPipeInQueue.notFull) begin
+    //         $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug"),  toBlue(", streamPipeInQueue is Full"));
+    //     end
+
+    //     if (!packetMetaPipeOutQueue.notFull) begin
+    //         $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug"),  toBlue(", packetMetaPipeOutQueue is Full"));
+    //     end
+    //     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+    //         if (!bramReadReqPipeInQueueVec[idx].notFull) begin
+    //             $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug [idx=%d]"), idx, toBlue(", bramReadReqPipeInQueueVec is Full"));
+    //         end
+    //         if (!bramReadRespPipeOutQueueVec[idx].notFull) begin
+    //             $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug [idx=%d]"), idx, toBlue(", bramReadRespPipeOutQueueVec is Full"));
+    //         end
+    //     end
+    // endrule
+
+
     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         rule handleStorageReadReq;
             let req = bramReadReqPipeInQueueVec[idx].first;
@@ -1197,6 +1221,11 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
         end
         curRowAddrReg <= curRowAddrReg + 1;
         curSegCntReg  <= curSegCnt;
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleMetaCalc BRAMwrite"),
+        //     toBlue(", curRowAddrReg="), fshow(curRowAddrReg),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     interface streamPipeIn              = toPipeIn(streamPipeInQueue);
@@ -1275,6 +1304,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
 
     rule prepareRoundRobinChannelOrder;
         Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset) vecToEnq = newVector;
+        Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Bool) needDeqFlagVec = replicate(False);
         let curInputRoundRobinIdx = curInputRoundRobinIdxReg;
         let prevDestSegOffset = prevDestSegOffsetReg;
         let enqCnt = 0;
@@ -1286,7 +1316,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             4'b0000: begin
             end
             4'b0001: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+3,
@@ -1302,7 +1332,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 1;
             end
             4'b0010: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+2,
@@ -1318,7 +1348,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 1;
             end
             4'b0011: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+2,
@@ -1331,7 +1361,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
                 prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+3,
@@ -1348,7 +1378,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 2;
             end
             4'b0100: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+1,
@@ -1364,7 +1394,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 1;
             end
             4'b0101: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+1,
@@ -1377,7 +1407,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
                 prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+3,
@@ -1394,7 +1424,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 2;
             end
             4'b011?: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+1,
@@ -1407,7 +1437,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
                 prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+2,
@@ -1424,7 +1454,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 2;
             end
             4'b1000: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+0,
@@ -1440,7 +1470,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 1;
             end
             4'b1001: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+0,
@@ -1453,7 +1483,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
                 prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+3,
@@ -1470,7 +1500,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 2;
             end
             4'b101?: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+0,
@@ -1483,7 +1513,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
                 prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+2,
@@ -1500,7 +1530,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 enqCnt = 2;
             end
             4'b11??: begin
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+0,
@@ -1513,7 +1543,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
                 prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
-                packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].deq;
+                needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[1] = FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
                     srcChannelIdx   : curInputRoundRobinIdx+1,
@@ -1531,10 +1561,29 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             end
         endcase
 
-        curInputRoundRobinIdxReg <= curInputRoundRobinIdx;
-        prevDestSegOffsetReg <= prevDestSegOffset;
+        
+        // IMPORTANT!!!!
+        // since MIMO's enq doesn't have guard (infact, it has guard, but the guard only check if it can enq at least one element), to make sure 
+        // there are enough space for `enqCnt`, we can't relay on enq's guard to block the rule from being fired.
+        // so, we need to move all the "Actions"(i.e., code that will change the state) into the following IF block. And only leave combinational logic
+        // out of the IF block
+        if (enqCnt != 0 && selectedInputChannelMetaMIMO.enqReadyN(enqCnt)) begin
+            curInputRoundRobinIdxReg <= curInputRoundRobinIdx;
+            prevDestSegOffsetReg <= prevDestSegOffset;
 
-        if (enqCnt != 0) begin
+            if (needDeqFlagVec[0] == True) begin
+                packetMetaPipeInQueueVec[0].deq;
+            end
+            if (needDeqFlagVec[1] == True) begin
+                packetMetaPipeInQueueVec[1].deq;
+            end
+            if (needDeqFlagVec[2] == True) begin
+                packetMetaPipeInQueueVec[2].deq;
+            end
+            if (needDeqFlagVec[3] == True) begin
+                packetMetaPipeInQueueVec[3].deq;
+            end
+
             selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
             // $display(
             //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork prepareRoundRobinChannelOrder"),
@@ -1590,6 +1639,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
 
             // $display(
             //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch"),
+            //     toBlue(", beatWillHoldPacket="), fshow(beatWillHoldThreePacket ? 3 : beatWillHoldTwoPacket ? 2 : 1),
             //     toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
             //     toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
             //     toBlue(", packetThreeSmallBramRowCnt="), fshow(packetThreeSmallBramRowCnt),
@@ -1630,6 +1680,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                     // isOutputBeatLast: 
                 };
 
+                immAssert(selectedInputChannelMetaMIMO.deqReadyN(2), "MIMO Queue doesn't have enough element", $format(""));
                 selectedInputChannelMetaMIMO.deq(2);
 
                 if (packetThreeWillEndInThisBeat) begin
@@ -1665,6 +1716,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                     // isOutputBeatLast: 
                 };
 
+                immAssert(selectedInputChannelMetaMIMO.deqReadyN(1), "MIMO Queue doesn't have enough element", $format(""));
                 selectedInputChannelMetaMIMO.deq(1);
 
                 if (packetTwoWillEndInThisBeat) begin
@@ -1691,7 +1743,13 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
                 };
 
                 if (packetOneWillEndInThisBeat) begin
-                    curMetaMaybeReg <= tagged Invalid;
+                    if (selectedInputChannelMetaMIMO.deqReadyN(1)) begin
+                        curMetaMaybeReg <= tagged Valid selectedInputChannelMetaMIMO.first[0];
+                        selectedInputChannelMetaMIMO.deq(1);
+                    end
+                    else begin
+                        curMetaMaybeReg <= tagged Invalid;
+                    end
                 end
                 else begin
                     let nextCurMeta                     = packetOneMeta;
@@ -1719,7 +1777,16 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
             if (selectedInputChannelMetaMIMO.deqReadyN(1)) begin
                 curMetaMaybeReg <= tagged Valid selectedInputChannelMetaMIMO.first[0];
                 selectedInputChannelMetaMIMO.deq(1);
-            end 
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch IDLE"),
+                //     toBlue(", selectedInputChannelMetaMIMO.first[0]="), fshow(selectedInputChannelMetaMIMO.first[0])
+                // );
+            end
+            else begin
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongFork dispatch IDLE and not new packet")
+                // );
+            end
         end
     endrule
 
@@ -1855,6 +1922,10 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
             curInputMetaBundleReg <= shiftOutFrom0(tagged Invalid, metaPipeInQueue.first, 1);
             curMetaEntryMaybeReg <= metaPipeInQueue.first[0];
             metaPipeInQueue.deq;
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxPingPongSingleChannel sendBramReadReq IDLE"),
+            //     toBlue(", metaPipeInQueue.first="), fshow(metaPipeInQueue.first)
+            // );
         end
     endrule
 

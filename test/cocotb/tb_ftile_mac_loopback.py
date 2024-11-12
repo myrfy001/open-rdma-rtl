@@ -21,11 +21,11 @@ from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BluespecD
 
 
 class TB(object):
-    def __init__(self, dut):
+    def __init__(self, dut, test_cnt=100, speed_limit=490):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
 
         self.clock = dut.CLK
         self.resetn = dut.RST_N
@@ -40,6 +40,12 @@ class TB(object):
 
         self.resetn.setimmediatevalue(0)
 
+        self.test_packet_cnt = test_cnt
+        self.total_send_byte_cnt = 0
+        self.speed_limit = speed_limit
+        self.packets_inflight = set()
+        self.cur_send_speed = 0
+
     async def gen_reset(self):
         self.resetn.value = 0
         await RisingEdge(self.clock)
@@ -48,116 +54,151 @@ class TB(object):
         await RisingEdge(self.clock)
         self.log.info("Generated FTile RST_N")
 
+    def genRandomPacket(self):
+        cur_packet_size = 0
+        target_packet_size = 0
+        while True:
+            if target_packet_size == 0:
+                target_packet_size = random.randint(64, 5120)
+                self.log.debug(f"send new packet, size={target_packet_size}")
 
-def genRandomPacket():
-    cur_packet_size = 0
-    target_packet_size = 0
-    while True:
-        if target_packet_size == 0:
-            target_packet_size = random.randint(127, 127)
-            print("send new packet, size=", target_packet_size)
+            byte_left = target_packet_size - cur_packet_size
+            byte_num = min(32, byte_left)
+            is_first = cur_packet_size == 0
+            is_last = byte_left <= 32
 
-        byte_left = target_packet_size - cur_packet_size
-        byte_num = min(32, byte_left)
-        is_first = cur_packet_size == 0
-        is_last = byte_left <= 32
+            ds = BluespecDataStream256(
+                data=bytes([random.randint(0, 255) for _ in range(byte_num)]),
+                byte_num=byte_num,
+                start_byte_index=0,
+                is_first=is_first,
+                is_last=is_last
+            )
+            # print("target_packet_size=", target_packet_size, ", cur_packet_size=",
+            #       cur_packet_size, ", byte_left=", byte_left, ", byte_num=", byte_num)
+            # print("gen new packet=", ds)
 
-        ds = BluespecDataStream256(
-            data=bytes([random.randint(0, 255) for _ in range(byte_num)]),
-            byte_num=byte_num,
-            start_byte_index=0,
-            is_first=is_first,
-            is_last=is_last
-        )
-        # print("target_packet_size=", target_packet_size, ", cur_packet_size=",
-        #       cur_packet_size, ", byte_left=", byte_left, ", byte_num=", byte_num)
-        # print("gen new packet=", ds)
+            if is_last:
+                cur_packet_size = 0
+                target_packet_size = 0
+            else:
+                cur_packet_size = cur_packet_size + byte_num
 
-        if is_last:
-            cur_packet_size = 0
-            target_packet_size = 0
-        else:
-            cur_packet_size = cur_packet_size + byte_num
+            yield ds
 
-        yield ds
+    async def calc_current_send_speed(self):
+        last_speed_calc_time = 0
+        last_total_send_byte = 0
+
+        average_factor = 0.9
+        while True:
+            cur_time = cocotb.utils.get_sim_time("ns")
+            delta_time = cur_time - last_speed_calc_time
+            delta_byte = self.total_send_byte_cnt - last_total_send_byte
+            new_send_speed = delta_byte * 8.0 / delta_time
+            self.cur_send_speed = self.cur_send_speed * average_factor + \
+                new_send_speed * (1-average_factor)
+            last_total_send_byte = self.total_send_byte_cnt
+            last_speed_calc_time = cur_time
+
+            await RisingEdge(self.clock)
+
+    async def gen_send_packet(self):
+
+        ds_generators = [self.genRandomPacket() for _ in range(4)]
+        channel_stop_flags = [False for _ in range(4)]
+        channel_packet_buf = ["" for _ in range(4)]
+        send_packet_cnt = 0
+
+        cocotb.start_soon(self.calc_current_send_speed())
+
+        while not all(channel_stop_flags):
+            for channel_idx in range(4):
+                if channel_stop_flags[channel_idx] == True:
+                    continue
+
+                if await self.txChannels[channel_idx].not_full():
+
+                    if (self.cur_send_speed > self.speed_limit):
+                        over_speed_ratio = (
+                            self.cur_send_speed - self.speed_limit) / self.speed_limit
+                        if (random.random() * 0.1 < over_speed_ratio):
+                            continue
+
+                    ds = next(ds_generators[channel_idx])
+                    if ds.is_first():
+                        if send_packet_cnt >= self.test_packet_cnt:
+                            channel_stop_flags[channel_idx] = True
+                            continue
+                        send_packet_cnt += 1
+
+                    await self.txChannels[channel_idx].enq(ds.pack())
+                    channel_packet_buf[channel_idx] += hex(ds.data())
+                    self.total_send_byte_cnt += ds.byte_num()
+
+                    if ds.is_last() == 1:
+                        self.packets_inflight.add(
+                            channel_packet_buf[channel_idx])
+                        channel_packet_buf[channel_idx] = ""
+            await RisingEdge(self.clock)
+
+    async def recv_and_check(self):
+        recv_packet_cnt = 0
+        recv_channel_packet_buf = ["" for _ in range(4)]
+
+        total_recv_byte_cnt = 0
+
+        last_recv_time = 0
+        last_recv_byte_cnt = 0
+        avg_calc_factor = 0.8
+        avg_speed = 0
+
+        while recv_packet_cnt < self.test_packet_cnt:
+            for channel_idx in range(4):
+                if await self.rxChannels[channel_idx].not_empty():
+                    ds_raw = await self.rxChannels[channel_idx].first()
+                    # print("ds_raw=", ds_raw)
+                    await self.rxChannels[channel_idx].deq()
+                    ds = BluespecDataStream256.unpack(ds_raw)
+                    recv_channel_packet_buf[channel_idx] += hex(ds.data())
+                    total_recv_byte_cnt += ds.byte_num()
+
+                    if ds.is_last() == 1:
+                        recv_packet_cnt += 1
+                        self.packets_inflight.remove(
+                            recv_channel_packet_buf[channel_idx])
+                        recv_channel_packet_buf[channel_idx] = ""
+                        if recv_packet_cnt % 20 == 0:
+                            cur_time = cocotb.utils.get_sim_time("ns")
+
+                            loop_back_speed = (
+                                total_recv_byte_cnt - last_recv_byte_cnt) * 8.0 / (cur_time - last_recv_time)
+
+                            avg_speed = avg_speed * avg_calc_factor + \
+                                loop_back_speed * (1-avg_calc_factor)
+
+                            last_recv_time = cur_time
+                            last_recv_byte_cnt = total_recv_byte_cnt
+
+                            is_warm_up = recv_packet_cnt < 400
+                            assert (is_warm_up or avg_speed >
+                                    self.speed_limit * 0.95)
+
+                            self.log.info(
+                                f"current loop back speed = {avg_speed} Gbps")
+            await RisingEdge(self.clock)
 
 
-@cocotb.test(timeout_time=30000, timeout_unit="ns")
+@cocotb.test(timeout_time=800000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
-    test_packet_cnt = 100
-    packets_sent = set()
-
-    tb = TB(dut)
+    tb = TB(dut, test_cnt=10000)
 
     await cocotb.start(Clock(tb.clock, 2, "ns").start())
     await tb.gen_reset()
 
-    async def gen_send_packet():
-        ds_generators = [genRandomPacket() for _ in range(4)]
-        channel_packet_buf = ["" for _ in range(4)]
-        sent_packet_cnt = 0
-        while sent_packet_cnt < test_packet_cnt:
-            for channel_idx in range(4):
-                if await tb.txChannels[channel_idx].not_full():
-                    # if (random.random() < 0.02):
-                    #     # make some bubles
-                    #     continue
-                    ds = next(ds_generators[channel_idx])
-                    await tb.txChannels[channel_idx].enq(ds.pack())
-                    channel_packet_buf[channel_idx] += hex(ds.data())
-
-                    if ds.is_last() == 1:
-                        sent_packet_cnt += 1
-                        packets_sent.add(channel_packet_buf[channel_idx])
-                        channel_packet_buf[channel_idx] = ""
-            await RisingEdge(tb.clock)
-
-    async def gen_send_packet_simple():
-        channel_packet_buf = ""
-        ds = BluespecDataStream256(
-            data=0,
-            byte_num=32,
-            start_byte_index=0,
-            is_first=True,
-            is_last=False
-        )
-        channel_packet_buf += hex(ds.data())
-        await tb.txChannels[1].enq(ds.pack())
-        await RisingEdge(tb.clock)
-
-        ds = BluespecDataStream256(
-            data=0,
-            byte_num=32,
-            start_byte_index=0,
-            is_first=False,
-            is_last=True
-        )
-        channel_packet_buf += hex(ds.data())
-        packets_sent.add(channel_packet_buf)
-        await tb.txChannels[1].enq(ds.pack())
-        await RisingEdge(tb.clock)
-
-    cocotb.start_soon(gen_send_packet())
-
-    recv_packet_cnt = 0
-    recv_channel_packet_buf = ["" for _ in range(4)]
-    while recv_packet_cnt < test_packet_cnt:
-        for channel_idx in range(4):
-            if await tb.rxChannels[channel_idx].not_empty():
-                ds_raw = await tb.rxChannels[channel_idx].first()
-                # print("ds_raw=", ds_raw)
-                await tb.rxChannels[channel_idx].deq()
-                ds = BluespecDataStream256.unpack(ds_raw)
-                recv_channel_packet_buf[channel_idx] += hex(ds.data())
-                # print("111122223333", ds, cocotb.utils.get_sim_time("ns"))
-                if ds.is_last() == 1:
-                    print("AAASSSDDDFFFF", cocotb.utils.get_sim_time("ns"))
-                    recv_packet_cnt += 1
-                    packets_sent.remove(recv_channel_packet_buf[channel_idx])
-                    recv_channel_packet_buf[channel_idx] = ""
-
-        await RisingEdge(tb.clock)
+    cocotb.start_soon(tb.gen_send_packet())
+    await tb.recv_and_check()
 
 
 def test_ftile_mac():
