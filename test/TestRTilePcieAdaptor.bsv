@@ -111,61 +111,73 @@ module mkTestRTilePcieAdaptorTx(Empty);
     endrule
 endmodule
 
-interface TestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest;
+interface TestPcieRxStreamSegmentForkTimingTest;
     method Bool getOutput;
 endinterface
 
-// (* doc = "testcase" *)
-// (* synthesize *)
-// module mkTestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest(TestExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStreamTimingTest);
-//     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+(* doc = "testcase" *)
+(* synthesize *)
+module mkTestPcieRxStreamSegmentForkTimingTest(TestPcieRxStreamSegmentForkTimingTest);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
 
-//     ExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream#(PcieDataStreamDataLsbRight) dut <- mkExtractLengthAndByteEnFormAxiWriteBeatAndConvertToShiftedDataStream;
+    let dut <- mkPcieRxStreamSegmentFork;
 
-//     ForceKeepWideSignals#(PcieDataStreamLsbRight, Bool) signalKeeperForStream <- mkForceKeepWideSignals; 
-//     ForceKeepWideSignals#(PcieLengthAndByteEn, Bool) signalKeeperForMeta <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(2048), Bool) signalKeeperA <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(256), Bool) signalKeeperB <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(256), Bool) signalKeeperC <- mkForceKeepWideSignals; 
     
 
-//     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
-//     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
-//     let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
-//     let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
-//     let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
-//     let randSource6 <- mkSynthesizableRng512('h11111111);
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+    let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
+    let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
+    // let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
+    // let randSource6 <- mkSynthesizableRng512('h11111111);
 
-//     Reg#(Bool) runReg <- mkReg(True);
-//     Reg#(Bool) outReg <- mkReg(True);
-//     rule injectTlp if (runReg);
-//         runReg <= False;
+    Reg#(Bool) runReg <- mkReg(True);
+    Reg#(Bool) outReg <- mkReg(True);
+    rule injectTlp if (runReg);
+        runReg <= False;
 
-//         let randValue1 <- randSource1.get;
-//         let randValue2 <- randSource2.get;
-//         let randValue3 <- randSource3.get;
-//         let randValue4 <- randSource4.get;
-//         let randValue5 <- randSource5.get;
-//         let randValue6 <- randSource6.get;
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        let randValue3 <- randSource3.get;
+        let randValue4 <- randSource4.get;
+        // let randValue5 <- randSource5.get;
+        // let randValue6 <- randSource6.get;
 
-//         let beat = unpack(truncate({pack(randValue1), pack(randValue2), pack(randValue3)}));
-//         dut.axiWriteBeatPipeIn.enq(beat);
+        let beat = unpack(truncate({pack(randValue1), pack(randValue2), pack(randValue3),  pack(randValue4)}));
+        dut.pcieRxPipeIn.enq(beat);
 
-//     endrule
+    endrule
 
-//     rule handleOutput;
-//         if (dut.dataStreamPipeOut.notEmpty) begin
-//             signalKeeperForStream.bitsPipeIn.enq(dut.dataStreamPipeOut.first);
-//             dut.dataStreamPipeOut.deq;
-//         end
+    rule handleOutput;
+        RtilePcieRxPayloadStorageWriteReq x = unpack(0);
+        Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)) y = unpack(0);
+        Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo) z = unpack(0);
 
-//         if (dut.lengthAndByteEnPipeOut.notEmpty) begin
-//             signalKeeperForMeta.bitsPipeIn.enq(dut.lengthAndByteEnPipeOut.first);
-//             dut.lengthAndByteEnPipeOut.deq;
-//         end
+        for (Integer idx = 0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            x = unpack(pack(x) ^ pack(dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].first));
+            dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].deq;
 
-//         outReg <= signalKeeperForStream.out && signalKeeperForMeta.out;
-//     endrule
+            y = unpack(pack(y) ^ pack(dut.cpltTlpVecPipeOutVec[idx].first));
+            dut.cpltTlpVecPipeOutVec[idx].deq;
+        end
 
-//     method getOutput = outReg;
-// endmodule
+        z = dut.memReadWriteReqTlpVecPipeOut.first;
+        dut.memReadWriteReqTlpVecPipeOut.deq;
+
+
+        signalKeeperA.bitsPipeIn.enq(zeroExtend(pack(x)));
+        signalKeeperB.bitsPipeIn.enq(zeroExtend(pack(y)));
+        signalKeeperC.bitsPipeIn.enq(zeroExtend(pack(z)));
+
+
+        outReg <= signalKeeperA.out && signalKeeperB.out && signalKeeperC.out;
+    endrule
+
+    method getOutput = outReg;
+endmodule
 
 
 
