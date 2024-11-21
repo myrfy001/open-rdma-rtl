@@ -67,9 +67,9 @@ typedef TAdd#(ETH_IP_UDP_HEADER_BYTE_LENGTH, RDMA_HEADER_MAX_BYTE_LENGTH) ETH_IP
 typedef TAdd#(ETH_IP_UDP_RDMA_HEADER_MAX_BYTE_LENGTH, MAX_PMTU) RDMA_ETHERNET_FRAME_MAX_BYTE_LENGTH;
 typedef Bit#(TAdd#(1, TLog#(RDMA_ETHERNET_FRAME_MAX_BYTE_LENGTH))) RdmaEthernetFrameByteLen;
 
-typedef TDiv#(DATA_BUS_WIDTH, 8)   DATA_BUS_BYTE_WIDTH; // 32 (bus 256b), 64 (bus 512b)
-typedef TLog#(DATA_BUS_BYTE_WIDTH) DATA_BUS_BYTE_NUM_WIDTH; // 5 (bus 256b), 6 (bus 512b)
-typedef TLog#(DATA_BUS_WIDTH)      DATA_BUS_BIT_NUM_WIDTH; // 8 (bus 256b), 9 (bus 512b)
+typedef TDiv#(DATA_BUS_WIDTH, BYTE_WIDTH)   DATA_BUS_BYTE_WIDTH; // 32 (bus 256b), 64 (bus 512b)
+typedef TLog#(DATA_BUS_BYTE_WIDTH)          DATA_BUS_BYTE_NUM_WIDTH; // 5 (bus 256b), 6 (bus 512b)
+typedef TLog#(DATA_BUS_WIDTH)               DATA_BUS_BIT_NUM_WIDTH; // 8 (bus 256b), 9 (bus 512b)
 
 
 typedef TLog#(MAX_PMTU)                      MAX_PMTU_WIDTH; // 12

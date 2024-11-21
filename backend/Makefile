@@ -53,8 +53,14 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
 # TOPMODULE ?= mkRTilePcieAdaptor
 
+# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+# TOPMODULE ?= mkTestPcieRxStreamSegmentForkTimingTest
+
+# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+# TOPMODULE ?= mkTestPcieHwCpltBufferAllocatorTimingTest
+
 TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-TOPMODULE ?= mkTestPcieRxStreamSegmentForkTimingTest
+TOPMODULE ?= mkTestPcieCompletionBufferTimingTest
 
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
