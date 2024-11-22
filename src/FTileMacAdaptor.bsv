@@ -1106,7 +1106,7 @@ typedef struct {
 
 typedef struct {
     FtileMacUserLogicChannelIdx         srcChannelIdx;
-    FtileMacTxBramBufferAddr            startRowAddr;
+    FtileMacTxChannelBufferAddr         startRowAddr;
     FtileMacSegmentIdx                  zeroBasedSegCnt;
     FtileMacEopEmpty                    eopEmpty;
     FtileMacTxChannelBufferRowSegIdx    destSegOffset;
@@ -1134,7 +1134,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA)) bramReadRespPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(DATA)) bramReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+    for (Integer idx=0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         bramReadReqPipeInVecInst[idx] = toPipeIn(bramReadReqPipeInQueueVec[idx]);
         bramReadRespPipeOutVecInst[idx] = toPipeOut(bramReadRespPipeOutQueueVec[idx]);
     end
@@ -1164,7 +1164,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
     // endrule
 
 
-    for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+    for (Integer idx=0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         rule handleStorageReadReq;
             let req = bramReadReqPipeInQueueVec[idx].first;
             bramReadReqPipeInQueueVec[idx].deq;
@@ -1175,6 +1175,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             // );
         endrule
 
+        // TODO Should we remove this stage?
         rule handleStorageReadResp;
             let resp = dataStreamStorageVec[idx].readRespPipeOut.first;
             dataStreamStorageVec[idx].readRespPipeOut.deq;
@@ -1301,6 +1302,14 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
     ))  mimoInputPipelineQueue <- mkLFIFOF;
 
     FIFOF#(Tuple2#(FtileMacUserLogicChannelIdx, FtileMacTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
+
+    rule guard;
+        immAssert(
+            valueOf(SizeOf#(FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset)) == valueOf(TExp#(TLog#(SizeOf#(FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset)))),
+            "the size of FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset must be 2's power",
+            $format("")
+        );
+    endrule
 
     rule prepareRoundRobinChannelOrder;
         Vector#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT, FtileMacTxBufferRangeWithSrcChannelIdxAndDestSegOffset) vecToEnq = newVector;
@@ -1801,17 +1810,8 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
     interface pingpongChannelMetaPipeOutVec = pingpongChannelMetaPipeOutVecInst;
 endmodule
 
-
-typedef 512 FTILE_MAC_TX_BRAM_BUFFER_DEPTH;
-typedef TLog#(FTILE_MAC_TX_BRAM_BUFFER_DEPTH) FTILE_MAC_TX_BRAM_BUFFER_ADDR_WIDTH;
-typedef Bit#(FTILE_MAC_TX_BRAM_BUFFER_ADDR_WIDTH) FtileMacTxBramBufferAddr;
-
-// typedef TAdd#(FTILE_MAC_SEGMENT_CNT, TSub#(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT, 1)) FTILE_MAC_RX_PING_PONG_CHANNEL_BUF_WITH_ADDITIONAL_TAIL_SEG_CNT;
-// typedef Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_BUF_WITH_ADDITIONAL_TAIL_SEG_CNT, FtileMacDataSegment)  FtileMacRxPingPongChannelWithTailSegDataBundle;
-// typedef Bit#(FTILE_MAC_RX_PING_PONG_CHANNEL_BUF_WITH_ADDITIONAL_TAIL_SEG_CNT) FtileMacRxPingPongChannelWithTailSegInframeSignalBundle;
-
 typedef struct {
-    FtileMacTxBramBufferAddr addr;
+    FtileMacTxChannelBufferAddr addr;
 } FtileMacTxBramBufferReadReq deriving (FShow, Bits);
 
 typedef struct {
@@ -1852,7 +1852,6 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
         bramReadRespPipeInVecInst[idx] = toPipeIn(bramReadRespPipeInQueueVec[idx]);
     end
 
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, AutoInferBramQueuedOutput#(FtileMacTxBramBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
     
     Reg#(Maybe#(FtileMacTxPingPongChannelMetaEntry)) curMetaEntryMaybeReg <- mkReg(tagged Invalid);
     Reg#(FtileMacTxPingPongChannelMetaBundle) curInputMetaBundleReg <- mkRegU;
