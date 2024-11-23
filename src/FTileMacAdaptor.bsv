@@ -1115,7 +1115,7 @@ typedef struct {
 } FtileMacTxPingPongChannelMetaEntry deriving(Bits, FShow);
 
 
-interface FtileMacTxUserInputChannel;
+interface FtileMacTxUserInputGearboxStorageAndMetaExtractor;
     interface PipeIn#(FtileMacTxUserStream)         streamPipeIn;
     interface PipeOut#(FtileMacTxBufferRange)       packetMetaPipeOut;
 
@@ -1124,7 +1124,7 @@ interface FtileMacTxUserInputChannel;
 endinterface
 
 // (* synthesize *)
-module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
+module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGearboxStorageAndMetaExtractor);
     FIFOF#(FtileMacTxUserStream)    streamPipeInQueue       <- mkFIFOF;
     FIFOF#(FtileMacTxBufferRange)   packetMetaPipeOutQueue  <- mkFIFOF;
 
@@ -1147,18 +1147,18 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
 
     // rule debug;
     //     if (!streamPipeInQueue.notFull) begin
-    //         $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug"),  toBlue(", streamPipeInQueue is Full"));
+    //         $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor debug"),  toBlue(", streamPipeInQueue is Full"));
     //     end
 
     //     if (!packetMetaPipeOutQueue.notFull) begin
-    //         $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug"),  toBlue(", packetMetaPipeOutQueue is Full"));
+    //         $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor debug"),  toBlue(", packetMetaPipeOutQueue is Full"));
     //     end
     //     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
     //         if (!bramReadReqPipeInQueueVec[idx].notFull) begin
-    //             $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug [idx=%d]"), idx, toBlue(", bramReadReqPipeInQueueVec is Full"));
+    //             $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor debug [idx=%d]"), idx, toBlue(", bramReadReqPipeInQueueVec is Full"));
     //         end
     //         if (!bramReadRespPipeOutQueueVec[idx].notFull) begin
-    //             $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel debug [idx=%d]"), idx, toBlue(", bramReadRespPipeOutQueueVec is Full"));
+    //             $display("time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor debug [idx=%d]"), idx, toBlue(", bramReadRespPipeOutQueueVec is Full"));
     //         end
     //     end
     // endrule
@@ -1170,7 +1170,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             bramReadReqPipeInQueueVec[idx].deq;
             dataStreamStorageVec[idx].putReadReq(req.addr);
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadReq [idx=%d]"), idx,
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor handleStorageReadReq [idx=%d]"), idx,
             //     toBlue(", req="), fshow(req)
             // );
         endrule
@@ -1181,7 +1181,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             dataStreamStorageVec[idx].readRespPipeOut.deq;
             bramReadRespPipeOutQueueVec[idx].enq(resp);
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleStorageReadResp [idx=%d]"), idx,
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor handleStorageReadResp [idx=%d]"), idx,
             //     toBlue(", resp="), fshow(resp)
             // );
         endrule
@@ -1212,7 +1212,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
             curSegCnt = 0;
             startRowAddrReg <= curRowAddrReg + 1;
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleMetaCalc"),
+            //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor handleMetaCalc"),
             //     toBlue(", outputEntry="), fshow(outputEntry)
             // );
         end
@@ -1223,7 +1223,7 @@ module mkFtileMacTxUserInputChannel(FtileMacTxUserInputChannel);
         curRowAddrReg <= curRowAddrReg + 1;
         curSegCntReg  <= curSegCnt;
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputChannel handleMetaCalc BRAMwrite"),
+        //     "time=%0t:", $time, toGreen(" mkFtileMacTxUserInputGearboxStorageAndMetaExtractor handleMetaCalc BRAMwrite"),
         //     toBlue(", curRowAddrReg="), fshow(curRowAddrReg),
         //     toBlue(", ds="), fshow(ds)
         // );
@@ -2106,7 +2106,7 @@ module mkFTileMac(FTileMac);
         ftilemacRxStreamPipeOutVecInst[idx] = storageAndGearBoxVec[idx].streamPipeOut;
     end
 
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacTxUserInputChannel) txInputChannelVec <- replicateM(mkFtileMacTxUserInputChannel);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacTxUserInputGearboxStorageAndMetaExtractor) txInputChannelVec <- replicateM(mkFtileMacTxUserInputGearboxStorageAndMetaExtractor);
     let ftileMacTxBeatFork <- mkFtileMacTxPingPongFork;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FtileMacTxPingPongSingleChannel) txPingPongChannelVec <- replicateM(mkFtileMacTxPingPongSingleChannel);
     let ftileMacTxBeatJoin <- mkFtileMacTxPingPongJoin;

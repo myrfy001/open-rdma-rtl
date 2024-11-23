@@ -47,7 +47,7 @@ interface DtldStreamSlaveReadPipes#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamData#(tData))                   readDataPipeOut;
 endinterface
 
-interface DtldStreamSlavePipes#(type tData, type tAddr, type tLen);
+interface DtldStreamBiDirSlavePipes#(type tData, type tAddr, type tLen);
     interface DtldStreamSlaveWritePipes#(tData, tAddr, tLen)  writePipeIfc;
     interface DtldStreamSlaveReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
@@ -56,10 +56,10 @@ endinterface
 
 
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);
-    interface Vector#(channelCnt, DtldStreamSlavePipes#(tData, tAddr, tLen))     slaveIfcVec;
-    interface DtldStreamMasterPipes#(tData, tAddr, tLen)                         masterIfc;
-    interface PipeOut#(Bit#(TLog#(channelCnt)))                                  writeSourceChannelIdPipeOut;
-    interface PipeOut#(Bit#(TLog#(channelCnt)))                                  readSourceChannelIdPipeOut;
+    interface Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))       slaveIfcVec;
+    interface DtldStreamMasterPipes#(tData, tAddr, tLen)                                masterIfc;
+    interface PipeOut#(Bit#(TLog#(channelCnt)))                                         writeSourceChannelIdPipeOut;
+    interface PipeOut#(Bit#(TLog#(channelCnt)))                                         readSourceChannelIdPipeOut;
 endinterface
 
 
@@ -69,7 +69,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         Alias#(Bit#(TLog#(channelCnt)), tChannelIdx)
     );
 
-    Vector#(channelCnt, DtldStreamSlavePipes#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
+    Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
 
     Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkFIFOF);
     Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkFIFOF);
@@ -178,7 +178,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
         slaveIfcVecInst[channelIdx] = (
-            interface DtldStreamSlavePipes 
+            interface DtldStreamBiDirSlavePipes 
                 interface DtldStreamSlaveWritePipes writePipeIfc;
                     interface  writeMetaPipeIn  = toPipeIn(slaveSideQueueVecWm[channelIdx]);
                     interface  writeDataPipeIn  = toPipeIn(slaveSideQueueVecWd[channelIdx]);

@@ -222,18 +222,18 @@ module mkTestPcieHwCpltBufferAllocatorTimingTest(TestPcieHwCpltBufferAllocatorTi
     for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         rule injectA;
             let beat = unpack(truncate(pack(randValue1Reg) >> 64 * idx));
-            dut.tagAllocReqPipeInVec[idx].enq(beat);
+            dut.slotAllocReqPipeInVec[idx].enq(beat);
         endrule
 
         rule injectB;
             let beat = unpack(truncate(pack(randValue2Reg) >> 64 * idx));
-            dut.tagDeAllocPipeInVec[idx].enq(beat);
+            dut.slotDeAllocPipeInVec[idx].enq(beat);
         endrule
     end
         
     for (Integer idx = 0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         rule handleOutput;
-            dut.tagAllocRespPipeOutVec[idx].deq;
+            dut.slotAllocRespPipeOutVec[idx].deq;
             signalKeepRegVec[idx] <= signalKeepRegVec[idx] + 1;
         endrule
     end
@@ -283,10 +283,10 @@ module mkTestPcieCompletionBufferTimingTest(TestPcieCompletionBufferTimingTest);
 
     rule injectReq1;
         let randValue1 <- randSource1.get;
-        // if (dut.tagAllocPipeIn.notFull) begin
-            let entry = unpack(truncate(randValue1));
-            dut.tagAllocPipeIn.enq(entry);
-        // end
+
+        let entry = unpack(truncate(randValue1));
+        dut.tagAllocReqPipeIn.enq(entry);
+
     endrule
 
     rule injectReq2;
@@ -294,41 +294,34 @@ module mkTestPcieCompletionBufferTimingTest(TestPcieCompletionBufferTimingTest);
         let randValue3 <- randSource3.get;
         let randValue4 <- randSource4.get;
 
-        // if (dut.tlpRawBeatDataStorageWriteReqPipeIn.notFull) begin
-            let entry = unpack(truncate({pack(randValue2), pack(randValue3), pack(randValue4)}));
-            dut.tlpRawBeatDataStorageWriteReqPipeIn.enq(entry);
-        // end
+
+        let entry = unpack(truncate({pack(randValue2), pack(randValue3), pack(randValue4)}));
+        dut.tlpRawBeatDataStorageWriteReqPipeIn.enq(entry);
+
     endrule
 
     rule injectReq3;
         let randValue5 <- randSource5.get;
-        // if (dut.cpltTlpVecPipeIn.notFull) begin
-            let entry = unpack(truncate(randValue5));
-            dut.cpltTlpVecPipeIn.enq(entry);
-        // end
+
+        let entry = unpack(truncate(randValue5));
+        dut.cpltTlpVecPipeIn.enq(entry);
 
     endrule
 
 
     rule handleOutput1;
-        // if (dut.tagAllocPipeOut.notEmpty) begin
-            signalKeeper1.bitsPipeIn.enq(zeroExtend(pack(dut.tagAllocPipeOut.first)));
-            dut.tagAllocPipeOut.deq;
-        // end
+        signalKeeper1.bitsPipeIn.enq(zeroExtend(pack(dut.tagAllocRespPipeOut.first)));
+        dut.tagAllocRespPipeOut.deq;
     endrule
 
     rule handleOutput2;
-        // if (dut.sharedHwCpltBufferSlotDeAllocReqPipeOut.notEmpty) begin
-            signalKeeper2.bitsPipeIn.enq(zeroExtend(pack(dut.sharedHwCpltBufferSlotDeAllocReqPipeOut.first)));
-            dut.sharedHwCpltBufferSlotDeAllocReqPipeOut.deq;
-        // end
+        signalKeeper2.bitsPipeIn.enq(zeroExtend(pack(dut.sharedHwCpltBufferSlotDeAllocReqPipeOut.first)));
+        dut.sharedHwCpltBufferSlotDeAllocReqPipeOut.deq;
     endrule
 
     rule handleOutput3;
-        // if (dut.dataStreamPipeOut.notEmpty) begin
-            signalKeeper3.bitsPipeIn.enq(zeroExtend(pack(dut.dataStreamPipeOut.first)));
-            dut.dataStreamPipeOut.deq;
-        // end
+        signalKeeper3.bitsPipeIn.enq(zeroExtend(pack(dut.dataStreamPipeOut.first)));
+        dut.dataStreamPipeOut.deq;
     endrule
 
     rule mergeOutput;

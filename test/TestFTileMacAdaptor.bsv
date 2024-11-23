@@ -1413,7 +1413,7 @@ module mkTestFtileTx(Empty);
     Reg#(Word) checkStepReg <- mkReg(0);
 
 
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacTxUserInputChannel) txInputChannelVec <- replicateM(mkFtileMacTxUserInputChannel);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FtileMacTxUserInputGearboxStorageAndMetaExtractor) txInputChannelVec <- replicateM(mkFtileMacTxUserInputGearboxStorageAndMetaExtractor);
     let ftileMacTxBeatFork <- mkFtileMacTxPingPongFork;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FtileMacTxPingPongSingleChannel) txPingPongChannelVec <- replicateM(mkFtileMacTxPingPongSingleChannel);
     let ftileMacTxBeatJoin <- mkFtileMacTxPingPongJoin;
