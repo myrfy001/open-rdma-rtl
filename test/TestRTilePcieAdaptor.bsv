@@ -22,165 +22,109 @@ import AddressChunker :: *;
 
 `include "PcieMacros.bsv"
 
-// (* doc = "testcase" *)
-// module mkTestRTilePcieAdaptorRx(Empty);
-//     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
 
-//     let dut <- mkRTilePcie;
+(* doc = "testcase" *)
+module mkTestRTilePcieAdaptorTx(Empty);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
 
-//     Reg#(Bool) runReg <- mkReg(True);
-//     rule injectTlp if (runReg);
-//         runReg <= False;
+    let dut <- mkRTilePcie;
 
-//         // Vector#(128, Byte) dataVec = map(fromInteger, genVector);
-//         // let data = unpack(pack(dataVec));
+    Reg#(Bool) runReg <- mkReg(True);
+    rule injectReadTlp if (runReg);
+        runReg <= False;
 
-//         PcieTlpDataBusSegBundle data = vec(
-//             'h00FFEEDD_CCBBAA00,
-//             0,
-//             0,
-//             0
-//         );
+        let writeMeta = DtldStreamMemAccessMeta {
+            addr: 0,
+            totalLen: 15
+        };
+        let writeData = DtldStreamData {
+            data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777,
+            startByteIdx: 0,
+            byteNum: 15,
+            isFirst: True,
+            isLast: True
+        };
+        dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
+        dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+    endrule
 
-//         PcieTlpHeaderCommon common_header1 = unpack(0);
-//         common_header1.fmt = `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA;
-//         common_header1.typ = `PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA;
-//         common_header1.length = 2;
-//         common_header1.t8 = True;
-//         common_header1.t9 = False;
-
-//         PcieTlpHeaderCompletion cplt1 = unpack(0);
-//         cplt1.commonHeader = common_header1;
-//         cplt1.byteCount = 6;
-//         cplt1.tag = 'h01;
-//         cplt1.lowerAddress = 7'd125;
-        
-//         PcieTlpHeaderBuffer headerBuf1 = zeroExtendLSB(pack(cplt1));
-//         PcieTlpHeaderBusSegBundle header = vec(
-//             headerBuf1,
-//             0,
-//             0,
-//             0
-//         );
-
-//         let beat = PcieRxBeat {
-//             data: data,
-//             header: header,
-//             sop: 'b0001,
-//             eop: 'b0001,
-//             hvalid: 'b0001,
-//             dvalid: 'b0001,
-//             bar: unpack(0),
-//             empty: ?
-//         };
-
-//         dut.pcieRxPipeIn.enq(beat);
-//     endrule
-// endmodule
-
-
-// (* doc = "testcase" *)
-// module mkTestRTilePcieAdaptorTx(Empty);
-//     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
-
-//     let dut <- mkRTilePcie;
-
-//     Reg#(Bool) runReg <- mkReg(True);
-//     rule injectReadTlp if (runReg);
-//         runReg <= False;
-
-//         let writeMeta = DtldStreamMemAccessMeta {
-//             addr: 0,
-//             totalLen: 15
-//         };
-//         let writeData = DtldStreamData {
-//             data: ?,
-//             startByteIdx: 0,
-//             byteNum: 15,
-//             isFirst: True,
-//             isLast: True
-//         };
-//         dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
-//         dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
-//     endrule
-
-//     rule getOutput;
-//         let outBeat = dut.pcieTxPipeOut.first;
-//         dut.pcieTxPipeOut.deq;
-//         $display(fshow(outBeat));
-//     endrule
-// endmodule
+    rule getOutput;
+        let outBeat = dut.pcieTxPipeOut.first;
+        dut.pcieTxPipeOut.deq;
+        $display(fshow(outBeat));
+    endrule
+endmodule
 
 interface TestPcieRxStreamSegmentForkTimingTest;
     method Bit#(16) getOutput;
 endinterface
 
-// (* synthesize *)
-// module mkTestPcieRxStreamSegmentForkTimingTest(TestPcieRxStreamSegmentForkTimingTest);
-//     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
+(* synthesize *)
+module mkTestPcieRxStreamSegmentForkTimingTest(TestPcieRxStreamSegmentForkTimingTest);
+    Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
 
-//     let dut <- mkPcieRxStreamSegmentFork;
+    let dut <- mkPcieRxStreamSegmentFork;
 
-//     ForceKeepWideSignals#(Bit#(2048), Bit#(16)) signalKeeperA <- mkForceKeepWideSignals; 
-//     ForceKeepWideSignals#(Bit#(256), Bit#(16)) signalKeeperB <- mkForceKeepWideSignals; 
-//     ForceKeepWideSignals#(Bit#(256), Bit#(16)) signalKeeperC <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(2048), Bit#(16)) signalKeeperA <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(256), Bit#(16)) signalKeeperB <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(256), Bit#(16)) signalKeeperC <- mkForceKeepWideSignals; 
     
 
-//     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
-//     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
-//     let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
-//     let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
-//     // let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
-//     // let randSource6 <- mkSynthesizableRng512('h11111111);
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+    let randSource3 <- mkSynthesizableRng512('hCCCCCCCC);
+    let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
+    // let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
+    // let randSource6 <- mkSynthesizableRng512('h11111111);
 
-//     Reg#(Bit#(16)) outReg <- mkReg(0);
-//     rule injectTlp;
+    Reg#(Bit#(16)) outReg <- mkReg(0);
+    rule injectTlp;
 
-//         let randValue1 <- randSource1.get;
-//         let randValue2 <- randSource2.get;
-//         let randValue3 <- randSource3.get;
-//         let randValue4 <- randSource4.get;
-//         // let randValue5 <- randSource5.get;
-//         // let randValue6 <- randSource6.get;
+        let randValue1 <- randSource1.get;
+        let randValue2 <- randSource2.get;
+        let randValue3 <- randSource3.get;
+        let randValue4 <- randSource4.get;
+        // let randValue5 <- randSource5.get;
+        // let randValue6 <- randSource6.get;
 
-//         let beat = unpack(truncate({pack(randValue1), pack(randValue2), pack(randValue3),  pack(randValue4)}));
-//         dut.pcieRxPipeIn.enq(beat);
+        let beat = unpack(truncate({pack(randValue1), pack(randValue2), pack(randValue3),  pack(randValue4)}));
+        dut.pcieRxPipeIn.enq(beat);
 
-//     endrule
+    endrule
 
-//     rule handleOutput;
-//         RtilePcieRxPayloadStorageWriteReq x = unpack(0);
-//         Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)) y = unpack(0);
-//         Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo) z = unpack(0);
+    rule handleOutput;
+        RtilePcieRxPayloadStorageWriteReq x = unpack(0);
+        Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)) y = unpack(0);
+        Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo) z = unpack(0);
 
-//         for (Integer idx = 0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
-//             if (dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].notEmpty) begin
-//                 x = unpack(pack(x) ^ pack(dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].first));
-//                 dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].deq;
-//             end
+        for (Integer idx = 0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            if (dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].notEmpty) begin
+                x = unpack(pack(x) ^ pack(dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].first));
+                dut.tlpRawBeatDataStorageWriteReqPipeOutVec[idx].deq;
+            end
             
-//             if (dut.cpltTlpVecPipeOutVec[idx].notEmpty) begin
-//                 y = unpack(pack(y) ^ pack(dut.cpltTlpVecPipeOutVec[idx].first));
-//                 dut.cpltTlpVecPipeOutVec[idx].deq;
-//             end
-//         end
+            if (dut.cpltTlpVecPipeOutVec[idx].notEmpty) begin
+                y = unpack(pack(y) ^ pack(dut.cpltTlpVecPipeOutVec[idx].first));
+                dut.cpltTlpVecPipeOutVec[idx].deq;
+            end
+        end
 
-//         if (dut.memReadWriteReqTlpVecPipeOut.notEmpty) begin
-//             z = dut.memReadWriteReqTlpVecPipeOut.first;
-//             dut.memReadWriteReqTlpVecPipeOut.deq;
-//         end
-
-
-//         signalKeeperA.bitsPipeIn.enq(zeroExtend(pack(x)));
-//         signalKeeperB.bitsPipeIn.enq(zeroExtend(pack(y)));
-//         signalKeeperC.bitsPipeIn.enq(zeroExtend(pack(z)));
+        if (dut.memReadWriteReqTlpVecPipeOut.notEmpty) begin
+            z = dut.memReadWriteReqTlpVecPipeOut.first;
+            dut.memReadWriteReqTlpVecPipeOut.deq;
+        end
 
 
-//         outReg <= pack(signalKeeperA.out) ^ pack(signalKeeperB.out) ^ pack(signalKeeperC.out);
-//     endrule
+        signalKeeperA.bitsPipeIn.enq(zeroExtend(pack(x)));
+        signalKeeperB.bitsPipeIn.enq(zeroExtend(pack(y)));
+        signalKeeperC.bitsPipeIn.enq(zeroExtend(pack(z)));
 
-//     method getOutput = outReg;
-// endmodule
+
+        outReg <= pack(signalKeeperA.out) ^ pack(signalKeeperB.out) ^ pack(signalKeeperC.out);
+    endrule
+
+    method getOutput = outReg;
+endmodule
 
 
 
@@ -514,22 +458,49 @@ endmodule
 
 
 
-
-interface TestRTileDmaReadWriteSimple;
+interface TestRTilePcieByCocotbTest;
     (* always_ready, always_enabled *)
     interface RTilePcieAdaptorRx rxRawIfc;
 
     (* always_ready, always_enabled *)
     interface RTilePcieAdaptorTx txRawIfc;
 
-    (* always_ready, always_enabled *)
-    method Action startTest(Bool isStart);
-
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamPipes)     streamSlaveIfcVec;
 endinterface
 
-// since the beat size is a const value, so no need to return value dynamically. Only need a placeholder to satify function signature.
-typedef 128                              RTILE_DATA_BUS_BYTE_WIDTH;
-typedef TLog#(RTILE_DATA_BUS_BYTE_WIDTH) RTILE_BEAT_ALIGN_BIT_NUM;   // 7
+module mkTestRTilePcieByCocotbTest(TestRTilePcieByCocotbTest);
+    let inner <- mkRTilePcie;
+    let rawInterfaceAdaptor <- mkRTilePcieAdaptor;
+
+    mkConnection(rawInterfaceAdaptor.pcieRxPipeOut, inner.pcieRxPipeIn);
+    mkConnection(rawInterfaceAdaptor.pcieTxPipeIn, inner.pcieTxPipeOut);
+
+    interface rxRawIfc = rawInterfaceAdaptor.rx;
+    interface txRawIfc = rawInterfaceAdaptor.tx;
+    interface streamSlaveIfcVec = inner.streamSlaveIfcVec;
+endmodule
+
+
+
+
+
+
+
+// interface TestRTileDmaReadWriteSimple;
+//     (* always_ready, always_enabled *)
+//     interface RTilePcieAdaptorRx rxRawIfc;
+
+//     (* always_ready, always_enabled *)
+//     interface RTilePcieAdaptorTx txRawIfc;
+
+//     (* always_ready, always_enabled *)
+//     method Action startTest(Bool isStart);
+
+// endinterface
+
+// // since the beat size is a const value, so no need to return value dynamically. Only need a placeholder to satify function signature.
+// typedef 128                              RTILE_DATA_BUS_BYTE_WIDTH;
+// typedef TLog#(RTILE_DATA_BUS_BYTE_WIDTH) RTILE_BEAT_ALIGN_BIT_NUM;   // 7
 
 // module mkTestRTileDmaReadWriteSimple(TestRTileDmaReadWriteSimple);
 //     let dut <- mkRTilePcie;

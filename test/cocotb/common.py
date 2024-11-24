@@ -182,7 +182,15 @@ class BlueRdmaData256ByteIndex(BluespecBits):
     _width = 5
 
 
-class BluespecDataStream256(BluespecStruct):
+class BlueRdmaLength(BluespecBits):
+    _width = 32
+
+
+class BlueRdmaAddr(BluespecBits):
+    _width = 64
+
+
+class BlueRdmaDataStream256(BluespecStruct):
     _members_def = OrderedDict(
         data=BlueRdmaData256,
         byte_num=BlueRdmaData256ByteNum,
@@ -201,12 +209,32 @@ class BluespecDataStream256(BluespecStruct):
 
     def __str__(self):
         return (
-            f"< BluespecDataStream256 "
+            f"< BlueRdmaDataStream256 "
             f"data={self.data}, "
             f"byte_num={self.byte_num}, "
             f"start_byte_index={self.start_byte_index}, "
             f"is_first={self.is_first}, "
             f"is_last={self.is_last} >"
+        )
+
+
+class BlueRdmaDtldStreamMemAccessMeta(BluespecStruct):
+    _members_def = OrderedDict(
+        addr=BlueRdmaAddr,
+        total_len=BlueRdmaLength,
+    )
+
+    def __init__(self, addr, total_len):
+        addr = BlueRdmaAddr(addr)
+        total_len = BlueRdmaLength(total_len)
+
+        super().__init__(addr, total_len)
+
+    def __str__(self):
+        return (
+            f"< BlueRdmaDtldStreamMemAccessMeta "
+            f"addr={self.addr}, "
+            f"total_len={self.total_len} >"
         )
 
 

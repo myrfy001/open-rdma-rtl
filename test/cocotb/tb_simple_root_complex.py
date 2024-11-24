@@ -16,11 +16,11 @@ from cocotb.clock import Clock
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.intel.rtile import RTilePcieDevice, RTileRxBus, RTileTxBus
 
-from common import gen_rtl_file_list
+from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta
 
 
 class TB(object):
-    def __init__(self, dut, msix=False):
+    def __init__(self, dut):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -29,22 +29,32 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
 
-        self._bus_width = 1024
-        self._bus_bytes = 128
+        self.requester_tx_write_meta_pipes = []
+        self.requester_tx_write_data_pipes = []
+        self.requester_tx_read_meta_pipes = []
+        self.requester_tx_read_data_pipes = []
+
+        for idx in range(4):
+            self.requester_tx_write_meta_pipes.append(BluespecPipeIn(
+                dut, f"streamSlaveIfcVec_{idx}_writePipeIfc_writeMetaPipeIn", self.clock))
+            self.requester_tx_write_data_pipes.append(BluespecPipeIn(
+                dut, f"streamSlaveIfcVec_{idx}_writePipeIfc_writeDataPipeIn", self.clock))
+            self.requester_tx_read_meta_pipes.append(BluespecPipeIn(
+                dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readMetaPipeIn", self.clock))
+            self.requester_tx_read_data_pipes.append(BluespecPipeOut(
+                dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readDataPipeOut", self.clock))
 
         # PCIe
         self.rc = RootComplex()
 
-        self.client_tag = bool(int(os.getenv("CLIENT_TAG", "1")))
-
-        self.dev = RTilePcieDevice(
+        self.hardware_ip_inst = RTilePcieDevice(
             # configuration options
             port_num=0,
             pcie_generation=5,
             pcie_link_width=16,
             pld_clk_frequency=500e6,
             pf_count=1,
-            max_payload_size=128,
+            max_payload_size=512,
             enable_extended_tag=True,
 
             # signals
@@ -71,53 +81,10 @@ class TB(object):
             # TX flow control
             tx_cdts_limit=None,
             tx_cdts_limit_tdm_idx=None,
-
         )
 
-        self.dev.log.setLevel(logging.INFO)
-
-        # dut.pcie_cq_np_req.setimmediatevalue(1)
-        # dut.cfg_mgmt_addr.setimmediatevalue(0)
-        # dut.cfg_mgmt_function_number.setimmediatevalue(0)
-        # dut.cfg_mgmt_write.setimmediatevalue(0)
-        # dut.cfg_mgmt_write_data.setimmediatevalue(0)
-        # dut.cfg_mgmt_byte_enable.setimmediatevalue(0)
-        # dut.cfg_mgmt_read.setimmediatevalue(0)
-        # dut.cfg_mgmt_debug_access.setimmediatevalue(0)
-        # dut.cfg_msg_transmit.setimmediatevalue(0)
-        # dut.cfg_msg_transmit_type.setimmediatevalue(0)
-        # dut.cfg_msg_transmit_data.setimmediatevalue(0)
-        # dut.cfg_fc_sel.setimmediatevalue(0)
-        # dut.cfg_dsn.setimmediatevalue(0)
-        # dut.cfg_power_state_change_ack.setimmediatevalue(0)
-        # dut.cfg_err_cor_in.setimmediatevalue(0)
-        # dut.cfg_err_uncor_in.setimmediatevalue(0)
-        # dut.cfg_flr_done.setimmediatevalue(0)
-        # dut.cfg_vf_flr_func_num.setimmediatevalue(0)
-        # dut.cfg_vf_flr_done.setimmediatevalue(0)
-        # dut.cfg_link_training_enable.setimmediatevalue(1)
-        # dut.cfg_interrupt_int.setimmediatevalue(0)
-        # dut.cfg_interrupt_pending.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_select.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_int.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_pending_status.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_pending_status_data_enable.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_pending_status_function_num.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_attr.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_tph_present.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_tph_type.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_tph_st_tag.setimmediatevalue(0)
-        # dut.cfg_interrupt_msi_function_number.setimmediatevalue(0)
-        # dut.cfg_pm_aspm_l1_entry_reject.setimmediatevalue(0)
-        # dut.cfg_pm_aspm_tx_l0s_entry_disable.setimmediatevalue(0)
-        # dut.cfg_config_space_enable.setimmediatevalue(1)
-        # dut.cfg_req_pm_transition_l23_ready.setimmediatevalue(0)
-        # dut.cfg_hot_reset_in.setimmediatevalue(0)
-        # dut.cfg_ds_port_number.setimmediatevalue(0)
-        # dut.cfg_ds_bus_number.setimmediatevalue(0)
-        # dut.cfg_ds_device_number.setimmediatevalue(0)
-
-        self.rc.make_port().connect(self.dev)
+        self.hardware_ip_inst.log.setLevel(logging.INFO)
+        self.rc.make_port().connect(self.hardware_ip_inst)
 
     # Do not use user_rst but gen rstn for bsv
     async def gen_reset(self):
@@ -135,26 +102,35 @@ class TB(object):
 @cocotb.test(timeout_time=100000000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
-    dut.startTest_isStart.setimmediatevalue(0)
-
     tb = TB(dut)
     await tb.gen_reset()
 
     await tb.rc.enumerate()
-    dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
+    pcie_ep_dev = tb.rc.find_device(
+        tb.hardware_ip_inst.functions[0].pcie_id)
 
-    await dev.enable_device()
-    await dev.set_master()
+    await pcie_ep_dev.enable_device()
+    await pcie_ep_dev.set_master()
 
     mem = tb.rc.mem_pool.alloc_region(1024*1024)
     mem_base = mem.get_absolute_address(0)
-    for idx, data in enumerate(len(mem)):
+    for idx, data in enumerate(mem):
         mem[mem_base+idx] = data & 0xFF
 
-    dut.startTest_isStart.value = 1
-    await RisingEdge(tb.clock)
-    dut.startTest_isStart.value = 0
-    await RisingEdge(tb.clock)
+    write_meta = BlueRdmaDtldStreamMemAccessMeta(
+        addr=1,
+        total_len=10
+    )
+    await tb.requester_tx_write_meta_pipes[0].enq(write_meta.pack())
+
+    ds = BlueRdmaDataStream256(
+        data=bytes([random.randint(0, 255) for _ in range(32)]),
+        byte_num=32,
+        start_byte_index=0,
+        is_first=True,
+        is_last=True
+    )
+    await tb.requester_tx_write_data_pipes[0].enq(ds.pack())
 
     await Timer(1000, units='ns')
 

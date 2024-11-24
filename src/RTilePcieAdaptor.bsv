@@ -609,7 +609,7 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
     for (Integer handlerIdx = 0; handlerIdx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); handlerIdx = handlerIdx + 1) begin
         tlpRawBeatDataStorageWriteReqPipeOutVecInst[handlerIdx] = toPipeOut(tlpRawBeatDataStorageWriteReqPipeOutQueueVec[handlerIdx]);
-        // tlpHeaderPipeOutInstVec[handlerIdx] = toPipeOut(tlpHeaderPipeOutQueueVec[handlerIdx]);
+        cpltTlpVecPipeOutVecInst[handlerIdx] = toPipeOut(cpltTlpPipeOutQueueVec[handlerIdx]);
     end
 
     Reg#(RtilePcieRxPayloadStorageAddr) storageWriteAddrReg <- mkReg(0);
@@ -2987,27 +2987,3 @@ module mkRTilePcie(RTilePcie);
     interface streamSlaveIfcVec = streamSlaveIfcVecInst;
     interface pcieTxPipeOut     = rtilePcieTxPingPongJoin.rtilePcieTxPipeOut;
 endmodule
-
-
-
-// interface RTilePcieWithRawIfc;
-//     (* always_ready, always_enabled *)
-//     interface RTilePcieAdaptorRx rxRawIfc;
-
-//     (* always_ready, always_enabled *)
-//     interface RTilePcieAdaptorTx txRawIfc;
-
-//     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, DtldStreamBiDirSlavePipes)     streamSlaveIfcVec;
-// endinterface
-
-// module mkRTilePcieWithRawIfc(RTilePcieWithRawIfc);
-//     let inner <- mkRTilePcie;
-//     let rawInterfaceAdaptor <- mkRTilePcieAdaptor;
-
-//     mkConnection(rawInterfaceAdaptor.pcieRxPipeOut, inner.pcieRxPipeIn);
-//     mkConnection(rawInterfaceAdaptor.pcieTxPipeIn, inner.pcieTxPipeOut);
-
-//     interface rxRawIfc = rawInterfaceAdaptor.rx;
-//     interface txRawIfc = rawInterfaceAdaptor.tx;
-//     interface streamSlaveIfcVec = inner.streamSlaveIfcVec;
-// endmodule

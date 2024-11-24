@@ -17,7 +17,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BluespecDataStream256
+from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256
 
 
 class TB(object):
@@ -67,7 +67,7 @@ class TB(object):
             is_first = cur_packet_size == 0
             is_last = byte_left <= 32
 
-            ds = BluespecDataStream256(
+            ds = BlueRdmaDataStream256(
                 data=bytes([random.randint(0, 255) for _ in range(byte_num)]),
                 byte_num=byte_num,
                 start_byte_index=0,
@@ -159,7 +159,7 @@ class TB(object):
                     ds_raw = await self.rxChannels[channel_idx].first()
                     # print("ds_raw=", ds_raw)
                     await self.rxChannels[channel_idx].deq()
-                    ds = BluespecDataStream256.unpack(ds_raw)
+                    ds = BlueRdmaDataStream256.unpack(ds_raw)
                     recv_channel_packet_buf[channel_idx] += hex(ds.data())
                     total_recv_byte_cnt += ds.byte_num()
 

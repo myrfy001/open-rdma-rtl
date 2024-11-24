@@ -16,6 +16,11 @@ module bram_single_clock_wr_with_read_bypass#(
         if (FILE != "") begin
             $readmemb(FILE, mem);
         end
+        else begin
+            for (int row_id = 0; row_id < 2**ADDR_WIDTH; row_id = row_id + 1) begin
+                mem[row_id] = 'h0;
+            end
+        end
     end // initial begin
 
 
