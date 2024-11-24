@@ -1919,7 +1919,7 @@ typedef Bit#(TLog#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG))                       
 typedef Bit#(TAdd#(1, TLog#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG)))                     RtilePcieTxSegCntInDoubleWidthSeg;
 
 typedef TMul#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, PCIE_TLP_DATA_SEGMENT_WIDTH)            RTILE_PCIE_TX_DATA_DOUBLE_WIDTH_SEGMENT_WIDTH;
-typedef TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, RTILE_PCIE_TX_DATA_DOUBLE_WIDTH_SEGMENT_WIDTH)    RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_CNT_PER_USER_INPUT_BEAT;
+typedef TDiv#(PCIE_TLP_DATA_BUNDLE_WIDTH, RTILE_PCIE_TX_DATA_DOUBLE_WIDTH_SEGMENT_WIDTH)    RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_CNT_PER_USER_INPUT_BEAT; // ?
 typedef TLog#(RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_CNT_PER_USER_INPUT_BEAT)                       RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_INDEX_IN_BUFFER_ROW_WIDTH;
 typedef Bit#(RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_INDEX_IN_BUFFER_ROW_WIDTH)                      RtilePcieTxChannelBufferRowDoubleWidthSegIdx;
 typedef RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_INDEX_IN_BUFFER_ROW_WIDTH                            RTILE_PCIE_TX_DOUBLE_WIDTH_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET;
@@ -1943,11 +1943,11 @@ typedef struct {
 } RtilePcieTxBufferRange deriving(Bits, FShow);
 
 typedef struct {
-    RtilePcieUserChannelIdx                         srcChannelIdx;
-    RtilePcieTxChannelBufferSegAddr                 startSegAddr;
-    RtilePcieTxChannelBufferSegCnt                  segCnt;
-    Bool                                            isStorageRowCountSmall;
-    ReservedZero#(2)                                reserved;           // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
+    RtilePcieUserChannelIdx                         srcChannelIdx;                  // 2
+    RtilePcieTxChannelBufferSegAddr                 startSegAddr;                   // 9
+    RtilePcieTxChannelBufferSegCnt                  segCnt;                         // 9
+    Bool                                            isStorageRowCountSmall;         // 1
+    ReservedZero#(11)                               reserved;                       // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
 } RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset deriving(Bits, FShow);
 
 typedef struct {
