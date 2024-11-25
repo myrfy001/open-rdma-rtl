@@ -142,10 +142,10 @@ async def small_desc_fp_test(dut):
 
     await Timer(100, units='ns')
 
-    read_ds = await tb.requester_read_data_pipes[0].first()
+    read_ds_raw = await tb.requester_read_data_pipes[0].first()
     await tb.requester_read_data_pipes[0].deq()
-
-    tb.log.info("pcie read resp = %s" % read_ds)
+    read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
+    tb.log.info("pcie read resp = %s" % read_ds.data)
 
 
 def test_dma():

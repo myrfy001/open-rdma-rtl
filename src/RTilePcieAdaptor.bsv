@@ -666,6 +666,12 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo) simpleTlpInfoVec = newVector;
         for (Integer idx = 0; idx < valueOf(PCIE_MAX_TLP_CNT); idx = idx + 1) begin
             if (tlpFirstSegmentIdxVec[idx] matches tagged Valid .segIdx) begin
+
+                // PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(beat.header[segIdx]));
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
+                //     ", tlpHeader=", fshow(tlpHeader)
+                // );
                 simpleTlpInfoVec[idx] = convertTlpToInternalDataType(beat.header[segIdx], storageWriteAddrReg, segIdx);
             end
             else begin
@@ -675,8 +681,7 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
         dispatchTlpInfoPipelineQueue.enq(simpleTlpInfoVec);
         // $display(
-        //     "time=%0t:", $time,
-        //     ", tlpCnt=", fshow(tlpCnt),
+        //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
         //     ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
         // );
 
@@ -1173,7 +1178,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     Count#(PcieCompletionBufferSlotCnt) busySlotCounter <- mkCount(0);
 
     Reg#(PcieExtendTagHighPart) doneReadReqToHandlePtrReg <- mkReg(fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE)));
-    Count#(PcieCompletionBufferSlotCnt) readReqDoneCounter <- mkCount(0);
 
     Reg#(CpltBufferCpltTlpInfoBufferAddr)   curCpltTlpBufferAddrToAllocReg <- mkReg(0);  
 
@@ -1220,6 +1224,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         for (Integer idx = 0; idx < valueOf(PCIE_SEGMENT_CNT); idx = idx + 1) begin
             dataStreamStorageVec[idx].write(req.addr, req.dataBundles[idx]);
         end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleDataStreamInput"),
+        //     toBlue(", req="), fshow(req)
+        // );
     endrule
 
     rule assertChecker;
@@ -1343,10 +1351,20 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 end
             end
 
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleInputCpltTlpVecStep1 BUSY mode"),
+            //     toBlue(", curInputCpltTlpVec="), fshow(curInputCpltTlpVec)
+            // );
+
         end
         else begin
             curInputCpltTlpVecMaybeReg <= tagged Valid cpltTlpVecPipeInQueue.first;
             cpltTlpVecPipeInQueue.deq;
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleInputCpltTlpVecStep1 IDLE mode"),
+            //     toBlue(", cpltTlpVecPipeInQueue.first="), fshow(cpltTlpVecPipeInQueue.first)
+            // );
 
             immAssert(
                 isValid(cpltTlpVecPipeInQueue.first[0]),
@@ -1372,6 +1390,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         slotMeta.cpltTlpListCurWriteOffset = slotMeta.cpltTlpListCurWriteOffset + 1;
         
         if (curCplt.isLastCplt) begin
+            slotMeta.isCompleted = True;
             newCompleteSlotSignalReg[1] <= True;
             sharedHwCpltBufferSlotDeAllocReqPipeOutQueue.enq(PcieSharedCompletionBufferSlotDeAllocReq{
                 headerSlotCnt   : zeroExtend(slotMeta.maxCpltTlpCntNeeded),
@@ -1382,6 +1401,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         slotMetaUpdateReqQueueForWritePtrUpdate.enq(tuple2(slotIdx, slotMeta));
         slotMetaUpdateForwardBuffer.enq(slotIdx, slotMeta);
 
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleInputCpltTlpVecStep2"),
+        //     toBlue(", slotMeta="), fshow(slotMeta)
+        // );
     endrule
 
     rule handleCpltTlpInfoStorageWrite;
@@ -1391,24 +1414,28 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         cpltTlpInfoStorage.write(cpltTlpEntryWriteAddr, curCplt);
     endrule
 
-    rule outputSendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateQueryReq);
+    rule sendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateQueryReq);
         if (newCompleteSlotSignalReg[0] == True) begin
             newCompleteSlotSignalReg[0] <= False;
             slotMetaReadReqQueueForOutputData.enq(tagAllocTailReg);
             outputStateReg <= PcieCompletionBufferOutputStateWaitStateQueryResp;
-            $display(
-                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputSendStateQuery"),
-                toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer sendStateQuery"),
+            //     toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg)
+            // );
         end
     endrule
 
     rule outputWaitStateQueryResp if (outputStateReg == PcieCompletionBufferOutputStateWaitStateQueryResp);
         if (slotMetaReadRespQueueForOutputData.notEmpty) begin
-            let slotMeta = slotMetaReadRespQueueForOutputData.first;
+            let slotMetaReadFromBram = slotMetaReadRespQueueForOutputData.first;
             slotMetaReadRespQueueForOutputData.deq;
+            let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(tagAllocTailReg);
+
+            PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
+            
             if (slotMeta.isCompleted) begin
-                readReqDoneCounter.incr(1);
+                // readReqDoneCounter.incr(1);
                 readCpltTlpInfoForOutputPipelineQueue.enq(PcieCompletionBufferTagSlotMetaForOutputStage {
                     cpltTlpListStartAddr        : slotMeta.cpltTlpListStartAddr,
                     cpltTlpListCurReadOffset    : 0,
@@ -1441,9 +1468,12 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             // let isFirst = cpltTlpListCurReadOffset == 0;
             let cpltTlpMetaAddr = curOutputSlotMeta.cpltTlpListStartAddr + zeroExtend(curOutputSlotMeta.cpltTlpListCurReadOffset);
             cpltTlpInfoStorage.putReadReq(cpltTlpMetaAddr);
-
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readCpltTlpInfoForOutput"),
+            //     toBlue(", cpltTlpMetaAddr="), fshow(cpltTlpMetaAddr)
+            // );
             if (isLast) begin
-                if (readDataStorageForOutputPipelineQueue.notEmpty) begin
+                if (readCpltTlpInfoForOutputPipelineQueue.notEmpty) begin
                     let slotMeta = readCpltTlpInfoForOutputPipelineQueue.first;
                     readCpltTlpInfoForOutputPipelineQueue.deq;
                     curOutputSlotMetaMaybeReg <= tagged Valid slotMeta;
@@ -1532,6 +1562,11 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             else begin
                 curOutputCpltTlpMaybeReg <= tagged Valid nextOutputCpltTlp;
             end
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
+            //     toBlue(", curOutputCpltTlp="), fshow(curOutputCpltTlp)
+            // );
         end
         else begin
             cpltTlpInfoStorage.readRespPipeOut.deq;
@@ -1573,6 +1608,13 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         dataStreamPipeOutQueue.enq(ds);
 
         isOutputFirstBeatReg <= beatMeta.isLast;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer getFinalReadRespAndConvertToDataStream"),
+        //     toBlue(", beatMeta="), fshow(beatMeta),
+        //     toBlue(", readOutBeat="), fshow(readOutBeat),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     interface tagAllocReqPipeIn                                 = toPipeIn(tagAllocReqPipeInQueue);
@@ -1723,7 +1765,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         ADDR endAddr = rm.addr + unpack(zeroExtend(pack(rm.totalLen))) - 1; 
 
-        let hwClptBufDataSlotCntNeeded = pack(rm.totalLen) >> valueOf(TLog#(PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT));
+        let hwClptBufDataSlotCntNeeded = 1 + (pack(rm.totalLen) >> valueOf(TLog#(PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT)));
         let maxCpltTlpCntNeeded        = 1 + (pack(rm.totalLen) >> valueOf(TLog#(PCIE_RCB)));
 
         let tagAllocReq = PcieChannelPrivateCompletionBufferSlotAllocReq {
@@ -1759,6 +1801,19 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         let endDwordAddr = endAddr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
         let lengthInDw = endDwordAddr - startDwordAddr + 1;   
         
+        PcieHeaderFieldFirstDwBe    firstDwBe = case (pack(rm.addr)[1:0])
+                                                    2'b00: 4'b1111;
+                                                    2'b01: 4'b1110;
+                                                    2'b10: 4'b1100;
+                                                    2'b11: 4'b1000;
+                                                endcase;
+        PcieHeaderFieldLastDwBe     lastDwBe = case (pack(endAddr)[1:0])
+                                                    2'b00: 4'b0001;
+                                                    2'b01: 4'b0011;
+                                                    2'b10: 4'b0111;
+                                                    2'b11: 4'b1111;
+                                                endcase;
+
         let commonHeader = PcieTlpHeaderCommon {
             fmt     : `PCIE_TLP_HEADER_FMT_4DW_NO_DATA,
             typ     : `PCIE_TLP_HEADER_TYPE_MEM_READ,
@@ -1779,7 +1834,8 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
             commonHeader    : commonHeader,
             requesterId     : 0,  // will filled by IP core
             tag             : truncate(tag),
-            st              : 0
+            lastDwBe        : lastDwBe,
+            firstDwBe       : firstDwBe
         };
 
         let tlp = PcieTlpHeaderMemoryRead4Dw {

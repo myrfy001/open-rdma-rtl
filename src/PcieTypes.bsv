@@ -85,7 +85,8 @@ typedef struct {
     PcieTlpHeaderCommon         commonHeader;
     PcieHeaderFieldRequesterId  requesterId;
     PcieHeaderFieldTag          tag;
-    PcieHeaderFieldSt           st;
+    PcieHeaderFieldLastDwBe     lastDwBe;
+    PcieHeaderFieldFirstDwBe    firstDwBe;
 } PcieTlpHeaderMemoryRead deriving(Bits, FShow);
 
 typedef struct {
