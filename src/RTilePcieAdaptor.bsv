@@ -1127,7 +1127,7 @@ typedef struct {
 typedef struct {
     CpltBufferCpltTlpInfoBufferAddr                     cpltTlpListStartAddr; 
     PcieClptTlpIdxInReadRequest                         cpltTlpListCurReadOffset;
-    PcieClptTlpIdxInReadRequest                         cpltTlpListLastReadOffset;
+    PcieClptTlpIdxInReadRequest                         cpltTlpListTargetReadOffset;
 } PcieCompletionBufferTagSlotMetaForOutputStage deriving(Bits, FShow);
 
 typedef struct {
@@ -1439,7 +1439,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 readCpltTlpInfoForOutputPipelineQueue.enq(PcieCompletionBufferTagSlotMetaForOutputStage {
                     cpltTlpListStartAddr        : slotMeta.cpltTlpListStartAddr,
                     cpltTlpListCurReadOffset    : 0,
-                    cpltTlpListLastReadOffset   : slotMeta.cpltTlpListCurWriteOffset
+                    cpltTlpListTargetReadOffset : slotMeta.cpltTlpListCurWriteOffset - 1  // because this points to the next write slot, so for the last valid one, need minus 1
                 });
 
                 let newTagAllocTail;
@@ -1464,14 +1464,15 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     rule readCpltTlpInfoForOutput;
         if (curOutputSlotMetaMaybeReg matches tagged Valid .curOutputSlotMeta) begin
-            let isLast = curOutputSlotMeta.cpltTlpListCurReadOffset == curOutputSlotMeta.cpltTlpListLastReadOffset;
+            let isLast = curOutputSlotMeta.cpltTlpListCurReadOffset == curOutputSlotMeta.cpltTlpListTargetReadOffset;
             // let isFirst = cpltTlpListCurReadOffset == 0;
             let cpltTlpMetaAddr = curOutputSlotMeta.cpltTlpListStartAddr + zeroExtend(curOutputSlotMeta.cpltTlpListCurReadOffset);
             cpltTlpInfoStorage.putReadReq(cpltTlpMetaAddr);
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readCpltTlpInfoForOutput"),
-            //     toBlue(", cpltTlpMetaAddr="), fshow(cpltTlpMetaAddr)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readCpltTlpInfoForOutput"),
+                toBlue(", curOutputSlotMeta="), fshow(curOutputSlotMeta),
+                toBlue(", cpltTlpMetaAddr="), fshow(cpltTlpMetaAddr)
+            );
             if (isLast) begin
                 if (readCpltTlpInfoForOutputPipelineQueue.notEmpty) begin
                     let slotMeta = readCpltTlpInfoForOutputPipelineQueue.first;
@@ -1563,10 +1564,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 curOutputCpltTlpMaybeReg <= tagged Valid nextOutputCpltTlp;
             end
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
-            //     toBlue(", curOutputCpltTlp="), fshow(curOutputCpltTlp)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
+                toBlue(", curOutputCpltTlp="), fshow(curOutputCpltTlp)
+            );
         end
         else begin
             cpltTlpInfoStorage.readRespPipeOut.deq;
@@ -1609,12 +1610,12 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
         isOutputFirstBeatReg <= beatMeta.isLast;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer getFinalReadRespAndConvertToDataStream"),
-        //     toBlue(", beatMeta="), fshow(beatMeta),
-        //     toBlue(", readOutBeat="), fshow(readOutBeat),
-        //     toBlue(", ds="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer getFinalReadRespAndConvertToDataStream"),
+            toBlue(", beatMeta="), fshow(beatMeta),
+            toBlue(", readOutBeat="), fshow(readOutBeat),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     interface tagAllocReqPipeIn                                 = toPipeIn(tagAllocReqPipeInQueue);

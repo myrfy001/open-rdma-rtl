@@ -140,12 +140,20 @@ async def small_desc_fp_test(dut):
     )
     await tb.requester_read_meta_pipes[0].enq(read_meta.pack())
 
-    await Timer(100, units='ns')
+    await Timer(200, units='ns')
 
-    read_ds_raw = await tb.requester_read_data_pipes[0].first()
-    await tb.requester_read_data_pipes[0].deq()
-    read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
-    tb.log.info("pcie read resp = %s" % read_ds.data)
+    if await tb.requester_read_data_pipes[0].not_empty():
+        read_ds_raw = await tb.requester_read_data_pipes[0].first()
+        await tb.requester_read_data_pipes[0].deq()
+        read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
+        tb.log.info("pcie read resp1 = %s" % read_ds)
+
+    await Timer(10, units='ns')
+    if await tb.requester_read_data_pipes[0].not_empty():
+        read_ds_raw = await tb.requester_read_data_pipes[0].first()
+        await tb.requester_read_data_pipes[0].deq()
+        read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
+        tb.log.info("pcie read resp2 = %s" % read_ds)
 
 
 def test_dma():
@@ -165,7 +173,8 @@ def test_dma():
         toplevel=toplevel,
         module=module,
         timescale="1ns/1ps",
-        sim_build=sim_build
+        sim_build=sim_build,
+        waves=True,
     )
 
 
