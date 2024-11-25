@@ -1241,8 +1241,9 @@ typedef 2 FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT;  // since the beta width is 1024
 typedef 3 FTILE_MAC_TX_MAX_PACKET_PER_BEAT;
 typedef TDiv#(FTILE_MAC_DATA_BUNDLE_WIDTH, SizeOf#(DATA)) FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT;  // 4
 // typedef TSub#(RTILE_GEAR_BOX_SEG_CNT_PER_USER_LOGIC_BEAT, 1) FTILE_MAC_TX_MAX_OVERFLOW_SEG_CNT_PER_BEAT;
-typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT FTILE_MAC_TX_PING_PONG_CHANNEL_CNT;
-typedef Bit#(TLog#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT)) FtileMacTxOutputBeatNewPacketIndex;
+typedef FTILE_MAC_USER_LOGIC_CHANNEL_CNT                    FTILE_MAC_TX_PING_PONG_CHANNEL_CNT;
+typedef Bit#(TLog#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT))     FtileMacTxPingPongChannelIdx
+typedef Bit#(TLog#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT))   FtileMacTxOutputBeatNewPacketIndex;
 
 typedef Bit#(TLog#(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) FtileMacTxBramRowIndexInOutputBeat;
 typedef TAdd#(1, TLog#(FTILE_MAC_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) FTILE_MAC_TX_SMALL_BRAM_ROW_COUNT_WIDTH;
@@ -1277,9 +1278,9 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
 
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Reg#(Maybe#(FtileMacTxBufferRange))) curDataRangeRegVec <- replicateM(mkReg(tagged Invalid));
-    Reg#(FtileMacUserLogicChannelIdx) curInputRoundRobinIdxReg <- mkReg(0);
-    Reg#(FtileMacUserLogicChannelIdx) curOutputRoundRobinIdxReg <- mkReg(0);
-    Reg#(FtileMacTxChannelBufferRowSegIdx) prevDestSegOffsetReg <- mkReg(0);
+    Reg#(FtileMacUserLogicChannelIdx)       curInputRoundRobinIdxReg <- mkReg(0);
+    Reg#(FtileMacTxPingPongChannelIdx)      curOutputRoundRobinIdxReg <- mkReg(0);
+    Reg#(FtileMacTxChannelBufferRowSegIdx)  prevDestSegOffsetReg <- mkReg(0);
 
     let mimoCfg = MIMOConfiguration {
         unguarded: False,
@@ -1301,7 +1302,7 @@ module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
         LUInt#(FTILE_MAC_TX_MAX_NEW_PACKET_PER_BEAT)
     ))  mimoInputPipelineQueue <- mkLFIFOF;
 
-    FIFOF#(Tuple2#(FtileMacUserLogicChannelIdx, FtileMacTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
+    FIFOF#(Tuple2#(FtileMacTxPingPongChannelIdx, FtileMacTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
 
     rule guard;
         immAssert(
@@ -2058,7 +2059,7 @@ module mkFtileMacTxPingPongJoin(FtileMacTxPingPongJoin);
         pingpongBeatPipeInVecInst[idx] = toPipeIn(pingpongBeatPipeInQueueVec[idx]);
     end
 
-    Reg#(FtileMacUserLogicChannelIdx) curChannelIdxReg <- mkReg(0);
+    Reg#(FtileMacTxPingPongChannelIdx) curChannelIdxReg <- mkReg(0);
 
     rule doJoin;
         let inputBeat = pingpongBeatPipeInQueueVec[curChannelIdxReg].first;

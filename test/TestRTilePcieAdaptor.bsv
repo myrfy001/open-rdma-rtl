@@ -35,17 +35,25 @@ module mkTestRTilePcieAdaptorTx(Empty);
 
         let writeMeta = DtldStreamMemAccessMeta {
             addr: 0,
-            totalLen: 15
+            totalLen: 32
         };
         let writeData = DtldStreamData {
             data: 'h00000000_11111111_22222222_33333333_44444444_55555555_66666666_77777777,
             startByteIdx: 0,
-            byteNum: 15,
+            byteNum: 32,
             isFirst: True,
             isLast: True
         };
         dut.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
         dut.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
+
+        let readMeta = DtldStreamMemAccessMeta {
+            addr: 0,
+            totalLen: 32
+        };
+        
+        dut.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
+
     endrule
 
     rule getOutput;

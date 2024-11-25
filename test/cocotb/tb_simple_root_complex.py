@@ -29,19 +29,19 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
 
-        self.requester_tx_write_meta_pipes = []
-        self.requester_tx_write_data_pipes = []
-        self.requester_tx_read_meta_pipes = []
-        self.requester_tx_read_data_pipes = []
+        self.requester_write_meta_pipes = []
+        self.requester_write_data_pipes = []
+        self.requester_read_meta_pipes = []
+        self.requester_read_data_pipes = []
 
         for idx in range(4):
-            self.requester_tx_write_meta_pipes.append(BluespecPipeIn(
+            self.requester_write_meta_pipes.append(BluespecPipeIn(
                 dut, f"streamSlaveIfcVec_{idx}_writePipeIfc_writeMetaPipeIn", self.clock))
-            self.requester_tx_write_data_pipes.append(BluespecPipeIn(
+            self.requester_write_data_pipes.append(BluespecPipeIn(
                 dut, f"streamSlaveIfcVec_{idx}_writePipeIfc_writeDataPipeIn", self.clock))
-            self.requester_tx_read_meta_pipes.append(BluespecPipeIn(
+            self.requester_read_meta_pipes.append(BluespecPipeIn(
                 dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readMetaPipeIn", self.clock))
-            self.requester_tx_read_data_pipes.append(BluespecPipeOut(
+            self.requester_read_data_pipes.append(BluespecPipeOut(
                 dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readDataPipeOut", self.clock))
 
         # PCIe
@@ -99,7 +99,7 @@ class TB(object):
         self.log.info("Generated DMA RST_N")
 
 
-@cocotb.test(timeout_time=100000000, timeout_unit="ns")
+@cocotb.test(timeout_time=2000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -118,21 +118,34 @@ async def small_desc_fp_test(dut):
         mem[mem_base+idx] = data & 0xFF
 
     write_meta = BlueRdmaDtldStreamMemAccessMeta(
-        addr=1,
-        total_len=10
+        addr=0,
+        total_len=32
     )
-    await tb.requester_tx_write_meta_pipes[0].enq(write_meta.pack())
+    await tb.requester_write_meta_pipes[0].enq(write_meta.pack())
 
-    ds = BlueRdmaDataStream256(
+    write_ds = BlueRdmaDataStream256(
         data=bytes([random.randint(0, 255) for _ in range(32)]),
         byte_num=32,
         start_byte_index=0,
         is_first=True,
         is_last=True
     )
-    await tb.requester_tx_write_data_pipes[0].enq(ds.pack())
+    await tb.requester_write_data_pipes[0].enq(write_ds.pack())
 
-    await Timer(1000, units='ns')
+    await Timer(100, units='ns')
+
+    read_meta = BlueRdmaDtldStreamMemAccessMeta(
+        addr=0,
+        total_len=32
+    )
+    await tb.requester_read_meta_pipes[0].enq(read_meta.pack())
+
+    await Timer(100, units='ns')
+
+    read_ds = await tb.requester_read_data_pipes[0].first()
+    await tb.requester_read_data_pipes[0].deq()
+
+    tb.log.info("pcie read resp = %s" % read_ds)
 
 
 def test_dma():

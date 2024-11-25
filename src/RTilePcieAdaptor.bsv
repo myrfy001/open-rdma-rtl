@@ -1701,6 +1701,19 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         };
 
         writeTlpQueue.enq(tlp);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMwr"),
+        //     toBlue(", wm="), fshow(wm),
+        //     toBlue(", startDwordAddr="), fshow(startDwordAddr),
+        //     toBlue(", endDwordAddr="), fshow(endDwordAddr),
+        //     toBlue(", lengthInDw="), fshow(lengthInDw),
+        //     toBlue(", firstDwBe="), fshow(firstDwBe),
+        //     toBlue(", lastDwBe="), fshow(lastDwBe),
+        //     toBlue(", tlp="), fshow(tlp)
+        // );
+
+
     endrule
     
 
@@ -1904,7 +1917,8 @@ endmodule
 
 
 
-typedef 2                                       RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT;
+typedef 2                                                   RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT;
+typedef Bit#(TLog#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT))    RtilePcieTxPingPongChannelIdx;
 typedef TLog#(PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH) RTILE_PCIE_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM;
 
 typedef 256 RTILE_PCIE_TX_SINGLE_USER_CHANNEL_BUFFER_DEPTH;  // each row of the buffer stores a double-width-seg
@@ -2168,8 +2182,8 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
 
 
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Reg#(Maybe#(RtilePcieTxBufferRange))) curDataRangeRegVec <- replicateM(mkReg(tagged Invalid));
-    Reg#(RtilePcieUserChannelIdx) curInputRoundRobinIdxReg <- mkReg(0);
-    Reg#(RtilePcieUserChannelIdx) curOutputRoundRobinIdxReg <- mkReg(0);
+    Reg#(RtilePcieUserChannelIdx)       curInputRoundRobinIdxReg <- mkReg(0);
+    Reg#(RtilePcieTxPingPongChannelIdx) curOutputRoundRobinIdxReg <- mkReg(0);
     // Reg#(RtilePcieTxChannelBufferRowSegIdx) prevDestSegOffsetReg <- mkReg(0);
 
     let mimoCfg = MIMOConfiguration {
@@ -2193,7 +2207,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         LUInt#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT)
     ))  mimoInputPipelineQueue <- mkLFIFOF;
 
-    FIFOF#(Tuple2#(RtilePcieUserChannelIdx, RtilePcieTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
+    FIFOF#(Tuple2#(RtilePcieTxPingPongChannelIdx, RtilePcieTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
 
     rule guard;
         immAssert(
@@ -2900,7 +2914,7 @@ module mkRtilePcieTxPingPongJoin(RtilePcieTxPingPongJoin);
         pingpongBeatPipeInVecInst[idx] = toPipeIn(pingpongBeatPipeInQueueVec[idx]);
     end
 
-    Reg#(RtilePcieUserChannelIdx) curChannelIdxReg <- mkReg(0);
+    Reg#(RtilePcieTxPingPongChannelIdx) curChannelIdxReg <- mkReg(0);
 
     rule doJoin;
         let inputBeat = pingpongBeatPipeInQueueVec[curChannelIdxReg].first;
