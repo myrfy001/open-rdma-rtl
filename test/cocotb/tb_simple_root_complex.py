@@ -23,6 +23,8 @@ class TB(object):
     def __init__(self, dut):
         self.dut = dut
 
+        self.pcie_mrrs = 128
+
         self.log = logging.getLogger("cocotb.tb")
         self.log.setLevel(logging.DEBUG)
 
@@ -98,62 +100,149 @@ class TB(object):
         await RisingEdge(self.clock)
         self.log.info("Generated DMA RST_N")
 
+    def genRandomWritePacket(self):
+        cur_packet_size = 0
+        target_packet_size = 0
+        packet_start_addr = 0
+        byte_cnt_per_beat = 32
+        while True:
+            if target_packet_size == 0:
+                packet_start_addr = 0x14d7b  # random.randint(0, 64*1024*1024)
+                packet_start_addr_4k_block = packet_start_addr >> 12
 
-@cocotb.test(timeout_time=2000, timeout_unit="ns")
+                # can not exceed max read request size and can not cross 4kB boundary
+                packet_max_end_addr = min(
+                    packet_start_addr+self.pcie_mrrs,
+                    packet_start_addr_4k_block << 12 + 4095
+                )
+
+                # random.randint(packet_start_addr, packet_max_end_addr)
+                packet_end_addr = 0x14dd8
+                target_packet_size = packet_end_addr - packet_start_addr + 1
+                self.log.debug(
+                    f"send new packet, start_addr = {hex(packet_start_addr)} size={hex(target_packet_size)}")
+
+            byte_left = target_packet_size - cur_packet_size
+            start_addr_aligned_to_4_byte = packet_start_addr & (~0x03)
+            end_addr_for_this_beat = packet_start_addr + byte_left
+            is_first = cur_packet_size == 0
+
+            max_allowed_end_addr_for_this_beat = start_addr_aligned_to_4_byte + byte_cnt_per_beat - 1
+
+            if end_addr_for_this_beat > max_allowed_end_addr_for_this_beat:
+
+                end_addr_for_this_beat = max_allowed_end_addr_for_this_beat
+                byte_num = end_addr_for_this_beat - packet_start_addr + 1
+                # print("end_addr_for_this_beat=", hex(
+                #     end_addr_for_this_beat), ", byte_num=", hex(byte_num))
+                is_last = False
+            else:
+                byte_num = byte_left
+                is_last = True
+
+            data = [byte
+                    for num in range(
+                        start_addr_aligned_to_4_byte, start_addr_aligned_to_4_byte + byte_cnt_per_beat, 4)
+                    for byte in num.to_bytes(4, byteorder="little")]
+
+            head_invalid_byte_cnt = packet_start_addr % 4
+            tail_invalid_byte_cnt = (
+                byte_cnt_per_beat - head_invalid_byte_cnt - byte_num)
+
+            # print("===========111", [hex(d) for d in data],
+            #       head_invalid_byte_cnt, tail_invalid_byte_cnt, end_addr_for_this_beat, is_first, is_last)
+
+            if head_invalid_byte_cnt != 0:
+                data[0: head_invalid_byte_cnt] = ([0] * head_invalid_byte_cnt)
+            if tail_invalid_byte_cnt != 0:
+                data[head_invalid_byte_cnt +
+                     byte_num: byte_cnt_per_beat] = ([0] * tail_invalid_byte_cnt)
+            # print("===========222", [hex(d) for d in data])
+
+            print("===========", data, is_first, is_last, cur_packet_size)
+
+            ds = BlueRdmaDataStream256(
+                data=bytes(data),
+                byte_num=byte_num,
+                start_byte_index=head_invalid_byte_cnt,
+                is_first=is_first,
+                is_last=is_last
+            )
+            print("target_packet_size=", target_packet_size, ", cur_packet_size=",
+                  cur_packet_size, ", byte_left=", byte_left, ", byte_num=", byte_num)
+            print("gen new packet=", ds)
+
+            if is_last:
+                cur_packet_size = 0
+                target_packet_size = 0
+            else:
+                cur_packet_size = cur_packet_size + byte_num
+                packet_start_addr += byte_num
+
+            yield ds
+
+
+@ cocotb.test(timeout_time=2000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
-    await tb.gen_reset()
 
-    await tb.rc.enumerate()
-    pcie_ep_dev = tb.rc.find_device(
-        tb.hardware_ip_inst.functions[0].pcie_id)
+    for idx, ds in enumerate(tb.genRandomWritePacket()):
+        print(ds)
+        if idx > 10:
+            raise SystemExit
 
-    await pcie_ep_dev.enable_device()
-    await pcie_ep_dev.set_master()
+    # await tb.gen_reset()
 
-    mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    mem_base = mem.get_absolute_address(0)
-    for idx, data in enumerate(mem):
-        mem[mem_base+idx] = data & 0xFF
+    # await tb.rc.enumerate()
+    # pcie_ep_dev = tb.rc.find_device(
+    #     tb.hardware_ip_inst.functions[0].pcie_id)
 
-    write_meta = BlueRdmaDtldStreamMemAccessMeta(
-        addr=0,
-        total_len=32
-    )
-    await tb.requester_write_meta_pipes[0].enq(write_meta.pack())
+    # await pcie_ep_dev.enable_device()
+    # await pcie_ep_dev.set_master()
 
-    write_ds = BlueRdmaDataStream256(
-        data=bytes([random.randint(0, 255) for _ in range(32)]),
-        byte_num=32,
-        start_byte_index=0,
-        is_first=True,
-        is_last=True
-    )
-    await tb.requester_write_data_pipes[0].enq(write_ds.pack())
+    # mem = tb.rc.mem_pool.alloc_region(1024*1024)
+    # mem_base = mem.get_absolute_address(0)
+    # for idx, data in enumerate(mem):
+    #     mem[mem_base+idx] = data & 0xFF
 
-    await Timer(100, units='ns')
+    # write_meta = BlueRdmaDtldStreamMemAccessMeta(
+    #     addr=0,
+    #     total_len=32
+    # )
+    # await tb.requester_write_meta_pipes[0].enq(write_meta.pack())
 
-    read_meta = BlueRdmaDtldStreamMemAccessMeta(
-        addr=0,
-        total_len=32
-    )
-    await tb.requester_read_meta_pipes[0].enq(read_meta.pack())
+    # write_ds = BlueRdmaDataStream256(
+    #     data=bytes([random.randint(0, 255) for _ in range(32)]),
+    #     byte_num=32,
+    #     start_byte_index=0,
+    #     is_first=True,
+    #     is_last=True
+    # )
+    # await tb.requester_write_data_pipes[0].enq(write_ds.pack())
 
-    await Timer(200, units='ns')
+    # await Timer(100, units='ns')
 
-    if await tb.requester_read_data_pipes[0].not_empty():
-        read_ds_raw = await tb.requester_read_data_pipes[0].first()
-        await tb.requester_read_data_pipes[0].deq()
-        read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
-        tb.log.info("pcie read resp1 = %s" % read_ds)
+    # read_meta = BlueRdmaDtldStreamMemAccessMeta(
+    #     addr=0,
+    #     total_len=32
+    # )
+    # await tb.requester_read_meta_pipes[0].enq(read_meta.pack())
 
-    await Timer(10, units='ns')
-    if await tb.requester_read_data_pipes[0].not_empty():
-        read_ds_raw = await tb.requester_read_data_pipes[0].first()
-        await tb.requester_read_data_pipes[0].deq()
-        read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
-        tb.log.info("pcie read resp2 = %s" % read_ds)
+    # await Timer(200, units='ns')
+
+    # if await tb.requester_read_data_pipes[0].not_empty():
+    #     read_ds_raw = await tb.requester_read_data_pipes[0].first()
+    #     await tb.requester_read_data_pipes[0].deq()
+    #     read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
+    #     tb.log.info("pcie read resp1 = %s" % read_ds)
+
+    # await Timer(10, units='ns')
+    # if await tb.requester_read_data_pipes[0].not_empty():
+    #     read_ds_raw = await tb.requester_read_data_pipes[0].first()
+    #     await tb.requester_read_data_pipes[0].deq()
+    #     read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
+    #     tb.log.info("pcie read resp2 = %s" % read_ds)
 
 
 def test_dma():
