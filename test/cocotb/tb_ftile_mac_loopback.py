@@ -136,7 +136,7 @@ class TB(object):
                     channel_packet_buf[channel_idx] += hex(ds.data())
                     self.total_send_byte_cnt += ds.byte_num()
 
-                    if ds.is_last() == 1:
+                    if ds.is_last():
                         self.packets_inflight.add(
                             channel_packet_buf[channel_idx])
                         channel_packet_buf[channel_idx] = ""
@@ -163,7 +163,7 @@ class TB(object):
                     recv_channel_packet_buf[channel_idx] += hex(ds.data())
                     total_recv_byte_cnt += ds.byte_num()
 
-                    if ds.is_last() == 1:
+                    if ds.is_last():
                         recv_packet_cnt += 1
                         self.packets_inflight.remove(
                             recv_channel_packet_buf[channel_idx])

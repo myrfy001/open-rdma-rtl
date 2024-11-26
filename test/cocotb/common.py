@@ -129,7 +129,7 @@ class BluespecStruct(BluespecType):
     _members_def = OrderedDict()
 
     def __init__(self, *members):
-        self._members = OrderedDict()
+        self.__dict__["_members"] = OrderedDict()
         self._width = 0
 
         for ((member_name, member_type), member_inst) in zip(self._members_def.items(), members):
@@ -152,6 +152,12 @@ class BluespecStruct(BluespecType):
             return self._members[name]
         return super().__getattribute__(name)
 
+    def __setattr__(self, name, value):
+        if name in self._members:
+            self._members[name] = self._members_def[name].unpack(value)
+            return
+        return super().__setattr__(name, value)
+
     @classmethod
     def unpack(cls, val):
         args = []
@@ -168,6 +174,10 @@ class BluespecStruct(BluespecType):
 
 class BluespecBool(BluespecBits):
     _width = 1
+
+    def __call__(self):
+        ret = super().__call__()
+        return ret == 1
 
 
 class BlueRdmaData256(BluespecBits):

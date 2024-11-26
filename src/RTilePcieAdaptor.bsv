@@ -1103,14 +1103,12 @@ typedef Bit#(TLog#(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE)) PcieCompleti
 
 typedef Bit#(TLog#(PCIE_HEADER_FIELD_FIRST_DW_BE_WIDTH))            InvalidByteNumInDw;
 
-
+typedef TDiv#(DATA_BUS_WIDTH, DWORD_WIDTH)       DWORD_CNT_PER_USER_LOGIC_BEAT;
+typedef Bit#(TLog#(DWORD_CNT_PER_USER_LOGIC_BEAT)) DwordIdxInUserLogicBeat;
 
 typedef struct {
     PcieClptTlpCntInReadRequest         maxCpltTlpCntNeeded;
     PcieClptDataSlotCntInReadRequest    hwClptBufDataSlotCntNeeded;
-
-    // InvalidByteNumInDw                  firstDwInvalidByteNum;
-    // InvalidByteNumInDw                  lastDwInvalidByteNum;
 } PcieChannelPrivateCompletionBufferSlotAllocReq deriving(Bits, FShow);
 
 // each PCIe read request correspond to a Tag, so each tag slot correspond to a PCIe read request
@@ -1144,6 +1142,7 @@ typedef struct {
     RtilePcieByteCntInDw            firstBeCnt;                 // 3    
     PcieTlpDataByteCnt              byteCountLeftInThisTlp;     // 13
     Bool                            isLast;                     // 1
+    Bool                            isLastCplt;                 // 1
 } PcieCompletionBufferBeatInfoForOutputDataStreamGenerate deriving(Bits, FShow);
 
 typedef enum {
@@ -1214,7 +1213,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     Reg#(PcieCompletionBufferOutputState) outputStateReg <- mkReg(PcieCompletionBufferOutputStateSendStateQueryReq);
 
-    Reg#(Bool) isOutputFirstBeatReg <- mkReg(True);
+    Reg#(Bool) isCurCpltOutputFirstBeatReg          <- mkReg(True);
+    Reg#(Bool) isOriginReadReqOutputFirstBeatReg    <- mkReg(True);
+    Reg#(Bool) isFirstCpltInOriginReadReqReg        <- mkReg(True);
+    Reg#(DwordIdxInUserLogicBeat)   finalDataStreamConcatShiftDwordOffsetReg <- mkRegU;
 
 
     rule handleDataStreamInput;
@@ -1506,10 +1508,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             let invalidByteCntInFirstDw = fromInteger(valueOf(BYTE_CNT_PER_DWOED)) - cpltTlpInfoIn.firstBeCnt;
             let totalBytesCntIncludeInvalidInThisTlp = cpltTlpInfoIn.byteCountInThisTlp + zeroExtend(invalidByteCntInFirstDw);
 
-            immAssert(
-                pack(totalBytesCntIncludeInvalidInThisTlp)[valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM)-1:0] == 2'b0,
-                "totalBytesCntIncludeInvalidInThisTlp must be aligned to DWord",
-                $format("")
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
+                toBlue(", cpltTlpInfoStorage.readRespPipeOut.first="), fshow(cpltTlpInfoStorage.readRespPipeOut.first)
             );
             let segCntInThisTlp = 1 + ((totalBytesCntIncludeInvalidInThisTlp - 1) >> fromInteger(valueOf(TLog#(PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH))));
 
@@ -1532,7 +1533,8 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 srcSegIdx               : curOutputCpltTlp.storageSegOffset,             
                 firstBeCnt              : curOutputCpltTlp.firstBeCnt,                
                 byteCountLeftInThisTlp  : curOutputCpltTlp.byteCountLeftInThisTlp,
-                isLast                  : isLastSegInThisCpltTlp             
+                isLast                  : isLastSegInThisCpltTlp,
+                isLastCplt              : curOutputCpltTlp.isLastCplt
             });
 
             let nextOutputCpltTlp = curOutputCpltTlp;
@@ -1575,7 +1577,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         end
     endrule
 
-    rule getFinalReadRespAndConvertToDataStream;
+    rule getStorageReadRespAndConvertToDataStream;
         let beatMeta = outputDataStreamGenPipelineQueue.first;
         outputDataStreamGenPipelineQueue.deq;
         
@@ -1583,14 +1585,15 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         dataStreamStorageVec[beatMeta.srcSegIdx].readRespPipeOut.deq;
 
         let byteNum;
-        let isFirst = isOutputFirstBeatReg;
+        let isFirst = isCurCpltOutputFirstBeatReg;
         let isLast = beatMeta.isLast;
+        ByteIndexInBeat startByteIdx = zeroExtend(fromInteger(valueOf(BYTE_CNT_PER_DWOED))-beatMeta.firstBeCnt);
 
         if (isFirst && isLast) begin
             byteNum = beatMeta.byteCountLeftInThisTlp;
         end
         else if (isFirst) begin
-            byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - beatMeta.byteCountLeftInThisTlp;
+            byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(startByteIdx);
         end
         else if (isLast) begin
             byteNum = beatMeta.byteCountLeftInThisTlp;
@@ -1602,20 +1605,29 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         let ds = RtilePcieUserStream {
             data: readOutBeat,
             byteNum: truncate(byteNum),
-            startByteIdx: zeroExtend(fromInteger(valueOf(BYTE_CNT_PER_DWOED))-beatMeta.firstBeCnt),
+            startByteIdx: startByteIdx,
             isFirst: isFirst,
             isLast: isLast
         };
         dataStreamPipeOutQueue.enq(ds);
 
-        isOutputFirstBeatReg <= beatMeta.isLast;
+        isCurCpltOutputFirstBeatReg <= beatMeta.isLast;
+
+
+        if (isLast && !beatMeta.isLastCplt) begin
+            let dwordCntForNextCpltOffset = 
+        end
 
         $display(
-            "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer getFinalReadRespAndConvertToDataStream"),
+            "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer getStorageReadRespAndConvertToDataStream"),
             toBlue(", beatMeta="), fshow(beatMeta),
             toBlue(", readOutBeat="), fshow(readOutBeat),
             toBlue(", ds="), fshow(ds)
         );
+    endrule
+
+    rule concatMultiCpltStreamToOneStream;
+
     endrule
 
     interface tagAllocReqPipeIn                                 = toPipeIn(tagAllocReqPipeInQueue);
@@ -1683,24 +1695,19 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     
     FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  tagAllocToReadTlpGenPipelineQ         <- mkFIFOF;
 
-    rule genTlpMwr;
-        
-        let wm = slaveSideQueueWm.first;
-        slaveSideQueueWm.deq;
-
-        // TODO: can reduce the bit width of the add operation.
-        ADDR endAddr = wm.addr + unpack(zeroExtend(pack(wm.totalLen))) - 1;
-        let startDwordAddr = wm.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+    function Tuple3#(PcieHeaderFieldFirstDwBe, PcieHeaderFieldLastDwBe, Length) genFirstLastBeAndLengthDw(ADDR startAddr, Length len);
+        // TODO: can reduce the bit width of the add operation.    
+        ADDR endAddr = startAddr + unpack(zeroExtend(pack(len))) - 1;
+        let startDwordAddr = startAddr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
         let endDwordAddr = endAddr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
         let lengthInDw = endDwordAddr - startDwordAddr + 1;
-
-
-        PcieHeaderFieldFirstDwBe    firstDwBe = case (pack(wm.addr)[1:0])
+        PcieHeaderFieldFirstDwBe    firstDwBe = case (pack(startAddr)[1:0])
                                                     2'b00: 4'b1111;
                                                     2'b01: 4'b1110;
                                                     2'b10: 4'b1100;
                                                     2'b11: 4'b1000;
                                                 endcase;
+
         PcieHeaderFieldLastDwBe     lastDwBe = case (pack(endAddr)[1:0])
                                                     2'b00: 4'b0001;
                                                     2'b01: 4'b0011;
@@ -1710,8 +1717,20 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         let isOnlyDword = startDwordAddr == endDwordAddr;
         if (isOnlyDword) begin
+            firstDwBe = firstDwBe & lastDwBe;  // use lastDwBe as a bitmask
             lastDwBe = 0;
         end
+
+        return tuple3(firstDwBe, lastDwBe, truncate(lengthInDw));
+    endfunction
+
+    rule genTlpMwr;
+        
+        let wm = slaveSideQueueWm.first;
+        slaveSideQueueWm.deq;
+
+
+        let {firstDwBe, lastDwBe, lengthInDw} = genFirstLastBeAndLengthDw(wm.addr, wm.totalLen);
         
         let commonHeader = PcieTlpHeaderCommon {
             fmt     : `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA,
@@ -1745,16 +1764,14 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         writeTlpQueue.enq(tlp);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMwr"),
-        //     toBlue(", wm="), fshow(wm),
-        //     toBlue(", startDwordAddr="), fshow(startDwordAddr),
-        //     toBlue(", endDwordAddr="), fshow(endDwordAddr),
-        //     toBlue(", lengthInDw="), fshow(lengthInDw),
-        //     toBlue(", firstDwBe="), fshow(firstDwBe),
-        //     toBlue(", lastDwBe="), fshow(lastDwBe),
-        //     toBlue(", tlp="), fshow(tlp)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMwr"),
+            toBlue(", wm="), fshow(wm),
+            toBlue(", lengthInDw="), fshow(lengthInDw),
+            toBlue(", firstDwBe="), fshow(firstDwBe),
+            toBlue(", lastDwBe="), fshow(lastDwBe),
+            toBlue(", tlp="), fshow(tlp)
+        );
 
 
     endrule
@@ -1770,8 +1787,6 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         let maxCpltTlpCntNeeded        = 1 + (pack(rm.totalLen) >> valueOf(TLog#(PCIE_RCB)));
 
         let tagAllocReq = PcieChannelPrivateCompletionBufferSlotAllocReq {
-            // firstDwInvalidByteNum       : truncate(pack(rm.addr)),
-            // lastDwInvalidByteNum        : maxBound - truncate(pack(endAddr)),
             hwClptBufDataSlotCntNeeded  : truncate(hwClptBufDataSlotCntNeeded),
             maxCpltTlpCntNeeded         : truncate(maxCpltTlpCntNeeded)
         };
@@ -1796,24 +1811,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         slotAllocRespPipeInQueue.deq;
 
-        // TODO: can reduce the bit width of the add operation.
-        ADDR endAddr = rm.addr + unpack(zeroExtend(pack(rm.totalLen))) - 1;
-        let startDwordAddr = rm.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
-        let endDwordAddr = endAddr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
-        let lengthInDw = endDwordAddr - startDwordAddr + 1;   
-        
-        PcieHeaderFieldFirstDwBe    firstDwBe = case (pack(rm.addr)[1:0])
-                                                    2'b00: 4'b1111;
-                                                    2'b01: 4'b1110;
-                                                    2'b10: 4'b1100;
-                                                    2'b11: 4'b1000;
-                                                endcase;
-        PcieHeaderFieldLastDwBe     lastDwBe = case (pack(endAddr)[1:0])
-                                                    2'b00: 4'b0001;
-                                                    2'b01: 4'b0011;
-                                                    2'b10: 4'b0111;
-                                                    2'b11: 4'b1111;
-                                                endcase;
+        let {firstDwBe, lastDwBe, lengthInDw} = genFirstLastBeAndLengthDw(rm.addr, rm.totalLen);
 
         let commonHeader = PcieTlpHeaderCommon {
             fmt     : `PCIE_TLP_HEADER_FMT_4DW_NO_DATA,
@@ -2146,14 +2144,10 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
 
         if (ds.isLast) begin
 
-            // let zeroBasedByteNum = ds.byteNum - 1;
-            // RtilePcieEopEmpty byteNumLowerBits = truncate(zeroBasedByteNum);
-
             let outputEntry = RtilePcieTxBufferRange {
                 startSegAddr: zeroExtend(startRowAddrReg) << valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET),
                 segCnt: newSegCnt,
-                isStorageRowCountSmall: (curSegCnt >> valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT))
-                // eopEmpty: fromInteger(valueOf(RTILE_PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH)-1) - byteNumLowerBits
+                isStorageRowCountSmall: (newSegCnt >> valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT))
             };
             packetMetaPipeOutQueue.enq(outputEntry);
             newSegCnt = 0;
@@ -2602,16 +2596,18 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             RtilePcieTxSmallBramRowCnt smallStorgeRowCntLeftForPacketOne     = fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
             RtilePcieTxSmallBramRowCnt smallStorgeRowCntLeftForPacketTwo     = fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(onePacketSmallBramRowCntSum);
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch"),
-            //     toBlue(", beatWillHoldPacket="), fshow(beatWillHoldTwoPacket ? 2 : 1),
-            //     toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
-            //     toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
-            //     toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
-            //     toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
-            //     toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
-            //     toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch"),
+                toBlue(", beatWillHoldPacket="), fshow(beatWillHoldTwoPacket ? 2 : 1),
+                toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
+                toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
+                toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
+                toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
+                toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
+                toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo),
+                toBlue(", packetOneMeta="), fshow(packetOneMeta),
+                toBlue(", packetTwoMeta="), fshow(packetTwoMeta)
+            );
 
             if (beatWillHoldTwoPacket) begin
                 outputMetaBundle[0] = tagged Valid RtilePcieTxPingPongChannelMetaEntry {
@@ -2625,14 +2621,11 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                     srcChannelIdx   : packetTwoMeta.srcChannelIdx,
                     startRowAddr    : truncateLSB(packetTwoMeta.startSegAddr),
                     zeroBasedSegCnt : packetTwoWillEndInThisBeat ? truncate(packetTwoMeta.segCnt-1) : ((zeroExtend(smallStorgeRowCntLeftForPacketTwo) << valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) - 1),
-                    // eopEmpty        : packetTwoMeta.eopEmpty,
-                    // destSegOffset   : ?,
                     isFirst         : True,
                     isLast          : packetTwoWillEndInThisBeat
                     // isOutputBeatLast: 
                 };
 
-                if (isFirstReg)
 
                 immAssert(selectedInputChannelMetaMIMO.deqReadyN(1), "MIMO Queue doesn't have enough element", $format(""));
                 selectedInputChannelMetaMIMO.deq(1);
@@ -2685,11 +2678,11 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             end
 
             outputTimingFixPipelineQueue.enq(tuple2(curOutputRoundRobinIdxReg, outputMetaBundle));
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch final output"),
-            //     toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
-            //     toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch final output"),
+                toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
+                toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
+            );
 
             curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
         end
@@ -2781,7 +2774,8 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
     Reg#(RtilePcieTxBramRowIndexInOutputBeat) outputBeatEmptyStorageRowCntReg <- mkReg(fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)-1));
 
 
-    Reg#(RtilePcieTxPingPongChannelOutputEntry) outputEntryReg <- mkReg(unpack(0));
+    Reg#(RtilePcieTxPingPongChannelOutputEntry) outputEntryReg  <- mkReg(unpack(0));
+    Reg#(Bool)                                  isFirstReg      <- mkReg(True);
 
     // Pipeline FIFOs
     FIFOF#(RtilePcieTxPingPongChannelBramReadPipelineEntry) bramReadPipelineQueue <- mkSizedFIFOF(8);
@@ -2808,13 +2802,13 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
 
             bramReadReqPipeOutQueueVec[curMetaEntry.srcChannelIdx].enq(RtilePcieTxBramBufferReadReq{
                 addr                : curMetaEntry.startRowAddr,
-                needReadTlpBuffer   : curMetaEntry.isFirst
+                needReadTlpBuffer   : isFirstReg
             });
 
             bramReadPipelineQueue.enq(RtilePcieTxPingPongChannelBramReadPipelineEntry {
                 srcChannelIdx       : curMetaEntry.srcChannelIdx,
                 zeroBasedValidSegCnt: zeroBasedValidSegCnt,
-                isFirst             : curMetaEntry.isFirst,
+                isFirst             : isFirstReg,
                 isLast              : isPacketLast,
                 isOutputBeatLast    : isOutputBeatLast
             });
@@ -2825,17 +2819,22 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
                 nextCurMetaEntry.zeroBasedSegCnt = nextCurMetaEntry.zeroBasedSegCnt - fromInteger(valueOf(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG));
                 nextCurMetaEntry.startRowAddr = nextCurMetaEntry.startRowAddr + 1;
                 nextCurMetaEntryMaybe = tagged Valid nextCurMetaEntry;
+                isFirstReg <= False;
             end
             else begin
                 if (haveNextValidPacketMeta) begin
                     curInputMetaBundleReg <= shiftOutFrom0(tagged Invalid, curInputMetaBundleReg, 1);
                     nextCurMetaEntryMaybe = curInputMetaBundleReg[0];
+                    immAssert(isValid(curInputMetaBundleReg[0]), "must always be valid", $format(""));
+                    isFirstReg <= fromMaybe(?, curInputMetaBundleReg[0]).isFirst;
                 end
                 else begin
                     if (metaPipeInQueue.notEmpty) begin
                         curInputMetaBundleReg <= shiftOutFrom0(tagged Invalid, metaPipeInQueue.first, 1);
                         nextCurMetaEntryMaybe = metaPipeInQueue.first[0];
                         metaPipeInQueue.deq;
+                        immAssert(isValid(metaPipeInQueue.first[0]), "must always be valid", $format(""));
+                        isFirstReg <= fromMaybe(?, metaPipeInQueue.first[0]).isFirst;
                     end
                     else begin
                         nextCurMetaEntryMaybe = tagged Invalid;
@@ -2848,6 +2847,9 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
             curInputMetaBundleReg <= shiftOutFrom0(tagged Invalid, metaPipeInQueue.first, 1);
             curMetaEntryMaybeReg <= metaPipeInQueue.first[0];
             metaPipeInQueue.deq;
+
+            immAssert(isValid(metaPipeInQueue.first[0]), "must always be valid", $format(""));
+            isFirstReg <= fromMaybe(?, metaPipeInQueue.first[0]).isFirst;
             // $display(
             //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel sendBramReadReq IDLE"),
             //     toBlue(", metaPipeInQueue.first="), fshow(metaPipeInQueue.first)
@@ -2878,7 +2880,7 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
 
         let tlpHasPayload = True;
         if (bramReadBeatMeta.isFirst) begin
-            outputEntry.hvalid = {2'b01, truncateLSB(outputEntry.dvalid)};
+            outputEntry.hvalid = {2'b01, truncateLSB(outputEntry.hvalid)};
             outputEntry.sop = {2'b01, truncateLSB(outputEntry.sop)};
 
             let tlpHeaderBuf = bramTlpHeaderReadRespPipeInQueueVec[bramReadBeatMeta.srcChannelIdx].first;
@@ -2890,7 +2892,9 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
             outputEntry.header = shiftInAtN(outputEntry.header, unpack(0));
         end
         else begin
-            outputEntry.hvalid = {2'b00, truncateLSB(outputEntry.dvalid)};
+            outputEntry.header = shiftInAtN(outputEntry.header, unpack(0));
+            outputEntry.header = shiftInAtN(outputEntry.header, unpack(0));
+            outputEntry.hvalid = {2'b00, truncateLSB(outputEntry.hvalid)};
             outputEntry.sop = {2'b00, truncateLSB(outputEntry.sop)};
         end
 
@@ -2923,11 +2927,11 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         {outputBeatEmptyStorageRowCnt, outputEntry} = finalShiftPipelineQueue.first;
         finalShiftPipelineQueue.deq;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift"),
-        //     toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
-        //     toBlue(", outputEntry="), fshow(outputEntry)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift before shift"),
+            toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
+            toBlue(", outputEntry="), fshow(outputEntry)
+        );
 
         case (outputBeatEmptyStorageRowCnt)
             0: begin
@@ -2945,6 +2949,11 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
             end
         endcase
         beatPipeOutQueue.enq(outputEntry);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift after shift"),
+            toBlue(", outputEntry="), fshow(outputEntry)
+        );
     endrule
 
    
