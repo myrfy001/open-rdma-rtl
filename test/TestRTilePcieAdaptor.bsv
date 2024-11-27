@@ -332,8 +332,7 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
     Reg#(Bit#(512)) rxBusOutputSignalReg <- mkReg(0);
     Reg#(Bit#(2048)) txBusOutputSignalReg <- mkReg(0);
 
-    rule injectUserLogicReq if (runReg);
-        
+    rule injectUserLogicReq1 if (runReg);
         let randValue1 <- randSource1.get;
         let randValue2 <- randSource2.get;
         let randValue3 <- randSource3.get;
@@ -341,32 +340,38 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
         let randValue5 <- randSource5.get;
 
 
-        let writeMeta = unpack(truncate(randValue1));
-
-        let writeData = unpack(truncate({randValue2, randValue3, randValue4}));
-
-        let readMeta = unpack(truncate(randValue5));
-
+        
+        
         // write req
+        let writeMeta = unpack(truncate(randValue1));
+        let writeData = unpack(truncate({randValue2, randValue3, randValue4}));
         rtilePcie.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
         rtilePcie.streamSlaveIfcVec[0].writePipeIfc.writeDataPipeIn.enq(writeData);
 
+        writeMeta = unpack(truncate(randValue2));
+        writeData = unpack(truncate({randValue1, randValue4, randValue3}));
         rtilePcie.streamSlaveIfcVec[1].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
         rtilePcie.streamSlaveIfcVec[1].writePipeIfc.writeDataPipeIn.enq(writeData);
 
+        writeMeta = unpack(truncate(randValue5));
+        writeData = unpack(truncate({randValue3, randValue2, randValue1}));
         rtilePcie.streamSlaveIfcVec[2].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
         rtilePcie.streamSlaveIfcVec[2].writePipeIfc.writeDataPipeIn.enq(writeData);
 
+        writeMeta = unpack(truncate(randValue3));
+        writeData = unpack(truncate({randValue4, randValue1, randValue2}));
         rtilePcie.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
         rtilePcie.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
 
         // read req
+        let readMeta = unpack(truncate(randValue5));
         rtilePcie.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
+        readMeta = unpack(truncate(randValue4));
         rtilePcie.streamSlaveIfcVec[1].readPipeIfc.readMetaPipeIn.enq(readMeta);
+        readMeta = unpack(truncate(randValue3));
         rtilePcie.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
+        readMeta = unpack(truncate(randValue2));
         rtilePcie.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
-
-
     endrule
 
     rule updateBusSignalReg;
