@@ -1611,7 +1611,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
         if (!beatMeta.isLastCplt) begin
             immAssert(
-                pack(zeroExtend(startByteIdx) + byteNum)[2:0] == 2'b0,
+                pack(zeroExtend(startByteIdx) + byteNum)[1:0] == 2'b0,
                 "must aligned to 4 dword",
                 $format("startByteIdx=", fshow(startByteIdx), ", byteNum=", fshow(byteNum))
             );

@@ -3,6 +3,9 @@ import FIFOF :: *;
 import Vector :: *;
 import BuildVector :: *;
 import PAClib :: *; 
+import GetPut :: *;
+
+import Utils4Test :: *;
 
 import PrimUtils :: *;
 import RdmaUtils :: *;
@@ -28,19 +31,25 @@ module mkTestDtldStreamConcatorTimingTest(TestDtldStreamConcatorTimingTest);
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
 
-    TestDtldStreamConcatorTimingTest#(DATA, NUMERIC_TYPE_TWO) dut <- mkDtldStreamConcator;
+    ForceKeepWideSignals#(Bit#(512), Bit#(128)) signalKeeper          <- mkForceKeepWideSignals; 
+
+    DtldStreamConcator#(DATA, NUMERIC_TYPE_TWO) dut <- mkDtldStreamConcator;
 
     rule test;
         let randValue1 <- randSource1.get;
-
         
-        signalKeeperForTxBusOutput.bitsPipeIn.enq(pack(testReg));
+        dut.dataPipeIn.enq(unpack(truncate(randValue1)));
+        dut.isLastStreamFlagPipeIn.enq(unpack(truncateLSB(randValue1)));
     endrule
 
 
 
     rule handleOutput;
-        outReg <= zeroExtend({signalKeeperForTxBusOutput.out});
+        let out = dut.dataPipeOut.first;
+        dut.dataPipeOut.deq;
+
+        signalKeeper.bitsPipeIn.enq(zeroExtend(pack(out)));
+        outReg <= zeroExtend({signalKeeper.out});
     endrule
 
     method getOutput = outReg;

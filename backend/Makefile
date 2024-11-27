@@ -62,8 +62,8 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOPMODULE ?= mkTestPcieCompletionBufferTimingTest
 
-TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
+# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+# TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest
@@ -89,7 +89,8 @@ TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # TOPMODULE ?= mkTestFtileMacCocotbLoopBackTest
 
-
+TARGETFILE ?= ../test/TestDtldStream.bsv
+TOPMODULE ?= mkTestDtldStreamConcatorTimingTest
 
 
 
