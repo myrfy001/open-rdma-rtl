@@ -208,3 +208,188 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
     interface readSourceChannelIdPipeOut  = toPipeOut(readSourceChannelIdPipeOutQueue);
 endmodule
 
+
+// This concator can concat one or more datastream fragments into a single big datastream.
+// The first (or only) fragment's first (or only) beat can have startByteIdx != 0
+// The first (or only) fragment's last (or only) beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)
+// The last (or only) fragment's last beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)
+// All the other fragments's beats must be full, i.e., startByteIdx == 0 && startByteIdx == byte_nume_per_beat
+interface DtldStreamConcator#(type tData, numeric type nLogOfAlign);
+    interface PipeIn#(DtldStreamData#(tData))                    dataPipeIn;
+    interface PipeIn#(Bool)                                      isLastStreamFlagPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                   dataPipeOut;
+endinterface
+
+typedef enum {
+    DtldStreamConcatorStateIdle,
+    DtldStreamConcatorStateOutputMore,
+    DtldStreamConcatorStateOutputExtra
+} DtldStreamConcatorState deriving(Eq, FShow, Bits);
+
+module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) provisos(
+        Bits#(tData, szData),
+        // Bits#(tAlignBlockIdx, szAlignBlockIdx),
+        // Bits#(tAlignBlockCnt, szAlignBlockCnt),
+        // Bits#(tByteIdx, szByteIdx),
+        // Bits#(tByteCnt, szByteCnt),
+        Alias#(Bit#(szAlignBlockIdx), tAlignBlockIdx),
+        Alias#(Bit#(szAlignBlockCnt), tAlignBlockCnt),
+        Alias#(Bit#(szByteIdx), tByteIdx),
+        Alias#(Bit#(szByteCnt), tByteCnt),
+        NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
+        NumAlias#(TLog#(szDataInByte), szByteIdx),
+        NumAlias#(TAdd#(szByteIdx, 1), szByteCnt),
+        NumAlias#(TDiv#(szDataInByte, TExp#(nLogOfByteAlign)), nAlignBlockPerBeat),
+        NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
+        NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
+    );
+    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkFIFOF;
+    FIFOF#(Bool)                    isLastStreamFlagPipeInQueue     <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOF;
+
+    Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
+
+    Reg#(Bool)                          isWholeOutputFirstBeatReg                   <- mkReg(True);
+    Reg#(Bool)                          isLastStreamReg                             <- mkRegU;
+    Reg#(tAlignBlockIdx)                shiftAlignBlockCntReg                       <- mkReg(0);
+    Reg#(DtldStreamData#(tData))        previousDsReg                               <- mkRegU;
+
+    // rule idleState if (curStateReg == DtldStreamConcatorStateIdle);
+    //     let ds = dataPipeInQueue.first;
+    //     dataPipeInQueue.deq;
+
+    //     let isLastStream = isLastStreamFlagPipeInQueue.first;
+    //     isLastStreamFlagPipeInQueue.deq;
+
+    //     if (ds.isLast && isLastStream) begin
+    //         // for only beat in only stream
+    //         immAssert(
+    //             ds.isFirst && isWholeOutputFirstBeatReg,
+    //             "must be first",
+    //             $format( "ds.isFirst=", fshow(ds.isFirst),
+    //                      ", isWholeOutputFirstBeatReg=", fshow(isWholeOutputFirstBeatReg))
+    //         );
+    //         dataPipeOutQueue.enq(ds);
+    //     end
+    //     else begin
+    //         curStateReg <= DtldStreamConcatorStateOutputMore;
+    //         previousDsReg <= ds;
+    //         isLastStreamReg <= isLastStream;
+
+
+    //         immAssert(
+    //             pack(zeroExtend(ds.startByteIdx) + ds.byteNum)[2:0] == 2'b0,
+    //             "not aligned",
+    //             $format("startByteIdx=", fshow(ds.startByteIdx), ", byteNum=", fshow(ds.byteNum))
+    //         );
+    //     end
+    // endrule
+
+    // rule outputState if (curStateReg == DtldStreamConcatorStateOutputMore);
+    //     let dsIn = dataPipeInQueue.first;
+    //     dataPipeInQueue.deq;
+
+    //     if (!(dsIn.isLast && isLastStreamReg)) begin
+    //         immAssert(
+    //             pack(zeroExtend(dsIn.startByteIdx) + dsIn.byteNum)[2:0] == 2'b0,
+    //             "not aligned",
+    //             $format("startByteIdx=", fshow(dsIn.startByteIdx), ", byteNum=", fshow(dsIn.byteNum))
+    //         );
+    //     end
+
+    //     tAlignBlockIdx curDsAlignBlockRightShiftCnt = shiftAlignBlockCntReg;
+    //     tAlignBlockCnt curDsAlignBlockLeftShiftCnt  = fromInteger(valueOf(nAlignBlockPerBeat)) - zeroExtend(shiftAlignBlockCntReg);
+        
+    //     szByteIdx curDsByteRightShiftCnt = zeroExtend(curDsAlignBlockRightShiftCnt) << valueOf(nLogOfByteAlign);
+    //     szByteCnt curDsByteLeftShiftCnt  = zeroExtend(curDsAlignBlockLeftShiftCnt)  << valueOf(nLogOfByteAlign);
+        
+    //     tData dataClearMask = (-1);
+    //     dataClearMask = dataClearMask >> (curDsByteRightShiftCnt);
+
+    //     let curOutBeatData = (previousDsReg.data & dataClearMask) | (dsIn.data << curDsByteLeftShiftCnt);
+    //     let nextBeatPrevDs = dsIn;
+    //     nextBeatPrevDs.data = nextBeatPrevDs.data >> curDsByteRightShiftCnt;
+    //     previousDsReg <= nextBeatPrevDs;
+
+
+    //     let isFirst = isWholeOutputFirstBeatReg;
+    //     let isLast = False;
+    //     if (isLastStreamReg && dsIn.isLast) begin
+    //         szByteCnt previousBeatEmptyByteCnt = zeroExtend(curDsByteRightShiftCnt);
+    //         if (previousBeatEmptyByteCnt >= dsIn.byteNum) begin
+    //             isLast = True;
+    //             curStateReg <= DtldStreamConcatorStateIdle;
+    //         end
+    //         else begin
+    //             curStateReg <= DtldStreamConcatorStateOutputMore;
+    //         end
+    //     end
+
+    //     let startByteIdx = isFirst ? previousDsReg.startByteIdx : 0;
+
+    //     let byteNum;
+    //     if (isFirst && isLast) begin
+    //         immFail(
+    //             "should not reach here. only beat should be handled by idleState", 
+    //             $format("dsIn=", fshow(dsIn), ", previousDsReg=", fshow(previousDsReg))
+    //         );
+    //         byteNum = 0;
+    //     end
+    //     else if (isLast) begin
+    //         byteNum = dsIn.byteNum - previousBeatEmptyByteCnt;
+    //     end
+    //     else begin
+    //         byteNum = fromInteger(valueOf(szDataInByte)) - zeroExtend(startByteIdxx);
+    //     end
+
+    //     let ds = RtilePcieUserStream {
+    //         data: curOutBeatData,
+    //         byteNum: byteNum,
+    //         startByteIdx: startByteIdx,
+    //         isFirst: isFirst,
+    //         isLast: isLast
+    //     };
+
+    //     isWholeOutputFirstBeatReg <= isLast;
+
+    //     if (isLast) begin
+    //         shiftAlignBlockCntReg <= 0;
+    //     end
+    // endrule
+
+    // rule outputExtraState if (curStateReg == DtldStreamConcatorStateOutputExtra);
+    //     if (dataPipeInQueue.notEmpty && isLastStreamFlagPipeInQueue.notEmpty) begin
+    //         let dsIn = dataPipeInQueue.first;
+    //         let isLastStream = isLastStreamFlagPipeInQueue.first;
+
+    //         if (dsIn.isLast && isLastStream) begin
+    //             // only stream, let DtldStreamConcatorStateIdle state to handle it. 
+    //             curStateReg <= DtldStreamConcatorStateIdle;
+    //         end
+    //         else begin
+    //             dataPipeInQueue.deq;
+    //             isLastStreamFlagPipeInQueue.deq;
+
+    //             isLastStreamReg <= isLastStream;
+    //             previousDsReg <= dsIn;
+    //             curStateReg <= DtldStreamConcatorStateOutputMore;
+    //         end
+    //     end
+    //     else begin
+    //         curStateReg <= DtldStreamConcatorStateIdle;
+    //     end
+
+    //     szByteIdx previousBeatEmptyByteCnt = zeroExtend(curDsAlignBlockRightShiftCnt) << valueOf(nLogOfByteAlign);
+    //     let byteNum = nextBeatPrevDs.byteNum - previousBeatEmptyByteCnt;
+    //     let ds = RtilePcieUserStream {
+    //         data: nextBeatPrevDs.data,
+    //         byteNum: byteNum,
+    //         startByteIdx: 0,
+    //         isFirst: False,
+    //         isLast: True
+    //     };
+
+    //     shiftAlignBlockCntReg <= 0;
+    // endrule
+endmodule
+

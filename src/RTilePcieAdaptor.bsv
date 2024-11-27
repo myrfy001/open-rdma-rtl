@@ -1206,6 +1206,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readDataStorageForOutputPipelineQueue               <- mkFIFOF;
     FIFOF#(PcieCompletionBufferBeatInfoForOutputDataStreamGenerate)             outputDataStreamGenPipelineQueue                    <- mkFIFOF;
     FIFOF#(Tuple2#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt))    handleCpltTlpInfoStorageWritePipelineQueue          <- mkLFIFOF;
+    FIFOF#(Tuple3#(RtilePcieUserStream, Bool, DwordIdxInUserLogicBeat))         outputStreamConcatPipelineQueue                     <- mkFIFOF;
 
     PrioritySearchBuffer#(NUMERIC_TYPE_SIX, PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta) slotMetaUpdateForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
  
@@ -1217,7 +1218,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     Reg#(Bool) isOriginReadReqOutputFirstBeatReg    <- mkReg(True);
     Reg#(Bool) isFirstCpltInOriginReadReqReg        <- mkReg(True);
     Reg#(DwordIdxInUserLogicBeat)   finalDataStreamConcatShiftDwordOffsetReg <- mkRegU;
-
+    Reg#(RtilePcieUserStream)   previousDs <- mkRegU;
 
     rule handleDataStreamInput;
         let req = tlpRawBeatDataStorageWriteReqPipeInQueue.first;
@@ -1585,21 +1586,35 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         dataStreamStorageVec[beatMeta.srcSegIdx].readRespPipeOut.deq;
 
         let byteNum;
+        DwordIdxInUserLogicBeat dwordCntForNextCpltShiftOffset;
         let isFirst = isCurCpltOutputFirstBeatReg;
         let isLast = beatMeta.isLast;
         ByteIndexInBeat startByteIdx = zeroExtend(fromInteger(valueOf(BYTE_CNT_PER_DWOED))-beatMeta.firstBeCnt);
 
+
         if (isFirst && isLast) begin
             byteNum = beatMeta.byteCountLeftInThisTlp;
+            dwordCntForNextCpltShiftOffset = truncate((fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - (zeroExtend(startByteIdx) + byteNum)) >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
         end
         else if (isFirst) begin
             byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(startByteIdx);
+            dwordCntForNextCpltShiftOffset = 0;
         end
         else if (isLast) begin
             byteNum = beatMeta.byteCountLeftInThisTlp;
+            dwordCntForNextCpltShiftOffset = truncate((fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - byteNum) >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
         end
         else begin
             byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+            dwordCntForNextCpltShiftOffset = 0;
+        end
+
+        if (!beatMeta.isLastCplt) begin
+            immAssert(
+                pack(zeroExtend(startByteIdx) + byteNum)[2:0] == 2'b0,
+                "must aligned to 4 dword",
+                $format("startByteIdx=", fshow(startByteIdx), ", byteNum=", fshow(byteNum))
+            );
         end
 
         let ds = RtilePcieUserStream {
@@ -1609,14 +1624,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             isFirst: isFirst,
             isLast: isLast
         };
-        dataStreamPipeOutQueue.enq(ds);
 
         isCurCpltOutputFirstBeatReg <= beatMeta.isLast;
 
-
-        if (isLast && !beatMeta.isLastCplt) begin
-            let dwordCntForNextCpltOffset = 
-        end
+        outputStreamConcatPipelineQueue.enq(tuple3(ds, beatMeta.isLastCplt, dwordCntForNextCpltShiftOffset));
 
         $display(
             "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer getStorageReadRespAndConvertToDataStream"),
@@ -1627,6 +1638,50 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     endrule
 
     rule concatMultiCpltStreamToOneStream;
+
+        let {dsIn, isLastCplt, dwordCntForNextCpltShiftOffset};
+        if (outputStreamConcatPipelineQueue.notEmpty) begin
+            {dsIn, isLastCplt, dwordCntForNextCpltShiftOffset} = outputStreamConcatPipelineQueue.first;
+            outputStreamConcatPipelineQueue.deq;
+        end
+
+        let isLastBeatInFirstCpltTlp = isFirstCpltInOriginReadReqReg && dsIn.isLast;
+        if (isLastBeatInFirstCpltTlp) begin
+            finalDataStreamConcatShiftDwordOffsetReg <= dwordCntForNextCpltShiftOffset;
+            isFirstCpltInOriginReadReqReg <= isLastCplt;
+        end
+
+        let isFirst = isOriginReadReqOutputFirstBeatReg;
+        let isLast = beatMeta.isLastCplt && dsIn.isLast;
+        let isHandlingFirstStream = isFirstCpltInOriginReadReqReg;
+        
+        let ds;
+
+        if (isHandlingFirstStream) begin
+            if (!dsIn.isLast) begin
+                // for the first stream fragment, if it's not the last beat in this stream fragment, then no shift is needed.
+                ds = dsIn;
+            end
+            else begin
+                if (isLastCplt) begin
+                    // the whole stream only has one fragment, so no shift is needed.
+                    ds = dsIn;
+                end
+                else begin
+
+                end
+            end
+        end
+        
+        let ds = RtilePcieUserStream {
+            data: readOutBeat,
+            byteNum: truncate(byteNum),
+            startByteIdx: startByteIdx,
+            isFirst: isFirst,
+            isLast: isLast
+        };
+
+        dataStreamPipeOutQueue.enq(ds);
 
     endrule
 
