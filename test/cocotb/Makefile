@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 ROOT_DIR = $(abspath ../../)
 BACKEND_DIR = $(ROOT_DIR)/backend
 SRC_DIR = $(ROOT_DIR)/src
@@ -35,6 +37,8 @@ prepare:
 run:
 	cd $(TB_DIR)
 	mkdir -p log
+
+	set -o pipefail; \
 	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) python3 $(TB_FILE) 2>&1 | tee $(LOG_FILE)
 
 cocotb:clean verilog prepare run

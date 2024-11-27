@@ -27,10 +27,10 @@ class TB(object):
         self.write_test_packet_cnt = 100
         self.total_write_byte_cnt = 0
 
-        self.read_test_packet_cnt = 1
+        self.read_test_packet_cnt = 600
         self.total_read_byte_cnt = 0
 
-        self.read_reqs_to_check = [[]] * 4
+        self.read_reqs_to_check = [[] for _ in range(4)]
 
         self.mem_pool_size = 64*1024
         self.byte_cnt_per_beat = 32
@@ -198,7 +198,7 @@ class TB(object):
     def genRandomReadPacket(self):
         while True:
             packet_start_addr = random.randint(0, self.mem_pool_size-1)
-            packet_start_addr = 0xc624
+            # packet_start_addr = 0xc624
 
             packet_start_addr_4k_block = packet_start_addr >> 12
 
@@ -210,7 +210,7 @@ class TB(object):
 
             packet_end_addr = random.randint(
                 packet_start_addr, packet_max_end_addr)
-            packet_end_addr = packet_start_addr + 0x158 - 1
+            # packet_end_addr = packet_start_addr + 0x158 - 1
 
             target_packet_size = packet_end_addr - packet_start_addr + 1
             # self.log.debug(
@@ -297,7 +297,6 @@ class TB(object):
 
                     await self.requester_read_meta_pipes[channel_idx].enq(read_meta.pack())
                     self.read_reqs_to_check[channel_idx].append(read_meta)
-                    self.log.debug(f"send new read meta={read_meta}")
 
                     self.total_read_byte_cnt += read_meta.total_len()
 
@@ -348,9 +347,10 @@ class TB(object):
                     assert cur_resp_ds.byte_num() == self.byte_cnt_per_beat
 
                 if cur_resp_ds.is_last():
-                    # assert cur_resp_ds.start_byte_index() == 0
-                    # assert cur_resp_ds.byte_num(
-                    # ) == self.read_reqs_to_check[channel_idx][0].total_len()
+                    if not cur_resp_ds.is_first:
+                        assert cur_resp_ds.start_byte_index() == 0
+                    assert cur_resp_ds.byte_num(
+                    ) == self.read_reqs_to_check[channel_idx][0].total_len()
                     self.read_reqs_to_check[channel_idx].pop(0)
                 else:
                     self.read_reqs_to_check[channel_idx][0].addr = cur_end_addr_aligned_to_4_byte
@@ -368,7 +368,7 @@ class TB(object):
             await Timer(1, units='ns')
 
 
-@ cocotb.test(timeout_time=2000, timeout_unit="ns")
+@ cocotb.test(timeout_time=20000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -388,7 +388,7 @@ async def small_desc_fp_test(dut):
     cocotb.start_soon(tb.start_send_read_req())
     cocotb.start_soon(tb.start_read_resp_check())
 
-    await Timer(1000, units='ns')
+    await Timer(5000, units='ns')
 
     # write_meta = BlueRdmaDtldStreamMemAccessMeta(
     #     addr=0,

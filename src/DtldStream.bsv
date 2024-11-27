@@ -274,11 +274,10 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             previousDsReg <= ds;
             isLastStreamReg <= isLastStream;
 
-
             immAssert(
                 pack(zeroExtend(ds.startByteIdx) + ds.byteNum)[1:0] == 2'b0,
                 "not aligned",
-                $format("startByteIdx=", fshow(ds.startByteIdx), ", byteNum=", fshow(ds.byteNum))
+                $format("ds=", fshow(ds))
             );
         end
     endrule
@@ -287,13 +286,23 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         let dsIn = dataPipeInQueue.first;
         dataPipeInQueue.deq;
 
-        if (!(dsIn.isLast && isLastStreamReg)) begin
+        let isLastStream = isLastStreamReg;
+        if (dsIn.isFirst) begin
+            isLastStream = isLastStreamFlagPipeInQueue.first;
+            isLastStreamFlagPipeInQueue.deq;
+            isLastStreamReg <= isLastStream;
+        end
+
+
+        if (!(dsIn.isLast && isLastStream)) begin
             immAssert(
                 pack(zeroExtend(dsIn.startByteIdx) + dsIn.byteNum)[1:0] == 2'b0,
                 "not aligned",
-                $format("startByteIdx=", fshow(dsIn.startByteIdx), ", byteNum=", fshow(dsIn.byteNum))
+                $format("dsIn=", fshow(dsIn))
             );
         end
+
+
 
         tAlignBlockIdx curDsAlignBlockRightShiftCnt = shiftAlignBlockCntReg;
         tAlignBlockCnt curDsAlignBlockLeftShiftCnt  = fromInteger(valueOf(nAlignBlockPerBeat)) - zeroExtend(shiftAlignBlockCntReg);
@@ -312,8 +321,11 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         let isFirst = isWholeOutputFirstBeatReg;
         let isLast = False;
+
+        let isDsInOnly = dsIn.isFirst && dsIn.isLast;
+
         tByteCnt previousBeatEmptyByteCnt = zeroExtend(curDsByteRightShiftCnt);
-        if (isLastStreamReg && dsIn.isLast) begin
+        if ((isLastStream && dsIn.isLast) || isDsInOnly) begin
             if (previousBeatEmptyByteCnt >= dsIn.byteNum) begin
                 isLast = True;
                 curStateReg <= DtldStreamConcatorStateIdle;
