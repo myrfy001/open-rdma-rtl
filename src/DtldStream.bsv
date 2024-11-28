@@ -234,9 +234,13 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         Alias#(Bit#(szAlignBlockCnt), tAlignBlockCnt),
         Alias#(Bit#(szByteIdx), tByteIdx),
         Alias#(Bit#(szByteCnt), tByteCnt),
+        Alias#(Bit#(szBitIdx), tBitIdx),
+        Alias#(Bit#(szBitCnt), tBitCnt),
         NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
         NumAlias#(TLog#(szDataInByte), szByteIdx),
         NumAlias#(TAdd#(szByteIdx, 1), szByteCnt),
+        NumAlias#(TAdd#(szByteIdx, BIT_BYTE_CONVERT_SHIFT_NUM), szBitIdx),
+        NumAlias#(TAdd#(szByteCnt, BIT_BYTE_CONVERT_SHIFT_NUM), szBitCnt),
         NumAlias#(TDiv#(szDataInByte, TExp#(nLogOfByteAlign)), nAlignBlockPerBeat),
         NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
         NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
@@ -248,6 +252,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
     Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
 
     Reg#(Bool)                          isWholeOutputFirstBeatReg                   <- mkReg(True);
+    Reg#(Bool)                          isFirstStreamReg                            <- mkReg(True);
     Reg#(Bool)                          isLastStreamReg                             <- mkRegU;
     Reg#(tAlignBlockIdx)                shiftAlignBlockCntReg                       <- mkReg(0);
     Reg#(DtldStreamData#(tData))        previousDsReg                               <- mkRegU;
@@ -258,13 +263,13 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         let isLastStream = isLastStreamFlagPipeInQueue.first;
         isLastStreamFlagPipeInQueue.deq;
-
         if (ds.isLast && isLastStream) begin
             // for only beat in only stream
             immAssert(
-                ds.isFirst && isWholeOutputFirstBeatReg,
+                ds.isFirst && isWholeOutputFirstBeatReg && isFirstStreamReg,
                 "must be first",
                 $format( "ds.isFirst=", fshow(ds.isFirst),
+                         ", isFirstStreamReg=", fshow(isFirstStreamReg),
                          ", isWholeOutputFirstBeatReg=", fshow(isWholeOutputFirstBeatReg))
             );
             dataPipeOutQueue.enq(ds);
@@ -280,21 +285,28 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
                 $format("ds=", fshow(ds))
             );
         end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator idleState"),
+        //     toBlue(", dsIn="), fshow(ds)
+        // );
     endrule
 
     rule outputState if (curStateReg == DtldStreamConcatorStateOutputMore);
         let dsIn = dataPipeInQueue.first;
         dataPipeInQueue.deq;
 
-        let isLastStream = isLastStreamReg;
+        Bool isFirstStream      = isFirstStreamReg;
+        Bool isLastStream       = isLastStreamReg;
+        Bool newIsLastStream    = isLastStreamReg; 
         if (dsIn.isFirst) begin
-            isLastStream = isLastStreamFlagPipeInQueue.first;
+            newIsLastStream = isLastStreamFlagPipeInQueue.first;
             isLastStreamFlagPipeInQueue.deq;
-            isLastStreamReg <= isLastStream;
+            isLastStreamReg <= newIsLastStream;
         end
 
-
-        if (!(dsIn.isLast && isLastStream)) begin
+        // $display("-------======----", "dsIn=", fshow(dsIn), ", isFirstStreamReg=", fshow(isFirstStreamReg), ", isFirstStream=", fshow(isFirstStream));
+        if (!(dsIn.isLast && newIsLastStream)) begin
             immAssert(
                 pack(zeroExtend(dsIn.startByteIdx) + dsIn.byteNum)[1:0] == 2'b0,
                 "not aligned",
@@ -303,19 +315,21 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         end
 
 
-
         tAlignBlockIdx curDsAlignBlockRightShiftCnt = shiftAlignBlockCntReg;
         tAlignBlockCnt curDsAlignBlockLeftShiftCnt  = fromInteger(valueOf(nAlignBlockPerBeat)) - zeroExtend(shiftAlignBlockCntReg);
         
         tByteIdx curDsByteRightShiftCnt = zeroExtend(curDsAlignBlockRightShiftCnt) << valueOf(nLogOfByteAlign);
         tByteCnt curDsByteLeftShiftCnt  = zeroExtend(curDsAlignBlockLeftShiftCnt)  << valueOf(nLogOfByteAlign);
+
+        tBitIdx curDsBitRightShiftCnt = zeroExtend(curDsByteRightShiftCnt) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+        tBitCnt curDsBitLeftShiftCnt  = zeroExtend(curDsByteLeftShiftCnt)  << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
         
         tData dataClearMask = unpack(-1);
-        dataClearMask = dataClearMask >> (curDsByteRightShiftCnt);
+        dataClearMask = dataClearMask >> (curDsBitRightShiftCnt);
 
-        let curOutBeatData = (previousDsReg.data & dataClearMask) | (dsIn.data << curDsByteLeftShiftCnt);
+        let curOutBeatData = (previousDsReg.data & dataClearMask) | (dsIn.data << curDsBitLeftShiftCnt);
         let nextBeatPrevDs = dsIn;
-        nextBeatPrevDs.data = nextBeatPrevDs.data >> curDsByteRightShiftCnt;
+        nextBeatPrevDs.data = nextBeatPrevDs.data >> curDsBitRightShiftCnt;
         previousDsReg <= nextBeatPrevDs;
 
 
@@ -325,7 +339,10 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         let isDsInOnly = dsIn.isFirst && dsIn.isLast;
 
         tByteCnt previousBeatEmptyByteCnt = zeroExtend(curDsByteRightShiftCnt);
-        if ((isLastStream && dsIn.isLast) || isDsInOnly) begin
+        
+        // `isLastStream` comes from the register so it doesn't reflact the newest packet's state.
+        // if the last stream only has one beat, then we must consult the newest isLastStream info.
+        if ((isLastStream && dsIn.isLast) || (isDsInOnly && newIsLastStream)) begin
             if (previousBeatEmptyByteCnt >= dsIn.byteNum) begin
                 isLast = True;
                 curStateReg <= DtldStreamConcatorStateIdle;
@@ -359,12 +376,34 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             isFirst: isFirst,
             isLast: isLast
         };
+        dataPipeOutQueue.enq(ds);
 
         isWholeOutputFirstBeatReg <= isLast;
 
-        if (isLast) begin
-            shiftAlignBlockCntReg <= 0;
+        tAlignBlockIdx newshiftAlignBlockCnt = shiftAlignBlockCntReg;
+        if (dsIn.isLast && isFirstStream) begin
+            isFirstStream = False;
+            newshiftAlignBlockCnt =  truncate((fromInteger(valueOf(szDataInByte)) - dsIn.byteNum) >> valueOf(nLogOfByteAlign));
         end
+
+        if (isLast) begin
+            newshiftAlignBlockCnt = 0;
+            isFirstStream = True;
+        end
+        shiftAlignBlockCntReg <= newshiftAlignBlockCnt;
+        isFirstStreamReg <= isFirstStream;
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputState"),
+            toBlue(", previousDsReg="), fshow(previousDsReg),
+            toBlue(", dsIn="), fshow(dsIn),
+            toBlue(", dsOut="), fshow(ds),
+            toBlue(", dataClearMask="), fshow(dataClearMask),
+            toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
+            toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
+            toBlue(", curDsByteRightShiftCnt="), fshow(curDsByteRightShiftCnt),
+            toBlue(", curDsByteLeftShiftCnt="), fshow(curDsByteLeftShiftCnt)
+        );
     endrule
 
     rule outputExtraState if (curStateReg == DtldStreamConcatorStateOutputExtra);
@@ -398,8 +437,15 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             isFirst: False,
             isLast: True
         };
+        dataPipeOutQueue.enq(ds);
 
         shiftAlignBlockCntReg <= 0;
+        isFirstStreamReg    <= True;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputExtraState"),
+        //     toBlue(", dsIn="), fshow(ds)
+        // );
     endrule
 
     interface dataPipeIn                = toPipeIn(dataPipeInQueue);
@@ -407,3 +453,129 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
     interface dataPipeOut               = toPipeOut(dataPipeOutQueue);
 endmodule
 
+
+
+
+interface DtldStreamSplitor#(type tData, type tStreamAlignBlockCount, numeric type nLogOfAlign);
+    interface PipeIn#(DtldStreamData#(tData))                    dataPipeIn;
+    interface PipeIn#(tStreamAlignBlockCount)                    streamAlignBlockCountPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                   dataPipeOut;
+endinterface
+
+
+typedef enum {
+    DtldStreamSplitorStateIdle,
+    DtldStreamSplitorStateOutputMore,
+    DtldStreamSplitorStateOutputExtra
+} DtldStreamSplitorState deriving(Eq, FShow, Bits);
+
+module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLogOfByteAlign)) provisos(
+        Bits#(tData, szData),
+        Bitwise#(tData),
+        Bits#(tStreamAlignBlockCount, szStreamAlignBlockCount),
+        FShow#(DtldStream::DtldStreamData#(tData)),
+        Alias#(Bit#(szAlignBlockIdx), tAlignBlockIdx),
+        Alias#(Bit#(szAlignBlockCnt), tAlignBlockCnt),
+        Alias#(Bit#(szByteIdx), tByteIdx),
+        Alias#(Bit#(szByteCnt), tByteCnt),
+        Alias#(Bit#(szBitIdx), tBitIdx),
+        Alias#(Bit#(szBitCnt), tBitCnt),
+        NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
+        NumAlias#(TLog#(szDataInByte), szByteIdx),
+        NumAlias#(TAdd#(szByteIdx, 1), szByteCnt),
+        NumAlias#(TAdd#(szByteIdx, BIT_BYTE_CONVERT_SHIFT_NUM), szBitIdx),
+        NumAlias#(TAdd#(szByteCnt, BIT_BYTE_CONVERT_SHIFT_NUM), szBitCnt),
+        NumAlias#(TDiv#(szDataInByte, TExp#(nLogOfByteAlign)), nAlignBlockPerBeat),
+        NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
+        NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
+    );
+    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkLFIFOF;
+    FIFOF#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkLFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkLFIFOF;
+
+    Reg#(DtldStreamSplitorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
+
+    Reg#(Bool)  isSubStreamFirstReg     <- mkReg(True);
+    
+    Reg#(DtldStreamData#(tData))        previousDsReg                               <- mkRegU;
+    Reg#(tAlignBlockCnt)                previousDsAlignBlockLeftReg                 <- mkReg(0);
+    Reg#(tAlignBlockCnt)                shiftAlignBlockCntReg                       <- mkReg(fromInteger(valueOf(nAlignBlockPerBeat)));
+    Reg#(tStreamAlignBlockCount)        alignBlockCntLeftForSubDsReg                <- mkRegU;
+
+    function tAlignBlockCnt getAlignBlockCountFromDs(DtldStreamData#(tData) ds);
+        tByteCnt lastByteIdx = ds.byteNum + ds.startByteIdx - 1;
+        tAlignBlockCnt alignBlockCnt = truncate(lastByteIdx >> valueOf(nAlignBlockPerBeat)) + 1;
+        return alignBlockCnt;
+    endfunction
+
+    rule idleState;
+        let subDsAlignBlockCount = alignBlockCntLeftForSubDsReg;
+        if (curStateReg == DtldStreamSplitorStateIdle)
+            subDsAlignBlockCount = streamAlignBlockCountPipeInQueue.first;
+            streamAlignBlockCountPipeInQueue.deq;
+        end
+        
+
+        let dsIn = dataPipeInQueue.first;
+        dataPipeInQueue.deq;
+
+        let alignBlockCntOfInputDs = getAlignBlockCountFromDs(dsIn);
+        let signedAlignBlockNeededToOutput = {0, pack(subDsAlignBlockCount)};
+        let signedAlignBlockLeftAfterOutput = signedAlignBlockNeededToOutput - (zeroExtend(alignBlockCntOfInputDs) + zeroExtend(previousDsAlignBlockLeftReg));
+
+        tAlignBlockCnt curDsAlignBlockRightShiftCnt = shiftAlignBlockCntReg;
+        tAlignBlockCnt curDsAlignBlockLeftShiftCnt  = fromInteger(valueOf(nAlignBlockPerBeat)) - zeroExtend(shiftAlignBlockCntReg);
+        
+        tByteCnt curDsByteRightShiftCnt = zeroExtend(curDsAlignBlockRightShiftCnt) << valueOf(nLogOfByteAlign);
+        tByteCnt curDsByteLeftShiftCnt  = zeroExtend(curDsAlignBlockLeftShiftCnt)  << valueOf(nLogOfByteAlign);
+
+        tBitCnt curDsBitRightShiftCnt = zeroExtend(curDsByteRightShiftCnt) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+        tBitCnt curDsBitLeftShiftCnt  = zeroExtend(curDsByteLeftShiftCnt)  << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+
+        tData dataClearMask = unpack(-1);
+        dataClearMask = dataClearMask >> (curDsBitRightShiftCnt);
+
+        tData dataForOutput = ( previousDsReg.data & dataClearMask ) | (dsIn.data << curDsBitLeftShiftCnt);
+
+        let isFirst = isSubStreamFirstReg;
+        let isLast = subDsAlignBlockCount <= fromInteger(valueOf(nAlignBlockPerBeat));
+
+        isSubStreamFirstReg <= isLast;
+        
+        let byteNum;
+        if (isFirst && isLast) begin
+            byteNum = 
+        end
+        else if (isFirst) begin
+        end
+        else if (isLast) begin
+        end 
+        else begin
+            byteNum = fromInteger(valueOf(szDataInByte));
+        end
+
+
+        let ds = DtldStreamData {
+            data: dataForOutput,
+            byteNum: byteNum,
+            startByteIdx: startByteIdx,
+            isFirst: isFirst,
+            isLast: isLast
+        };
+        dataPipeOutQueue.enq(ds);
+
+
+    endrule
+
+    rule outputState if (curStateReg == DtldStreamSplitorStateOutputMore);
+        
+    endrule
+
+    rule outputExtraState if (curStateReg == DtldStreamSplitorStateOutputExtra);
+        
+    endrule
+
+    interface dataPipeIn                    = toPipeIn(dataPipeInQueue);
+    interface streamAlignBlockCountPipeIn   = toPipeIn(streamAlignBlockCountPipeInQueue);
+    interface dataPipeOut                   = toPipeOut(dataPipeOutQueue);
+endmodule

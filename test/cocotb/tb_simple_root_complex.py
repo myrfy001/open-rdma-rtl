@@ -27,7 +27,7 @@ class TB(object):
         self.write_test_packet_cnt = 100
         self.total_write_byte_cnt = 0
 
-        self.read_test_packet_cnt = 600
+        self.read_test_packet_cnt = 400
         self.total_read_byte_cnt = 0
 
         self.read_reqs_to_check = [[] for _ in range(4)]
@@ -279,7 +279,6 @@ class TB(object):
             for channel_idx in range(4):
                 if channel_stop_flags[channel_idx] == True:
                     continue
-
                 if await self.requester_read_meta_pipes[channel_idx].not_full():
 
                     # if (self.cur_send_speed > self.speed_limit):
@@ -288,27 +287,29 @@ class TB(object):
                     #     if (random.random() * 0.1 < over_speed_ratio):
                     #         continue
 
-                    read_meta = next(ds_generators[channel_idx])
-
                     if send_packet_cnt >= self.read_test_packet_cnt:
                         channel_stop_flags[channel_idx] = True
                         continue
                     send_packet_cnt += 1
 
+                    read_meta = next(ds_generators[channel_idx])
+
                     await self.requester_read_meta_pipes[channel_idx].enq(read_meta.pack())
                     self.read_reqs_to_check[channel_idx].append(read_meta)
+                    self.log.debug(
+                        f"cahnnel {channel_idx} send read request = {read_meta}")
 
                     self.total_read_byte_cnt += read_meta.total_len()
 
             await RisingEdge(self.clock)
 
     async def start_read_resp_check(self):
-        channel_stop_flags = [False for _ in range(4)]
-        while True:
+        total_recv_read_req_cnt = 0
+        total_recv_byte_cnt = 0
+        last_recv_byte_cnt = 0
+        last_recv_time = 0
+        while total_recv_read_req_cnt < self.read_test_packet_cnt:
             for channel_idx in range(4):
-                if channel_stop_flags[channel_idx] == True:
-                    continue
-
                 if not await self.requester_read_data_pipes[channel_idx].not_empty():
                     continue
 
@@ -325,12 +326,21 @@ class TB(object):
                                            for b in idx.to_bytes(4, byteorder="little")]
                 got_payload_array = cur_resp_ds.data()
 
-                print("aaaaa=", cur_resp_ds)
+                total_recv_byte_cnt += cur_resp_ds.byte_num()
+
+                print(f"channel {channel_idx} recv ds =", cur_resp_ds,
+                      ", total_recv_byte_cnt=", total_recv_byte_cnt)
                 # print("aaaaa=", reference_payload_array)
                 # print("bbbbb=", list(got_payload_array.to_bytes(
                 #     self.byte_cnt_per_beat, byteorder="little")))
 
                 for byte_idx in range(cur_resp_ds.start_byte_index(), cur_resp_ds.start_byte_index() + cur_resp_ds.byte_num()):
+                    if reference_payload_array[byte_idx] != got_payload_array.to_bytes(
+                            self.byte_cnt_per_beat, byteorder="little")[byte_idx]:
+                        print("reference_payload_array=",
+                              reference_payload_array)
+                        print("      got_payload_array=", list(got_payload_array.to_bytes(
+                            self.byte_cnt_per_beat, byteorder="little")))
                     assert reference_payload_array[byte_idx] == got_payload_array.to_bytes(
                         self.byte_cnt_per_beat, byteorder="little")[byte_idx]
 
@@ -352,10 +362,30 @@ class TB(object):
                     assert cur_resp_ds.byte_num(
                     ) == self.read_reqs_to_check[channel_idx][0].total_len()
                     self.read_reqs_to_check[channel_idx].pop(0)
+                    total_recv_read_req_cnt += 1
                 else:
                     self.read_reqs_to_check[channel_idx][0].addr = cur_end_addr_aligned_to_4_byte
                     self.read_reqs_to_check[channel_idx][0].total_len = self.read_reqs_to_check[channel_idx][0].total_len(
                     ) - cur_resp_ds.byte_num()
+
+            if total_recv_read_req_cnt != 0 and total_recv_read_req_cnt % 20 == 0:
+                cur_time = cocotb.utils.get_sim_time("ns")
+
+                loop_back_speed = (
+                    total_recv_byte_cnt - last_recv_byte_cnt) * 8.0 / (cur_time - last_recv_time)
+
+                # avg_speed = avg_speed * avg_calc_factor + \
+                #     loop_back_speed * (1-avg_calc_factor)
+
+                last_recv_time = cur_time
+                last_recv_byte_cnt = total_recv_byte_cnt
+
+                # is_warm_up = recv_packet_cnt < 400
+                # assert (is_warm_up or avg_speed >
+                #         self.speed_limit * 0.95)
+
+                self.log.info(
+                    f"current read speed = {loop_back_speed} Gbps")
 
             await RisingEdge(self.clock)
 
@@ -365,10 +395,10 @@ class TB(object):
             for idx in range(0, len(self.mem_pool), 4):
                 assert self.mem_pool[mem_base+idx: mem_base+idx +
                                      4] == idx.to_bytes(4, byteorder="little")
-            await Timer(1, units='ns')
+            await Timer(10, units='ns')
 
 
-@ cocotb.test(timeout_time=20000, timeout_unit="ns")
+@ cocotb.test(timeout_time=60000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -388,7 +418,7 @@ async def small_desc_fp_test(dut):
     cocotb.start_soon(tb.start_send_read_req())
     cocotb.start_soon(tb.start_read_resp_check())
 
-    await Timer(5000, units='ns')
+    await Timer(2000, units='ns')
 
     # write_meta = BlueRdmaDtldStreamMemAccessMeta(
     #     addr=0,

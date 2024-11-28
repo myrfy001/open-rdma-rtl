@@ -1440,6 +1440,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 headerSlotCnt   : zeroExtend(slotMeta.maxCpltTlpCntNeeded),
                 dataSlotCnt     : zeroExtend(slotMeta.hwClptBufDataSlotCntNeeded)
             });
+            busySlotCounter.decr(1);
         end
 
         slotMetaUpdateReqQueueForWritePtrUpdate.enq(tuple2(slotIdx, slotMeta));
@@ -2155,10 +2156,6 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
             if (req.needReadTlpBuffer) begin
                 tlpHeaderStorageVec[idx].putReadReq(req.addr);
             end
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor handleStorageReadReq [idx=%d]"), idx,
-            //     toBlue(", req="), fshow(req)
-            // );
         endrule
 
         rule handlePayloadStorageReadResp;
