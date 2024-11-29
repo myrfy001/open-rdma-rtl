@@ -92,7 +92,7 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestBiDirectionStreamShifterG
 
 FILE=`ls TestDtldStream.bsv`
-TESTCASE=mkTestDtldStreamSpliter
+TESTCASE=mkTestDtldStreamSpliterAndConcator
 
 # FILE=`ls TestTop.bsv`
 # TESTCASE=mkTestTop

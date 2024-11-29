@@ -465,7 +465,7 @@ endinterface
 
 typedef enum {
     DtldStreamSplitorStateOutput,
-    DtldStreamSplitorStateOutputExtra
+    DtldStreamSplitorStateOutputLastStream
 } DtldStreamSplitorState deriving(Eq, FShow, Bits);
 
 
@@ -484,14 +484,16 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         Alias#(Bit#(szBitCnt), tBitCnt),
         NumAlias#(TDiv#(szData, BYTE_WIDTH), szDataInByte),
         NumAlias#(TLog#(szDataInByte), szByteIdx),
-        NumAlias#(TAdd#(szByteIdx, 1), szByteCnt),
+        NumAlias#(TAdd#(1, szByteIdx), szByteCnt),
         NumAlias#(TAdd#(szByteIdx, BIT_BYTE_CONVERT_SHIFT_NUM), szBitIdx),
         NumAlias#(TAdd#(szByteCnt, BIT_BYTE_CONVERT_SHIFT_NUM), szBitCnt),
         NumAlias#(TDiv#(szDataInByte, TExp#(nLogOfByteAlign)), nAlignBlockPerBeat),
         NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
-        NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt),
+        NumAlias#(TAdd#(1, szAlignBlockIdx), szAlignBlockCnt),
         Ord#(tStreamAlignBlockCount),
         Add#(a__, szAlignBlockCnt, szStreamAlignBlockCount),
+        Add#(b__, szByteCnt, szStreamAlignBlockCount),
+        Eq#(tStreamAlignBlockCount),
         Arith#(tStreamAlignBlockCount),
         FShow#(tStreamAlignBlockCount)
     );
@@ -522,11 +524,12 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
             streamAlignBlockCountPipeInQueue.deq;
         end
         
-
         let dsIn = dataPipeInQueue.first;
         dataPipeInQueue.deq;
 
         let alignBlockCntOfInputDs = getAlignBlockCountFromDs(dsIn);
+        let alignBlockCntOfPrevDs = getAlignBlockCountFromDs(previousDsReg);
+        let totalAvailableBlockCnt = alignBlockCntOfInputDs + alignBlockCntOfPrevDs;
 
         tAlignBlockCnt curDsAlignBlockRightShiftCnt = shiftAlignBlockCntReg;
         tAlignBlockCnt curDsAlignBlockLeftShiftCnt  = fromInteger(valueOf(nAlignBlockPerBeat)) - zeroExtend(shiftAlignBlockCntReg);
@@ -551,11 +554,12 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
 
         tByteCnt    emptyByteCountInPreviousBeat = fromInteger(valueOf(szDataInByte)) - (previousDsReg.byteNum + zeroExtend(previousDsReg.startByteIdx));
 
-        tByteCnt byteNum;
-        tByteIdx startByteIdx;
-        tAlignBlockCnt alignBlockCntOfOutputBeat;
-        // tAlignBlockCnt emptyAlignBlockCntLeftForInputBeat;
-        tByteCnt    byteCntConsumedInNewInputBeat;
+        // since this already last beat of sub stream, then the subDsAlignBlockCount must be small enough. the higher bits can be truncated.
+        tAlignBlockCnt alignBlockCntSmallForLastBeatOfSubStream = truncate(pack(subDsAlignBlockCount));
+        tAlignBlockCnt alignBlockCntOfOutputBeat = isLast ? alignBlockCntSmallForLastBeatOfSubStream : fromInteger(valueOf(nAlignBlockPerBeat));
+
+        tByteCnt byteNum = ?;
+        tByteIdx startByteIdx = dsIn.isFirst ? dsIn.startByteIdx : 0;
         if (dsIn.isFirst && dsIn.isLast) begin
             immAssert(
                 isFirst && isLast,
@@ -564,25 +568,21 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
                         "subDsAlignBlockCount=", fshow(subDsAlignBlockCount))
             );
 
-            startByteIdx = dsIn.startByteIdx;
-            // since this already last beat of sub stream, then the subDsAlignBlockCount must be small enough. the higher bits can be truncated.
-            tAlignBlockCnt alignBlockCntSmall = truncate(pack(subDsAlignBlockCount));
-            tByteCnt bytesNeededIfAllAlignBlockIsFull = zeroExtend(alignBlockCntSmall) << valueOf(nLogOfByteAlign);
-            if (bytesNeededIfAllAlignBlockIsFull >= byteNumAvaliableNow) begin
+            immAssert(
+                subDsAlignBlockCount <= unpack(zeroExtend(totalAvailableBlockCnt)),
+                "required sub stream is longer than original input stream",
+                $format("alignBlockCntSmallForLastBeatOfSubStream=", fshow(alignBlockCntSmallForLastBeatOfSubStream), ", totalAvailableBlockCnt=", fshow(totalAvailableBlockCnt))
+            );
+
+            tByteCnt bytesNeededIfAllAlignBlockIsFull = zeroExtend(alignBlockCntSmallForLastBeatOfSubStream) << valueOf(nLogOfByteAlign);
+            if (alignBlockCntSmallForLastBeatOfSubStream == totalAvailableBlockCnt) begin
+                immAssert(isLast, "must be isLast here", $format(""));
                 byteNum = byteNumAvaliableNow;
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = byteNum;
-                previousDsAlignBlockLeftReg <= 0;
             end
             else begin
                 // still have a tail, need goto next rule
-                byteNum = bytesNeededIfAllAlignBlockIsFull;
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = byteNum;
-
-                previousDsAlignBlockLeftReg <= alignBlockCntOfInputDs - alignBlockCntSmall;
-
-                curStateReg <= DtldStreamSplitorStateOutputExtra;
+                byteNum = bytesNeededIfAllAlignBlockIsFull - zeroExtend(dsIn.startByteIdx);
+                curStateReg <= DtldStreamSplitorStateOutputLastStream;
             end
         end
         else if (dsIn.isFirst) begin
@@ -593,71 +593,42 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
                         "subDsAlignBlockCount=", fshow(subDsAlignBlockCount))
             );
 
-            startByteIdx = dsIn.startByteIdx;
-
             if (isLast) begin
-                // since this already last beat of sub stream, then the subDsAlignBlockCount must be small enough. the higher bits can be truncated.
-                tAlignBlockCnt alignBlockCntSmall = truncate(pack(subDsAlignBlockCount));
-                byteNum = (zeroExtend(alignBlockCntSmall) << valueOf(nLogOfByteAlign)) - zeroExtend(dsIn.startByteIdx);
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = byteNum;
-                previousDsAlignBlockLeftReg <= alignBlockCntOfInputDs - alignBlockCntSmall;
+                byteNum = (zeroExtend(alignBlockCntSmallForLastBeatOfSubStream) << valueOf(nLogOfByteAlign)) - zeroExtend(dsIn.startByteIdx);
             end
             else begin
                 byteNum = dsIn.byteNum;
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = byteNum;
-                previousDsAlignBlockLeftReg <= alignBlockCntOfInputDs - fromInteger(valueOf(nAlignBlockPerBeat));
             end
         end
         else if (dsIn.isLast) begin
-            startByteIdx = 0;
-
             if (isLast) begin
-                // since this already last beat of sub stream, then the subDsAlignBlockCount must be small enough. the higher bits can be truncated.
-                tAlignBlockCnt alignBlockCntSmall = truncate(pack(subDsAlignBlockCount));
-                tByteCnt bytesNeededIfAllAlignBlockIsFull = zeroExtend(alignBlockCntSmall) << valueOf(nLogOfByteAlign);
-                if (bytesNeededIfAllAlignBlockIsFull >= byteNumAvaliableNow) begin
+                immAssert(
+                    subDsAlignBlockCount <= unpack(zeroExtend(totalAvailableBlockCnt)),
+                    "required sub stream is longer than original input stream",
+                    $format("alignBlockCntSmallForLastBeatOfSubStream=", fshow(alignBlockCntSmallForLastBeatOfSubStream), ", totalAvailableBlockCnt=", fshow(totalAvailableBlockCnt))
+                );
+                tByteCnt bytesNeededIfAllAlignBlockIsFull = zeroExtend(alignBlockCntSmallForLastBeatOfSubStream) << valueOf(nLogOfByteAlign);
+                if (alignBlockCntSmallForLastBeatOfSubStream == totalAvailableBlockCnt) begin
                     byteNum = byteNumAvaliableNow;
-                    alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                    byteCntConsumedInNewInputBeat = ?; // don't care
-                    previousDsAlignBlockLeftReg <= 0;
                 end
                 else begin
                     // still have a tail, need goto next rule
                     byteNum = bytesNeededIfAllAlignBlockIsFull;
-                    alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                    byteCntConsumedInNewInputBeat = emptyByteCountInPreviousBeat;
-
-                    previousDsAlignBlockLeftReg <=  alignBlockCntOfInputDs - (alignBlockCntOfOutputBeat - previousDsAlignBlockLeftReg);
-
-                    curStateReg <= DtldStreamSplitorStateOutputExtra;
+                    curStateReg <= DtldStreamSplitorStateOutputLastStream;
                 end
             end
             else begin
                 byteNum = fromInteger(valueOf(szDataInByte));
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = emptyByteCountInPreviousBeat;
-                previousDsAlignBlockLeftReg <= alignBlockCntOfInputDs - (alignBlockCntOfOutputBeat - previousDsAlignBlockLeftReg);
-
-                curStateReg <= DtldStreamSplitorStateOutputExtra;
+                curStateReg <= DtldStreamSplitorStateOutputLastStream;
             end
         end
         else begin
-            startByteIdx = 0;
             if (isLast) begin
-                // since this already last beat of sub stream, then the subDsAlignBlockCount must be small enough. the higher bits can be truncated.
-                tAlignBlockCnt alignBlockCntSmall = truncate(pack(subDsAlignBlockCount));
-                byteNum = zeroExtend(alignBlockCntSmall) << valueOf(nLogOfByteAlign);
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = emptyByteCountInPreviousBeat;
+                byteNum = zeroExtend(alignBlockCntSmallForLastBeatOfSubStream) << valueOf(nLogOfByteAlign);
             end
             else begin
                 byteNum = fromInteger(valueOf(szDataInByte));
-                alignBlockCntOfOutputBeat = truncate((byteNum + zeroExtend(startByteIdx)-1) >> valueOf(nLogOfByteAlign)) + 1;
-                byteCntConsumedInNewInputBeat = emptyByteCountInPreviousBeat;
             end
-            previousDsAlignBlockLeftReg <= alignBlockCntOfInputDs - (alignBlockCntOfOutputBeat - previousDsAlignBlockLeftReg);
         end
 
         let ds = DtldStreamData {
@@ -671,49 +642,49 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
 
 
         alignBlockCntLeftForSubDsReg <= subDsAlignBlockCount - unpack(zeroExtend(alignBlockCntOfOutputBeat));
-        
-        // tAlignBlockCnt inputBeatAlignBlockConsumedCnt = alignBlockCntOfOutputBeat - previousDsAlignBlockLeftReg;
-        // tByteCnt inDsByteRightShiftCnt  = unpack(zeroExtend(pack(inputBeatAlignBlockConsumedCnt))  << valueOf(nLogOfByteAlign));
 
+        tAlignBlockCnt usedAlignBlockCntOfThisInputBeat = alignBlockCntOfOutputBeat - alignBlockCntOfPrevDs;
 
-        immAssert(
-            ((byteCntConsumedInNewInputBeat >> valueOf(nLogOfByteAlign)) << valueOf(nLogOfByteAlign))  == byteCntConsumedInNewInputBeat,
-            "should align to block", 
-            $format("")
-        );
-        byteCntConsumedInNewInputBeat = byteCntConsumedInNewInputBeat >> valueOf(nLogOfByteAlign);
-        byteCntConsumedInNewInputBeat = byteCntConsumedInNewInputBeat << valueOf(nLogOfByteAlign);
+        tByteCnt inDsByteRightShiftCnt = zeroExtend(usedAlignBlockCntOfThisInputBeat) << valueOf(nLogOfByteAlign);
+        tBitCnt inDsBitRightShiftCnt   = zeroExtend(inDsByteRightShiftCnt) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
 
-        tBitCnt inDsBitRightShiftCnt = zeroExtend(byteCntConsumedInNewInputBeat) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
         dsIn.data = dsIn.data >> inDsBitRightShiftCnt;
         dsIn.startByteIdx = 0; // when using as previous beat, the first maybe unaligned block must already been consumed.
         dsIn.byteNum = byteNumAvaliableNow - byteNum;
         previousDsReg <= dsIn;
 
-        shiftAlignBlockCntReg <= truncate((byteCntConsumedInNewInputBeat-1) >> valueOf(nLogOfByteAlign)) + 1;
+        shiftAlignBlockCntReg <= usedAlignBlockCntOfThisInputBeat;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
-            toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
-            toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
-            toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
-            toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
-            toBlue(", dataClearMask="), fshow(dataClearMask),
-            toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
-            toBlue(", emptyByteCountInPreviousBeat="), fshow(emptyByteCountInPreviousBeat),
-            toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
-            toBlue(", byteCntConsumedInNewInputBeat="), fshow(byteCntConsumedInNewInputBeat),
-            toBlue(", ds="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
+        //     toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
+        //     toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
+        //     toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
+        //     toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
+        //     toBlue(", dataClearMask="), fshow(dataClearMask),
+        //     toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
+        //     toBlue(", emptyByteCountInPreviousBeat="), fshow(emptyByteCountInPreviousBeat),
+        //     toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
-    rule outputExtraState if (curStateReg == DtldStreamSplitorStateOutputExtra);
+    rule outputLastStreamState if (curStateReg == DtldStreamSplitorStateOutputLastStream);
+        let subDsAlignBlockCount = streamAlignBlockCountPipeInQueue.first;
+        streamAlignBlockCountPipeInQueue.deq;
+
+
+        immAssert(
+            unpack(zeroExtend(((previousDsReg.byteNum-1) >> valueOf(nLogOfByteAlign)) + 1)) == subDsAlignBlockCount,
+            "last sub stream doesn't match input stream length",
+            $format("previousDsReg=", fshow(previousDsReg), ", subDsAlignBlockCount=", fshow(subDsAlignBlockCount))
+        );
 
         let ds = DtldStreamData {
             data: previousDsReg.data,
             byteNum: previousDsReg.byteNum,
             startByteIdx: 0,
-            isFirst: False,
+            isFirst: True,
             isLast: True
         };
         dataPipeOutQueue.enq(ds);
