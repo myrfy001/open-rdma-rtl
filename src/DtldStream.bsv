@@ -258,38 +258,49 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
     Reg#(DtldStreamData#(tData))        previousDsReg                               <- mkRegU;
 
     rule idleState if (curStateReg == DtldStreamConcatorStateIdle);
-        let ds = dataPipeInQueue.first;
+        let dsIn = dataPipeInQueue.first;
         dataPipeInQueue.deq;
 
+        Bool isFirstStream      = isFirstStreamReg;
         let isLastStream = isLastStreamFlagPipeInQueue.first;
         isLastStreamFlagPipeInQueue.deq;
-        if (ds.isLast && isLastStream) begin
+        if (dsIn.isLast && isLastStream) begin
             // for only beat in only stream
             immAssert(
-                ds.isFirst && isWholeOutputFirstBeatReg && isFirstStreamReg,
+                dsIn.isFirst && isWholeOutputFirstBeatReg && isFirstStreamReg,
                 "must be first",
-                $format( "ds.isFirst=", fshow(ds.isFirst),
+                $format( "dsIn.isFirst=", fshow(dsIn.isFirst),
                          ", isFirstStreamReg=", fshow(isFirstStreamReg),
                          ", isWholeOutputFirstBeatReg=", fshow(isWholeOutputFirstBeatReg))
             );
-            dataPipeOutQueue.enq(ds);
+            dataPipeOutQueue.enq(dsIn);
         end
         else begin
             curStateReg <= DtldStreamConcatorStateOutputMore;
-            previousDsReg <= ds;
+            previousDsReg <= dsIn;
             isLastStreamReg <= isLastStream;
 
+            if (dsIn.isLast && isFirstStream) begin
+                isFirstStream = False;
+                shiftAlignBlockCntReg <=  truncate((fromInteger(valueOf(szDataInByte)) - dsIn.byteNum - zeroExtend(dsIn.startByteIdx)) >> valueOf(nLogOfByteAlign));
+            end
+            
             immAssert(
-                pack(zeroExtend(ds.startByteIdx) + ds.byteNum)[1:0] == 2'b0,
+                pack(zeroExtend(dsIn.startByteIdx) + dsIn.byteNum)[1:0] == 2'b0,
                 "not aligned",
-                $format("ds=", fshow(ds))
+                $format("dsIn=", fshow(dsIn))
             );
         end
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator idleState"),
-        //     toBlue(", dsIn="), fshow(ds)
-        // );
+        isFirstStreamReg <= isFirstStream;
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkDtldStreamConcator idleState"),
+            toBlue(", dsIn="), fshow(dsIn),
+            toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
+            toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
+            toBlue(", isLastStream="), fshow(isLastStream)
+        );
     endrule
 
     rule outputState if (curStateReg == DtldStreamConcatorStateOutputMore);
@@ -305,7 +316,6 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             isLastStreamReg <= newIsLastStream;
         end
 
-        // $display("-------======----", "dsIn=", fshow(dsIn), ", isFirstStreamReg=", fshow(isFirstStreamReg), ", isFirstStream=", fshow(isFirstStream));
         if (!(dsIn.isLast && newIsLastStream)) begin
             immAssert(
                 pack(zeroExtend(dsIn.startByteIdx) + dsIn.byteNum)[1:0] == 2'b0,
@@ -348,7 +358,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
                 curStateReg <= DtldStreamConcatorStateIdle;
             end
             else begin
-                curStateReg <= DtldStreamConcatorStateOutputMore;
+                curStateReg <= DtldStreamConcatorStateOutputExtra;
             end
         end
 
@@ -356,11 +366,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         let byteNum;
         if (isFirst && isLast) begin
-            immFail(
-                "should not reach here. only beat should be handled by idleState", 
-                $format("dsIn=", fshow(dsIn), ", previousDsReg=", fshow(previousDsReg))
-            );
-            byteNum = 0;
+            byteNum = previousDsReg.byteNum + dsIn.byteNum;
         end
         else if (isLast) begin
             byteNum = dsIn.byteNum - previousBeatEmptyByteCnt;
@@ -383,7 +389,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         tAlignBlockIdx newshiftAlignBlockCnt = shiftAlignBlockCntReg;
         if (dsIn.isLast && isFirstStream) begin
             isFirstStream = False;
-            newshiftAlignBlockCnt =  truncate((fromInteger(valueOf(szDataInByte)) - dsIn.byteNum) >> valueOf(nLogOfByteAlign));
+            newshiftAlignBlockCnt =  truncate((fromInteger(valueOf(szDataInByte)) - dsIn.byteNum - zeroExtend(dsIn.startByteIdx)) >> valueOf(nLogOfByteAlign));
         end
 
         if (isLast) begin
@@ -402,7 +408,11 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
             toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
             toBlue(", curDsByteRightShiftCnt="), fshow(curDsByteRightShiftCnt),
-            toBlue(", curDsByteLeftShiftCnt="), fshow(curDsByteLeftShiftCnt)
+            toBlue(", curDsByteLeftShiftCnt="), fshow(curDsByteLeftShiftCnt),
+            toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
+            toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
+            toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
+            toBlue(", previousBeatEmptyByteCnt="), fshow(shiftAlignBlockCntReg)
         );
     endrule
 
@@ -441,7 +451,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         shiftAlignBlockCntReg <= 0;
         isFirstStreamReg    <= True;
-
+        isWholeOutputFirstBeatReg <= True;
         // $display(
         //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputExtraState"),
         //     toBlue(", dsIn="), fshow(ds)
@@ -527,8 +537,15 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         let dsIn = dataPipeInQueue.first;
         dataPipeInQueue.deq;
 
+        let previousDs = previousDsReg;
+        if (dsIn.isFirst) begin
+            // only clear important bits, data will be masked out, so no need to clear. save a lot of mux
+            previousDs.byteNum = 0;
+            previousDs.startByteIdx = 0;
+        end
+
         let alignBlockCntOfInputDs = getAlignBlockCountFromDs(dsIn);
-        let alignBlockCntOfPrevDs = getAlignBlockCountFromDs(previousDsReg);
+        let alignBlockCntOfPrevDs = getAlignBlockCountFromDs(previousDs);
         let totalAvailableBlockCnt = alignBlockCntOfInputDs + alignBlockCntOfPrevDs;
 
         tAlignBlockCnt curDsAlignBlockRightShiftCnt = shiftAlignBlockCntReg;
@@ -543,16 +560,14 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         tData dataClearMask = unpack(-1);
         dataClearMask = dataClearMask >> (curDsBitRightShiftCnt);
 
-        tData dataForOutput = ( previousDsReg.data & dataClearMask ) | (dsIn.data << curDsBitLeftShiftCnt);
+        tData dataForOutput = ( previousDs.data & dataClearMask ) | (dsIn.data << curDsBitLeftShiftCnt);
 
         let isFirst = isSubStreamFirstReg;
         let isLast = subDsAlignBlockCount <= unpack(fromInteger(valueOf(nAlignBlockPerBeat)));
 
         isSubStreamFirstReg <= isLast;
         
-        let byteNumAvaliableNow = previousDsReg.byteNum + dsIn.byteNum;
-
-        tByteCnt    emptyByteCountInPreviousBeat = fromInteger(valueOf(szDataInByte)) - (previousDsReg.byteNum + zeroExtend(previousDsReg.startByteIdx));
+        let byteNumAvaliableNow = previousDs.byteNum + dsIn.byteNum;
 
         // since this already last beat of sub stream, then the subDsAlignBlockCount must be small enough. the higher bits can be truncated.
         tAlignBlockCnt alignBlockCntSmallForLastBeatOfSubStream = truncate(pack(subDsAlignBlockCount));
@@ -651,22 +666,23 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         dsIn.data = dsIn.data >> inDsBitRightShiftCnt;
         dsIn.startByteIdx = 0; // when using as previous beat, the first maybe unaligned block must already been consumed.
         dsIn.byteNum = byteNumAvaliableNow - byteNum;
+        
         previousDsReg <= dsIn;
 
-        shiftAlignBlockCntReg <= usedAlignBlockCntOfThisInputBeat;
+        shiftAlignBlockCntReg <= dsIn.isLast ? fromInteger(valueOf(nAlignBlockPerBeat)) : usedAlignBlockCntOfThisInputBeat;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
-        //     toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
-        //     toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
-        //     toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
-        //     toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
-        //     toBlue(", dataClearMask="), fshow(dataClearMask),
-        //     toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
-        //     toBlue(", emptyByteCountInPreviousBeat="), fshow(emptyByteCountInPreviousBeat),
-        //     toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
-        //     toBlue(", ds="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
+            toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
+            toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
+            toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
+            toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
+            toBlue(", dataClearMask="), fshow(dataClearMask),
+            toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
+            toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
+            toBlue(", previousDsReg="), fshow(previousDsReg),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     rule outputLastStreamState if (curStateReg == DtldStreamSplitorStateOutputLastStream);

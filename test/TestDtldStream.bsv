@@ -103,6 +103,8 @@ endmodule
 
 module mkTestDtldStreamSpliterAndConcator(Empty);
    
+    Reg#(Bool) genNewTestReg <- mkReg(True);
+
     DtldStreamConcator#(DATA, NUMERIC_TYPE_TWO) concator <- mkDtldStreamConcator;
     DtldStreamSplitor#(DATA, SpliterSubStreamAlignBlockCnt, NUMERIC_TYPE_TWO) splitor <- mkDtldStreamSplitor;
 
@@ -130,6 +132,24 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
     // mkConnection(splitor.dataPipeOut, concator.dataPipeIn);
 
+
+    function DtldStreamData#(DATA) maskOutUnusedBytes(DtldStreamData#(DATA) dsIn);
+        DATA mask = -1;
+        BusBitNum shiftCnt = zeroExtend(dsIn.startByteIdx) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+        mask = mask >> (shiftCnt);
+        mask = mask << (shiftCnt);
+
+        if (dsIn.isLast) begin
+            ByteEnBitNum emptyByteCntAtTail = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - dsIn.byteNum - zeroExtend(dsIn.startByteIdx);
+            shiftCnt = zeroExtend(emptyByteCntAtTail) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+            mask = mask << shiftCnt;
+            mask = mask >> shiftCnt;
+        end
+
+        dsIn.data = dsIn.data & mask;
+        return dsIn;
+    endfunction
+
     rule connectSplitorAndConcator;
         splitor.dataPipeOut.deq;
         concator.dataPipeIn.enq(splitor.dataPipeOut.first);
@@ -153,16 +173,32 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
         $display("split plan: subDsAlignCnt=", fshow(subDsAlignCnt), ", isSubDsLast=", fshow(isSubDsLast));
     endrule
 
-    rule getOutput;
+    rule checkOutput if (!genNewTestReg);
         let expectedDs = checkerExpectedDsQueue.first;
         checkerExpectedDsQueue.deq;
 
         let gotDs = concator.dataPipeOut.first;
         concator.dataPipeOut.deq;
 
-        $display("expectedDs=", fshow(expectedDs));
-        $display("     gotDs=", fshow(gotDs));
 
+
+        if (expectedDs.isLast) begin
+            genNewTestReg <= True;
+        end
+
+        // $display("expectedDs=", fshow(expectedDs));
+        // $display("     gotDs=", fshow(gotDs));
+
+        expectedDs = maskOutUnusedBytes(expectedDs);
+        gotDs = maskOutUnusedBytes(gotDs);
+        $display("masked expectedDs=", fshow(expectedDs));
+        $display("     masked gotDs=", fshow(gotDs));
+
+        immAssert(
+            pack(expectedDs) == pack(gotDs),
+            "not match",
+            $format("")
+        );
     endrule
 
     Stmt genOriginStream = (seq
@@ -273,24 +309,15 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
     FSM originDsGenFSM <- mkFSM(genOriginStream);
     FSM genSplitMetaFSM  <- mkFSM(splitMetaGen);
     
-    Reg#(Bool) goingReg1 <- mkReg(False);
-    Reg#(Bool) goingReg2 <- mkReg(False);
+    
 
-    rule runOriginDsGen if (!goingReg1);
-        goingReg1 <= True;
+
+    rule runOriginDsGen if (genNewTestReg);
+        $display("======================================================");
+        $display("=====================New Stream=======================");
+        $display("======================================================");
+        genNewTestReg <= False;
         originDsGenFSM.start;
-    endrule
-
-    rule runSplitMetaGen if (!goingReg2);
-        goingReg2 <= True;
         genSplitMetaFSM.start;
     endrule
-
-   
-
-    // rule start (!goingReg);
-    //     goingReg <= True;
-    //     injectFSM.start;
-    //     checkFSM.start;
-    // endrule
 endmodule
