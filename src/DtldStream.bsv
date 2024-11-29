@@ -296,13 +296,13 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         isFirstStreamReg <= isFirstStream;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamConcator idleState"),
-            toBlue(", dsIn="), fshow(dsIn),
-            toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
-            toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
-            toBlue(", isLastStream="), fshow(isLastStream)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator idleState"),
+        //     toBlue(", dsIn="), fshow(dsIn),
+        //     toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
+        //     toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
+        //     toBlue(", isLastStream="), fshow(isLastStream)
+        // );
     endrule
 
     rule outputState if (curStateReg == DtldStreamConcatorStateOutputMore);
@@ -405,21 +405,21 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         shiftAlignBlockCntReg <= newshiftAlignBlockCnt;
         isFirstStreamReg <= isFirstStream;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputState"),
-            toBlue(", previousDsReg="), fshow(previousDsReg),
-            toBlue(", dsIn="), fshow(dsIn),
-            toBlue(", dsOut="), fshow(ds),
-            toBlue(", dataClearMask="), fshow(dataClearMask),
-            toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
-            toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
-            toBlue(", curDsByteRightShiftCnt="), fshow(curDsByteRightShiftCnt),
-            toBlue(", curDsByteLeftShiftCnt="), fshow(curDsByteLeftShiftCnt),
-            toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
-            toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
-            toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
-            toBlue(", previousBeatEmptyByteCnt="), fshow(previousBeatEmptyByteCnt)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputState"),
+        //     toBlue(", previousDsReg="), fshow(previousDsReg),
+        //     toBlue(", dsIn="), fshow(dsIn),
+        //     toBlue(", dsOut="), fshow(ds),
+        //     toBlue(", dataClearMask="), fshow(dataClearMask),
+        //     toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
+        //     toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
+        //     toBlue(", curDsByteRightShiftCnt="), fshow(curDsByteRightShiftCnt),
+        //     toBlue(", curDsByteLeftShiftCnt="), fshow(curDsByteLeftShiftCnt),
+        //     toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
+        //     toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
+        //     toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
+        //     toBlue(", previousBeatEmptyByteCnt="), fshow(previousBeatEmptyByteCnt)
+        // );
     endrule
 
     rule outputExtraState if (curStateReg == DtldStreamConcatorStateOutputExtra);
@@ -457,11 +457,11 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         shiftAlignBlockCntReg <= 0;
         isFirstStreamReg    <= True;
         isWholeOutputFirstBeatReg <= True;
-        $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputExtraState"),
-            toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
-            toBlue(", dsIn="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputExtraState"),
+        //     toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
+        //     toBlue(", dsIn="), fshow(ds)
+        // );
     endrule
 
     interface dataPipeIn                = toPipeIn(dataPipeInQueue);
@@ -677,19 +677,19 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
 
         shiftAlignBlockCntReg <= dsIn.isLast ? fromInteger(valueOf(nAlignBlockPerBeat)) : usedAlignBlockCntOfThisInputBeat;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
-            toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
-            toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
-            toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
-            toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
-            toBlue(", dataClearMask="), fshow(dataClearMask),
-            toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
-            toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
-            toBlue(", previousDsReg="), fshow(previousDsReg),
-            toBlue(", dsIn="), fshow(dsIn),
-            toBlue(", ds="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
+        //     toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
+        //     toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
+        //     toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
+        //     toBlue(", curDsAlignBlockLeftShiftCnt="), fshow(curDsAlignBlockLeftShiftCnt),
+        //     toBlue(", dataClearMask="), fshow(dataClearMask),
+        //     toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
+        //     toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
+        //     toBlue(", previousDsReg="), fshow(previousDsReg),
+        //     toBlue(", dsIn="), fshow(dsIn),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     rule outputLastStreamState if (curStateReg == DtldStreamSplitorStateOutputLastStream);
@@ -714,11 +714,11 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
 
         curStateReg <= DtldStreamSplitorStateOutput;
         
-        $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputLastStreamState"),
-            toBlue(", previousDsReg="), fshow(previousDsReg),
-            toBlue(", ds="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputLastStreamState"),
+        //     toBlue(", previousDsReg="), fshow(previousDsReg),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     interface dataPipeIn                    = toPipeIn(dataPipeInQueue);

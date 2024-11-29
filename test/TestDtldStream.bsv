@@ -103,6 +103,7 @@ endmodule
 
 module mkTestDtldStreamSpliterAndConcator(Empty);
    
+    Reg#(Length) testCounterReg <- mkReg(1000000);
     Reg#(Bool) genNewTestReg <- mkReg(True);
     Reg#(Bool) runCheckerReg[2] <- mkCReg(2, False);
 
@@ -112,7 +113,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
 
-    let originStreamTotalByteNumRandomGenPipeOut <- mkRandomLenPipeOut(1, 192);
+    let originStreamTotalByteNumRandomGenPipeOut <- mkRandomLenPipeOut(1, 512);
     let originStreamStartByteIdxRandomGenPipeOut <- mkRandomLenPipeOut(0,3);
     let splitFirstStreamAlignBlockCntRandomGenPipeOut <- mkRandomLenPipeOut(1,24);
     let splitOtherStreamAlignBlockCntRandomGenPipeOut <- mkRandomLenPipeOut(8,24);
@@ -157,7 +158,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
     rule connectSplitorAndConcator;
         splitor.dataPipeOut.deq;
         concator.dataPipeIn.enq(splitor.dataPipeOut.first);
-        $display("froward from S to C: ds=", fshow(splitor.dataPipeOut.first));
+        // $display("froward from S to C: ds=", fshow(splitor.dataPipeOut.first));
     endrule
     
     rule forkOriginDsToCheckerAndDut;
@@ -166,7 +167,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
         splitor.dataPipeIn.enq(ds);
         checkerExpectedDsQueue.enq(ds);
 
-        $display("original DS: ds=", fshow(ds));
+        // $display("original DS: ds=", fshow(ds));
     endrule
 
     rule forkOriginDsMetaToCheckerAndDut;
@@ -174,7 +175,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
         splitAlignBlockCntQueue.deq;
         splitor.streamAlignBlockCountPipeIn.enq(subDsAlignCnt);
         concator.isLastStreamFlagPipeIn.enq(isSubDsLast);
-        $display("split plan: subDsAlignCnt=", fshow(subDsAlignCnt), ", isSubDsLast=", fshow(isSubDsLast));
+        // $display("split plan: subDsAlignCnt=", fshow(subDsAlignCnt), ", isSubDsLast=", fshow(isSubDsLast));
     endrule
 
     rule checkOutput if (runCheckerReg[1]);
@@ -195,9 +196,9 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
         expectedDs = maskOutUnusedBytes(expectedDs);
         gotDs = maskOutUnusedBytes(gotDs);
-        $display("time=%t", $time);
-        $display("masked expectedDs=", fshow(expectedDs));
-        $display("     masked gotDs=", fshow(gotDs));
+        // $display("time=%t", $time);
+        // $display("masked expectedDs=", fshow(expectedDs));
+        // $display("     masked gotDs=", fshow(gotDs));
 
         immAssert(
             pack(expectedDs) == pack(gotDs),
@@ -217,7 +218,6 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
             curOriginDsTotalByteNumReg <= 0;
 
             originDsInfoQueue.enq(tuple2(originStreamTotalByteNumRandomGenPipeOut.first, originStreamStartByteIdxRandomGenPipeOut.first));
-            $display("originDsInfoQueue.enq");
         endaction
 
         while (curOriginDsTotalByteNumReg != targetOriginDsTotalByteNumReg)
@@ -280,8 +280,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
                     splitFirstStreamAlignBlockCntRandomGenPipeOut.deq;
                     let originDsALignBlockCnt = ((originDsLen + startIdx - 1) >> valueOf(NUMERIC_TYPE_TWO)) + 1;
                     if (firstStreamAlignBlockCnt <= originDsALignBlockCnt) begin
-                        $display("org ds meta = ", fshow(originDsInfoQueue.first));
-                        $display("originDsInfoQueue.deq");
+                        // $display("org ds meta = ", fshow(originDsInfoQueue.first));
                         originDsInfoQueue.deq;
                         let isLastSubDs = firstStreamAlignBlockCnt == originDsALignBlockCnt;
                         splitAlignBlockCntQueue.enq(tuple2(truncate(firstStreamAlignBlockCnt), isLastSubDs));
@@ -303,9 +302,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
                     let t = splitOtherStreamAlignBlockCntRandomGenPipeOut.first;
                     splitOtherStreamAlignBlockCntRandomGenPipeOut.deq;
-
                     Length otherStreamAlignBlockCnt = 8 * (1 + zeroExtend(pack(t)[1:0]));
-
 
                     if (otherStreamAlignBlockCnt > leftAlignBlockCntForSubDsReg) begin
                         // nothing to do
@@ -333,9 +330,9 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
     Stmt runTest = (seq
         action
-            $display("======================================================");
-            $display("=====================New Stream=======================");
-            $display("======================================================");
+            // $display("======================================================");
+            // $display("=====================New Stream=======================");
+            // $display("======================================================");
             originDsGenFSM.start;
             genSplitMetaFSM.start;
         endaction
@@ -351,6 +348,14 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
     // endrule
 
     rule runTestRule;
+        testCounterReg <= testCounterReg - 1;
+        if (testCounterReg == 0) begin
+            $display("Pass");
+            $finish;
+        end
+        if (testCounterReg % 10000 == 0) begin
+            $display("testCounterReg=%d", testCounterReg);
+        end
         runTestFSM.start;
     endrule
 endmodule
