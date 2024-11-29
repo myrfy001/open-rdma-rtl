@@ -245,9 +245,9 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
         NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
     );
-    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkLFIFOF;
-    FIFOF#(Bool)                    isLastStreamFlagPipeInQueue     <- mkLFIFOF;
-    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkLFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkFIFOF;
+    FIFOF#(Bool)                    isLastStreamFlagPipeInQueue     <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOF;
 
     Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
 
@@ -256,6 +256,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
     Reg#(Bool)                          isLastStreamReg                             <- mkRegU;
     Reg#(tAlignBlockIdx)                shiftAlignBlockCntReg                       <- mkReg(0);
     Reg#(DtldStreamData#(tData))        previousDsReg                               <- mkRegU;
+    Reg#(tByteCnt)                      previousBeatByteLeftReg                     <- mkRegU;
 
     rule idleState if (curStateReg == DtldStreamConcatorStateIdle);
         let dsIn = dataPipeInQueue.first;
@@ -279,6 +280,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             curStateReg <= DtldStreamConcatorStateOutputMore;
             previousDsReg <= dsIn;
             isLastStreamReg <= isLastStream;
+            previousBeatByteLeftReg <= dsIn.byteNum;
 
             if (dsIn.isLast && isFirstStream) begin
                 isFirstStream = False;
@@ -366,14 +368,18 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         let byteNum;
         if (isFirst && isLast) begin
-            byteNum = previousDsReg.byteNum + dsIn.byteNum;
+            // byteNum = previousDsReg.byteNum + dsIn.byteNum;
+            byteNum = dsIn.byteNum + previousBeatByteLeftReg;
         end
         else if (isLast) begin
-            byteNum = dsIn.byteNum - previousBeatEmptyByteCnt;
+            // byteNum = dsIn.byteNum + (fromInteger(valueOf(szDataInByte)) - previousBeatEmptyByteCnt);
+            byteNum = dsIn.byteNum + previousBeatByteLeftReg;
         end
         else begin
             byteNum = fromInteger(valueOf(szDataInByte)) - zeroExtend(startByteIdx);
         end
+
+        previousBeatByteLeftReg <= previousBeatByteLeftReg + dsIn.byteNum - byteNum;
 
         let ds = DtldStreamData {
             data: curOutBeatData,
@@ -412,7 +418,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             toBlue(", isFirstStreamReg="), fshow(isFirstStreamReg),
             toBlue(", isLastStreamReg="), fshow(isLastStreamReg),
             toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
-            toBlue(", previousBeatEmptyByteCnt="), fshow(shiftAlignBlockCntReg)
+            toBlue(", previousBeatEmptyByteCnt="), fshow(previousBeatEmptyByteCnt)
         );
     endrule
 
@@ -438,8 +444,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
             curStateReg <= DtldStreamConcatorStateIdle;
         end
 
-        tByteIdx previousBeatEmptyByteCnt = zeroExtend(shiftAlignBlockCntReg) << valueOf(nLogOfByteAlign);
-        let byteNum = previousDsReg.byteNum - zeroExtend(previousBeatEmptyByteCnt);
+        let byteNum = previousBeatByteLeftReg;
         let ds = DtldStreamData {
             data: previousDsReg.data,
             byteNum: byteNum,
@@ -452,10 +457,11 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         shiftAlignBlockCntReg <= 0;
         isFirstStreamReg    <= True;
         isWholeOutputFirstBeatReg <= True;
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputExtraState"),
-        //     toBlue(", dsIn="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkDtldStreamConcator outputExtraState"),
+            toBlue(", shiftAlignBlockCntReg="), fshow(shiftAlignBlockCntReg),
+            toBlue(", dsIn="), fshow(ds)
+        );
     endrule
 
     interface dataPipeIn                = toPipeIn(dataPipeInQueue);
@@ -681,6 +687,7 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
             toBlue(", byteNumAvaliableNow="), fshow(byteNumAvaliableNow),
             toBlue(", alignBlockCntOfOutputBeat="), fshow(alignBlockCntOfOutputBeat),
             toBlue(", previousDsReg="), fshow(previousDsReg),
+            toBlue(", dsIn="), fshow(dsIn),
             toBlue(", ds="), fshow(ds)
         );
     endrule
@@ -707,6 +714,11 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
 
         curStateReg <= DtldStreamSplitorStateOutput;
         
+        $display(
+            "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputLastStreamState"),
+            toBlue(", previousDsReg="), fshow(previousDsReg),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     interface dataPipeIn                    = toPipeIn(dataPipeInQueue);
