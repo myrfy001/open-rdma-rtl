@@ -27,7 +27,7 @@ class TB(object):
         self.write_test_packet_cnt = 100
         self.total_write_byte_cnt = 0
 
-        self.read_test_packet_cnt = 400
+        self.read_test_packet_cnt = 4000
         self.total_read_byte_cnt = 0
 
         self.read_reqs_to_check = [[] for _ in range(4)]
@@ -272,10 +272,16 @@ class TB(object):
         channel_stop_flags = [False for _ in range(4)]
         channel_packet_buf = ["" for _ in range(4)]
         send_packet_cnt = 0
+        send_gap_counter = 0
 
         # cocotb.start_soon(self.calc_current_send_speed())
 
         while not all(channel_stop_flags):
+            send_gap_counter += 1
+            if (send_gap_counter % 3 != 0):
+                await RisingEdge(self.clock)
+                continue
+
             for channel_idx in range(4):
                 if channel_stop_flags[channel_idx] == True:
                     continue
@@ -317,6 +323,10 @@ class TB(object):
                 cur_resp_ds_raw = await self.requester_read_data_pipes[channel_idx].first()
                 cur_resp_ds = BlueRdmaDataStream256.unpack(cur_resp_ds_raw)
                 await self.requester_read_data_pipes[channel_idx].deq()
+
+                if cur_resp_ds.is_first():
+                    print(
+                        f"channel {channel_idx} recv new packet, raw meta = {cur_meta}")
 
                 first_beat_invalid_byte_cnt = cur_meta.addr() % 4
                 cur_start_addr_aligned_to_4_byte = cur_meta.addr() - first_beat_invalid_byte_cnt
@@ -368,7 +378,7 @@ class TB(object):
                     self.read_reqs_to_check[channel_idx][0].total_len = self.read_reqs_to_check[channel_idx][0].total_len(
                     ) - cur_resp_ds.byte_num()
 
-            if total_recv_read_req_cnt != 0 and total_recv_read_req_cnt % 20 == 0:
+            if total_recv_read_req_cnt != 0 and total_recv_read_req_cnt % 1 == 0:
                 cur_time = cocotb.utils.get_sim_time("ns")
 
                 loop_back_speed = (
@@ -385,7 +395,7 @@ class TB(object):
                 #         self.speed_limit * 0.95)
 
                 self.log.info(
-                    f"current read speed = {loop_back_speed} Gbps")
+                    f"total_recv_read_req_cnt = {total_recv_read_req_cnt}, current read speed = {loop_back_speed} Gbps")
 
             await RisingEdge(self.clock)
 
@@ -418,7 +428,7 @@ async def small_desc_fp_test(dut):
     cocotb.start_soon(tb.start_send_read_req())
     cocotb.start_soon(tb.start_read_resp_check())
 
-    await Timer(2000, units='ns')
+    await Timer(20000, units='ns')
 
     # write_meta = BlueRdmaDtldStreamMemAccessMeta(
     #     addr=0,

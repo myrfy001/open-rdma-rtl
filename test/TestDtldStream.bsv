@@ -4,7 +4,8 @@ import Vector :: *;
 import BuildVector :: *;
 import PAClib :: *; 
 import GetPut :: *;
-import StmtFSM :: * ;
+import StmtFSM :: *;
+import Cntrs :: *;
 
 import Utils4Test :: *;
 
@@ -102,11 +103,14 @@ endmodule
 
 
 module mkTestDtldStreamSpliterAndConcator(Empty);
-   
+    
     Reg#(Length) testCounterReg <- mkReg(1000000);
     Reg#(Bool) genNewTestReg <- mkReg(True);
     Reg#(Bool) runCheckerReg[2] <- mkCReg(2, False);
 
+    Count#(Length) originDsCounter <- mkCount(0);
+
+    Length minBatchCnt = 2;
 
     DtldStreamConcator#(DATA, NUMERIC_TYPE_TWO) concator <- mkDtldStreamConcator;
     DtldStreamSplitor#(DATA, SpliterSubStreamAlignBlockCnt, NUMERIC_TYPE_TWO) splitor <- mkDtldStreamSplitor;
@@ -125,16 +129,14 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
     Reg#(Length) leftAlignBlockCntForSubDsReg <- mkReg(0);
     Reg#(Bool)   firstSubDsLenHasSelectedReg <- mkReg(False);
-
+    Reg#(Length) checkerBatchCounterReg <- mkReg(0);
     
 
-    FIFOF#(DtldStreamData#(DATA)) originDsQueue <- mkSizedFIFOF(100);
-    FIFOF#(Tuple2#(Length, Length)) originDsInfoQueue <- mkSizedFIFOF(100);
-    FIFOF#(Tuple2#(SpliterSubStreamAlignBlockCnt, Bool)) splitAlignBlockCntQueue <- mkSizedFIFOF(100);
+    FIFOF#(DtldStreamData#(DATA)) originDsQueue <- mkSizedFIFOF(1000);
+    FIFOF#(Tuple2#(Length, Length)) originDsInfoQueue <- mkSizedFIFOF(1000);
+    FIFOF#(Tuple2#(SpliterSubStreamAlignBlockCnt, Bool)) splitAlignBlockCntQueue <- mkSizedFIFOF(1000);
 
-    FIFOF#(DtldStreamData#(DATA)) checkerExpectedDsQueue <- mkSizedFIFOF(100);
-
-    // mkConnection(splitor.dataPipeOut, concator.dataPipeIn);
+    FIFOF#(DtldStreamData#(DATA)) checkerExpectedDsQueue <- mkSizedFIFOF(1000);
 
 
     function DtldStreamData#(DATA) maskOutUnusedBytes(DtldStreamData#(DATA) dsIn);
@@ -166,8 +168,6 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
         originDsQueue.deq;
         splitor.dataPipeIn.enq(ds);
         checkerExpectedDsQueue.enq(ds);
-
-        // $display("original DS: ds=", fshow(ds));
     endrule
 
     rule forkOriginDsMetaToCheckerAndDut;
@@ -175,20 +175,31 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
         splitAlignBlockCntQueue.deq;
         splitor.streamAlignBlockCountPipeIn.enq(subDsAlignCnt);
         concator.isLastStreamFlagPipeIn.enq(isSubDsLast);
-        // $display("split plan: subDsAlignCnt=", fshow(subDsAlignCnt), ", isSubDsLast=", fshow(isSubDsLast));
     endrule
 
-    rule checkOutput if (runCheckerReg[1]);
+    rule checkOutput if (originDsCounter == minBatchCnt);
         let expectedDs = checkerExpectedDsQueue.first;
         checkerExpectedDsQueue.deq;
 
         let gotDs = concator.dataPipeOut.first;
         concator.dataPipeOut.deq;
 
+        // if (expectedDs.isFirst) begin
+        //     $display("======================================================");
+        //     $display("===============Start Check New Stream=================");
+        //     $display("======================================================");
+        // end
 
 
+        
         if (expectedDs.isLast) begin
-            runCheckerReg[1] <= False;
+            if (checkerBatchCounterReg + 1 == minBatchCnt) begin
+                checkerBatchCounterReg <= 0;
+                originDsCounter.decr(minBatchCnt);
+            end
+            else begin
+                checkerBatchCounterReg <= checkerBatchCounterReg + 1;
+            end
         end
 
         // $display("expectedDs=", fshow(expectedDs));
@@ -208,116 +219,123 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
     endrule
 
     Stmt genOriginStream = (seq
-        action
-            targetOriginDsTotalByteNumReg <= originStreamTotalByteNumRandomGenPipeOut.first;
-            originStreamTotalByteNumRandomGenPipeOut.deq;
-
-            targetOriginDsStartByteIdxReg <= originStreamStartByteIdxRandomGenPipeOut.first;
-            originStreamStartByteIdxRandomGenPipeOut.deq;
-
-            curOriginDsTotalByteNumReg <= 0;
-
-            originDsInfoQueue.enq(tuple2(originStreamTotalByteNumRandomGenPipeOut.first, originStreamStartByteIdxRandomGenPipeOut.first));
-        endaction
-
-        while (curOriginDsTotalByteNumReg != targetOriginDsTotalByteNumReg)
+        repeat(minBatchCnt)
         seq
             action
+                targetOriginDsTotalByteNumReg <= originStreamTotalByteNumRandomGenPipeOut.first;
+                originStreamTotalByteNumRandomGenPipeOut.deq;
 
-                ByteEnBitNum byteCntCanHoldInThisBeat = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(targetOriginDsStartByteIdxReg);
+                targetOriginDsStartByteIdxReg <= originStreamStartByteIdxRandomGenPipeOut.first;
+                originStreamStartByteIdxRandomGenPipeOut.deq;
 
-                let isFirst = originDsIsFirstReg;
-                let isLast = (targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) && (truncate(targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg) <= byteCntCanHoldInThisBeat);
-                originDsIsFirstReg <= isLast;
-                targetOriginDsStartByteIdxReg <= 0;
+                curOriginDsTotalByteNumReg <= 0;
 
-                // $display("targetOriginDsStartByteIdxReg=", fshow(targetOriginDsStartByteIdxReg), ", curOriginDsTotalByteNumReg=", fshow(curOriginDsTotalByteNumReg), ", targetOriginDsTotalByteNumReg=", fshow(targetOriginDsTotalByteNumReg));
-                ByteEnBitNum byteNum;
-                ByteIndexInBeat    startByteIdx;
-
-                if (isFirst && isLast) begin
-                    byteNum = truncate(targetOriginDsTotalByteNumReg);
-                    startByteIdx = truncate(targetOriginDsStartByteIdxReg);
-                end
-                else if (isFirst) begin
-                    byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-                    byteNum = byteNum - truncate(targetOriginDsStartByteIdxReg);
-                    startByteIdx = truncate(targetOriginDsStartByteIdxReg);
-                end
-                else if (isLast) begin
-                    byteNum = truncate(targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg);
-                    startByteIdx = 0;
-                end
-                else begin
-                    byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-                    startByteIdx = 0;
-                end
-
-                let tmpData <- randSource1.get;
-                let ds = DtldStreamData {
-                    data: truncate(tmpData),
-                    byteNum: byteNum,
-                    startByteIdx: startByteIdx,
-                    isFirst: isFirst,
-                    isLast: isLast
-                };
-                originDsQueue.enq(ds);
-
-                curOriginDsTotalByteNumReg <= curOriginDsTotalByteNumReg + zeroExtend(byteNum);
-                
+                originDsInfoQueue.enq(tuple2(originStreamTotalByteNumRandomGenPipeOut.first, originStreamStartByteIdxRandomGenPipeOut.first));
             endaction
+
+            while (curOriginDsTotalByteNumReg != targetOriginDsTotalByteNumReg)
+            seq
+                action
+
+                    ByteEnBitNum byteCntCanHoldInThisBeat = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(targetOriginDsStartByteIdxReg);
+
+                    let isFirst = originDsIsFirstReg;
+                    let isLast = (targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) && (truncate(targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg) <= byteCntCanHoldInThisBeat);
+                    originDsIsFirstReg <= isLast;
+                    targetOriginDsStartByteIdxReg <= 0;
+
+                    // $display("targetOriginDsStartByteIdxReg=", fshow(targetOriginDsStartByteIdxReg), ", curOriginDsTotalByteNumReg=", fshow(curOriginDsTotalByteNumReg), ", targetOriginDsTotalByteNumReg=", fshow(targetOriginDsTotalByteNumReg));
+                    ByteEnBitNum byteNum;
+                    ByteIndexInBeat    startByteIdx;
+
+                    if (isFirst && isLast) begin
+                        byteNum = truncate(targetOriginDsTotalByteNumReg);
+                        startByteIdx = truncate(targetOriginDsStartByteIdxReg);
+                    end
+                    else if (isFirst) begin
+                        byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+                        byteNum = byteNum - truncate(targetOriginDsStartByteIdxReg);
+                        startByteIdx = truncate(targetOriginDsStartByteIdxReg);
+                    end
+                    else if (isLast) begin
+                        byteNum = truncate(targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg);
+                        startByteIdx = 0;
+                    end
+                    else begin
+                        byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+                        startByteIdx = 0;
+                    end
+
+                    let tmpData <- randSource1.get;
+                    DtldStreamData#(DATA) ds = DtldStreamData {
+                        data: truncate(tmpData),
+                        byteNum: byteNum,
+                        startByteIdx: startByteIdx,
+                        isFirst: isFirst,
+                        isLast: isLast
+                    };
+                    originDsQueue.enq(ds);
+                    // $display("original DS: ds=", fshow(ds));
+
+                    curOriginDsTotalByteNumReg <= curOriginDsTotalByteNumReg + zeroExtend(byteNum);
+                    
+                endaction
+            endseq
         endseq
     endseq);
 
 
     Stmt splitMetaGen = (seq
-        while (!firstSubDsLenHasSelectedReg)
+        repeat(minBatchCnt)
         seq
-            action
-                if (originDsInfoQueue.notFull) begin
-                    let {originDsLen, startIdx} = originDsInfoQueue.first;
-                    let firstStreamAlignBlockCnt = splitFirstStreamAlignBlockCntRandomGenPipeOut.first;
-                    splitFirstStreamAlignBlockCntRandomGenPipeOut.deq;
-                    let originDsALignBlockCnt = ((originDsLen + startIdx - 1) >> valueOf(NUMERIC_TYPE_TWO)) + 1;
-                    if (firstStreamAlignBlockCnt <= originDsALignBlockCnt) begin
-                        // $display("org ds meta = ", fshow(originDsInfoQueue.first));
-                        originDsInfoQueue.deq;
-                        let isLastSubDs = firstStreamAlignBlockCnt == originDsALignBlockCnt;
-                        splitAlignBlockCntQueue.enq(tuple2(truncate(firstStreamAlignBlockCnt), isLastSubDs));
-                        leftAlignBlockCntForSubDsReg <= originDsALignBlockCnt - firstStreamAlignBlockCnt;
-                        firstSubDsLenHasSelectedReg <= True;
+            while (!firstSubDsLenHasSelectedReg)
+            seq
+                action
+                    if (originDsInfoQueue.notFull) begin
+                        let {originDsLen, startIdx} = originDsInfoQueue.first;
+                        let firstStreamAlignBlockCnt = splitFirstStreamAlignBlockCntRandomGenPipeOut.first;
+                        splitFirstStreamAlignBlockCntRandomGenPipeOut.deq;
+                        let originDsALignBlockCnt = ((originDsLen + startIdx - 1) >> valueOf(NUMERIC_TYPE_TWO)) + 1;
+                        if (firstStreamAlignBlockCnt <= originDsALignBlockCnt) begin
+                            originDsInfoQueue.deq;
+                            let isLastSubDs = firstStreamAlignBlockCnt == originDsALignBlockCnt;
+                            splitAlignBlockCntQueue.enq(tuple2(truncate(firstStreamAlignBlockCnt), isLastSubDs));
+                            leftAlignBlockCntForSubDsReg <= originDsALignBlockCnt - firstStreamAlignBlockCnt;
+                            firstSubDsLenHasSelectedReg <= True;
+                            // $display("org ds meta = ", fshow(originDsInfoQueue.first));
+                            // $display("split plan: subDsAlignCnt=", fshow(firstStreamAlignBlockCnt), ", isLastSubDs=", fshow(isLastSubDs));
+                        end
                     end
-                end
-            endaction
-        endseq
+                endaction
+            endseq
 
-        firstSubDsLenHasSelectedReg <= False;
+            firstSubDsLenHasSelectedReg <= False;
 
-        while (leftAlignBlockCntForSubDsReg != 0)
-        seq
-            action
-                if (leftAlignBlockCntForSubDsReg >= 8) begin
-                    // let otherStreamAlignBlockCnt = splitOtherStreamAlignBlockCntRandomGenPipeOut.first;
-                    // splitOtherStreamAlignBlockCntRandomGenPipeOut.deq;
+            while (leftAlignBlockCntForSubDsReg != 0)
+            seq
+                action
+                    if (leftAlignBlockCntForSubDsReg >= 8) begin
+                        let t = splitOtherStreamAlignBlockCntRandomGenPipeOut.first;
+                        splitOtherStreamAlignBlockCntRandomGenPipeOut.deq;
+                        Length otherStreamAlignBlockCnt = 8 * (1 + zeroExtend(pack(t)[1:0]));
 
-                    let t = splitOtherStreamAlignBlockCntRandomGenPipeOut.first;
-                    splitOtherStreamAlignBlockCntRandomGenPipeOut.deq;
-                    Length otherStreamAlignBlockCnt = 8 * (1 + zeroExtend(pack(t)[1:0]));
-
-                    if (otherStreamAlignBlockCnt > leftAlignBlockCntForSubDsReg) begin
-                        // nothing to do
+                        if (otherStreamAlignBlockCnt > leftAlignBlockCntForSubDsReg) begin
+                            // nothing to do
+                        end
+                        else begin
+                            let isLastSubDs = leftAlignBlockCntForSubDsReg == otherStreamAlignBlockCnt;
+                            splitAlignBlockCntQueue.enq(tuple2(truncate(otherStreamAlignBlockCnt), isLastSubDs));
+                            // $display("split plan: subDsAlignCnt=", fshow(otherStreamAlignBlockCnt), ", isLastSubDs=", fshow(isLastSubDs));
+                            leftAlignBlockCntForSubDsReg <= leftAlignBlockCntForSubDsReg - otherStreamAlignBlockCnt;
+                        end
                     end
                     else begin
-                        let isLastSubDs = leftAlignBlockCntForSubDsReg == otherStreamAlignBlockCnt;
-                        splitAlignBlockCntQueue.enq(tuple2(truncate(otherStreamAlignBlockCnt), isLastSubDs));
-                        leftAlignBlockCntForSubDsReg <= leftAlignBlockCntForSubDsReg - otherStreamAlignBlockCnt;
+                        splitAlignBlockCntQueue.enq(tuple2(truncate(leftAlignBlockCntForSubDsReg), True));
+                        // $display("split plan: subDsAlignCnt=", fshow(leftAlignBlockCntForSubDsReg), ", isLastSubDs=", fshow(True));
+                        leftAlignBlockCntForSubDsReg <= 0;
                     end
-                end
-                else begin
-                    splitAlignBlockCntQueue.enq(tuple2(truncate(leftAlignBlockCntForSubDsReg), True));
-                    leftAlignBlockCntForSubDsReg <= 0;
-                end
-            endaction
+                endaction
+            endseq
         endseq
     endseq);
 
@@ -329,22 +347,29 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
 
     Stmt runTest = (seq
-        action
-            // $display("======================================================");
-            // $display("=====================New Stream=======================");
-            // $display("======================================================");
-            originDsGenFSM.start;
-            genSplitMetaFSM.start;
-        endaction
-        await(originDsGenFSM.done && genSplitMetaFSM.done);
-        runCheckerReg[0] <= True;
-        await(!runCheckerReg[0]);
+        // action
+        //     $display("======================================================");
+        //     $display("=====================New Batch=======================");
+        //     $display("======================================================");
+        // endaction
+        originDsGenFSM.start;
+        // $display("step 1---------------");
+        await(originDsGenFSM.done);
+        // $display("step 2---------------");
+        genSplitMetaFSM.start;
+        // $display("step 3---------------");
+        await(genSplitMetaFSM.done);
+        // $display("step 4---------------");
+        originDsCounter.incr(minBatchCnt);
+        // $display("step 5---------------");
+        await(originDsCounter == 0);
+        // $display("step 6---------------");
     endseq);
 
     FSM runTestFSM  <- mkFSM(runTest);
     
     // rule debug;
-    //     $display(fshow(originDsGenFSM.done), " ", fshow(genSplitMetaFSM.done), " ", fshow(originDsInfoQueue.notEmpty), " ", fshow(splitAlignBlockCntQueue.notFull));
+    //     $display(fshow(originDsGenFSM.done), " ", fshow(genSplitMetaFSM.done), " ", fshow(originDsInfoQueue.notEmpty), " ", fshow(splitAlignBlockCntQueue.notFull), " originDsCounter=", fshow(originDsCounter));
     // endrule
 
     rule runTestRule;
@@ -359,3 +384,66 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
         runTestFSM.start;
     endrule
 endmodule
+
+// module mkTestDtldStreamSpliterAndConcator(Empty);
+//     DtldStreamConcator#(DATA, NUMERIC_TYPE_TWO) concator <- mkDtldStreamConcator;
+
+//     Stmt runTest = (
+//         par
+//         seq
+//             concator.isLastStreamFlagPipeIn.enq(False);
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000f8e80000f8e40000f8e00000f8dc0000f8d80000f8d40000f8d00000f8cc, byteNum: 'h1e, startByteIdx: 'h02, isFirst: True, isLast: False});
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000f9080000f9040000f9000000f8fc0000f8f80000f8f40000f8f00000f8ec, byteNum: 'h20, startByteIdx: 'h00, isFirst: False, isLast: False});
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000f9280000f9240000f9200000f91c0000f9180000f9140000f9100000f90c, byteNum: 'h20, startByteIdx: 'h00, isFirst: False, isLast: False});
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000000000000000000000000000f93c0000f9380000f9340000f9300000f92c, byteNum: 'h14, startByteIdx: 'h00, isFirst: False, isLast: True});
+//             concator.isLastStreamFlagPipeIn.enq(True);
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000f95c0000f9580000f9540000f9500000f94c0000f9480000f9440000f940, byteNum: 'h20, startByteIdx: 'h00, isFirst: True, isLast: False});
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000f97c0000f9780000f9740000f9700000f96c0000f9680000f9640000f960, byteNum: 'h20, startByteIdx: 'h00, isFirst: False, isLast: False});
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000f99c0000f9980000f9940000f9900000f98c0000f9880000f9840000f980, byteNum: 'h20, startByteIdx: 'h00, isFirst: False, isLast: False});
+//             concator.dataPipeIn.enq(DtldStreamData {data: 'h0000000000000000000000000000000000000000000000000000f9a40000f9a0, byteNum: 'h07, startByteIdx: 'h00, isFirst: False, isLast: True});
+            
+//         endseq
+//         seq
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+//             action
+//                 concator.dataPipeOut.deq;
+//                 $display(fshow(concator.dataPipeOut.first));
+//             endaction
+            
+//         endseq
+//         endpar
+//     );
+
+//     FSM runTestFSM  <- mkFSM(runTest);
+
+//     Reg#(Bool) runReg <- mkReg(True);
+
+//     rule r if (runReg);
+//         runReg <= False;
+//         runTestFSM.start;
+//     endrule
+
+// endmodule
