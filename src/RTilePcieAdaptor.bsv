@@ -676,11 +676,11 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
             if (tlpFirstSegmentIdxVec[idx] matches tagged Valid .segIdx) begin
 
                 PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(beat.header[segIdx]));
-                $display(
-                    "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
-                    "segment_id=%d", idx, 
-                    ", tlpHeader=", fshow(tlpHeader)
-                );
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
+                //     "segment_id=%d", idx, 
+                //     ", tlpHeader=", fshow(tlpHeader)
+                // );
                 simpleTlpInfoVec[idx] = convertTlpToInternalDataType(beat.header[segIdx], storageWriteAddrReg, segIdx);
             end
             else begin
@@ -1254,7 +1254,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     FIFOF#(RtilePcieRxTlpInfoCplt)                                              handleInputCpltTlpVecStep2PipelineQueue             <- mkSizedFIFOF(6);
     FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readCpltTlpInfoForOutputPipelineQueue               <- mkFIFOF;
     // FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readDataStorageForOutputPipelineQueue               <- mkFIFOF;
-    FIFOF#(PcieCompletionBufferBeatInfoForOutputDataStreamGenerate)             outputDataStreamGenPipelineQueue                    <- mkFIFOF;
+    FIFOF#(PcieCompletionBufferBeatInfoForOutputDataStreamGenerate)             outputDataStreamGenPipelineQueue                    <- mkSizedFIFOF(6);
     FIFOF#(Tuple2#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt))    handleCpltTlpInfoStorageWritePipelineQueue          <- mkLFIFOF;
 
 
@@ -1687,6 +1687,24 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             cpltTlpInfoStorage.readRespPipeOut.deq;
             curOutputCpltTlpMaybeReg <= tagged Valid nextNewOutputCpltTlpInfo;
         end
+    endrule
+
+    rule debug1;
+        if (!outputDataStreamGenPipelineQueue.notFull) begin
+            $display("time=%0t, ", $time, "DEBUG QUEUE Full!!!  outputDataStreamGenPipelineQueue");
+        end
+
+        if (!outputDataStreamGenPipelineQueue.notEmpty) begin
+            $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  outputDataStreamGenPipelineQueue");
+        end
+        else begin
+            let beatMeta = outputDataStreamGenPipelineQueue.first;
+
+            if (!dataStreamStorageVec[beatMeta.srcSegIdx].readRespPipeOut.notEmpty) begin
+                $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  dataStreamStorageVec[%d].readRespPipeOut", beatMeta.srcSegIdx);
+            end
+        end
+        
     endrule
 
     rule getStorageReadRespAndConvertToDataStream;
@@ -2769,18 +2787,18 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             RtilePcieTxSmallBramRowCnt smallStorgeRowCntLeftForPacketOne     = fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
             RtilePcieTxSmallBramRowCnt smallStorgeRowCntLeftForPacketTwo     = fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)) - truncate(onePacketSmallBramRowCntSum);
 
-            $display(
-                "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch"),
-                toBlue(", beatWillHoldPacket="), fshow(beatWillHoldTwoPacket ? 2 : 1),
-                toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
-                toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
-                toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
-                toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
-                toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
-                toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo),
-                toBlue(", packetOneMeta="), fshow(packetOneMeta),
-                toBlue(", packetTwoMeta="), fshow(packetTwoMeta)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch"),
+            //     toBlue(", beatWillHoldPacket="), fshow(beatWillHoldTwoPacket ? 2 : 1),
+            //     toBlue(", packetOneSmallBramRowCnt="), fshow(packetOneSmallBramRowCnt),
+            //     toBlue(", packetTwoSmallBramRowCnt="), fshow(packetTwoSmallBramRowCnt),
+            //     toBlue(", onePacketSmallBramRowCntSum="), fshow(onePacketSmallBramRowCntSum),
+            //     toBlue(", twoPacketSmallBramRowCntSum="), fshow(twoPacketSmallBramRowCntSum),
+            //     toBlue(", smallStorgeRowCntLeftForPacketOne="), fshow(smallStorgeRowCntLeftForPacketOne),
+            //     toBlue(", smallStorgeRowCntLeftForPacketTwo="), fshow(smallStorgeRowCntLeftForPacketTwo),
+            //     toBlue(", packetOneMeta="), fshow(packetOneMeta),
+            //     toBlue(", packetTwoMeta="), fshow(packetTwoMeta)
+            // );
 
             if (beatWillHoldTwoPacket) begin
                 outputMetaBundle[0] = tagged Valid RtilePcieTxPingPongChannelMetaEntry {
@@ -2851,11 +2869,11 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             end
 
             outputTimingFixPipelineQueue.enq(tuple2(curOutputRoundRobinIdxReg, outputMetaBundle));
-            $display(
-                "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch final output"),
-                toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
-                toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch final output"),
+            //     toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
+            //     toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
+            // );
 
             curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
         end
@@ -3100,11 +3118,11 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         {outputBeatEmptyStorageRowCnt, outputEntry} = finalShiftPipelineQueue.first;
         finalShiftPipelineQueue.deq;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift before shift"),
-            toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
-            toBlue(", outputEntry="), fshow(outputEntry)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift before shift"),
+        //     toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
+        //     toBlue(", outputEntry="), fshow(outputEntry)
+        // );
 
         case (outputBeatEmptyStorageRowCnt)
             0: begin
@@ -3123,10 +3141,10 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         endcase
         beatPipeOutQueue.enq(outputEntry);
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift after shift"),
-            toBlue(", outputEntry="), fshow(outputEntry)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift after shift"),
+        //     toBlue(", outputEntry="), fshow(outputEntry)
+        // );
     endrule
 
    

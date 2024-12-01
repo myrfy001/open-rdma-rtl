@@ -314,18 +314,21 @@ class TB(object):
         last_recv_byte_cnt = 0
         last_recv_time = 0
         while total_recv_read_req_cnt < self.read_test_packet_cnt:
+            cur_time = cocotb.utils.get_sim_time("ns")
             for channel_idx in range(4):
                 if not await self.requester_read_data_pipes[channel_idx].not_empty():
                     continue
 
+                if len(self.read_reqs_to_check[channel_idx]) == 0:
+                    continue
                 cur_meta = self.read_reqs_to_check[channel_idx][0]
                 cur_resp_ds_raw = await self.requester_read_data_pipes[channel_idx].first()
                 cur_resp_ds = BlueRdmaDataStream256.unpack(cur_resp_ds_raw)
                 await self.requester_read_data_pipes[channel_idx].deq()
 
-                # if cur_resp_ds.is_first():
-                #     print(
-                #         f"channel {channel_idx} recv new packet, raw meta = {cur_meta}")
+                if cur_resp_ds.is_first():
+                    print(
+                        f"channel {channel_idx} recv new packet, raw meta = {cur_meta}")
 
                 first_beat_invalid_byte_cnt = cur_meta.addr() % 4
                 cur_start_addr_aligned_to_4_byte = cur_meta.addr() - first_beat_invalid_byte_cnt
@@ -337,8 +340,8 @@ class TB(object):
 
                 total_recv_byte_cnt += cur_resp_ds.byte_num()
 
-                # print(f"channel {channel_idx} recv ds =", cur_resp_ds,
-                #       ", total_recv_byte_cnt=", total_recv_byte_cnt)
+                print(f"time={cur_time}, channel {channel_idx} recv ds =", cur_resp_ds,
+                      ", total_recv_byte_cnt=", total_recv_byte_cnt)
                 # print("aaaaa=", reference_payload_array)
                 # print("bbbbb=", list(got_payload_array.to_bytes(
                 #     self.byte_cnt_per_beat, byteorder="little")))
@@ -377,7 +380,6 @@ class TB(object):
                     self.read_reqs_to_check[channel_idx][0].total_len = self.read_reqs_to_check[channel_idx][0].total_len(
                     ) - cur_resp_ds.byte_num()
 
-            cur_time = cocotb.utils.get_sim_time("ns")
             time_delta = cur_time - last_recv_time
             if time_delta > 200:
 
@@ -428,7 +430,7 @@ async def small_desc_fp_test(dut):
     cocotb.start_soon(tb.start_send_read_req())
     cocotb.start_soon(tb.start_read_resp_check())
 
-    await Timer(15000, units='ns')
+    await Timer(1000, units='ns')
 
     # write_meta = BlueRdmaDtldStreamMemAccessMeta(
     #     addr=0,
