@@ -9,6 +9,8 @@ QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%
 RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			$(BACKENDDIR)/../src/verilog/*.v \
 			$(BACKENDDIR)/../src/verilog/**/*.v
+
+QUARTUS_SDC_DIRS ?= $(BACKENDDIR)/quartus/sdc/*.sdc
 			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
@@ -110,6 +112,7 @@ export PROJ_NAME = $(TOPMODULE)
 export REV_NAME = rev1
 export TOP = $(TOPMODULE)
 export RTL_DIRS
+export QUARTUS_SDC_DIRS
 export DEVICE
 export FAMILY
 export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
