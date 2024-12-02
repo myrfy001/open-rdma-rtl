@@ -75,7 +75,7 @@ module mkTestPcieRxStreamSegmentForkTimingTest(TestPcieRxStreamSegmentForkTiming
 
     ForceKeepWideSignals#(Bit#(2048), Bit#(16)) signalKeeperA <- mkForceKeepWideSignals; 
     ForceKeepWideSignals#(Bit#(256), Bit#(16)) signalKeeperB <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Bit#(256), Bit#(16)) signalKeeperC <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(512), Bit#(16)) signalKeeperC <- mkForceKeepWideSignals; 
     
 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
@@ -342,7 +342,7 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
 
         
         
-        // write req
+        // write req as requester
         let writeMeta = unpack(truncate(randValue1));
         let writeData = unpack(truncate({randValue2, randValue3, randValue4}));
         rtilePcie.streamSlaveIfcVec[0].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
@@ -363,7 +363,7 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
         rtilePcie.streamSlaveIfcVec[3].writePipeIfc.writeMetaPipeIn.enq(writeMeta);
         rtilePcie.streamSlaveIfcVec[3].writePipeIfc.writeDataPipeIn.enq(writeData);
 
-        // read req
+        // read req as requester
         let readMeta = unpack(truncate(randValue5));
         rtilePcie.streamSlaveIfcVec[0].readPipeIfc.readMetaPipeIn.enq(readMeta);
         readMeta = unpack(truncate(randValue4));
@@ -372,6 +372,10 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
         rtilePcie.streamSlaveIfcVec[2].readPipeIfc.readMetaPipeIn.enq(readMeta);
         readMeta = unpack(truncate(randValue2));
         rtilePcie.streamSlaveIfcVec[3].readPipeIfc.readMetaPipeIn.enq(readMeta);
+
+        // read resp as completer
+        let readData = unpack(truncate({randValue1, randValue2, randValue5}));
+        rtilePcie.streamMasterIfc.readPipeIfc.readDataPipeIn.enq(readData);
     endrule
 
     rule updateBusSignalReg;
@@ -442,9 +446,8 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
         signalKeeperForTxBusOutput.bitsPipeIn.enq(zeroExtend(pack(txBusOutputSignalReg)));
     endrule
 
-    rule handleUSerlogicReadOutput;
+    rule handleUserlogicReadOutput;
         Vector#(NUMERIC_TYPE_FOUR, RtilePcieUserStream) resultVec = newVector;
-
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
             if (rtilePcie.streamSlaveIfcVec[idx].readPipeIfc.readDataPipeOut.notEmpty) begin
                 resultVec[idx] = rtilePcie.streamSlaveIfcVec[idx].readPipeIfc.readDataPipeOut.first;
@@ -452,7 +455,23 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
             end
         end
 
-        signalKeeperForUserLogicReadOutput.bitsPipeIn.enq(zeroExtend(pack(resultVec)));
+        let completerWm = ?;
+        let completerWd = ?;
+        let completerRm = ?;
+        if (rtilePcie.streamMasterIfc.writePipeIfc.writeMetaPipeOut.notEmpty) begin
+            completerWm = rtilePcie.streamMasterIfc.writePipeIfc.writeMetaPipeOut.first;
+            rtilePcie.streamMasterIfc.writePipeIfc.writeMetaPipeOut.deq;
+        end
+        if (rtilePcie.streamMasterIfc.writePipeIfc.writeDataPipeOut.notEmpty) begin
+            completerWd = rtilePcie.streamMasterIfc.writePipeIfc.writeDataPipeOut.first;
+            rtilePcie.streamMasterIfc.writePipeIfc.writeDataPipeOut.deq;
+        end
+        if (rtilePcie.streamMasterIfc.readPipeIfc.readMetaPipeOut.notEmpty) begin
+            completerRm = rtilePcie.streamMasterIfc.readPipeIfc.readMetaPipeOut.first;
+            rtilePcie.streamMasterIfc.readPipeIfc.readMetaPipeOut.deq;
+        end
+
+        signalKeeperForUserLogicReadOutput.bitsPipeIn.enq(zeroExtend({pack(resultVec), pack(completerWm), pack(completerWd), pack(completerRm)}));
 
     endrule
 
@@ -478,7 +497,8 @@ interface TestRTilePcieByCocotbTest;
     (* always_ready, always_enabled *)
     interface RTilePcieAdaptorTx txRawIfc;
 
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamPipes)     streamSlaveIfcVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)     streamSlaveIfcVec;
+    interface PcieBiDirUserDataStreamMasterPipes                                                streamMasterIfc;
 endinterface
 
 module mkTestRTilePcieByCocotbTest(TestRTilePcieByCocotbTest);
@@ -491,6 +511,7 @@ module mkTestRTilePcieByCocotbTest(TestRTilePcieByCocotbTest);
     interface rxRawIfc = rawInterfaceAdaptor.rx;
     interface txRawIfc = rawInterfaceAdaptor.tx;
     interface streamSlaveIfcVec = inner.streamSlaveIfcVec;
+    interface streamMasterIfc = inner.streamMasterIfc;
 endmodule
 
 

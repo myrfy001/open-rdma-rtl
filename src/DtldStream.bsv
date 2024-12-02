@@ -32,7 +32,7 @@ interface DtldStreamMasterReadPipes#(type tData, type tAddr, type tLen);
     interface PipeIn#(DtldStreamData#(tData))                   readDataPipeIn;
 endinterface
 
-interface DtldStreamMasterPipes#(type tData, type tAddr, type tLen);
+interface DtldStreamBiDirMasterPipes#(type tData, type tAddr, type tLen);
     interface DtldStreamMasterWritePipes#(tData, tAddr, tLen)  writePipeIfc;
     interface DtldStreamMasterReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
@@ -57,7 +57,7 @@ endinterface
 
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);
     interface Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))       slaveIfcVec;
-    interface DtldStreamMasterPipes#(tData, tAddr, tLen)                                masterIfc;
+    interface DtldStreamBiDirMasterPipes#(tData, tAddr, tLen)                                masterIfc;
     interface PipeOut#(Bit#(TLog#(channelCnt)))                                         writeSourceChannelIdPipeOut;
     interface PipeOut#(Bit#(TLog#(channelCnt)))                                         readSourceChannelIdPipeOut;
 endinterface
@@ -192,7 +192,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
     end
 
     interface slaveIfcVec = slaveIfcVecInst;
-    interface DtldStreamMasterPipes masterIfc;
+    interface DtldStreamBiDirMasterPipes masterIfc;
         interface DtldStreamMasterWritePipes writePipeIfc;
             interface  writeMetaPipeOut  = toPipeOut(masterSideQueueWm);
             interface  writeDataPipeOut  = toPipeOut(masterSideQueueWd);
