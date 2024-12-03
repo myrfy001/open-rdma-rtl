@@ -688,7 +688,7 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         for (Integer idx = 0; idx < valueOf(PCIE_MAX_TLP_CNT); idx = idx + 1) begin
             if (tlpFirstSegmentIdxVec[idx] matches tagged Valid .segIdx) begin
 
-                PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(beat.header[segIdx]));
+                // PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(beat.header[segIdx]));
                 // $display(
                 //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
                 //     "segment_id=%d", idx, 
@@ -702,10 +702,10 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         end
 
         dispatchTlpInfoPipelineQueue.enq(simpleTlpInfoVec);
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
-        //     ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
+            ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
+        );
 
     endrule
 
@@ -804,6 +804,25 @@ endmodule
 function RtilePcieRxTlpInfo convertTlpToInternalDataType(PcieTlpHeaderBuffer tlpBuffer, RtilePcieRxPayloadStorageAddr storageAddr, PcieSegmentIdx firstSegIdx);
     PcieTlpHeaderCommon headerFirstDW = getPcieTlpHeaderCommon(tlpBuffer);
     case ({pack(headerFirstDW.fmt), pack(headerFirstDW.typ)})
+        {`PCIE_TLP_HEADER_FMT_3DW_NO_DATA, `PCIE_TLP_HEADER_TYPE_MEM_READ}: begin
+            PcieTlpHeaderMemoryRead3Dw tlpHeader = unpack(truncateLSB(tlpBuffer));
+            return tagged TlpTypeMrRead RtilePcieRxTlpInfoMrRead {
+                addr        : unpack(zeroExtend({tlpHeader.addr, 2'b00})),                       
+                tag         : unpack(truncate({
+                                    pack(tlpHeader.memoryReadHeader.commonHeader.t9), 
+                                    pack(tlpHeader.memoryReadHeader.commonHeader.t8), 
+                                    pack(tlpHeader.memoryReadHeader.tag)})),                       
+                requesterId : unpack(pack(tlpHeader.memoryReadHeader.requesterId))               
+            };
+        end
+        {`PCIE_TLP_HEADER_FMT_3DW_WITH_DATA, `PCIE_TLP_HEADER_TYPE_MEM_WRITE}: begin
+            PcieTlpHeaderMemoryWrite3Dw tlpHeader = unpack(truncateLSB(tlpBuffer));
+            return tagged TlpTypeMrWrite RtilePcieRxTlpInfoMrWrite {
+                addr: unpack(zeroExtend({tlpHeader.addr, 2'b00})),                       
+                firstBeatStorageAddr: storageAddr,
+                firstBeatSegIdx: firstSegIdx       
+            };
+        end
         {`PCIE_TLP_HEADER_FMT_4DW_NO_DATA, `PCIE_TLP_HEADER_TYPE_MEM_READ}: begin
             PcieTlpHeaderMemoryRead4Dw tlpHeader = unpack(truncateLSB(tlpBuffer));
             return tagged TlpTypeMrRead RtilePcieRxTlpInfoMrRead {
@@ -1838,6 +1857,7 @@ interface PcieRequestTlpHeaderGen;
     interface PipeOut#(RtilePcieUserStream)                                     tlpDataStreamPipeOut;
 endinterface
 
+(*synthesize*)
 module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
 
@@ -2110,6 +2130,12 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
                 "for read cplt, only support ONLY cplt TLP with max payload not exceed 64-bits",
                 $format("ds=", fshow(ds))
             );
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen arbitOutputTlp cpltTlpQueue"),
+                toBlue(", cpltTlpQueue.first="), fshow(cpltTlpQueue.first),
+                toBlue(", ds="), fshow(ds)
+            );
         end
         
     endrule
@@ -2221,7 +2247,7 @@ interface RtilePcieTxUserInputGearboxStorageAndMetaExtractor;
     interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(PcieTlpHeaderBuffer))  bramTlpHeaderReadRespPipeOutVec;
 endinterface
 
-// (* synthesize *)
+(* synthesize *)
 module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInputGearboxStorageAndMetaExtractor);
     FIFOF#(RtilePcieUserStream)                     streamPipeInQueue               <- mkFIFOF;
     FIFOF#(PcieTlpHeaderBuffer)                     txTlpHeaderBufferPipeInQueue    <- mkFIFOF;
@@ -3191,6 +3217,7 @@ interface RtilePcieCompleter;
     interface PipeOut#(RtilePcieUserStream)                                      cpltTlpDataStreamPipeOut;
 endinterface
 
+(* synthesize *)
 module mkRtilePcieCompleter(RtilePcieCompleter);
     FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  masterSideQueueWm         <- mkFIFOF;
     FIFOF#(RtilePcieUserStream)                     masterSideQueueWd         <- mkFIFOF;
@@ -3220,10 +3247,10 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
         for (Integer idx = 0; idx < valueOf(PCIE_SEGMENT_CNT); idx = idx + 1) begin
             dataStreamStorageVec[idx].write(req.addr, req.dataBundles[idx]);
         end
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleDataStreamInput"),
-        //     toBlue(", req="), fshow(req)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleDataStreamInput"),
+            toBlue(", req="), fshow(req)
+        );
     endrule
 
     Reg#(Maybe#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo))) curInputTlpVecMaybeReg <- mkReg(tagged Invalid);
@@ -3270,20 +3297,20 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
                 end
             end
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 BUSY mode"),
-            //     toBlue(", curInputTlpVec="), fshow(curInputTlpVec)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 BUSY mode"),
+                toBlue(", curInputTlpVec="), fshow(curInputTlpVec)
+            );
 
         end
         else begin
             curInputTlpVecMaybeReg <= tagged Valid memReadWriteReqTlpVecPipeInQueue.first;
             memReadWriteReqTlpVecPipeInQueue.deq;
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 IDLE mode"),
-            //     toBlue(", memReadWriteReqTlpVecPipeInQueue.first="), fshow(memReadWriteReqTlpVecPipeInQueue.first)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 IDLE mode"),
+                toBlue(", memReadWriteReqTlpVecPipeInQueue.first="), fshow(memReadWriteReqTlpVecPipeInQueue.first)
+            );
 
             immAssert(
                 isRtilePcieRxTlpInfoValid(memReadWriteReqTlpVecPipeInQueue.first[0]),
@@ -3315,6 +3342,13 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
             isFirst     : True,
             isLast      : True
         });
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleBramReadResp"),
+            toBlue(", writeAddr="), fshow(writeAddr),
+            toBlue(", segIdx="), fshow(segIdx),
+            toBlue(", writeDataOrigin="), fshow(writeDataOrigin)
+        );
     endrule
 
     rule handleCompleterReadResp;
@@ -3357,6 +3391,14 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
             lowerAddress    : truncate(readTlpMeta.addr)
         };
 
+        cpltTlpHeaderPipeOutQueue.enq(tlp);
+        cpltTlpDataStreamPipeOutQueue.enq(ds);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleCompleterReadResp"),
+            toBlue(", tlp="), fshow(tlp),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
 

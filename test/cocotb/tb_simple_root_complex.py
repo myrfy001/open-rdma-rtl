@@ -31,9 +31,13 @@ class TB(object):
         self.total_read_byte_cnt = 0
 
         self.read_reqs_to_check = [[] for _ in range(4)]
+        self.completer_read_reqs_to_check = []
+        self.completer_write_reqs_to_check = []
 
         self.mem_pool_size = 64*1024
         self.byte_cnt_per_beat = 32
+
+        self.device_mem_size = 1024*1024
 
         self.log = logging.getLogger("cocotb.tb")
         self.log.setLevel(logging.DEBUG)
@@ -55,6 +59,15 @@ class TB(object):
                 dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readMetaPipeIn", self.clock))
             self.requester_read_data_pipes.append(BluespecPipeOut(
                 dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readDataPipeOut", self.clock))
+
+        self.completer_write_meta_pipe = BluespecPipeOut(
+            dut, f"streamMasterIfc_writePipeIfc_writeMetaPipeOut", self.clock)
+        self.completer_write_data_pipe = BluespecPipeOut(
+            dut, f"streamMasterIfc_writePipeIfc_writeDataPipeOut", self.clock)
+        self.completer_read_meta_pipe = BluespecPipeOut(
+            dut, f"streamMasterIfc_readPipeIfc_readMetaPipeOut", self.clock)
+        self.completer_read_data_pipe = BluespecPipeIn(
+            dut, f"streamMasterIfc_readPipeIfc_readDataPipeIn", self.clock)
 
         # PCIe
         self.rc = RootComplex()
@@ -94,6 +107,9 @@ class TB(object):
             tx_cdts_limit=None,
             tx_cdts_limit_tdm_idx=None,
         )
+
+        self.hardware_ip_inst.functions[0].configure_bar(
+            0, self.device_mem_size)
 
         self.hardware_ip_inst.log.setLevel(logging.INFO)
         self.rc.make_port().connect(self.hardware_ip_inst)
@@ -407,7 +423,94 @@ class TB(object):
             for idx in range(0, len(self.mem_pool), 4):
                 assert self.mem_pool[mem_base+idx: mem_base+idx +
                                      4] == idx.to_bytes(4, byteorder="little")
-            await Timer(10, units='ns')
+
+            await Timer(100, units='ns')
+
+    async def start_completer_read_write_req_send(self):
+        pcie_ep_dev = self.rc.find_device(
+            self.hardware_ip_inst.functions[0].pcie_id)
+        bar = pcie_ep_dev.bar_window[0]
+        while True:
+
+            # ===== send write req ==============
+            write_req_addr = random.randint(
+                0, self.device_mem_size-1) & 0xFFFFFFFC  # align to 4 byte
+            write_req_data = random.randint(0, 2**32 - 1)
+
+            self.completer_write_reqs_to_check.append(
+                [write_req_addr, write_req_data])
+            await cocotb.start(
+                bar.write(write_req_addr, write_req_data.to_bytes(4, byteorder="little"), timeout=50))
+
+            print(
+                f"bar write req: write_req_addr={hex(write_req_addr)}, write_req_data={hex(write_req_data)}")
+
+            # ===========send read req =================
+            read_req_addr = random.randint(
+                0, self.device_mem_size-1) & 0xFFFFFFFC  # align to 4 byte
+            expected_read_resp_data = random.randint(0, 2**32 - 1)
+            self.completer_read_reqs_to_check.append(
+                [read_req_addr, expected_read_resp_data])
+
+            async def _checker_closure():
+                # int is a basic type, so here should be copy by value, not by reference
+                captured_expected_read_resp_data = expected_read_resp_data
+                read_resp = await bar.read(read_req_addr, 4, timeout=100)
+                assert int.from_bytes(
+                    read_resp, byteorder="little") == captured_expected_read_resp_data
+
+            await cocotb.start(_checker_closure())
+
+            await RisingEdge(self.clock)
+            await RisingEdge(self.clock)
+
+    async def start_completer_read_write_req_handler(self):
+
+        while True:
+            if (await self.completer_write_meta_pipe.not_empty()) and (await self.completer_write_data_pipe.not_empty()):
+                raw_write_meta = await self.completer_write_meta_pipe.first()
+                await self.completer_write_meta_pipe.deq()
+                raw_write_data = await self.completer_write_data_pipe.first()
+                await self.completer_write_data_pipe.deq()
+
+                write_meta = BlueRdmaDtldStreamMemAccessMeta.unpack(
+                    raw_write_meta)
+                write_data = BlueRdmaDataStream256.unpack(
+                    raw_write_data)
+
+                (expected_write_req_addr,
+                 expected_write_req_data) = self.completer_write_reqs_to_check.pop(0)
+                assert write_meta.addr() & (self.device_mem_size-1) == expected_write_req_addr
+                assert write_meta.total_len() == 4
+
+                assert write_data.data() == expected_write_req_data
+                assert write_data.byte_num() == 4
+                assert write_data.start_byte_index() == 0
+                assert write_data.is_first() == True
+                assert write_data.is_last() == True
+
+            if (await self.completer_read_meta_pipe.not_empty()):
+                raw_read_meta = await self.completer_read_meta_pipe.first()
+                await self.completer_read_meta_pipe.deq()
+                read_meta = BlueRdmaDtldStreamMemAccessMeta.unpack(
+                    raw_read_meta)
+
+                expected_read_req_addr, expected_read_resp_data = self.completer_read_reqs_to_check.pop(
+                    0)
+                assert read_meta.addr() & (self.device_mem_size-1) == expected_read_req_addr
+                assert read_meta.total_len() == 4
+
+                read_resp_ds = BlueRdmaDataStream256(
+                    data=expected_read_resp_data.to_bytes(
+                        4, byteorder="little"),
+                    byte_num=4,
+                    start_byte_index=0,
+                    is_first=True,
+                    is_last=True
+                )
+                await self.completer_read_data_pipe.enq(read_resp_ds.pack())
+
+            await RisingEdge(self.clock)
 
 
 @ cocotb.test(timeout_time=60000, timeout_unit="ns")
@@ -427,8 +530,11 @@ async def small_desc_fp_test(dut):
     # cocotb.start_soon(tb.start_memory_content_check())
     # cocotb.start_soon(tb.start_send_write_req())
 
-    cocotb.start_soon(tb.start_send_read_req())
-    cocotb.start_soon(tb.start_read_resp_check())
+    # cocotb.start_soon(tb.start_send_read_req())
+    # cocotb.start_soon(tb.start_read_resp_check())
+
+    cocotb.start_soon(tb.start_completer_read_write_req_send())
+    cocotb.start_soon(tb.start_completer_read_write_req_handler())
 
     await Timer(1000, units='ns')
 
