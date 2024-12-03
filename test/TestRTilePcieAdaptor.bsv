@@ -338,9 +338,6 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
         let randValue3 <- randSource3.get;
         let randValue4 <- randSource4.get;
         let randValue5 <- randSource5.get;
-
-
-        
         
         // write req as requester
         let writeMeta = unpack(truncate(randValue1));
@@ -477,8 +474,6 @@ module mkTestRtilePcieAdaptorTimingTest(TestRtilePcieAdaptorTimingTest);
 
 
     rule handleOutput;
-        
-
         outReg <= zeroExtend({signalKeeperForRxBusOutput.out, signalKeeperForTxBusOutput.out, signalKeeperForUserLogicReadOutput.out});
     endrule
 

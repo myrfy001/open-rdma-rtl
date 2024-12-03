@@ -5,14 +5,15 @@ CLK ?= rdma_clock
 OOC ?= 1
 
 BACKENDDIR ?= $(shell readlink -f ./)
-QUARTUS_BACKENDD_IR ?= $(BACKENDDIR)/quartus
+QUARTUS_BACKEND_DIR ?= $(BACKENDDIR)/quartus
 
 QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
 RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			$(BACKENDDIR)/../src/verilog/*.v \
-			$(BACKENDDIR)/../src/verilog/**/*.v
+			$(BACKENDDIR)/../src/verilog/**/*.v \
+			$(BACKENDDIR)/quartus/rtl/*.v
 
-QUARTUS_SDC_DIRS ?= $(QUARTUS_BACKENDD_IR)/sdc/*.sdc
+QUARTUS_SDC_DIRS ?= $(QUARTUS_BACKEND_DIR)/sdc/*.sdc
 			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
@@ -22,129 +23,114 @@ FAMILY ?= Agilex 7
 
 
 # TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
-# TOPMODULE ?= mkTestFullyPipelinedBackendTimingTest
+# BSV_TOP_MODULE ?= mkTestFullyPipelinedBackendTimingTest
 
 # TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
-# TOPMODULE ?= mkTestFullyPipelinedUpdateBramFunctionalTest
+# BSV_TOP_MODULE ?= mkTestFullyPipelinedUpdateBramFunctionalTest
 
 # TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
-# TOPMODULE ?= mkTestSdpBramWrapperConflictReadWriteTest
+# BSV_TOP_MODULE ?= mkTestSdpBramWrapperConflictReadWriteTest
 
 # TARGETFILE ?= ../test/TestSdpBramWrapper.bsv
-# TOPMODULE ?= mkTestAcxBram72kSdpConflictRW
+# BSV_TOP_MODULE ?= mkTestAcxBram72kSdpConflictRW
 
 # TARGETFILE ?= ../test/TestButterflyMerge.bsv
-# TOPMODULE ?= mkTestFourChannelButterflyMergeTimingTest
+# BSV_TOP_MODULE ?= mkTestFourChannelButterflyMergeTimingTest
 
 # TARGETFILE ?= ../test/TestNapWrapper.bsv
-# TOPMODULE ?= mkTestEthernetNapLoopBack
+# BSV_TOP_MODULE ?= mkTestEthernetNapLoopBack
 
 # TARGETFILE ?= ../test/TestEthernetFrameIO.bsv
-# TOPMODULE ?= mkTestEthernetFrameIoTiming
+# BSV_TOP_MODULE ?= mkTestEthernetFrameIoTiming
 
 # TARGETFILE ?= ../test/TestAddressChunker.bsv
-# TOPMODULE ?= mkTestAddressChunkerTiming
+# BSV_TOP_MODULE ?= mkTestAddressChunkerTiming
 
 # TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
-# TOPMODULE ?= mkTestPayloadGenAndConTiming
+# BSV_TOP_MODULE ?= mkTestPayloadGenAndConTiming
 
 # TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
-# TOPMODULE ?= mkTestBitmapWindowStorageTiming
+# BSV_TOP_MODULE ?= mkTestBitmapWindowStorageTiming
 
 # TARGETFILE ?= ../src/AutoAckGenerator.bsv
-# TOPMODULE ?= mkAutoAckGenerator
+# BSV_TOP_MODULE ?= mkAutoAckGenerator
 
 # TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
-# TOPMODULE ?= mkRTilePcieAdaptor
+# BSV_TOP_MODULE ?= mkRTilePcieAdaptor
 
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-# TOPMODULE ?= mkTestPcieRxStreamSegmentForkTimingTest
+# BSV_TOP_MODULE ?= mkTestPcieRxStreamSegmentForkTimingTest
 
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-# TOPMODULE ?= mkTestPcieHwCpltBufferAllocatorTimingTest
+# BSV_TOP_MODULE ?= mkTestPcieHwCpltBufferAllocatorTimingTest
 
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-# TOPMODULE ?= mkTestPcieCompletionBufferTimingTest
+# BSV_TOP_MODULE ?= mkTestPcieCompletionBufferTimingTest
 
-TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-TOPMODULE ?= mkTestRtilePcieAdaptorTimingTest
+# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+# BSV_TOP_MODULE ?= mkTestRtilePcieAdaptorTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest
+# BSV_TOP_MODULE ?= mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest
 
 # TARGETFILE ?= ../src/FTileMacAdaptor.bsv
-# TOPMODULE ?= mkFtileMacRxPingPongChannelMetaJoin
+# BSV_TOP_MODULE ?= mkFtileMacRxPingPongChannelMetaJoin
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestFtileMacRxPingPongChannelMetaJoinTimingTest
+# BSV_TOP_MODULE ?= mkTestFtileMacRxPingPongChannelMetaJoinTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestFtileMacAdaptorTimingTest
+# BSV_TOP_MODULE ?= mkTestFtileMacAdaptorTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestRotateTimingTest
+# BSV_TOP_MODULE ?= mkTestRotateTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestMimoTimingTest
+# BSV_TOP_MODULE ?= mkTestMimoTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestFtileMacTxPingPongForkTimingTest
+# BSV_TOP_MODULE ?= mkTestFtileMacTxPingPongForkTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
-# TOPMODULE ?= mkTestFtileMacCocotbLoopBackTest
+# BSV_TOP_MODULE ?= mkTestFtileMacCocotbLoopBackTest
 
 # TARGETFILE ?= ../test/TestDtldStream.bsv
-# TOPMODULE ?= mkTestDtldStreamConcatorTimingTest
+# BSV_TOP_MODULE ?= mkTestDtldStreamConcatorTimingTest
 
 # TARGETFILE ?= ../test/TestDtldStream.bsv
-# TOPMODULE ?= mkTestDtldStreamSpliterTimingTest
+# BSV_TOP_MODULE ?= mkTestDtldStreamSpliterTimingTest
 
 
+TARGETFILE ?= ../src/Top.bsv
+BSV_TOP_MODULE ?= mkBsvTop
+TOP = bluerdma_top
 
-# TARGETFILE ?= ../test/TestTop.bsv
-# TOPMODULE ?= mkTestTopTiming
 
 
 MAX_NET_PATH_NUM ?= 10000
-VERILOG_TOPMODULE ?= top
-
+TOP ?= $(BSV_TOP_MODULE)
 
 export QUARTUS_WORKDIR
-export QUARTUS_BACKENDD_IR
-export PROJ_NAME = $(TOPMODULE)
+export QUARTUS_BACKEND_DIR
+export PROJ_NAME = $(BSV_TOP_MODULE)
 export REV_NAME = rev1
-export TOP = $(TOPMODULE)
+export TOP
 export RTL_DIRS
 export QUARTUS_SDC_DIRS
 export DEVICE
 export FAMILY
 export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
 
-# export TOP = $(TOPMODULE)
-# export DIR_RTL = $(VLOGDIR)
-# export DIR_XDC = $(TCLDIR)
-# export DIR_OOC_SCRIPTS = $(BACKENDDIR)/ooc_tcl_and_xdc
-# export DIR_IPS = $(BACKENDDIR)/ips
-# export DIR_IP_GENERATED = $(BUILDDIR)/ips
-
-# export VERILOG_TOPMODULE
-# export TARGET_CLOCKS = $(CLK)
-# export DIR_OUTPUT = $(OUTPUTDIR)
-# export OOCSYNTH = $(OOC)
-# export RUNTO = $(RUNTOPHASE)
-# export PART = $(PARTNAME)
-# export MAX_NET_PATH_NUM
-
 
 
 compile:
 	mkdir -p $(BUILDDIR)
-	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
+	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)
 
 verilog: compile 
 	mkdir -p $(DIR_BSV_GENERATED)
-	bsc $(VERILOGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
-	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(TOPMODULE) $(TOPMODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)
+	bsc $(VERILOGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)
+	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(BSV_TOP_MODULE) $(BSV_TOP_MODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)
 
 vivado: verilog
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
