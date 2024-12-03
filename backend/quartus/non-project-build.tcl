@@ -2,6 +2,7 @@
 package require ::quartus::project
 load_package flow
 
+set quartus_backend_dir		$::env(QUARTUS_BACKEND_DIR)
 set quartus_work_dir 		$::env(QUARTUS_WORKDIR)
 set project_name  			$::env(PROJ_NAME)
 set revision_name   		$::env(REV_NAME)
@@ -29,10 +30,12 @@ proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype 
 	return $snapshot_file_list
 }
 
-proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list} {
+proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list quartus_backend_dir} {
 
 	set verilog_snapshot_dir "$quartus_work_dir/verilog_snapshot_dir"
 	set sdc_snapshot_dir "$quartus_work_dir/sdc_snapshot_dir"
+	set pcie_ip_file_path "$quartus_backend_dir/ips/pcie/rtile_pcie_hip.ip"
+	# set mac_ip_file_path "$quartus_backend_dir/ips/pcie/ftile_mac_hip.ip"
 
 	file mkdir $verilog_snapshot_dir
 	file mkdir $sdc_snapshot_dir
@@ -41,6 +44,9 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list} {
 
 	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
 	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
+
+	lappend snapshot_file_list [list "IP_FILE" $pcie_ip_file_path]
+	# lappend snapshot_file_list [list "IP_FILE" $mac_ip_file_path]
 
 	foreach tuple $snapshot_file_list {
 		lassign $tuple filetype filename
@@ -80,7 +86,7 @@ set need_to_close_project 1
 
 # Make assignments
 if {$make_assignments} {
-	addFilesToProj $quartus_work_dir $rtl_dirs $sdc_dirs
+	addFilesToProj $quartus_work_dir $rtl_dirs $sdc_dirs $quartus_backend_dir
 
 	set_global_assignment -name TOP_LEVEL_ENTITY $top_module
 	set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files

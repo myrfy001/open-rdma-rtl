@@ -1,0 +1,1 @@
+create_clock -name rdma_main_clk -period 2 [get_ports {CLK}]

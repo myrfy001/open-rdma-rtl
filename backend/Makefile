@@ -5,12 +5,14 @@ CLK ?= rdma_clock
 OOC ?= 1
 
 BACKENDDIR ?= $(shell readlink -f ./)
+QUARTUS_BACKENDD_IR ?= $(BACKENDDIR)/quartus
+
 QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
 RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			$(BACKENDDIR)/../src/verilog/*.v \
 			$(BACKENDDIR)/../src/verilog/**/*.v
 
-QUARTUS_SDC_DIRS ?= $(BACKENDDIR)/quartus/sdc/*.sdc
+QUARTUS_SDC_DIRS ?= $(QUARTUS_BACKENDD_IR)/sdc/*.sdc
 			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
@@ -108,6 +110,7 @@ VERILOG_TOPMODULE ?= top
 
 
 export QUARTUS_WORKDIR
+export QUARTUS_BACKENDD_IR
 export PROJ_NAME = $(TOPMODULE)
 export REV_NAME = rev1
 export TOP = $(TOPMODULE)
