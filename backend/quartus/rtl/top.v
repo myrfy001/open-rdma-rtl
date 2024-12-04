@@ -9,6 +9,13 @@ module bluerdma_top(
     output wire   [15:0]        rtile_pcie_tx_n_out ,
     output wire   [15:0]        rtile_pcie_tx_p_out ,
 
+	input  wire                 qsfpdd_refclk_fht   ,
+    input  wire                 qsfpdd_refclk_fgt   ,
+    input  wire     [3:0]       qsfpdd0_rx_p        ,
+    input  wire     [3:0]       qsfpdd0_rx_n        ,
+    output wire     [3:0]       qsfpdd0_tx_p        ,
+    output wire     [3:0]       qsfpdd0_tx_n        ,
+
     output wire   [127:0]       signalKeeperOutput
 );
 
@@ -134,18 +141,65 @@ module bluerdma_top(
     wire rtile_pcie_p0_tx_ehp_deallocate_empty;
     wire rtile_pcie_pin_perst_n_o;
 
+	wire ftile_eth_clk_pll;
+	wire ftile_eth_reconfig_clk;
+	wire ftile_eth_reconfig_reset;
+	wire ftile_eth_sys_pll_locked;
+	wire ftile_eth_clk_ref;
+	wire ftile_eth_clk_sys;
+	wire [13:0]ftile_eth_reconfig_eth_addr;
+	wire [3:0]ftile_eth_reconfig_eth_byteenable;
+	wire ftile_eth_reconfig_eth_readdata_valid;
+	wire ftile_eth_reconfig_eth_read;
+	wire ftile_eth_reconfig_eth_write;
+	wire [31:0]ftile_eth_reconfig_eth_readdata;
+	wire [31:0]ftile_eth_reconfig_eth_writedata;
+	wire ftile_eth_reconfig_eth_waitrequest;
+	wire ftile_eth_rst_n;
+	wire ftile_eth_tx_rst_n;
+	wire ftile_eth_rx_rst_n;
+	wire ftile_eth_rst_ack_n;
+	wire ftile_eth_tx_rst_ack_n;
+	wire ftile_eth_rx_rst_ack_n;
+	wire ftile_eth_cdr_lock;
+	wire ftile_eth_tx_pll_locked;
+	wire ftile_eth_tx_lanes_stable;
+	wire ftile_eth_rx_pcs_ready;
+	wire ftile_eth_clk_tx_div;
+	wire ftile_eth_clk_rec_div64;
+	wire ftile_eth_clk_rec_div;
+	wire ftile_eth_rx_block_lock;
+	wire ftile_eth_rx_am_lock;
+	wire ftile_eth_local_fault_status;
+	wire ftile_eth_remote_fault_status;
+	wire ftile_eth_stats_snapshot;
+	wire ftile_eth_rx_hi_ber;
+	wire ftile_eth_rx_pcs_fully_aligned;
+	wire [1023:0]ftile_eth_tx_mac_data;
+	wire ftile_eth_tx_mac_valid;
+	wire [15:0]ftile_eth_tx_mac_inframe;
+	wire [47:0]ftile_eth_tx_mac_eop_empty;
+	wire ftile_eth_tx_mac_ready;
+	wire [15:0]ftile_eth_tx_mac_error;
+	wire [15:0]ftile_eth_tx_mac_skip_crc;
+	wire [1023:0]ftile_eth_rx_mac_data;
+	wire ftile_eth_rx_mac_valid;
+	wire [15:0]ftile_eth_rx_mac_inframe;
+	wire [47:0]ftile_eth_rx_mac_eop_empty;
+	wire [15:0]ftile_eth_rx_mac_fcs_error;
+	wire [31:0]ftile_eth_rx_mac_error;
+	wire [47:0]ftile_eth_rx_mac_status;
+	wire [7:0]ftile_eth_tx_pfc;
+	wire [7:0]ftile_eth_rx_pfc;
+	wire ftile_eth_tx_pause;
+	wire ftile_eth_rx_pause;
+	wire ftile_eth_clk_pll;
+	wire ftile_eth_anlt_link;
 
-    wire reconfig;
-    wire clk_50m;
 
 
-    iopll iopll_inst (
-		.refclk   (clk_sys_100m_p),   
-		.locked   (), 
-		.rst      (1'b0),     
-		.outclk_0 (reconfig_clk), 
-		.outclk_1 (clk_50m) 
-	);
+
+
 
 
     
@@ -342,9 +396,130 @@ module bluerdma_top(
 		.pin_perst_n_o                (rtile_pcie_pin_perst_n_o)                 //  output,    width = 1,          pin_perst_n_o.reset_n
 	);
 
+
+
+	iopll iopll_inst (
+		.refclk   (clk_sys_100m_p),   
+		.locked   (), 
+		.rst      (1'b0),     
+		.outclk_0 (ftile_eth_reconfig_clk), 
+		.outclk_1 () 
+	);
+
+	system_clk_and_ftile_ref_clk system_clk_and_ftile_ref_clk_inst (
+		.out_systempll_synthlock_0 (), 							//  output,  width = 1, out_systempll_synthlock_0.out_systempll_synthlock
+		.out_systempll_clk_0       (ftile_eth_clk_sys),       	//  output,  width = 1,       out_systempll_clk_0.clk
+		.out_refclk_fgt_3          (),          				//  output,  width = 1,          out_refclk_fgt_3.clk
+		.in_refclk_fgt_3           (qsfpdd_refclk_fgt),        	//   input,  width = 1,                refclk_fgt.in_refclk_fgt_3
+		.in_refclk_fht_0           (qsfpdd_refclk_fht),         //   input,  width = 1,                refclk_fht.in_refclk_fht_0
+		.out_fht_cmmpll_clk_0      (ftile_eth_clk_ref),      	//  output,  width = 1,      out_fht_cmmpll_clk_0.clk
+		.disable_refclk_monitor_3  ()   						//   input,  width = 1,  disable_refclk_monitor_3.disable_refclk_monitor_3
+	);
+
+
+
+	ftile_eth_hip ftile_eth_hip_inst (
+		.o_clk_pll                       (ftile_eth_clk_pll),                       //  output,     width = 1,             o_clk_pll.clk
+		.i_reconfig_clk                  (ftile_eth_reconfig_clk),                  //   input,     width = 1,        i_reconfig_clk.clk
+		.i_reconfig_reset                (ftile_eth_reconfig_reset),                //   input,     width = 1,      i_reconfig_reset.reset
+		.o_sys_pll_locked                (ftile_eth_sys_pll_locked),                //  output,     width = 1,      o_sys_pll_locked.o_sys_pll_locked
+		.o_tx_serial                     (qsfpdd0_tx_p),                     		//  output,     width = 8,                serial.o_tx_serial
+		.i_rx_serial                     (qsfpdd0_rx_p),                     		//   input,     width = 8,                      .i_rx_serial
+		.o_tx_serial_n                   (qsfpdd0_tx_n),                   			//  output,     width = 8,                      .o_tx_serial_n
+		.i_rx_serial_n                   (qsfpdd0_rx_n),                   			//   input,     width = 8,                      .i_rx_serial_n
+		.i_clk_ref                       (ftile_eth_clk_ref),                       //   input,     width = 1,             i_clk_ref.clk
+		.i_clk_sys                       (ftile_eth_clk_sys),                       //   input,     width = 1,             i_clk_sys.clk
+		.i_reconfig_eth_addr             (ftile_eth_reconfig_eth_addr),             //   input,    width = 14,    reconfig_eth_slave.address
+		.i_reconfig_eth_byteenable       (ftile_eth_reconfig_eth_byteenable),       //   input,     width = 4,                      .byteenable
+		.o_reconfig_eth_readdata_valid   (ftile_eth_reconfig_eth_readdata_valid),   //  output,     width = 1,                      .readdatavalid
+		.i_reconfig_eth_read             (ftile_eth_reconfig_eth_read),             //   input,     width = 1,                      .read
+		.i_reconfig_eth_write            (ftile_eth_reconfig_eth_write),            //   input,     width = 1,                      .write
+		.o_reconfig_eth_readdata         (ftile_eth_reconfig_eth_readdata),         //  output,    width = 32,                      .readdata
+		.i_reconfig_eth_writedata        (ftile_eth_reconfig_eth_writedata),        //   input,    width = 32,                      .writedata
+		.o_reconfig_eth_waitrequest      (ftile_eth_reconfig_eth_waitrequest),      //  output,     width = 1,                      .waitrequest
+		.i_clk_tx                        (ftile_eth_o_clk_pll),                     //   input,     width = 1,              i_tx_clk.clk
+		.i_clk_rx                        (ftile_eth_o_clk_pll),                     //   input,     width = 1,              i_rx_clk.clk
+		.i_rst_n                         (ftile_eth_rst_n),                         //   input,     width = 1,               i_rst_n.reset_n
+		.i_tx_rst_n                      (ftile_eth_tx_rst_n),                      //   input,     width = 1,            i_tx_rst_n.reset_n
+		.i_rx_rst_n                      (ftile_eth_rx_rst_n),                      //   input,     width = 1,            i_rx_rst_n.reset_n
+		.o_rst_ack_n                     (ftile_eth_rst_ack_n),                     //  output,     width = 1,    reset_status_ports.o_rst_ack_n
+		.o_tx_rst_ack_n                  (ftile_eth_tx_rst_ack_n),                  //  output,     width = 1,                      .o_tx_rst_ack_n
+		.o_rx_rst_ack_n                  (ftile_eth_rx_rst_ack_n),                  //  output,     width = 1,                      .o_rx_rst_ack_n
+		.o_cdr_lock                      (ftile_eth_cdr_lock),                      //  output,     width = 1,    clock_status_ports.o_cdr_lock
+		.o_tx_pll_locked                 (ftile_eth_tx_pll_locked),                 //  output,     width = 1,                      .o_tx_pll_locked
+		.o_tx_lanes_stable               (ftile_eth_tx_lanes_stable),               //  output,     width = 1,                      .o_tx_lanes_stable
+		.o_rx_pcs_ready                  (ftile_eth_rx_pcs_ready),                  //  output,     width = 1,                      .o_rx_pcs_ready
+		.o_clk_tx_div                    (ftile_eth_clk_tx_div),                    //  output,     width = 1,            clk_tx_div.clk
+		.o_clk_rec_div64                 (ftile_eth_clk_rec_div64),                 //  output,     width = 1,         clk_rec_div64.clk
+		.o_clk_rec_div                   (ftile_eth_clk_rec_div),                   //  output,     width = 1,           clk_rec_div.clk
+		.o_rx_block_lock                 (ftile_eth_rx_block_lock),                 //  output,     width = 1,          status_ports.o_rx_block_lock
+		.o_rx_am_lock                    (ftile_eth_rx_am_lock),                    //  output,     width = 1,                      .o_rx_am_lock
+		.o_local_fault_status            (ftile_eth_local_fault_status),            //  output,     width = 1,                      .o_local_fault_status
+		.o_remote_fault_status           (ftile_eth_remote_fault_status),           //  output,     width = 1,                      .o_remote_fault_status
+		.i_stats_snapshot                (ftile_eth_stats_snapshot),                //   input,     width = 1,                      .i_stats_snapshot
+		.o_rx_hi_ber                     (ftile_eth_rx_hi_ber),                     //  output,     width = 1,                      .o_rx_hi_ber
+		.o_rx_pcs_fully_aligned          (ftile_eth_rx_pcs_fully_aligned),          //  output,     width = 1,                      .o_rx_pcs_fully_aligned
+		.i_tx_mac_data                   (ftile_eth_tx_mac_data),                   //   input,  width = 1024,            tx_mac_seg.i_tx_mac_data
+		.i_tx_mac_valid                  (ftile_eth_tx_mac_valid),                  //   input,     width = 1,                      .i_tx_mac_valid
+		.i_tx_mac_inframe                (ftile_eth_tx_mac_inframe),                //   input,    width = 16,                      .i_tx_mac_inframe
+		.i_tx_mac_eop_empty              (ftile_eth_tx_mac_eop_empty),              //   input,    width = 48,                      .i_tx_mac_eop_empty
+		.o_tx_mac_ready                  (ftile_eth_tx_mac_ready),                  //  output,     width = 1,                      .o_tx_mac_ready
+		.i_tx_mac_error                  (ftile_eth_tx_mac_error),                  //   input,    width = 16,                      .i_tx_mac_error
+		.i_tx_mac_skip_crc               (ftile_eth_tx_mac_skip_crc),               //   input,    width = 16,                      .i_tx_mac_skip_crc
+		.o_rx_mac_data                   (ftile_eth_rx_mac_data),                   //  output,  width = 1024,            rx_mac_seg.o_rx_mac_data
+		.o_rx_mac_valid                  (ftile_eth_rx_mac_valid),                  //  output,     width = 1,                      .o_rx_mac_valid
+		.o_rx_mac_inframe                (ftile_eth_rx_mac_inframe),                //  output,    width = 16,                      .o_rx_mac_inframe
+		.o_rx_mac_eop_empty              (ftile_eth_rx_mac_eop_empty),              //  output,    width = 48,                      .o_rx_mac_eop_empty
+		.o_rx_mac_fcs_error              (ftile_eth_rx_mac_fcs_error),              //  output,    width = 16,                      .o_rx_mac_fcs_error
+		.o_rx_mac_error                  (ftile_eth_rx_mac_error),                  //  output,    width = 32,                      .o_rx_mac_error
+		.o_rx_mac_status                 (ftile_eth_rx_mac_status),                 //  output,    width = 48,                      .o_rx_mac_status
+		.i_tx_pfc                        ('h0),                        //   input,     width = 8,             pfc_ports.i_tx_pfc
+		.o_rx_pfc                        (),                        //  output,     width = 8,                      .o_rx_pfc
+		.i_tx_pause                      ('h0),                      //   input,     width = 1,             sfc_ports.i_tx_pause
+		.o_rx_pause                      (),                      //  output,     width = 1,                      .o_rx_pause
+		.i_reconfig_xcvr0_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_0.address
+		.i_reconfig_xcvr0_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr0_readdata_valid (), //  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr0_read           ('h0),           //   input,     width = 1,                      .read
+		.i_reconfig_xcvr0_write          ('h0),          //   input,     width = 1,                      .write
+		.o_reconfig_xcvr0_readdata       (),       //  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr0_writedata      ('h0),      //   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr0_waitrequest    (),    //  output,     width = 1,                      .waitrequest
+		.i_reconfig_xcvr1_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_1.address
+		.i_reconfig_xcvr1_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr1_readdata_valid (), //  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr1_read           ('h0),           //   input,     width = 1,                      .read
+		.i_reconfig_xcvr1_write          ('h0),          //   input,     width = 1,                      .write
+		.o_reconfig_xcvr1_readdata       (),       //  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr1_writedata      ('h0),      //   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr1_waitrequest    (),    //  output,     width = 1,                      .waitrequest
+		.i_reconfig_xcvr2_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_2.address
+		.i_reconfig_xcvr2_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr2_readdata_valid (), //  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr2_read           ('h0),           //   input,     width = 1,                      .read
+		.i_reconfig_xcvr2_write          ('h0),          //   input,     width = 1,                      .write
+		.o_reconfig_xcvr2_readdata       (),       //  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr2_writedata      ('h0),      //   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr2_waitrequest    (),    //  output,     width = 1,                      .waitrequest
+		.i_reconfig_xcvr3_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_3.address
+		.i_reconfig_xcvr3_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr3_readdata_valid (), //  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr3_read           ('h0),           //   input,     width = 1,                      .read
+		.i_reconfig_xcvr3_write          ('h0),          //   input,     width = 1,                      .write
+		.o_reconfig_xcvr3_readdata       (),       //  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr3_writedata      ('h0),      //   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr3_waitrequest    (),    //  output,     width = 1,                      .waitrequest
+		.i_clk_pll                       (ftile_eth_clk_pll),                       //   input,     width = 1,             i_clk_pll.clk
+		.anlt_link                       (ftile_eth_anlt_link)                        //  output,     width = 1,            anlt_ports.anlt_link
+	);
+
+
+
     mkBsvTop bsv_top(
         .CLK(rtile_pcie_coreclkout_hip),
 		.RST_N(rtile_pcie_p0_reset_status_n),
+
+		// Rtile
 		.rtilePcieAdaptorRxRawIfc_data({rtile_pcie_p0_rx_st3_data, rtile_pcie_p0_rx_st2_data, rtile_pcie_p0_rx_st1_data, rtile_pcie_p0_rx_st0_data}),
 		.rtilePcieAdaptorRxRawIfc_hdr({rtile_pcie_p0_rx_st3_hdr, rtile_pcie_p0_rx_st2_hdr, rtile_pcie_p0_rx_st1_hdr, rtile_pcie_p0_rx_st0_hdr}),
 		.rtilePcieAdaptorRxRawIfc_sop({rtile_pcie_p0_rx_st3_sop, rtile_pcie_p0_rx_st2_sop, rtile_pcie_p0_rx_st1_sop, rtile_pcie_p0_rx_st0_sop}),
@@ -377,6 +552,25 @@ module bluerdma_top(
 		.rtilePcieAdaptorTxRawIfc_eop({rtile_pcie_p0_tx_st3_eop, rtile_pcie_p0_tx_st2_eop, rtile_pcie_p0_tx_st1_eop, rtile_pcie_p0_tx_st0_eop}),
 		.rtilePcieAdaptorTxRawIfc_hvalid({rtile_pcie_p0_tx_st3_hvalid, rtile_pcie_p0_tx_st2_hvalid, rtile_pcie_p0_tx_st1_hvalid, rtile_pcie_p0_tx_st0_hvalid}),
 		.rtilePcieAdaptorTxRawIfc_dvalid({rtile_pcie_p0_tx_st3_dvalid, rtile_pcie_p0_tx_st2_dvalid, rtile_pcie_p0_tx_st1_dvalid, rtile_pcie_p0_tx_st0_dvalid}),
+		
+		// FTile
+		.ftileMacAdaptorRxRawIfc_data(ftile_eth_rx_mac_data),
+		.ftileMacAdaptorRxRawIfc_valid(ftile_eth_rx_mac_valid),
+		.ftileMacAdaptorRxRawIfc_inframe(ftile_eth_rx_mac_inframe),
+		.ftileMacAdaptorRxRawIfc_eop_empty(ftile_eth_rx_mac_eop_empty),
+		.ftileMacAdaptorRxRawIfc_fcs_error(ftile_eth_rx_mac_fcs_error),
+		.ftileMacAdaptorRxRawIfc_error(ftile_eth_rx_mac_error),
+		.ftileMacAdaptorRxRawIfc_status_data(ftile_eth_rx_mac_status),
+		.ftileMacAdaptorRxRawIfc_ready(),
+		.ftileMacAdaptorTxRawIfc_ready(ftile_eth_tx_mac_ready),
+		.ftileMacAdaptorTxRawIfc_data(ftile_eth_tx_mac_data),
+		.ftileMacAdaptorTxRawIfc_valid(ftile_eth_tx_mac_valid),
+		.ftileMacAdaptorTxRawIfc_inframe(ftile_eth_tx_mac_inframe),
+		.ftileMacAdaptorTxRawIfc_eop_empty(ftile_eth_tx_mac_eop_empty),
+		.ftileMacAdaptorTxRawIfc_error(ftile_eth_tx_mac_error),
+		.ftileMacAdaptorTxRawIfc_skip_crc(ftile_eth_tx_mac_skip_crc),
+
+		// Debug
 		.signalKeeperOutput(signalKeeperOutput),
 		.RDY_signalKeeperOutput()
     );

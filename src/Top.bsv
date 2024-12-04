@@ -15,13 +15,18 @@ import DtldStream :: *;
 
 
 import RTilePcieAdaptor :: *;
+import FTileMacAdaptor :: *;
 
 interface BsvTop;
         (* always_ready, always_enabled *)
         interface RTilePcieAdaptorRx rtilePcieAdaptorRxRawIfc;
-
         (* always_ready, always_enabled *)
         interface RTilePcieAdaptorTx rtilePcieAdaptorTxRawIfc;
+
+        (* always_ready, always_enabled *)
+        interface FTileMacAdaptorRx ftileMacAdaptorRxRawIfc;
+        (* always_ready, always_enabled *)
+        interface FTileMacAdaptorTx ftileMacAdaptorTxRawIfc;
 
         method Bit#(128) signalKeeperOutput;
         
@@ -32,14 +37,20 @@ module mkBsvTop(BsvTop);
     RTilePcieAdaptor rtilePcieAdaptor   <- mkRTilePcieAdaptor;
     RTilePcie        rtilePcie          <- mkRTilePcie;
 
+    FTileMacAdaptor  ftileMacAdaptor    <- mkFTileMacAdaptor;
+    FTileMac         ftileMac           <- mkFTileMac;
+
     mkConnection(rtilePcieAdaptor.pcieRxPipeOut, rtilePcie.pcieRxPipeIn);
     mkConnection(rtilePcieAdaptor.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
 
+    mkConnection(ftileMacAdaptor.ftilemacRxPipeOut, ftileMac.ftilemacRxPipeIn);
+    mkConnection(ftileMacAdaptor.ftilemacTxPipeIn, ftileMac.ftilemacTxPipeOut);
 
-    ForceKeepWideSignals#(Bit#(2048), Bit#(32)) signalKeeperForTxBusOutput          <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Bit#(512), Bit#(16)) signalKeeperForRxBusOutput           <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Bit#(4164), Bit#(32)) signalKeeperForUserLogicReadOutput   <- mkForceKeepWideSignals; 
-    
+
+ 
+
+    ForceKeepWideSignals#(Bit#(4164), Bit#(32)) signalKeeperForPcieUserLogicReadOutput   <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Bit#(4164), Bit#(32)) signalKeeperForEthUserLogicReadOutput   <- mkForceKeepWideSignals; 
 
     Reg#(Bit#(128)) outReg <- mkReg(0);
 
@@ -57,7 +68,7 @@ module mkBsvTop(BsvTop);
     let randSourceC <- mkSynthesizableRng512('h77777777);
     let randSourceD <- mkSynthesizableRng512('h88888888);
 
-    rule injectUserLogicReq1;
+    rule injectPcieUserLogicReq;
         let randValue1 <- randSource1.get;
         let randValue2 <- randSource2.get;
         let randValue3 <- randSource3.get;
@@ -101,7 +112,7 @@ module mkBsvTop(BsvTop);
     endrule
 
 
-    rule handleUserlogicReadOutput;
+    rule handlePcieUserlogicReadOutput;
         Vector#(NUMERIC_TYPE_FOUR, RtilePcieUserStream) resultVec = newVector;
         for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
             if (rtilePcie.streamSlaveIfcVec[idx].readPipeIfc.readDataPipeOut.notEmpty) begin
@@ -126,17 +137,56 @@ module mkBsvTop(BsvTop);
             rtilePcie.streamMasterIfc.readPipeIfc.readMetaPipeOut.deq;
         end
 
-        signalKeeperForUserLogicReadOutput.bitsPipeIn.enq(zeroExtend({pack(resultVec), pack(completerWm), pack(completerWd), pack(completerRm)}));
+        signalKeeperForPcieUserLogicReadOutput.bitsPipeIn.enq(zeroExtend({pack(resultVec), pack(completerWm), pack(completerWd), pack(completerRm)}));
 
     endrule
 
+
+    rule injectEthUserLogicReq;
+        
+        let randValue1 <- randSource6.get;
+        let randValue2 <- randSource7.get;
+        let randValue3 <- randSource8.get;
+        let randValue4 <- randSource9.get;
+        let randValue5 <- randSourceA.get;
+
+
+        let writeStream1 = unpack(truncate(randValue1));
+        let writeStream2 = unpack(truncate(randValue2));
+        let writeStream3 = unpack(truncate(randValue3));
+        let writeStream4 = unpack(truncate(randValue4));
+
+        // write req
+        ftileMac.ftilemacTxStreamPipeInVec[0].enq(writeStream1);
+        ftileMac.ftilemacTxStreamPipeInVec[1].enq(writeStream2);
+        ftileMac.ftilemacTxStreamPipeInVec[2].enq(writeStream3);
+        ftileMac.ftilemacTxStreamPipeInVec[3].enq(writeStream4);
+    endrule
+
+    rule handleEthUSerlogicReadOutput;
+        Vector#(NUMERIC_TYPE_FOUR, FtileMacRxUserStream) resultVec = newVector;
+
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
+            if (ftileMac.ftilemacRxStreamPipeOutVec[idx].notEmpty) begin
+                resultVec[idx] = ftileMac.ftilemacRxStreamPipeOutVec[idx].first;
+                ftileMac.ftilemacRxStreamPipeOutVec[idx].deq;
+            end
+        end
+
+        signalKeeperForEthUserLogicReadOutput.bitsPipeIn.enq(zeroExtend(pack(resultVec)));
+
+    endrule
+
+
     rule handleOutput;
-        outReg <= zeroExtend({signalKeeperForRxBusOutput.out, signalKeeperForTxBusOutput.out, signalKeeperForUserLogicReadOutput.out});
+        outReg <= zeroExtend({signalKeeperForPcieUserLogicReadOutput.out, signalKeeperForEthUserLogicReadOutput.out});
     endrule
 
     method signalKeeperOutput = outReg;
 
     interface rtilePcieAdaptorRxRawIfc = rtilePcieAdaptor.rx;
     interface rtilePcieAdaptorTxRawIfc = rtilePcieAdaptor.tx;
+    interface ftileMacAdaptorRxRawIfc = ftileMacAdaptor.rx;
+    interface ftileMacAdaptorTxRawIfc = ftileMacAdaptor.tx;
 endmodule
 

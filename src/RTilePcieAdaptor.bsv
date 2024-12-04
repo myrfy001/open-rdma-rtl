@@ -115,6 +115,8 @@ typedef Bit#(PCIE_SEGMENT_CNT) DvalidSignalBundle;
 typedef 12 CREDIT_COUNTER_WIDTH;
 typedef Bit#(CREDIT_COUNTER_WIDTH) CreditCount;
 
+typedef 4 DWORD_CNT_PER_FLOW_CONTROL_CREDIT;
+
 typedef Bit#(TLog#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT)) DispatchChannelIdx;
 
 typedef struct {
@@ -573,6 +575,7 @@ typedef struct {
     ADDR                            addr;                       // 64
     RtilePcieRxPayloadStorageAddr   firstBeatStorageAddr;       // 12
     PcieSegmentIdx                  firstBeatSegIdx;            // 2
+    CreditCount                     pcieFcCreditPd;             // 12
 } RtilePcieRxTlpInfoMrWrite deriving(Bits, FShow);
 
 typedef struct {
@@ -582,6 +585,7 @@ typedef struct {
     PcieTlpDataByteCnt              byteCountInThisTlp;         // 13
     PcieHeaderFieldExtendedTag      tag;                        // 10
     Bool                            isLastCplt;                 // 1
+    CreditCount                     pcieFcCreditCpltd;          // 12
 } RtilePcieRxTlpInfoCplt deriving(Bits, FShow);
 
 typedef union tagged {
@@ -626,10 +630,16 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
     // Pipeline FIFOs
     FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) dispatchTlpInfoPipelineQueue <- mkFIFOF;
 
-    rule calcRxBeatMetaAndForkPayloadStorage;
-
+    rule calcRxBeatMetaAndForkPayloadStorageAndReleasePcieRxFlowCredit;
+        // A trick here. we assume that the whole system is fully-pipelined, there will be no back preasure.
+        // so, when we receive a TLP, we can immediately tell the PCIe IP core that we have consumed the TLP header
+        // and its payload (although we maybe even doesn't see the EOP of this TLP, but we are sure we can hold this TLP,
+        // since we have enough storage for CPLT TLP and we assume that the BAR access is seldom, we won't block)
+        
         let beat = pcieRxPipeInQueue.first;
         pcieRxPipeInQueue.deq;
+
+        // Calc meta data begin ============================================
 
         for (Integer idx = 0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
             tlpRawBeatDataStorageWriteReqPipeOutQueueVec[idx].enq(RtilePcieRxPayloadStorageWriteReq {
@@ -702,6 +712,26 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         end
 
         dispatchTlpInfoPipelineQueue.enq(simpleTlpInfoVec);
+        // Calc meta data end ============================================
+
+        // Release pcie rx flow credit begin=====================
+
+        Vector#(PCIE_SEGMENT_CNT, Bool) rxFlowControlCreditToRelasePh = replicate(False);
+        Vector#(PCIE_SEGMENT_CNT, Bool) rxFlowControlCreditToRelaseNph = replicate(False);
+        Vector#(PCIE_SEGMENT_CNT, Bool) rxFlowControlCreditToRelaseCplh = replicate(False);
+
+        Vector#(PCIE_SEGMENT_CNT, CreditCount) rxFlowControlCreditToRelasePd = replicate(unpack(0));
+        Vector#(PCIE_SEGMENT_CNT, CreditCount) rxFlowControlCreditToRelaseNpd = replicate(unpack(0));
+        Vector#(PCIE_SEGMENT_CNT, CreditCount) rxFlowControlCreditToRelaseCpld = replicate(unpack(0));
+
+
+        for (Integer segIdx = 0; segIdx < valueOf(PCIE_SEGMENT_CNT); segIdx = segIdx + 1) begin
+            if (beat.sop[segIdx] == 1'b1) begin
+                // we have an tlp here
+                PcieTlpHeaderCommon headerFirstDW = getPcieTlpHeaderCommon(beat.header[segIdx]);
+
+            end
+        end
         $display(
             "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
             ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
@@ -780,15 +810,15 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         endcase
 
 
-    for (Integer channelIdx = 0; channelIdx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
-        if (channelHasClptTlpVec[channelIdx]) begin
-            cpltTlpPipeOutQueueVec[channelIdx].enq(cpltTlpInfoVec[channelIdx]);
+        for (Integer channelIdx = 0; channelIdx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
+            if (channelHasClptTlpVec[channelIdx]) begin
+                cpltTlpPipeOutQueueVec[channelIdx].enq(cpltTlpInfoVec[channelIdx]);
+            end
         end
-    end
 
-    if (memRdWrHasTlp) begin
-        memReadWriteReqTlpVecPipeOutQueue.enq(memRdWrTlpInfoVec);
-    end
+        if (memRdWrHasTlp) begin
+            memReadWriteReqTlpVecPipeOutQueue.enq(memRdWrTlpInfoVec);
+        end
 
     endrule
     
@@ -818,9 +848,10 @@ function RtilePcieRxTlpInfo convertTlpToInternalDataType(PcieTlpHeaderBuffer tlp
         {`PCIE_TLP_HEADER_FMT_3DW_WITH_DATA, `PCIE_TLP_HEADER_TYPE_MEM_WRITE}: begin
             PcieTlpHeaderMemoryWrite3Dw tlpHeader = unpack(truncateLSB(tlpBuffer));
             return tagged TlpTypeMrWrite RtilePcieRxTlpInfoMrWrite {
-                addr: unpack(zeroExtend({tlpHeader.addr, 2'b00})),                       
+                addr                : unpack(zeroExtend({tlpHeader.addr, 2'b00})),                       
                 firstBeatStorageAddr: storageAddr,
-                firstBeatSegIdx: firstSegIdx       
+                firstBeatSegIdx     : firstSegIdx,
+                pcieFcCreditPd      : (zeroExtend(tlpHeader.memoryWriteHeader.commonHeader.length) + fromInteger(valueOf(DWORD_CNT_PER_FLOW_CONTROL_CREDIT)-1)) >> valueOf(TLog#(DWORD_CNT_PER_FLOW_CONTROL_CREDIT))
             };
         end
         {`PCIE_TLP_HEADER_FMT_4DW_NO_DATA, `PCIE_TLP_HEADER_TYPE_MEM_READ}: begin
@@ -837,22 +868,24 @@ function RtilePcieRxTlpInfo convertTlpToInternalDataType(PcieTlpHeaderBuffer tlp
         {`PCIE_TLP_HEADER_FMT_4DW_WITH_DATA, `PCIE_TLP_HEADER_TYPE_MEM_WRITE}: begin
             PcieTlpHeaderMemoryWrite4Dw tlpHeader = unpack(truncateLSB(tlpBuffer));
             return tagged TlpTypeMrWrite RtilePcieRxTlpInfoMrWrite {
-                addr: unpack({tlpHeader.addr, 2'b00}),                       
+                addr                : unpack({tlpHeader.addr, 2'b00}),                       
                 firstBeatStorageAddr: storageAddr,
-                firstBeatSegIdx: firstSegIdx       
+                firstBeatSegIdx     : firstSegIdx,
+                pcieFcCreditPd      : (zeroExtend(tlpHeader.memoryWriteHeader.commonHeader.length) + fromInteger(valueOf(DWORD_CNT_PER_FLOW_CONTROL_CREDIT)-1)) >> valueOf(TLog#(DWORD_CNT_PER_FLOW_CONTROL_CREDIT))       
             };
         end
         {`PCIE_TLP_HEADER_FMT_3DW_WITH_DATA, `PCIE_TLP_HEADER_TYPE_CPL_WITH_DATA}: begin
             let {byteCountInThisTlp, firstBeCnt, isLastCplt} = getDataLenFromTlpHeaderOfTypeCplt(tlpBuffer);
             let tag = getExtendedTagFromTlpCpltHeader(tlpBuffer);
-
+            PcieTlpHeaderCompletion tlpHeader = unpack(truncateLSB(tlpBuffer));
             return tagged TlpTypeCplt RtilePcieRxTlpInfoCplt{
                 firstBeatStorageAddr: storageAddr,
-                firstBeatSegIdx: firstSegIdx,
-                firstBeCnt: firstBeCnt,
-                byteCountInThisTlp: byteCountInThisTlp,
-                tag: tag,
-                isLastCplt: isLastCplt
+                firstBeatSegIdx     : firstSegIdx,
+                firstBeCnt          : firstBeCnt,
+                byteCountInThisTlp  : byteCountInThisTlp,
+                tag                 : tag,
+                isLastCplt          : isLastCplt,
+                pcieFcCreditCpltd   : (zeroExtend(tlpHeader.commonHeader.length) + fromInteger(valueOf(DWORD_CNT_PER_FLOW_CONTROL_CREDIT)-1)) >> valueOf(TLog#(DWORD_CNT_PER_FLOW_CONTROL_CREDIT))
             };
         end
         default: begin

@@ -38,7 +38,8 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list quartus_backend_
 	set pcie_ip_file_path "$quartus_backend_dir/ips/pcie/rtile_pcie_hip.ip"
 	set iopll_ip_file_path "$quartus_backend_dir/ips/iopll/iopll.ip"
 	set reset_release_ip_file_path "$quartus_backend_dir/ips/reset_release/reset_release.ip"
-	# set mac_ip_file_path "$quartus_backend_dir/ips/pcie/ftile_mac_hip.ip"
+	set eth_ip_file_path "$quartus_backend_dir/ips/eth/ftile_eth_hip.ip"
+	set system_clk_and_ftile_ref_clk_ip_file_path "$quartus_backend_dir/ips/system_clk_and_ftile_ref_clk/system_clk_and_ftile_ref_clk.ip"
 
 	file mkdir $verilog_snapshot_dir
 	file mkdir $sdc_snapshot_dir
@@ -48,10 +49,14 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list quartus_backend_
 	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
 	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
 
+	# Add ips to the project
 	lappend snapshot_file_list [list "IP_FILE" $pcie_ip_file_path]
 	lappend snapshot_file_list [list "IP_FILE" $iopll_ip_file_path]
 	lappend snapshot_file_list [list "IP_FILE" $reset_release_ip_file_path]
-	# lappend snapshot_file_list [list "IP_FILE" $mac_ip_file_path]
+	lappend snapshot_file_list [list "IP_FILE" $eth_ip_file_path]
+	lappend snapshot_file_list [list "IP_FILE" $system_clk_and_ftile_ref_clk_ip_file_path]
+
+	
 
 	foreach tuple $snapshot_file_list {
 		lassign $tuple filetype filename
@@ -95,6 +100,7 @@ if {$make_assignments} {
 
 	# assign pin location
 	source "$quartus_backend_dir/sdc/set_pin_loc.tcl"
+	source "$quartus_backend_dir/sdc/fitter_assignments.tcl"
 
 	set_global_assignment -name TOP_LEVEL_ENTITY $top_module
 	set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
