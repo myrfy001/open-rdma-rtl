@@ -67,8 +67,8 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
 # BSV_TOP_MODULE ?= mkTestPcieCompletionBufferTimingTest
 
-# TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
-# BSV_TOP_MODULE ?= mkTestRtilePcieAdaptorTimingTest
+TARGETFILE ?= ../test/TestRTilePcieAdaptor.bsv
+BSV_TOP_MODULE ?= mkTestRtilePcieAdaptorTimingTest
 
 # TARGETFILE ?= ../test/TestFTileMacAdaptor.bsv
 # BSV_TOP_MODULE ?= mkTestFtileMacRxPingPongSingleChannelProcessorTimingTest
@@ -101,9 +101,9 @@ FAMILY ?= Agilex 7
 # BSV_TOP_MODULE ?= mkTestDtldStreamSpliterTimingTest
 
 
-TARGETFILE ?= ../src/Top.bsv
-BSV_TOP_MODULE ?= mkBsvTop
-TOP = bluerdma_top
+# TARGETFILE ?= ../src/Top.bsv
+# BSV_TOP_MODULE ?= mkBsvTop
+# TOP = bluerdma_top
 
 
 

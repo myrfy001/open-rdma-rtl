@@ -1222,36 +1222,47 @@ module mkPcieHwCpltBufferAllocator(PcieHwCpltBufferAllocator);
     //     end
     // endrule
 
-    rule perCalc;
+    rule perCalcDealloc;
         PcieHwCpltBufferHeaderSlotCnt   decrHeader  = 0;
         PcieHwCpltBufferDataSlotCnt     decrData    = 0;
+
+        Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieSharedCompletionBufferSlotDeAllocReq) decrReqVec = replicate(unpack(0));
         for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
             if (tagDeAllocPipeInQueueVec[idx].notEmpty) begin
-                decrHeader  = decrHeader    + tagDeAllocPipeInQueueVec[idx].first.headerSlotCnt;
-                decrData    = decrData      + tagDeAllocPipeInQueueVec[idx].first.dataSlotCnt;
+                decrReqVec[idx] = tagDeAllocPipeInQueueVec[idx].first;
                 tagDeAllocPipeInQueueVec[idx].deq;
             end
         end
-        preCalcDeallocReqPipelineQueue.enq(tuple2(decrHeader, decrData));
-
-        if (preCalcAllocReqPipelineQueue.notFull) begin
-            PcieHwCpltBufferHeaderSlotCnt   incrHeader    = 0;
-            PcieHwCpltBufferDataSlotCnt     incrData      = 0;
-            Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool) incrReqChannelFlag = replicate(False);
-            for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
-                // important, we need to make sure the output channel is also not full, so the merge rule can't block.
-                if (tagAllocReqPipeInQueueVec[idx].notEmpty && tagAllocRespPipeOutQueueVec[idx].notFull) begin
-                    incrHeader  = incrHeader    + tagAllocReqPipeInQueueVec[idx].first.headerSlotCnt;
-                    incrData    = incrData      + tagAllocReqPipeInQueueVec[idx].first.dataSlotCnt;
-                    incrReqChannelFlag[idx] = True;
-                    tagAllocReqPipeInQueueVec[idx].deq;
-                end
-            end
-            preCalcAllocReqPipelineQueue.enq(tuple3(incrHeader, incrData, incrReqChannelFlag));
-        end
         
+        for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            decrHeader  = decrHeader    + decrReqVec[idx].headerSlotCnt;
+            decrData    = decrData      + decrReqVec[idx].dataSlotCnt;
+        end
+        preCalcDeallocReqPipelineQueue.enq(tuple2(decrHeader, decrData));
+    endrule
+
+    rule perCalcAlloc;
+        PcieHwCpltBufferHeaderSlotCnt   incrHeader    = 0;
+        PcieHwCpltBufferDataSlotCnt     incrData      = 0;
+        Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieSharedCompletionBufferSlotAllocReq) incrReqVec = replicate(unpack(0));
+
+        Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool) incrReqChannelFlag = replicate(False);
+        for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            // important, we need to make sure the output channel is also not full, so the merge rule can't block.
+            if (tagAllocReqPipeInQueueVec[idx].notEmpty && tagAllocRespPipeOutQueueVec[idx].notFull) begin
+                incrReqVec[idx] = tagAllocReqPipeInQueueVec[idx].first;
+                incrReqChannelFlag[idx] = True;
+                tagAllocReqPipeInQueueVec[idx].deq;
+            end
+        end
+
+        for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
+            incrHeader  = incrHeader    + incrReqVec[idx].headerSlotCnt;
+            incrData    = incrData      + incrReqVec[idx].dataSlotCnt;
+        end
+        preCalcAllocReqPipelineQueue.enq(tuple3(incrHeader, incrData, incrReqChannelFlag));
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkPcieHwCpltBufferAllocator perCalc")
+        //     "time=%0t:", $time, toGreen(" mkPcieHwCpltBufferAllocator perCalcAlloc")
         // );
     endrule
 
@@ -1387,8 +1398,8 @@ typedef struct {
 } PcieCompletionBufferBeatInfoForOutputDataStreamGenerate deriving(Bits, FShow);
 
 typedef enum {
-    PcieCompletionBufferOutputStateSendStateQueryReq = 0,
-    PcieCompletionBufferOutputStateWaitStateQueryResp = 1
+    PcieCompletionBufferOutputStateSendStateInit = 0,
+    PcieCompletionBufferOutputStateWaitStateRunning = 1
 } PcieCompletionBufferOutputState deriving(Bits, Eq, FShow);
 
 interface PcieCompletionBuffer;
@@ -1421,20 +1432,23 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     Reg#(CpltBufferCpltTlpInfoBufferAddr)   curCpltTlpBufferAddrToAllocReg <- mkReg(0);  
 
-    Vector#(PCIE_SEGMENT_CNT, AutoInferBramQueuedOutput#(RtilePcieRxPayloadStorageAddr, PcieTlpDataSegment))    dataStreamStorageVec            <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
-    AutoInferBramQueuedOutput#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)                    slotMetaStorage                 <- mkAutoInferBramQueuedOutput(False, "");
-    AutoInferBramQueuedOutput#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt)                         cpltTlpInfoStorage              <- mkAutoInferBramQueuedOutput(False, "");
+    Vector#(PCIE_SEGMENT_CNT, AutoInferBramQueuedOutput#(RtilePcieRxPayloadStorageAddr, PcieTlpDataSegment))            dataStreamStorageVec            <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+    Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaStorageDoubleWriteVec   <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+    AutoInferBramQueuedOutput#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt)                                 cpltTlpInfoStorage              <- mkAutoInferBramQueuedOutput(False, "");
+
+    Integer slotMetaStorageBramIdxForPtrUpdateRead = 0;
+    Integer slotMetaStorageBramIdxForOutputStatePollRead = 1;
 
     FIFOF#(Tuple2#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaUpdateReqQueueForTagAlloc <- mkFIFOF;
     FIFOF#(Tuple2#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaUpdateReqQueueForWritePtrUpdate <- mkFIFOF;
 
-    FIFOF#(PcieCompletionBufferSlotIdx) slotMetaReadReqQueueForPtrUpdate <- mkSizedFIFOF(4);
-    FIFOF#(PcieCompletionBufferSlotIdx) slotMetaReadReqQueueForOutputData <- mkSizedFIFOF(2);
+    // FIFOF#(PcieCompletionBufferSlotIdx) slotMetaReadReqQueueForPtrUpdate <- mkSizedFIFOF(4);
+    // FIFOF#(PcieCompletionBufferSlotIdx) slotMetaReadReqQueueForOutputData <- mkSizedFIFOF(2);
 
-    FIFOF#(PcieCompletionBufferTagSlotMeta) slotMetaReadRespQueueForPtrUpdate <- mkSizedFIFOF(2);
-    FIFOF#(PcieCompletionBufferTagSlotMeta) slotMetaReadRespQueueForOutputData <- mkSizedFIFOF(2);
+    // FIFOF#(PcieCompletionBufferTagSlotMeta) slotMetaReadRespQueueForPtrUpdate <- mkSizedFIFOF(2);
+    // FIFOF#(PcieCompletionBufferTagSlotMeta) slotMetaReadRespQueueForOutputData <- mkSizedFIFOF(2);
 
-    FIFOF#(Bool) slotMetaReadReqKeepOrderQueue <- mkSizedFIFOF(4);
+    // FIFOF#(Bool) slotMetaReadReqKeepOrderQueue <- mkSizedFIFOF(4);
 
     Reg#(Maybe#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) curInputCpltTlpVecMaybeReg <- mkReg(tagged Invalid);
     
@@ -1453,9 +1467,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     PrioritySearchBuffer#(NUMERIC_TYPE_SIX, PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta) slotMetaUpdateForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
  
-    Reg#(Bool) newCompleteSlotSignalReg[3] <- mkCReg(3, False);
+    // Reg#(Bool) newCompleteSlotSignalReg[3] <- mkCReg(3, False);
 
-    Reg#(PcieCompletionBufferOutputState) outputStateReg <- mkReg(PcieCompletionBufferOutputStateSendStateQueryReq);
+    Reg#(PcieCompletionBufferOutputState) outputStateReg <- mkReg(PcieCompletionBufferOutputStateSendStateInit);
 
     Reg#(Bool) isCurCpltOutputFirstBeatReg          <- mkReg(True);
     Reg#(Bool) isOriginReadReqOutputFirstBeatReg    <- mkReg(True);
@@ -1548,47 +1562,52 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         if (slotMetaUpdateReqQueueForWritePtrUpdate.notEmpty) begin
             let {addr, data} = slotMetaUpdateReqQueueForWritePtrUpdate.first;
             slotMetaUpdateReqQueueForWritePtrUpdate.deq;
-            slotMetaStorage.write(addr, data);
+            for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                slotMetaStorageDoubleWriteVec[idx].write(addr, data);
+            end
+            
         end
         else if (slotMetaUpdateReqQueueForTagAlloc.notEmpty) begin
             let {addr, data} = slotMetaUpdateReqQueueForTagAlloc.first;
             slotMetaUpdateReqQueueForTagAlloc.deq;
-            slotMetaStorage.write(addr, data);
-        end
-    endrule
-
-    rule muxSlotMetaQueryReq;
-        // writePtr query has higher priority
-        if (slotMetaReadReqQueueForPtrUpdate.notEmpty) begin
-            let addr = slotMetaReadReqQueueForPtrUpdate.first;
-            slotMetaReadReqQueueForPtrUpdate.deq;
-            slotMetaStorage.putReadReq(addr);
-            Bool isForPtrUpdate = True;
-            slotMetaReadReqKeepOrderQueue.enq(isForPtrUpdate);
-        end
-        else if (slotMetaReadReqQueueForOutputData.notEmpty) begin
-            let addr = slotMetaReadReqQueueForOutputData.first;
-            slotMetaReadReqQueueForOutputData.deq;
-            slotMetaStorage.putReadReq(addr);
-            Bool isForPtrUpdate = False;
-            slotMetaReadReqKeepOrderQueue.enq(isForPtrUpdate);
-        end
-    endrule 
-
-    rule muxSlotMetaQueryResp;
-        if (slotMetaStorage.readRespPipeOut.notEmpty) begin
-            let resp = slotMetaStorage.readRespPipeOut.first;
-            let isForPtrUpdate = slotMetaReadReqKeepOrderQueue.first;
-            slotMetaReadReqKeepOrderQueue.deq;
-            slotMetaStorage.readRespPipeOut.deq;
-            if (isForPtrUpdate) begin
-                slotMetaReadRespQueueForPtrUpdate.enq(resp);
-            end
-            else begin
-                slotMetaReadRespQueueForOutputData.enq(resp);
+            for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                slotMetaStorageDoubleWriteVec[idx].write(addr, data);
             end
         end
     endrule
+
+    // rule muxSlotMetaQueryReq;
+    //     // writePtr query has higher priority
+    //     if (slotMetaReadReqQueueForPtrUpdate.notEmpty) begin
+    //         let addr = slotMetaReadReqQueueForPtrUpdate.first;
+    //         slotMetaReadReqQueueForPtrUpdate.deq;
+    //         slotMetaStorage.putReadReq(addr);
+    //         Bool isForPtrUpdate = True;
+    //         slotMetaReadReqKeepOrderQueue.enq(isForPtrUpdate);
+    //     end
+    //     else if (slotMetaReadReqQueueForOutputData.notEmpty) begin
+    //         let addr = slotMetaReadReqQueueForOutputData.first;
+    //         slotMetaReadReqQueueForOutputData.deq;
+    //         slotMetaStorage.putReadReq(addr);
+    //         Bool isForPtrUpdate = False;
+    //         slotMetaReadReqKeepOrderQueue.enq(isForPtrUpdate);
+    //     end
+    // endrule 
+
+    // rule muxSlotMetaQueryResp;
+    //     if (slotMetaStorage.readRespPipeOut.notEmpty) begin
+    //         let resp = slotMetaStorage.readRespPipeOut.first;
+    //         let isForPtrUpdate = slotMetaReadReqKeepOrderQueue.first;
+    //         slotMetaReadReqKeepOrderQueue.deq;
+    //         slotMetaStorage.readRespPipeOut.deq;
+    //         if (isForPtrUpdate) begin
+    //             slotMetaReadRespQueueForPtrUpdate.enq(resp);
+    //         end
+    //         else begin
+    //             slotMetaReadRespQueueForOutputData.enq(resp);
+    //         end
+    //     end
+    // endrule
 
     rule handleTagAlloc;
         if (busySlotCounter != fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT))) begin
@@ -1637,7 +1656,8 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             let curCplt = fromMaybe(?, curInputCpltTlpVec[0]);
 
             PcieExtendTagHighPart slotIdx = unpack(truncateLSB(curCplt.tag));
-            slotMetaReadReqQueueForPtrUpdate.enq(slotIdx);
+            slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForPtrUpdateRead].putReadReq(slotIdx);            
+            // slotMetaReadReqQueueForPtrUpdate.enq(slotIdx);
             handleInputCpltTlpVecStep2PipelineQueue.enq(curCplt);
 
             let newInputCpltTlpVec = shiftOutFrom0(tagged Invalid, curInputCpltTlpVec, 1);
@@ -1682,9 +1702,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         handleInputCpltTlpVecStep2PipelineQueue.deq;
 
         PcieExtendTagHighPart slotIdx = unpack(truncateLSB(curCplt.tag));
+        let slotMetaReadFromBram = slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForPtrUpdateRead].readRespPipeOut.first;
+        slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForPtrUpdateRead].readRespPipeOut.deq;
 
-        let slotMetaReadFromBram = slotMetaReadRespQueueForPtrUpdate.first;
-        slotMetaReadRespQueueForPtrUpdate.deq;
         let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(slotIdx);
         PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
 
@@ -1694,7 +1714,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         
         if (curCplt.isLastCplt) begin
             slotMeta.isCompleted = True;
-            newCompleteSlotSignalReg[1] <= True;
+            // newCompleteSlotSignalReg[1] <= True;
             sharedHwCpltBufferSlotDeAllocReqPipeOutQueue.enq(PcieSharedCompletionBufferSlotDeAllocReq{
                 headerSlotCnt   : zeroExtend(slotMeta.maxCpltTlpCntNeeded),
                 dataSlotCnt     : zeroExtend(slotMeta.hwClptBufDataSlotCntNeeded)
@@ -1718,55 +1738,50 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         cpltTlpInfoStorage.write(cpltTlpEntryWriteAddr, curCplt);
     endrule
 
-    rule sendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateQueryReq);
-        if (newCompleteSlotSignalReg[0] == True) begin
-            newCompleteSlotSignalReg[0] <= False;
-            slotMetaReadReqQueueForOutputData.enq(tagAllocTailReg);
-            outputStateReg <= PcieCompletionBufferOutputStateWaitStateQueryResp;
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer sendStateQuery"),
-            //     toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg)
-            // );
-        end
+    rule sendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateInit);
+
+        slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
+        outputStateReg <= PcieCompletionBufferOutputStateWaitStateRunning;
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer sendStateQuery"),
-        //     toBlue(", newCompleteSlotSignalReg="), fshow(newCompleteSlotSignalReg[0])
+        //     toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg)
         // );
     endrule
 
-    rule outputWaitStateQueryResp if (outputStateReg == PcieCompletionBufferOutputStateWaitStateQueryResp);
-        if (slotMetaReadRespQueueForOutputData.notEmpty) begin
-            let slotMetaReadFromBram = slotMetaReadRespQueueForOutputData.first;
-            slotMetaReadRespQueueForOutputData.deq;
-            let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(tagAllocTailReg);
+    rule outputWaitStateQueryResp if (outputStateReg == PcieCompletionBufferOutputStateWaitStateRunning);
 
-            PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
-            
-            if (slotMeta.isCompleted) begin
-                readCpltTlpInfoForOutputPipelineQueue.enq(PcieCompletionBufferTagSlotMetaForOutputStage {
-                    cpltTlpListStartAddr        : slotMeta.cpltTlpListStartAddr,
-                    cpltTlpListCurReadOffset    : 0,
-                    cpltTlpListTargetReadOffset : slotMeta.cpltTlpListCurWriteOffset - 1  // because this points to the next write slot, so for the last valid one, need minus 1
-                });
+        let slotMetaReadFromBram = slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].readRespPipeOut.first;
+        slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].readRespPipeOut.deq;
 
-                let newTagAllocTail;
-                if (tagAllocTailReg == fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE))) begin
-                    newTagAllocTail = fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE));
-                end 
-                else begin
-                    newTagAllocTail = tagAllocTailReg + 1;
-                end
-                tagAllocTailReg <= newTagAllocTail;
-                slotMetaReadReqQueueForOutputData.enq(newTagAllocTail);
-            end
+        let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(tagAllocTailReg);
+
+        PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
+        
+        if (slotMeta.isCompleted) begin
+            readCpltTlpInfoForOutputPipelineQueue.enq(PcieCompletionBufferTagSlotMetaForOutputStage {
+                cpltTlpListStartAddr        : slotMeta.cpltTlpListStartAddr,
+                cpltTlpListCurReadOffset    : 0,
+                cpltTlpListTargetReadOffset : slotMeta.cpltTlpListCurWriteOffset - 1  // because this points to the next write slot, so for the last valid one, need minus 1
+            });
+
+            let newTagAllocTail;
+            if (tagAllocTailReg == fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE))) begin
+                newTagAllocTail = fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE));
+            end 
             else begin
-                outputStateReg <= PcieCompletionBufferOutputStateSendStateQueryReq;
+                newTagAllocTail = tagAllocTailReg + 1;
             end
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp"),
-            //     toBlue(", slotMeta="), fshow(slotMeta)
-            // );
+            tagAllocTailReg <= newTagAllocTail;
+            slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(newTagAllocTail);
         end
+        else begin
+            slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
+        end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp"),
+        //     toBlue(", slotMeta="), fshow(slotMeta)
+        // );
+
     endrule
 
     rule readCpltTlpInfoForOutput;
