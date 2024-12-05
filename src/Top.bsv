@@ -42,10 +42,12 @@ module mkBsvTop(BsvTop);
 
     mkConnection(rtilePcieAdaptor.pcieRxPipeOut, rtilePcie.pcieRxPipeIn);
     mkConnection(rtilePcieAdaptor.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
+    mkConnection(rtilePcieAdaptor.rxFlowControlReleaseReqPipeIn, rtilePcie.rxFlowControlReleaseReqPipeOut);
+    mkConnection(rtilePcieAdaptor.txFlowControlConsumeReqPipeIn, rtilePcie.txFlowControlConsumeReqPipeOut);
+    mkConnection(rtilePcieAdaptor.txFlowControlAvaliablePipeOut, rtilePcie.txFlowControlAvaliablePipeIn);
 
     mkConnection(ftileMacAdaptor.ftilemacRxPipeOut, ftileMac.ftilemacRxPipeIn);
     mkConnection(ftileMacAdaptor.ftilemacTxPipeIn, ftileMac.ftilemacTxPipeOut);
-
 
  
 

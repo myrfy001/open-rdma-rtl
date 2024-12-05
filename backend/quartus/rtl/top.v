@@ -437,8 +437,8 @@ module bluerdma_top(
 		.o_reconfig_eth_readdata         (ftile_eth_reconfig_eth_readdata),         //  output,    width = 32,                      .readdata
 		.i_reconfig_eth_writedata        (ftile_eth_reconfig_eth_writedata),        //   input,    width = 32,                      .writedata
 		.o_reconfig_eth_waitrequest      (ftile_eth_reconfig_eth_waitrequest),      //  output,     width = 1,                      .waitrequest
-		.i_clk_tx                        (ftile_eth_o_clk_pll),                     //   input,     width = 1,              i_tx_clk.clk
-		.i_clk_rx                        (ftile_eth_o_clk_pll),                     //   input,     width = 1,              i_rx_clk.clk
+		.i_clk_tx                        (ftile_eth_clk_pll),                       //   input,     width = 1,              i_tx_clk.clk
+		.i_clk_rx                        (ftile_eth_clk_pll),                       //   input,     width = 1,              i_rx_clk.clk
 		.i_rst_n                         (ftile_eth_rst_n),                         //   input,     width = 1,               i_rst_n.reset_n
 		.i_tx_rst_n                      (ftile_eth_tx_rst_n),                      //   input,     width = 1,            i_tx_rst_n.reset_n
 		.i_rx_rst_n                      (ftile_eth_rx_rst_n),                      //   input,     width = 1,            i_rx_rst_n.reset_n

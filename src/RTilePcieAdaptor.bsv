@@ -209,6 +209,11 @@ interface RTilePcieAdaptor;
 
     interface PipeOut#(PcieRxBeat) pcieRxPipeOut;
     interface PipeIn#(PcieTxBeat) pcieTxPipeIn;
+
+    interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeIn;
+    interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeIn;
+    interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))   txFlowControlAvaliablePipeOut;
+    
 endinterface
 
 (* synthesize *)
@@ -233,6 +238,10 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
     FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGFIFOF;
 
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkFIFOF;
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkFIFOF;
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkFIFOF;
+
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
 
     Bool txValid = pcieTxPipeInQueue.notEmpty && txReadySignalOutputReg;
@@ -241,6 +250,47 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
         if (txValid && pcieTxPipeInQueue.notEmpty) begin
             pcieTxPipeInQueue.deq;
         end
+    endrule
+
+    rule handleRxFlowControlCreditRelease;
+        let {phToRelease, nphToRelease, cplhToRelease, pdToRelease, npdToRelease, cpldToRelease} = rxFlowControlReleaseReqPipeInQueue.first;
+        rxFlowControlReleaseReqPipeInQueue.deq;
+        rxCreditPH.releaseCredit(phToRelease);
+        rxCreditNPH.releaseCredit(nphToRelease);
+        rxCreditCPLH.releaseCredit(cplhToRelease);
+        rxCreditPD.releaseCredit(pdToRelease);
+        rxCreditNPD.releaseCredit(npdToRelease);
+        rxCreditCPLD.releaseCredit(cpldToRelease);
+    endrule
+
+    rule outputNewestCreditAvailable;
+        txFlowControlAvaliablePipeOutQueue.enq(tuple6(txCreditPH.curAvailableCredit, txCreditNPH.curAvailableCredit, txCreditCPLH.curAvailableCredit, txCreditPD.curAvailableCredit, txCreditNPD.curAvailableCredit, txCreditCPLD.curAvailableCredit));
+    endrule
+
+    rule handleTxFlowControlCreditConsume;
+        let {phToConsume, nphToConsume, cplhToConsume, pdToConsume, npdToConsume, cpldToConsume} = txFlowControlConsumeReqPipeInQueue.first;
+        txFlowControlConsumeReqPipeInQueue.deq;
+
+        let r1 <- txCreditPH.consumeCredit(phToConsume);
+        let r2 <- txCreditNPH.consumeCredit(nphToConsume);
+        let r3 <- txCreditCPLH.consumeCredit(cplhToConsume);
+        let r4 <- txCreditPD.consumeCredit(pdToConsume);
+        let r5 <- txCreditNPD.consumeCredit(npdToConsume);
+        let r6 <- txCreditCPLD.consumeCredit(cpldToConsume);
+
+        immAssert(
+            r1 && r2 && r3 && r4 && r5 && r6,
+            "no enough credit",
+            $format(
+                "txFlowControlConsumeReqPipeInQueue.first=", fshow(txFlowControlConsumeReqPipeInQueue.first),
+                ", txCreditPH=", fshow(txCreditPH.curAvailableCredit),
+                ", txCreditNPH=", fshow(txCreditNPH.curAvailableCredit),
+                ", txCreditCPLH=", fshow(txCreditCPLH.curAvailableCredit),
+                ", txCreditPD=", fshow(txCreditPD.curAvailableCredit),
+                ", txCreditNPD=", fshow(txCreditNPD.curAvailableCredit),
+                ", txCreditCPLD=", fshow(txCreditCPLD.curAvailableCredit)
+            )
+        );
     endrule
 
 
@@ -335,6 +385,9 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
 
     interface pcieRxPipeOut = ugToPipeOut(pcieRxPipeOutQueue);
     interface pcieTxPipeIn = ugToPipeIn(pcieTxPipeInQueue);
+    interface rxFlowControlReleaseReqPipeIn = toPipeIn(rxFlowControlReleaseReqPipeInQueue);
+    interface txFlowControlConsumeReqPipeIn = toPipeIn(txFlowControlConsumeReqPipeInQueue);
+    interface txFlowControlAvaliablePipeOut = toPipeOut(txFlowControlAvaliablePipeOutQueue);
 endmodule
 
 
@@ -439,7 +492,8 @@ interface PcieCreditCounterSource#(type tCounter, type tDelta);
     (* always_ready, always_enabled *) method Bool     initAckSignal;
     (* always_ready, always_enabled *) method Action   setInputSignal(Bool initSignal, Bool updateSignal, tDelta updateCntSignal);
 
-    method ActionValue#(Bool) consumeCredit(tCounter delta);
+    method ActionValue#(Bool)   consumeCredit(tCounter delta);
+    method tCounter             curAvailableCredit;
 endinterface
 
 typedef enum {
@@ -516,6 +570,8 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
             return False;
         end
     endmethod
+
+    method curAvailableCredit = counter;
 endmodule
 
 
@@ -605,6 +661,7 @@ interface PcieRxStreamSegmentFork;
     interface PipeOut#(RtilePcieRxPayloadStorageWriteReq) tlpRawBeatDataStorageWriteReqForCompleterPipeOut;
     interface PipeOut#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeOut;
     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) cpltTlpVecPipeOutVec;
+    interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeOut;
 endinterface
 
 (* synthesize *)
@@ -619,6 +676,8 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) cpltTlpVecPipeOutVecInst = newVector;
 
     FIFOF#(RtilePcieRxPayloadStorageWriteReq) tlpRawBeatDataStorageWriteReqForCompleterPipeOutQueue <- mkFIFOF;
+
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeOutQueue <- mkFIFOF;
 
     for (Integer handlerIdx = 0; handlerIdx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); handlerIdx = handlerIdx + 1) begin
         tlpRawBeatDataStorageWriteReqPipeOutVecInst[handlerIdx] = toPipeOut(tlpRawBeatDataStorageWriteReqPipeOutQueueVec[handlerIdx]);
@@ -724,14 +783,39 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         Vector#(PCIE_SEGMENT_CNT, CreditCount) rxFlowControlCreditToRelaseNpd = replicate(unpack(0));
         Vector#(PCIE_SEGMENT_CNT, CreditCount) rxFlowControlCreditToRelaseCpld = replicate(unpack(0));
 
+        CreditCount phToRelease     = 0;
+        CreditCount nphToRelease    = 0;
+        CreditCount cplhToRelease   = 0;
+        CreditCount pdToRelease     = 0;
+        CreditCount npdToRelease    = 0;
+        CreditCount cpldToRelease   = 0;
+
 
         for (Integer segIdx = 0; segIdx < valueOf(PCIE_SEGMENT_CNT); segIdx = segIdx + 1) begin
             if (beat.sop[segIdx] == 1'b1) begin
                 // we have an tlp here
-                PcieTlpHeaderCommon headerFirstDW = getPcieTlpHeaderCommon(beat.header[segIdx]);
-
+                let {isPostTlp, isNonPostedTlp, isCpltTlp, pdCredit, npdCredit, cpldCredit} = getFlowControlCreditFromRxTlp(beat.header[segIdx]);
+                rxFlowControlCreditToRelasePh[segIdx] = isPostTlp;
+                rxFlowControlCreditToRelaseNph[segIdx] = isNonPostedTlp;
+                rxFlowControlCreditToRelaseCplh[segIdx] = isCpltTlp;
+                rxFlowControlCreditToRelasePd[segIdx] = pdCredit;
+                rxFlowControlCreditToRelaseNpd[segIdx] = npdCredit;
+                rxFlowControlCreditToRelaseCpld[segIdx] = cpldCredit;
             end
         end
+
+        for (Integer segIdx = 0; segIdx < valueOf(PCIE_SEGMENT_CNT); segIdx = segIdx + 1) begin
+            phToRelease = phToRelease + zeroExtend(pack(rxFlowControlCreditToRelasePh[segIdx]));
+            nphToRelease = nphToRelease + zeroExtend(pack(rxFlowControlCreditToRelaseNph[segIdx]));
+            cplhToRelease = cplhToRelease + zeroExtend(pack(rxFlowControlCreditToRelaseCplh[segIdx]));
+            pdToRelease = pdToRelease + rxFlowControlCreditToRelasePd[segIdx];
+            npdToRelease = npdToRelease + rxFlowControlCreditToRelaseNpd[segIdx];
+            cpldToRelease = cpldToRelease + rxFlowControlCreditToRelaseCpld[segIdx];
+        end
+
+        rxFlowControlReleaseReqPipeOutQueue.enq(tuple6(phToRelease, nphToRelease, cplhToRelease, pdToRelease, npdToRelease, cpldToRelease));
+
+
         $display(
             "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
             ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
@@ -828,6 +912,7 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
     interface tlpRawBeatDataStorageWriteReqForCompleterPipeOut = toPipeOut(tlpRawBeatDataStorageWriteReqForCompleterPipeOutQueue);
     interface cpltTlpVecPipeOutVec = cpltTlpVecPipeOutVecInst;
     interface memReadWriteReqTlpVecPipeOut = toPipeOut(memReadWriteReqTlpVecPipeOutQueue);
+    interface rxFlowControlReleaseReqPipeOut = toPipeOut(rxFlowControlReleaseReqPipeOutQueue);
 endmodule
 
 
@@ -894,6 +979,34 @@ function RtilePcieRxTlpInfo convertTlpToInternalDataType(PcieTlpHeaderBuffer tlp
 
     endcase
 endfunction
+
+function Tuple6#(Bool, Bool, Bool, CreditCount, CreditCount, CreditCount) getFlowControlCreditFromRxTlp(PcieTlpHeaderBuffer tlpBuffer);
+    PcieTlpHeaderCommon headerFirstDW = getPcieTlpHeaderCommon(tlpBuffer);
+    CreditCount dataCredit = (zeroExtend(headerFirstDW.length) + fromInteger(valueOf(DWORD_CNT_PER_FLOW_CONTROL_CREDIT)-1)) >> valueOf(TLog#(DWORD_CNT_PER_FLOW_CONTROL_CREDIT));
+    Bool hasPayload = isPcieTlpHasPayload(tlpBuffer);
+
+    Bool isMemWriteTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_MEM_REQ);
+    Bool isMessageTlp  = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA) && (headerFirstDW.typ matches `PCIE_TLP_HEADER_TYPE_MSG ? True : False);
+    Bool isPostTlp  = isMemWriteTlp || isMessageTlp;
+
+    Bool isMemReadTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_NO_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_MEM_REQ || headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_MEM_LOCK_REQ);
+    Bool isIoTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_NO_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_IO);
+    Bool isCgfTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_NO_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CFG_TYPE_0 || headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CFG_TYPE_1);
+    Bool isFetchAndAddAtomicTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_FETCH_ADD);
+    Bool isNonPostedTlp = isMemReadTlp || isIoTlp || isCgfTlp || isFetchAndAddAtomicTlp;
+
+    Bool isCpltNoLockTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CPL);
+    Bool isCpltWithLockTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CPL_LOCK);
+    Bool isCpltTlp = isCpltNoLockTlp || isCpltWithLockTlp;
+
+    let pdCredit = (hasPayload && isPostTlp) ? dataCredit : 0;
+    let npdCredit = (hasPayload && isNonPostedTlp) ? dataCredit : 0;
+    let cpldCredit = (hasPayload && isCpltTlp) ? dataCredit : 0;
+
+    return tuple6(isPostTlp, isNonPostedTlp, isCpltTlp, pdCredit, npdCredit, cpldCredit);
+endfunction
+
+
 
 function Bool isPcieTlpHasPayload(PcieTlpHeaderBuffer tlpBuffer);
     PcieHeaderFieldFmt fmt = unpack(truncateLSB(tlpBuffer));
@@ -1018,6 +1131,7 @@ typedef StreamShifterG#(PcieDataStreamDataLsbRight) PcieStreamShifter;
 typedef 4096                                                            PCIE_MRRS;
 typedef TMul#(PCIE_MRRS, BYTE_WIDTH)                                    PCIE_MRRS_WIDTH_IN_BITS;
 
+typedef 4096                                                            PCIE_MAX_MPS_ALLOWED_IN_PCIE_SPEC;
 typedef 512                                                             PCIE_MPS;
 typedef TAdd#(1, TDiv#(PCIE_MPS, PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH))     PCIE_MAX_PAYLOAD_SEGMENT_CNT_PER_TLP;
 typedef TLog#(PCIE_MAX_PAYLOAD_SEGMENT_CNT_PER_TLP)                     PCIE_SEGMENT_IDX_IN_TLP_WIDTH;
@@ -2246,18 +2360,30 @@ typedef TMax#(1, TLog#(RTILE_PCIE_TX_SEG_CNT_PER_USER_INPUT_BEAT))      RTILE_PC
 typedef Bit#(RTILE_PCIE_TX_SEG_INDEX_IN_BUFFER_ROW_WIDTH)               RtilePcieTxChannelBufferRowSegIdx;
 typedef TLog#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG)                     RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET;
 
+typedef enum  {
+    RtilePcieFlowControlTlpTypeEnumP,
+    RtilePcieFlowControlTlpTypeEnumNP,
+    RtilePcieFlowControlTlpTypeEnumCPLT
+} RtilePcieFlowControlTlpTypeEnum deriving(FShow, Bits, Eq);
+
+
 typedef struct {
     RtilePcieTxChannelBufferSegAddr             startSegAddr;
     RtilePcieTxChannelBufferSegCnt              segCnt;
     Bool                                        isStorageRowCountSmall;  // To improve timing
+    RtilePcieFlowControlTlpTypeEnum             flowControlTlpType;
+    CreditCount                                 flowControlCreditConsumed;
 } RtilePcieTxBufferRange deriving(Bits, FShow);
+
 
 typedef struct {
     RtilePcieUserChannelIdx                         srcChannelIdx;                  // 2
     RtilePcieTxChannelBufferSegAddr                 startSegAddr;                   // 9
     RtilePcieTxChannelBufferSegCnt                  segCnt;                         // 9
     Bool                                            isStorageRowCountSmall;         // 1
-    ReservedZero#(11)                               reserved;                       // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
+    RtilePcieFlowControlTlpTypeEnum                 flowControlTlpType;             // 2
+    CreditCount                                     flowControlCreditConsumed;      // 12
+    ReservedZero#(29)                               reserved;                       // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
 } RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset deriving(Bits, FShow);
 
 typedef struct {
@@ -2312,6 +2438,8 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
     Reg#(RtilePcieTxChannelBufferAddr)      startRowAddrReg             <- mkReg(0);
     Reg#(RtilePcieTxChannelBufferSegCnt)    curSegCntReg                <- mkReg(0);
     Reg#(Bool)                              isFirstReg                  <- mkReg(True);
+    Reg#(Tuple2#(RtilePcieFlowControlTlpTypeEnum, CreditCount)) tlpFlowControlCreditReg <- mkRegU;
+
 
     // rule debug;
     //     if (!streamPipeInQueue.notFull) begin
@@ -2379,12 +2507,34 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
         let newSegCnt = curSegCnt + fromInteger(valueOf(RTILE_PCIE_TX_SEG_CNT_PER_USER_INPUT_BEAT));
         let nextBeatRowAddr = lsb(curSegCnt) == 1 ? curRowAddrReg + 1 : curRowAddrReg;
 
+        let tlpFlowControlCredit = tlpFlowControlCreditReg;
+        if (isFirstReg) begin
+            let tlpHeaderBuf = txTlpHeaderBufferPipeInQueue.first;
+            txTlpHeaderBufferPipeInQueue.deq;
+            for (Integer idx = 0; idx < valueOf(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
+                tlpHeaderStorageVec[idx].write(curRowAddrReg, tlpHeaderBuf);
+            end
+
+
+            let {isPostTlp, isNonPostedTlp, isCpltTlp, pdCredit, npdCredit, cpldCredit} = getFlowControlCreditFromRxTlp(tlpHeaderBuf);
+            case ({pack(isPostTlp), pack(isNonPostedTlp), pack(isCpltTlp)}) 
+                3'b100: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumP, pdCredit);
+                3'b010: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumP, pdCredit);
+                3'b001: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumP, pdCredit);
+                default: immFail("should not reach here", $format("credit info = ", fshow(getFlowControlCreditFromRxTlp(tlpHeaderBuf))));
+            endcase
+            tlpFlowControlCreditReg <= tlpFlowControlCredit;
+        end
+
         if (ds.isLast) begin
 
+            let {flowControlTlpType, flowControlCreditConsumed} = tlpFlowControlCredit;
             let outputEntry = RtilePcieTxBufferRange {
-                startSegAddr: zeroExtend(startRowAddrReg) << valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET),
-                segCnt: newSegCnt,
-                isStorageRowCountSmall: (newSegCnt >> valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT))
+                startSegAddr                : zeroExtend(startRowAddrReg) << valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET),
+                segCnt                      : newSegCnt,
+                isStorageRowCountSmall      : (newSegCnt >> valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT)),
+                flowControlTlpType          : flowControlTlpType,
+                flowControlCreditConsumed   : flowControlCreditConsumed
             };
             packetMetaPipeOutQueue.enq(outputEntry);
             newSegCnt = 0;
@@ -2401,16 +2551,6 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
         for (Integer idx = 0; idx < valueOf(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
             dataStreamStorageVec[idx][curIdxInDoubleWidthSeg].write(curRowAddrReg, ds.data);
         end
-
-        if (isFirstReg) begin
-            let tlpHeaderBuf = txTlpHeaderBufferPipeInQueue.first;
-            txTlpHeaderBufferPipeInQueue.deq;
-            for (Integer idx = 0; idx < valueOf(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
-                tlpHeaderStorageVec[idx].write(curRowAddrReg, tlpHeaderBuf);
-            end
-        end
-
-        
 
         curSegCntReg  <= newSegCnt;
         curRowAddrReg <= nextBeatRowAddr;
@@ -2448,7 +2588,8 @@ typedef Vector#(RTILE_PCIE_TX_MAX_PACKET_PER_BEAT, Maybe#(RtilePcieTxPingPongCha
 interface RtilePcieTxPingPongFork;
     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeIn#(RtilePcieTxBufferRange)) packetMetaPipeInVec;
     interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(RtilePcieTxPingPongChannelMetaBundle))  pingpongChannelMetaPipeOutVec;
-
+    interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))   txFlowControlConsumeReqPipeOut;
+    interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeIn;
 endinterface
 
 (* synthesize *)
@@ -2459,6 +2600,8 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(RtilePcieTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(RtilePcieTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
     
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeOutQueue <- mkFIFOF;
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeInQueue <- mkFIFOF;
 
     for (Integer idx=0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         packetMetaPipeInVecInst[idx] = toPipeIn(packetMetaPipeInQueueVec[idx]);
@@ -2493,6 +2636,10 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
     FIFOF#(Tuple2#(
         Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset),
         LUInt#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT)
+    ))  flowControlCheckPipelineQueue <- mkLFIFOF;
+    FIFOF#(Tuple2#(
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset),
+        LUInt#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT)
     ))  mimoInputPipelineQueue <- mkLFIFOF;
 
     FIFOF#(Tuple2#(RtilePcieTxPingPongChannelIdx, RtilePcieTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
@@ -2509,7 +2656,6 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset) vecToEnq = newVector;
         Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool) needDeqFlagVec = replicate(False);
         let curInputRoundRobinIdx = curInputRoundRobinIdxReg;
-        // let prevDestSegOffset = prevDestSegOffsetReg;
         let enqCnt = 0;
         case ({ pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].notEmpty),
                 pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].notEmpty),
@@ -2522,15 +2668,14 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+3,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+3,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
                 enqCnt = 1;
             end
@@ -2538,13 +2683,13 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+2,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt,
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty, 
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+2,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt,
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
                 // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
@@ -2554,28 +2699,26 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+2,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+2,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
                 needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[1] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+3,
-                    startSegAddr    : inMeta1.startSegAddr, 
-                    segCnt          : inMeta1.segCnt, 
-                    isStorageRowCountSmall : inMeta1.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta1.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+3,
+                    startSegAddr                : inMeta1.startSegAddr, 
+                    segCnt                      : inMeta1.segCnt, 
+                    isStorageRowCountSmall      : inMeta1.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta1.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta1.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
                 
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
                 enqCnt = 2;
@@ -2584,15 +2727,14 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+1,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt,
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall, 
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+1,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt,
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall, 
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 2;
                 enqCnt = 1;
             end
@@ -2600,28 +2742,26 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+1,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+1,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
                 needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[1] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+3,
-                    startSegAddr    : inMeta1.startSegAddr, 
-                    segCnt          : inMeta1.segCnt, 
-                    isStorageRowCountSmall : inMeta1.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta1.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+3,
+                    startSegAddr                : inMeta1.startSegAddr, 
+                    segCnt                      : inMeta1.segCnt, 
+                    isStorageRowCountSmall      : inMeta1.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta1.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta1.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
                 
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
                 enqCnt = 2;
@@ -2630,28 +2770,26 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+1,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+1,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
                 needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[1] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+2,
-                    startSegAddr    : inMeta1.startSegAddr, 
-                    segCnt          : inMeta1.segCnt, 
-                    isStorageRowCountSmall : inMeta1.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta1.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+2,
+                    startSegAddr                : inMeta1.startSegAddr, 
+                    segCnt                      : inMeta1.segCnt, 
+                    isStorageRowCountSmall      : inMeta1.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta1.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta1.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
                 
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
                 enqCnt = 2;
@@ -2660,15 +2798,14 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+0,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt,
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty, 
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+0,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt,
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 1;
                 enqCnt = 1;
             end
@@ -2676,28 +2813,26 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+0,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+0,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
                 needDeqFlagVec[curInputRoundRobinIdx+3] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].first;
                 vecToEnq[1] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+3,
-                    startSegAddr    : inMeta1.startSegAddr, 
-                    segCnt          : inMeta1.segCnt, 
-                    isStorageRowCountSmall : inMeta1.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta1.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+3,
+                    startSegAddr                : inMeta1.startSegAddr, 
+                    segCnt                      : inMeta1.segCnt, 
+                    isStorageRowCountSmall      : inMeta1.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta1.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta1.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
                 
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 0;
                 enqCnt = 2;
@@ -2706,28 +2841,27 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+0,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+0,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
                 // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
                 needDeqFlagVec[curInputRoundRobinIdx+2] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].first;
                 vecToEnq[1] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+2,
-                    startSegAddr    : inMeta1.startSegAddr, 
-                    segCnt          : inMeta1.segCnt, 
-                    isStorageRowCountSmall : inMeta1.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta1.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+2,
+                    startSegAddr                : inMeta1.startSegAddr, 
+                    segCnt                      : inMeta1.segCnt, 
+                    isStorageRowCountSmall      : inMeta1.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta1.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta1.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
                 
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
                 enqCnt = 2;
@@ -2736,28 +2870,26 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 needDeqFlagVec[curInputRoundRobinIdx+0] = True;
                 let inMeta0 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].first;
                 vecToEnq[0] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+0,
-                    startSegAddr    : inMeta0.startSegAddr, 
-                    segCnt          : inMeta0.segCnt, 
-                    isStorageRowCountSmall : inMeta0.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta0.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+0,
+                    startSegAddr                : inMeta0.startSegAddr, 
+                    segCnt                      : inMeta0.segCnt, 
+                    isStorageRowCountSmall      : inMeta0.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta0.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
 
                 needDeqFlagVec[curInputRoundRobinIdx+1] = True;
                 let inMeta1 = packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].first;
                 vecToEnq[1] = RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset {
-                    srcChannelIdx   : curInputRoundRobinIdx+1,
-                    startSegAddr    : inMeta1.startSegAddr, 
-                    segCnt          : inMeta1.segCnt, 
-                    isStorageRowCountSmall : inMeta1.isStorageRowCountSmall,
-                    // eopEmpty        : inMeta1.eopEmpty,
-                    // destSegOffset   : prevDestSegOffset,
-                    reserved        : unpack(0)
+                    srcChannelIdx               : curInputRoundRobinIdx+1,
+                    startSegAddr                : inMeta1.startSegAddr, 
+                    segCnt                      : inMeta1.segCnt, 
+                    isStorageRowCountSmall      : inMeta1.isStorageRowCountSmall,
+                    flowControlTlpType          : inMeta1.flowControlTlpType,
+                    flowControlCreditConsumed   : inMeta1.flowControlCreditConsumed,
+                    reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta1.segCnt);
                 
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 2;
                 enqCnt = 2;
@@ -2772,7 +2904,6 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         // out of the IF block
         if (enqCnt != 0 && selectedInputChannelMetaMIMO.enqReadyN(enqCnt)) begin
             curInputRoundRobinIdxReg <= curInputRoundRobinIdx;
-            // prevDestSegOffsetReg <= prevDestSegOffset;
 
             if (needDeqFlagVec[0] == True) begin
                 packetMetaPipeInQueueVec[0].deq;
@@ -2787,7 +2918,8 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 packetMetaPipeInQueueVec[3].deq;
             end
 
-            selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+            // selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+
             // $display(
             //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork prepareRoundRobinChannelOrder"),
             //     toBlue(", enqCnt="), fshow(enqCnt),
@@ -2795,7 +2927,82 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             // );
         end
 
-        // mimoInputPipelineQueue.enq(tuple2(vecToEnq, enqCnt));
+        flowControlCheckPipelineQueue.enq(tuple2(vecToEnq, enqCnt));
+    endrule
+
+    rule checkFlowControlCredit;
+        let {vecToEnq, enqCnt} = flowControlCheckPipelineQueue.first;
+        
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, Bool) txFlowControlCreditToConsumePh = replicate(False);
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, Bool) txFlowControlCreditToConsumeNph = replicate(False);
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, Bool) txFlowControlCreditToConsumeCplh = replicate(False);
+
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, CreditCount) txFlowControlCreditToConsumePd = replicate(unpack(0));
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, CreditCount) txFlowControlCreditToConsumeNpd = replicate(unpack(0));
+        Vector#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT, CreditCount) txFlowControlCreditToConsumeCpld = replicate(unpack(0));
+
+        for (Integer tlpIdx = 0; tlpIdx < valueOf(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT); tlpIdx = tlpIdx + 1) begin
+            
+            let isThisSlotValid = fromInteger(tlpIdx+1) <= enqCnt;
+            let creditToConsume = isThisSlotValid ? vecToEnq[tlpIdx].flowControlCreditConsumed : 0;
+
+            case (vecToEnq[tlpIdx].flowControlTlpType)
+                RtilePcieFlowControlTlpTypeEnumP: begin
+                    txFlowControlCreditToConsumePh[tlpIdx] = isThisSlotValid;
+                    txFlowControlCreditToConsumePd[tlpIdx] = creditToConsume;
+                end
+                RtilePcieFlowControlTlpTypeEnumNP: begin
+                    txFlowControlCreditToConsumeNph[tlpIdx] = isThisSlotValid;
+                    txFlowControlCreditToConsumeNpd[tlpIdx] = creditToConsume;
+                end
+                RtilePcieFlowControlTlpTypeEnumCPLT: begin
+                    txFlowControlCreditToConsumeCplh[tlpIdx] = isThisSlotValid;
+                    txFlowControlCreditToConsumeCpld[tlpIdx] = creditToConsume;
+                end
+                default: begin
+                    immFail("should not reach here", $format("vecToEnq=", fshow(vecToEnq)));
+                end
+            endcase
+        end
+
+        CreditCount phToConsume     = 0;
+        CreditCount nphToConsume    = 0;
+        CreditCount cplhToConsume   = 0;
+        CreditCount pdToConsume     = 0;
+        CreditCount npdToConsume    = 0;
+        CreditCount cpldToConsume   = 0;
+
+        for (Integer tlpIdx = 0; tlpIdx < valueOf(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT); tlpIdx = tlpIdx + 1) begin
+            phToConsume = phToConsume + zeroExtend(pack(txFlowControlCreditToConsumePh[tlpIdx]));
+            nphToConsume = nphToConsume + zeroExtend(pack(txFlowControlCreditToConsumeNph[tlpIdx]));
+            cplhToConsume = cplhToConsume + zeroExtend(pack(txFlowControlCreditToConsumeCplh[tlpIdx]));
+            pdToConsume = pdToConsume + txFlowControlCreditToConsumePd[tlpIdx];
+            npdToConsume = npdToConsume + txFlowControlCreditToConsumeNpd[tlpIdx];
+            cpldToConsume = cpldToConsume + txFlowControlCreditToConsumeCpld[tlpIdx];
+        end
+
+        // txFlowControlAvaliablePipeInQueue is filled by a "always enabled" rule, so we must consume it as soon as possible, no matter wo have tlps or not.
+        // so, this rule should not be blocked.
+        let {availableCreditPh, availableCreditNph, availableCreditCplh, availableCreditPd, availableCreditNpd, availableCreditCpld} = txFlowControlAvaliablePipeInQueue.first;
+        txFlowControlAvaliablePipeInQueue.deq;
+
+        if (phToConsume <= availableCreditPh        && 
+            nphToConsume <= availableCreditNph      &&
+            cplhToConsume <= availableCreditCplh    &&
+            pdToConsume <= availableCreditPd        &&
+            npdToConsume <= availableCreditNpd      &&
+            cpldToConsume <= availableCreditCpld) begin
+
+            // IMPORTANT!!!!
+            // since MIMO's enq doesn't have guard (infact, it has guard, but the guard only check if it can enq at least one element), to make sure 
+            // there are enough space for `enqCnt`, we can't relay on enq's guard to block the rule from being fired.
+            // so, we need to move all the "Actions"(i.e., code that will change the state) into the following IF block. And only leave combinational logic
+            // out of the IF block
+            if (enqCnt != 0 && selectedInputChannelMetaMIMO.enqReadyN(enqCnt)) begin
+                flowControlCheckPipelineQueue.deq;
+                selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+            end
+        end
     endrule
 
     // rule forwardRoundRobinResultToMimoBuffer;
@@ -2949,6 +3156,8 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
     
     interface packetMetaPipeInVec = packetMetaPipeInVecInst;
     interface pingpongChannelMetaPipeOutVec = pingpongChannelMetaPipeOutVecInst;
+    interface txFlowControlConsumeReqPipeOut = toPipeOut(txFlowControlConsumeReqPipeOutQueue);
+    interface txFlowControlAvaliablePipeIn = toPipeIn(txFlowControlAvaliablePipeInQueue);
 endmodule
 
 
@@ -3457,10 +3666,13 @@ endmodule
 
 
 interface RTilePcie;
-    interface PipeIn#(PcieRxBeat)                                                               pcieRxPipeIn;
-    interface PipeOut#(PcieTxBeat)                                                              pcieTxPipeOut;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)     streamSlaveIfcVec;
-    interface PcieBiDirUserDataStreamMasterPipes                                                streamMasterIfc;
+    interface PipeIn#(PcieRxBeat)                                                                                   pcieRxPipeIn;
+    interface PipeOut#(PcieTxBeat)                                                                                  pcieTxPipeOut;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)                         streamSlaveIfcVec;
+    interface PcieBiDirUserDataStreamMasterPipes                                                                    streamMasterIfc;
+    interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))       rxFlowControlReleaseReqPipeOut;
+    interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))       txFlowControlConsumeReqPipeOut;
+    interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))        txFlowControlAvaliablePipeIn;
 endinterface
 
 
@@ -3523,8 +3735,11 @@ module mkRTilePcie(RTilePcie);
         end
     endrule
 
-    interface pcieRxPipeIn      = pcieRxStreamSegmentFork.pcieRxPipeIn;
-    interface streamSlaveIfcVec = streamSlaveIfcVecInst;
-    interface pcieTxPipeOut     = rtilePcieTxPingPongJoin.rtilePcieTxPipeOut;
-    interface streamMasterIfc   = pcieCompleter.dtldStreamMasterPipes;
+    interface pcieRxPipeIn                      = pcieRxStreamSegmentFork.pcieRxPipeIn;
+    interface streamSlaveIfcVec                 = streamSlaveIfcVecInst;
+    interface pcieTxPipeOut                     = rtilePcieTxPingPongJoin.rtilePcieTxPipeOut;
+    interface streamMasterIfc                   = pcieCompleter.dtldStreamMasterPipes;
+    interface rxFlowControlReleaseReqPipeOut    = pcieRxStreamSegmentFork.rxFlowControlReleaseReqPipeOut;
+    interface txFlowControlConsumeReqPipeOut    = rtilePcieTxPingPongFork.txFlowControlConsumeReqPipeOut;
+    interface txFlowControlAvaliablePipeIn      = rtilePcieTxPingPongFork.txFlowControlAvaliablePipeIn;
 endmodule
