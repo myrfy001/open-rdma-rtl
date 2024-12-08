@@ -243,12 +243,43 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
+    Reg#(Bool) txTlpAcrossTwoBeatReg <- mkReg(False);
 
     Bool txValid = pcieTxPipeInQueue.notEmpty && txReadySignalOutputReg;
+   
+    rule guard;
+        immAssert(
+            !(txTlpAcrossTwoBeatReg && !pcieTxPipeInQueue.notEmpty),
+            "Can't stop between sop and eop",
+            $format("")
+        );
+    endrule
 
     rule deq;
         if (txValid && pcieTxPipeInQueue.notEmpty) begin
             pcieTxPipeInQueue.deq;
+
+            // use for assertion
+            case ({pcieTxPipeInQueue.first.sop, pcieTxPipeInQueue.first.eop}) matches
+                8'b0000_0000: begin
+                    // nothing to do, not start, not end.
+                end
+                8'b1???_0???: begin
+                    txTlpAcrossTwoBeatReg <= True;
+                end
+                8'b01??_00??: begin
+                    txTlpAcrossTwoBeatReg <= True;
+                end
+                8'b001?_000?: begin
+                    txTlpAcrossTwoBeatReg <= True;
+                end
+                8'b0001_0000: begin
+                    txTlpAcrossTwoBeatReg <= True;
+                end
+                default: begin
+                    txTlpAcrossTwoBeatReg <= False;
+                end
+            endcase
         end
     endrule
 
@@ -415,12 +446,13 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
         Arith#(tCounter),
         ModArith#(tCounter),
         Add#(a__, szDelta, szCounter),
-        Eq#(tCounter)
+        Eq#(tCounter),
+        FShow#(tDelta)
     );
 
     Reg#(PcieCreditCounterSinkState) stateReg <- mkReg(PcieCreditCounterSinkStateWaitingAck);
 
-    Reg#(Bool) initSignalReg <- mkReg(True);
+    Reg#(Bool) initSignalReg <- mkReg(False);
     Reg#(Bool) updateSignalReg <- mkReg(False);
     Reg#(tDelta) updateCntSignalReg <- mkReg(unpack(0));
 
@@ -432,6 +464,7 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
 
     tDelta maxDelta = maxBound;
     rule waitingAck if (stateReg == PcieCreditCounterSinkStateWaitingAck);
+        initSignalReg <= True;
         if (initAckSignalWire) begin
             stateReg <= PcieCreditCounterSinkStateTransferInitValue;
             tDelta delta = unpack(pack(initCounter) > zeroExtend(pack(maxDelta)) ? pack(maxDelta) : truncate(pack(initCounter)));
@@ -440,6 +473,10 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
             updateCntSignalReg <= delta;
             initCounter.decr(unpack(zeroExtend(pack(delta))));
         end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCreditCounterSink waitingAck"),
+        //     ", initAckSignalWire=", fshow(initAckSignalWire)
+        // );
     endrule
 
     rule transferInitValue if (stateReg == PcieCreditCounterSinkStateTransferInitValue);
@@ -452,6 +489,9 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
             updateCntSignalReg <= delta;
             initCounter.decr(unpack(zeroExtend(pack(delta))));
         end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCreditCounterSink transferInitValue")
+        // );
     endrule
 
     rule delayInitRelease1 if (stateReg == PcieCreditCounterSinkStateDelayInitRelease1);
@@ -472,6 +512,10 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
             tDelta delta = unpack(pack(initCounter) > zeroExtend(pack(maxDelta)) ? pack(maxDelta) : truncate(pack(initCounter)));
             updateCntSignalReg <= delta;
             updateCounter.decr(unpack(zeroExtend(pack(delta))));
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCreditCounterSink normalOperation"),
+                ", delta=", fshow(delta)
+            );
         end
     endrule
 
@@ -507,15 +551,20 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
         Bits#(tCounter, szCounter),
         Bits#(tDelta, szDelta),
         Bounded#(tDelta),
+        Bounded#(tCounter),
         Arith#(tCounter),
         ModArith#(tCounter),
         Add#(a__, szDelta, szCounter),
         Eq#(tCounter),
-        Ord#(tCounter)
+        Eq#(tDelta),
+        Ord#(tCounter),
+        FShow#(tDelta)
     );
     Reg#(PcieCreditCounterSourceState) stateReg <- mkReg(PcieCreditCounterSourceStateWaitingInit);
 
     Reg#(Bool) initAckSignalReg <- mkReg(False);
+    Reg#(Bool) isFirstInitBeatReg <- mkReg(True);
+    Reg#(Bool) isInfiniteCreditReg <- mkReg(False);
 
     Wire#(Bool) initSignalWire <- mkBypassWire;
     Wire#(Bool) updateSignalWire <- mkBypassWire;
@@ -542,7 +591,14 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
         end
         else begin
             if (updateSignalWire) begin
-                counter.incr(unpack(zeroExtend(pack(updateCntSignalWire))));
+                isFirstInitBeatReg <= False;
+                if (isFirstInitBeatReg && updateCntSignalWire == unpack(0)) begin
+                    isInfiniteCreditReg <= True;
+                    counter <= maxBound;
+                end
+                else if (!isFirstInitBeatReg) begin
+                    counter.incr(unpack(zeroExtend(pack(updateCntSignalWire))));
+                end
             end
         end
     endrule
@@ -562,8 +618,10 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
     method initAckSignal = initAckSignalReg;
 
     method ActionValue#(Bool) consumeCredit(tCounter delta);
-        if (delta <= counter) begin
-            counter.decr(unpack(zeroExtend(pack(delta))));
+        if (isInfiniteCreditReg || delta <= counter) begin
+            if (!isInfiniteCreditReg) begin
+                counter.decr(unpack(zeroExtend(pack(delta))));
+            end
             return True;
         end
         else begin

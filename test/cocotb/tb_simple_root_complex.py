@@ -98,14 +98,6 @@ class TB(object):
             # TX interface
             tx_bus=RTileTxBus.from_prefix(dut, "txRawIfc"),
             tx_par_err=None,
-
-            # RX flow control
-            rx_buffer_limit=None,
-            rx_buffer_limit_tdm_idx=None,
-
-            # TX flow control
-            tx_cdts_limit=None,
-            tx_cdts_limit_tdm_idx=None,
         )
 
         self.hardware_ip_inst.functions[0].configure_bar(
@@ -442,7 +434,7 @@ class TB(object):
             await cocotb.start(
                 bar.write(write_req_addr, write_req_data.to_bytes(4, byteorder="little"), timeout=50))
 
-            print(
+            self.log.debug(
                 f"bar write req: write_req_addr={hex(write_req_addr)}, write_req_data={hex(write_req_data)}")
 
             # ===========send read req =================
@@ -530,51 +522,13 @@ async def small_desc_fp_test(dut):
     # cocotb.start_soon(tb.start_memory_content_check())
     # cocotb.start_soon(tb.start_send_write_req())
 
-    # cocotb.start_soon(tb.start_send_read_req())
-    # cocotb.start_soon(tb.start_read_resp_check())
+    cocotb.start_soon(tb.start_send_read_req())
+    cocotb.start_soon(tb.start_read_resp_check())
 
-    cocotb.start_soon(tb.start_completer_read_write_req_send())
-    cocotb.start_soon(tb.start_completer_read_write_req_handler())
+    # cocotb.start_soon(tb.start_completer_read_write_req_send())
+    # cocotb.start_soon(tb.start_completer_read_write_req_handler())
 
     await Timer(1000, units='ns')
-
-    # write_meta = BlueRdmaDtldStreamMemAccessMeta(
-    #     addr=0,
-    #     total_len=32
-    # )
-    # await tb.requester_write_meta_pipes[0].enq(write_meta.pack())
-
-    # write_ds = BlueRdmaDataStream256(
-    #     data=bytes([random.randint(0, 255) for _ in range(32)]),
-    #     byte_num=32,
-    #     start_byte_index=0,
-    #     is_first=True,
-    #     is_last=True
-    # )
-    # await tb.requester_write_data_pipes[0].enq(write_ds.pack())
-
-    # await Timer(100, units='ns')
-
-    # read_meta = BlueRdmaDtldStreamMemAccessMeta(
-    #     addr=0,
-    #     total_len=32
-    # )
-    # await tb.requester_read_meta_pipes[0].enq(read_meta.pack())
-
-    # await Timer(200, units='ns')
-
-    # if await tb.requester_read_data_pipes[0].not_empty():
-    #     read_ds_raw = await tb.requester_read_data_pipes[0].first()
-    #     await tb.requester_read_data_pipes[0].deq()
-    #     read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
-    #     tb.log.info("pcie read resp1 = %s" % read_ds)
-
-    # await Timer(10, units='ns')
-    # if await tb.requester_read_data_pipes[0].not_empty():
-    #     read_ds_raw = await tb.requester_read_data_pipes[0].first()
-    #     await tb.requester_read_data_pipes[0].deq()
-    #     read_ds = BlueRdmaDataStream256.unpack(read_ds_raw)
-    #     tb.log.info("pcie read resp2 = %s" % read_ds)
 
 
 def test_dma():
