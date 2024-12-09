@@ -372,6 +372,18 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
                 );
 
                 pcieRxPipeOutQueue.enq(beat);
+
+                if (beat.dvalid != 4'b1111) begin
+                    $display(
+                        "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor setRxInputData Non-full beat detected"),
+                        ", beat=", fshow(beat)
+                    );
+                end
+            end
+            else begin
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor setRxInputData no hand-shake beat detected")
+                // );
             end
         endmethod
 
@@ -892,10 +904,10 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         rxFlowControlReleaseReqPipeOutQueue.enq(tuple6(phToRelease, nphToRelease, cplhToRelease, pdToRelease, npdToRelease, cpldToRelease));
 
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
-            ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork calcRxBeatMetaAndForkPayloadStorage"),
+        //     ", simpleTlpInfoVec=", fshow(simpleTlpInfoVec)
+        // );
 
     endrule
 
@@ -1497,14 +1509,11 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     FIFOF#(RtilePcieRxPayloadStorageWriteReq)                           tlpRawBeatDataStorageWriteReqPipeInQueue        <- mkFIFOF;
     FIFOF#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))   cpltTlpVecPipeInQueue                           <- mkFIFOF;
     FIFOF#(PcieSharedCompletionBufferSlotDeAllocReq)                    sharedHwCpltBufferSlotDeAllocReqPipeOutQueue    <- mkFIFOF;
-    // FIFOF#(RtilePcieUserStream)                                         dataStreamPipeOutQueue                          <- mkFIFOF;
 
     Wire#(RtilePcieUserChannelIdx) channelIdxWire <- mkBypassWire;
     Reg#(PcieExtendTagHighPart) tagAllocHeadReg <- mkReg(fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE)));
     Reg#(PcieExtendTagHighPart) tagAllocTailReg <- mkReg(fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE)));
     Count#(PcieCompletionBufferSlotCnt) busySlotCounter <- mkCount(0);
-
-    Reg#(PcieExtendTagHighPart) doneReadReqToHandlePtrReg <- mkReg(fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE)));
 
     Reg#(CpltBufferCpltTlpInfoBufferAddr)   curCpltTlpBufferAddrToAllocReg <- mkReg(0);  
 
@@ -1518,14 +1527,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     FIFOF#(Tuple2#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaUpdateReqQueueForTagAlloc <- mkFIFOF;
     FIFOF#(Tuple2#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaUpdateReqQueueForWritePtrUpdate <- mkFIFOF;
 
-    // FIFOF#(PcieCompletionBufferSlotIdx) slotMetaReadReqQueueForPtrUpdate <- mkSizedFIFOF(4);
-    // FIFOF#(PcieCompletionBufferSlotIdx) slotMetaReadReqQueueForOutputData <- mkSizedFIFOF(2);
-
-    // FIFOF#(PcieCompletionBufferTagSlotMeta) slotMetaReadRespQueueForPtrUpdate <- mkSizedFIFOF(2);
-    // FIFOF#(PcieCompletionBufferTagSlotMeta) slotMetaReadRespQueueForOutputData <- mkSizedFIFOF(2);
-
-    // FIFOF#(Bool) slotMetaReadReqKeepOrderQueue <- mkSizedFIFOF(4);
-
     Reg#(Maybe#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) curInputCpltTlpVecMaybeReg <- mkReg(tagged Invalid);
     
     Reg#(Maybe#(PcieCompletionBufferTagSlotMetaForOutputStage))     curOutputSlotMetaMaybeReg   <- mkReg(tagged Invalid);
@@ -1536,13 +1537,17 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     // Pipeline FIFOs
     FIFOF#(RtilePcieRxTlpInfoCplt)                                              handleInputCpltTlpVecStep2PipelineQueue             <- mkSizedFIFOF(6);
     FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readCpltTlpInfoForOutputPipelineQueue               <- mkFIFOF;
-    // FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readDataStorageForOutputPipelineQueue               <- mkFIFOF;
+    FIFOF#(PcieExtendTagHighPart)                                               slotMetaQueryForOutputPipelineQueue                 <- mkSizedFIFOF(6);
     FIFOF#(PcieCompletionBufferBeatInfoForOutputDataStreamGenerate)             outputDataStreamGenPipelineQueue                    <- mkSizedFIFOF(6);
     FIFOF#(Tuple2#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt))    handleCpltTlpInfoStorageWritePipelineQueue          <- mkLFIFOF;
 
 
     PrioritySearchBuffer#(NUMERIC_TYPE_SIX, PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta) slotMetaUpdateForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
  
+ 
+    // Reg#(Bool) newCompleteSlotSignalReg[3] <- mkCReg(3, False);
+
+
     // Reg#(Bool) newCompleteSlotSignalReg[3] <- mkCReg(3, False);
 
     Reg#(PcieCompletionBufferOutputState) outputStateReg <- mkReg(PcieCompletionBufferOutputStateSendStateInit);
@@ -1566,9 +1571,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  handleCpltTlpInfoStorageWritePipelineQueue");
     //     end
 
-    //     if (!slotMetaReadReqQueueForPtrUpdate.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  slotMetaReadReqQueueForPtrUpdate");
-    //     end
 
     //     if (!slotMetaReadReqQueueForOutputData.notFull) begin
     //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  slotMetaReadReqQueueForOutputData");
@@ -1600,10 +1602,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     //     // if (!readCpltTlpInfoForOutputPipelineQueue.notFull) begin
     //     //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  readCpltTlpInfoForOutputPipelineQueue");
-    //     // end
-
-    //     // if (!readDataStorageForOutputPipelineQueue.notFull) begin
-    //     //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  readDataStorageForOutputPipelineQueue");
     //     // end
 
         
@@ -1651,39 +1649,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             end
         end
     endrule
-
-    // rule muxSlotMetaQueryReq;
-    //     // writePtr query has higher priority
-    //     if (slotMetaReadReqQueueForPtrUpdate.notEmpty) begin
-    //         let addr = slotMetaReadReqQueueForPtrUpdate.first;
-    //         slotMetaReadReqQueueForPtrUpdate.deq;
-    //         slotMetaStorage.putReadReq(addr);
-    //         Bool isForPtrUpdate = True;
-    //         slotMetaReadReqKeepOrderQueue.enq(isForPtrUpdate);
-    //     end
-    //     else if (slotMetaReadReqQueueForOutputData.notEmpty) begin
-    //         let addr = slotMetaReadReqQueueForOutputData.first;
-    //         slotMetaReadReqQueueForOutputData.deq;
-    //         slotMetaStorage.putReadReq(addr);
-    //         Bool isForPtrUpdate = False;
-    //         slotMetaReadReqKeepOrderQueue.enq(isForPtrUpdate);
-    //     end
-    // endrule 
-
-    // rule muxSlotMetaQueryResp;
-    //     if (slotMetaStorage.readRespPipeOut.notEmpty) begin
-    //         let resp = slotMetaStorage.readRespPipeOut.first;
-    //         let isForPtrUpdate = slotMetaReadReqKeepOrderQueue.first;
-    //         slotMetaReadReqKeepOrderQueue.deq;
-    //         slotMetaStorage.readRespPipeOut.deq;
-    //         if (isForPtrUpdate) begin
-    //             slotMetaReadRespQueueForPtrUpdate.enq(resp);
-    //         end
-    //         else begin
-    //             slotMetaReadRespQueueForOutputData.enq(resp);
-    //         end
-    //     end
-    // endrule
 
     rule handleTagAlloc;
         if (busySlotCounter != fromInteger(valueOf(PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT))) begin
@@ -1733,7 +1698,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
             PcieExtendTagHighPart slotIdx = unpack(truncateLSB(curCplt.tag));
             slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForPtrUpdateRead].putReadReq(slotIdx);            
-            // slotMetaReadReqQueueForPtrUpdate.enq(slotIdx);
             handleInputCpltTlpVecStep2PipelineQueue.enq(curCplt);
 
             let newInputCpltTlpVec = shiftOutFrom0(tagged Invalid, curInputCpltTlpVec, 1);
@@ -1790,7 +1754,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         
         if (curCplt.isLastCplt) begin
             slotMeta.isCompleted = True;
-            // newCompleteSlotSignalReg[1] <= True;
             sharedHwCpltBufferSlotDeAllocReqPipeOutQueue.enq(PcieSharedCompletionBufferSlotDeAllocReq{
                 headerSlotCnt   : zeroExtend(slotMeta.maxCpltTlpCntNeeded),
                 dataSlotCnt     : zeroExtend(slotMeta.hwClptBufDataSlotCntNeeded)
@@ -1801,10 +1764,11 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         slotMetaUpdateReqQueueForWritePtrUpdate.enq(tuple2(slotIdx, slotMeta));
         slotMetaUpdateForwardBuffer.enq(slotIdx, slotMeta);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleInputCpltTlpVecStep2"),
-        //     toBlue(", slotMeta="), fshow(slotMeta)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleInputCpltTlpVecStep2"),
+            ", channel [%0d]", channelIdxWire,
+            toBlue(", slotMeta="), fshow(slotMeta)
+        );
     endrule
 
     rule handleCpltTlpInfoStorageWrite;
@@ -1817,6 +1781,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     rule sendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateInit);
 
         slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
+        slotMetaQueryForOutputPipelineQueue.enq(tagAllocTailReg);
         outputStateReg <= PcieCompletionBufferOutputStateWaitStateRunning;
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer sendStateQuery"),
@@ -1829,7 +1794,21 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         let slotMetaReadFromBram = slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].readRespPipeOut.first;
         slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].readRespPipeOut.deq;
 
+        let slotIdxForReadResp = slotMetaQueryForOutputPipelineQueue.first;
+        slotMetaQueryForOutputPipelineQueue.deq;
+
         let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(tagAllocTailReg);
+
+        if (slotIdxForReadResp != tagAllocTailReg) begin
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp"),
+                ", channel [%0d]", channelIdxWire,
+                ", got outdated slot meta query result",
+                toBlue(", slotIdxForReadResp="), fshow(slotIdxForReadResp),
+                toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg),
+                toBlue(", use cache forwarded newest result="), fshow(isValid(slotMetaFromForwardBufferMaybe))
+            );
+        end
 
         PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
         
@@ -1849,12 +1828,22 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             end
             tagAllocTailReg <= newTagAllocTail;
             slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(newTagAllocTail);
+            slotMetaQueryForOutputPipelineQueue.enq(newTagAllocTail);
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp found complete"),
+                ", channel [%0d]", channelIdxWire,
+                toBlue(", slotMeta="), fshow(slotMeta),
+                toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg),
+                toBlue(", newTagAllocTail="), fshow(newTagAllocTail)
+            );
         end
         else begin
             slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
+            slotMetaQueryForOutputPipelineQueue.enq(tagAllocTailReg);
         end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp"),
+        //     ", channel [%0d]", channelIdxWire,
         //     toBlue(", slotMeta="), fshow(slotMeta)
         // );
 
@@ -1863,20 +1852,19 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     rule readCpltTlpInfoForOutput;
         if (curOutputSlotMetaMaybeReg matches tagged Valid .curOutputSlotMeta) begin
             let isLast = curOutputSlotMeta.cpltTlpListCurReadOffset == curOutputSlotMeta.cpltTlpListTargetReadOffset;
-            // let isFirst = cpltTlpListCurReadOffset == 0;
             let cpltTlpMetaAddr = curOutputSlotMeta.cpltTlpListStartAddr + zeroExtend(curOutputSlotMeta.cpltTlpListCurReadOffset);
             cpltTlpInfoStorage.putReadReq(cpltTlpMetaAddr);
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readCpltTlpInfoForOutput"),
-            //     toBlue(", curOutputSlotMeta="), fshow(curOutputSlotMeta),
-            //     toBlue(", cpltTlpMetaAddr="), fshow(cpltTlpMetaAddr)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readCpltTlpInfoForOutput"),
+                ", channel [%0d]", channelIdxWire,
+                toBlue(", curOutputSlotMeta="), fshow(curOutputSlotMeta),
+                toBlue(", cpltTlpMetaAddr="), fshow(cpltTlpMetaAddr)
+            );
             if (isLast) begin
                 if (readCpltTlpInfoForOutputPipelineQueue.notEmpty) begin
                     let slotMeta = readCpltTlpInfoForOutputPipelineQueue.first;
                     readCpltTlpInfoForOutputPipelineQueue.deq;
                     curOutputSlotMetaMaybeReg <= tagged Valid slotMeta;
-                    // readDataStorageForOutputPipelineQueue.enq(slotMeta);
                 end
                 else begin
                     curOutputSlotMetaMaybeReg <= tagged Invalid;
@@ -1892,7 +1880,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             let slotMeta = readCpltTlpInfoForOutputPipelineQueue.first;
             readCpltTlpInfoForOutputPipelineQueue.deq;
             curOutputSlotMetaMaybeReg <= tagged Valid slotMeta;
-            // readDataStorageForOutputPipelineQueue.enq(slotMeta);
         end
     endrule
 
@@ -1906,6 +1893,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
             // $display(
             //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
+            //     ", channel [%0d]", channelIdxWire,
             //     toBlue(", cpltTlpInfoStorage.readRespPipeOut.first="), fshow(cpltTlpInfoStorage.readRespPipeOut.first)
             // );
             let segCntInThisTlp = 1 + ((totalBytesCntIncludeInvalidInThisTlp - 1) >> fromInteger(valueOf(TLog#(PCIE_TLP_DATA_SEGMENT_BYTE_WIDTH))));
@@ -1962,14 +1950,20 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 curOutputCpltTlpMaybeReg <= tagged Valid nextOutputCpltTlp;
             end
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
-            //     toBlue(", curOutputCpltTlp="), fshow(curOutputCpltTlp)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput"),
+                ", channel [%0d]", channelIdxWire,
+                toBlue(", curOutputCpltTlp="), fshow(curOutputCpltTlp)
+            );
         end
         else begin
             cpltTlpInfoStorage.readRespPipeOut.deq;
             curOutputCpltTlpMaybeReg <= tagged Valid nextNewOutputCpltTlpInfo;
+            $display(
+                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer readDataStorageForOutput IDLE state"),
+                ", channel [%0d]", channelIdxWire,
+                toBlue(", nextNewOutputCpltTlpInfo="), fshow(nextNewOutputCpltTlpInfo)
+            );
         end
     endrule
 
@@ -2320,11 +2314,11 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         readTlpQueue.enq(tlp);
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMrd"),
-            toBlue(", rm="), fshow(rm),
-            toBlue(", tlp="), fshow(tlp)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMrd"),
+        //     toBlue(", rm="), fshow(rm),
+        //     toBlue(", tlp="), fshow(tlp)
+        // );
     endrule
 
     rule arbitOutputTlp if (!isOutputingPayloadStreamReg);
@@ -2373,11 +2367,11 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
                 $format("ds=", fshow(ds))
             );
 
-            $display(
-                "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen arbitOutputTlp cpltTlpQueue"),
-                toBlue(", cpltTlpQueue.first="), fshow(cpltTlpQueue.first),
-                toBlue(", ds="), fshow(ds)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen arbitOutputTlp cpltTlpQueue"),
+            //     toBlue(", cpltTlpQueue.first="), fshow(cpltTlpQueue.first),
+            //     toBlue(", ds="), fshow(ds)
+            // );
         end
         
     endrule
@@ -3093,15 +3087,17 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         let {availableCreditPh, availableCreditNph, availableCreditCplh, availableCreditPd, availableCreditNpd, availableCreditCpld} = txFlowControlAvaliablePipeInQueue.first;
         txFlowControlAvaliablePipeInQueue.deq;
 
+        let hasEnoughCredit =   phToConsume <= availableCreditPh        && 
+                                nphToConsume <= availableCreditNph      &&
+                                cplhToConsume <= availableCreditCplh    &&
+                                pdToConsume <= availableCreditPd        &&
+                                npdToConsume <= availableCreditNpd      &&
+                                cpldToConsume <= availableCreditCpld;
+
         if (enqCnt == 0) begin
             flowControlCheckPipelineQueue.deq;
         end
-        else if (phToConsume <= availableCreditPh        && 
-                 nphToConsume <= availableCreditNph      &&
-                 cplhToConsume <= availableCreditCplh    &&
-                 pdToConsume <= availableCreditPd        &&
-                 npdToConsume <= availableCreditNpd      &&
-                 cpldToConsume <= availableCreditCpld) begin
+        else if (hasEnoughCredit) begin
 
             // IMPORTANT!!!!
             // since MIMO's enq doesn't have guard (infact, it has guard, but the guard only check if it can enq at least one element), to make sure 
@@ -3118,22 +3114,23 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 // );
             end
         end
-
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork checkFlowControlCredit"),
-        //     toBlue(", phToConsume="), fshow(phToConsume),
-        //     toBlue(", availableCreditPh="), fshow(availableCreditPh),
-        //     toBlue(", nphToConsume="), fshow(nphToConsume),
-        //     toBlue(", availableCreditNph="), fshow(availableCreditNph),
-        //     toBlue(", cplhToConsume="), fshow(cplhToConsume),
-        //     toBlue(", availableCreditCplh="), fshow(availableCreditCplh),
-        //     toBlue(", pdToConsume="), fshow(pdToConsume),
-        //     toBlue(", availableCreditPd="), fshow(availableCreditPd),
-        //     toBlue(", npdToConsume="), fshow(npdToConsume),
-        //     toBlue(", availableCreditNpd="), fshow(availableCreditNpd),
-        //     toBlue(", cpldToConsume="), fshow(cpldToConsume),
-        //     toBlue(", availableCreditCpld="), fshow(availableCreditCpld)
-        // );
+        else begin
+            $display(
+                "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork checkFlowControlCredit No enough credit for tx"),
+                toBlue(", phToConsume="), fshow(phToConsume),
+                toBlue(", availableCreditPh="), fshow(availableCreditPh),
+                toBlue(", nphToConsume="), fshow(nphToConsume),
+                toBlue(", availableCreditNph="), fshow(availableCreditNph),
+                toBlue(", cplhToConsume="), fshow(cplhToConsume),
+                toBlue(", availableCreditCplh="), fshow(availableCreditCplh),
+                toBlue(", pdToConsume="), fshow(pdToConsume),
+                toBlue(", availableCreditPd="), fshow(availableCreditPd),
+                toBlue(", npdToConsume="), fshow(npdToConsume),
+                toBlue(", availableCreditNpd="), fshow(availableCreditNpd),
+                toBlue(", cpldToConsume="), fshow(cpldToConsume),
+                toBlue(", availableCreditCpld="), fshow(availableCreditCpld)
+            );
+        end
     endrule
 
     // rule forwardRoundRobinResultToMimoBuffer;
@@ -3620,10 +3617,10 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
         for (Integer idx = 0; idx < valueOf(PCIE_SEGMENT_CNT); idx = idx + 1) begin
             dataStreamStorageVec[idx].write(req.addr, req.dataBundles[idx]);
         end
-        $display(
-            "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleDataStreamInput"),
-            toBlue(", req="), fshow(req)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleDataStreamInput"),
+        //     toBlue(", req="), fshow(req)
+        // );
     endrule
 
     Reg#(Maybe#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo))) curInputTlpVecMaybeReg <- mkReg(tagged Invalid);
@@ -3670,20 +3667,20 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
                 end
             end
 
-            $display(
-                "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 BUSY mode"),
-                toBlue(", curInputTlpVec="), fshow(curInputTlpVec)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 BUSY mode"),
+            //     toBlue(", curInputTlpVec="), fshow(curInputTlpVec)
+            // );
 
         end
         else begin
             curInputTlpVecMaybeReg <= tagged Valid memReadWriteReqTlpVecPipeInQueue.first;
             memReadWriteReqTlpVecPipeInQueue.deq;
 
-            $display(
-                "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 IDLE mode"),
-                toBlue(", memReadWriteReqTlpVecPipeInQueue.first="), fshow(memReadWriteReqTlpVecPipeInQueue.first)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleInputTlpVecStep1 IDLE mode"),
+            //     toBlue(", memReadWriteReqTlpVecPipeInQueue.first="), fshow(memReadWriteReqTlpVecPipeInQueue.first)
+            // );
 
             immAssert(
                 isRtilePcieRxTlpInfoValid(memReadWriteReqTlpVecPipeInQueue.first[0]),
@@ -3716,12 +3713,12 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
             isLast      : True
         });
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleBramReadResp"),
-            toBlue(", writeAddr="), fshow(writeAddr),
-            toBlue(", segIdx="), fshow(segIdx),
-            toBlue(", writeDataOrigin="), fshow(writeDataOrigin)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleBramReadResp"),
+        //     toBlue(", writeAddr="), fshow(writeAddr),
+        //     toBlue(", segIdx="), fshow(segIdx),
+        //     toBlue(", writeDataOrigin="), fshow(writeDataOrigin)
+        // );
     endrule
 
     rule handleCompleterReadResp;
@@ -3767,11 +3764,11 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
         cpltTlpHeaderPipeOutQueue.enq(tlp);
         cpltTlpDataStreamPipeOutQueue.enq(ds);
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleCompleterReadResp"),
-            toBlue(", tlp="), fshow(tlp),
-            toBlue(", ds="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieCompleter handleCompleterReadResp"),
+        //     toBlue(", tlp="), fshow(tlp),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
 
