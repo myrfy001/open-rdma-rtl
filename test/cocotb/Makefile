@@ -29,7 +29,7 @@ DATE = $(shell date "+%Y%m%d")
 LOG_FILE = $(TB_DIR)/log/$(DATE)_$(TOP_MODULE).log
 
 verilog:
-	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} TOPMODULE=${TOP_MODULE} verilog
+	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} BSV_TOP_MODULE=${TOP_MODULE} verilog
 
 prepare:
 	sed -i '1i `timescale 1ns/1ps' $(GENERATED_VSRC_DIR)/$(TOP_FILE)

@@ -295,7 +295,14 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     endrule
 
     rule outputNewestCreditAvailable;
-        txFlowControlAvaliablePipeOutQueue.enq(tuple6(txCreditPH.curAvailableCredit, txCreditNPH.curAvailableCredit, txCreditCPLH.curAvailableCredit, txCreditPD.curAvailableCredit, txCreditNPD.curAvailableCredit, txCreditCPLD.curAvailableCredit));
+        let outputCredit = tuple6(txCreditPH.curAvailableCredit, txCreditNPH.curAvailableCredit, txCreditCPLH.curAvailableCredit, txCreditPD.curAvailableCredit, txCreditNPD.curAvailableCredit, txCreditCPLD.curAvailableCredit);
+        txFlowControlAvaliablePipeOutQueue.enq(outputCredit);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor outputNewestCreditAvailable"),
+        //     ", outputCredit=", fshow(outputCredit),
+        //     ", txFlowControlAvaliablePipeOutQueue.notFull=", fshow(txFlowControlAvaliablePipeOutQueue.notFull),
+        //     ", txFlowControlAvaliablePipeOutQueue.notEmpty=", fshow(txFlowControlAvaliablePipeOutQueue.notEmpty)
+        // );
     endrule
 
     rule handleTxFlowControlCreditConsume;
@@ -512,10 +519,10 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
             tDelta delta = unpack(pack(initCounter) > zeroExtend(pack(maxDelta)) ? pack(maxDelta) : truncate(pack(initCounter)));
             updateCntSignalReg <= delta;
             updateCounter.decr(unpack(zeroExtend(pack(delta))));
-            $display(
-                "time=%0t:", $time, toGreen(" mkPcieCreditCounterSink normalOperation"),
-                ", delta=", fshow(delta)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieCreditCounterSink normalOperation"),
+            //     ", delta=", fshow(delta)
+            // );
         end
     endrule
 
@@ -558,7 +565,8 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
         Eq#(tCounter),
         Eq#(tDelta),
         Ord#(tCounter),
-        FShow#(tDelta)
+        FShow#(tDelta),
+        FShow#(tCounter)
     );
     Reg#(PcieCreditCounterSourceState) stateReg <- mkReg(PcieCreditCounterSourceStateWaitingInit);
 
@@ -575,17 +583,22 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
     rule waitingInit if (stateReg == PcieCreditCounterSourceStateWaitingInit);
         if (initSignalWire) begin
             stateReg <= PcieCreditCounterSourceStateSendAck;
-            initAckSignalReg <= True;
         end
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieCreditCounterSource waitingInit")
+        );
     endrule
 
     rule sendAck if (stateReg == PcieCreditCounterSourceStateSendAck);
-        initAckSignalReg <= False;
+        initAckSignalReg <= True;
         stateReg <= PcieCreditCounterSourceStateRecvInitValue;
-       
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieCreditCounterSource sendAck")
+        );
     endrule
 
     rule recvInitValue if (stateReg == PcieCreditCounterSourceStateRecvInitValue);
+        initAckSignalReg <= False;
         if (!initSignalWire) begin
             stateReg <= PcieCreditCounterSourceStateNormalOperation;
         end
@@ -596,11 +609,16 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
                     isInfiniteCreditReg <= True;
                     counter <= maxBound;
                 end
-                else if (!isFirstInitBeatReg) begin
+                else begin
                     counter.incr(unpack(zeroExtend(pack(updateCntSignalWire))));
                 end
             end
         end
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieCreditCounterSource recvInitValue"),
+            ", updateSignalWire=", fshow(updateSignalWire),
+            ", updateCntSignalWire=", fshow(updateCntSignalWire)
+        );
     endrule
 
     rule normalOperation if (stateReg == PcieCreditCounterSourceStateNormalOperation);   
@@ -2302,11 +2320,11 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         readTlpQueue.enq(tlp);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMrd"),
-        //     toBlue(", rm="), fshow(rm),
-        //     toBlue(", tlp="), fshow(tlp)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMrd"),
+            toBlue(", rm="), fshow(rm),
+            toBlue(", tlp="), fshow(tlp)
+        );
     endrule
 
     rule arbitOutputTlp if (!isOutputingPayloadStreamReg);
@@ -2337,6 +2355,10 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
                 isLast      : True
             };
             arbittedTlpDataStreamQueue.enq(ds);
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen arbitOutputTlp readTlpQueue"),
+            //     toBlue(", readTlpQueue.first="), fshow(readTlpQueue.first)
+            // );
         end
         else if (cpltTlpQueue.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(cpltTlpQueue.first)));
@@ -2717,6 +2739,23 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
 
     FIFOF#(Tuple2#(RtilePcieTxPingPongChannelIdx, RtilePcieTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
 
+    // rule debug;
+    //     if (!txFlowControlAvaliablePipeInQueue.notEmpty) begin
+    //         $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  txFlowControlAvaliablePipeInQueue");
+    //     end
+    //     else begin
+    //         $display("time=%0t, ", $time, "DEBUG QUEUE Not EMPTY!!!  txFlowControlAvaliablePipeInQueue.first=", fshow(txFlowControlAvaliablePipeInQueue.first));
+    //     end
+
+    //     if (!flowControlCheckPipelineQueue.notEmpty) begin
+    //         $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  flowControlCheckPipelineQueue");
+    //     end
+    //     else begin
+    //         $display("time=%0t, ", $time, "DEBUG QUEUE Not EMPTY!!!  flowControlCheckPipelineQueue.first=", fshow(flowControlCheckPipelineQueue.first));
+    //     end
+    // endrule
+
+
     rule guard;
         immAssert(
             valueOf(SizeOf#(RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset)) == valueOf(TExp#(TLog#(SizeOf#(RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset)))),
@@ -2730,11 +2769,13 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool) needDeqFlagVec = replicate(False);
         let curInputRoundRobinIdx = curInputRoundRobinIdxReg;
         let enqCnt = 0;
-        case ({ pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].notEmpty),
-                pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].notEmpty),
-                pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].notEmpty),
-                pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].notEmpty)
-            }) matches
+        let inputQueueStatus = {
+            pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+0].notEmpty),
+            pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+1].notEmpty),
+            pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+2].notEmpty),
+            pack(packetMetaPipeInQueueVec[curInputRoundRobinIdx+3].notEmpty)
+        };
+        case (inputQueueStatus) matches
             4'b0000: begin
             end
             4'b0001: begin
@@ -2764,7 +2805,6 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                     flowControlCreditConsumed   : inMeta0.flowControlCreditConsumed,
                     reserved                    : unpack(0)
                 };
-                // prevDestSegOffset = prevDestSegOffset + truncate(inMeta0.segCnt);
                 curInputRoundRobinIdx = curInputRoundRobinIdx + 3;
                 enqCnt = 1;
             end
@@ -2970,12 +3010,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         endcase
 
         
-        // IMPORTANT!!!!
-        // since MIMO's enq doesn't have guard (infact, it has guard, but the guard only check if it can enq at least one element), to make sure 
-        // there are enough space for `enqCnt`, we can't relay on enq's guard to block the rule from being fired.
-        // so, we need to move all the "Actions"(i.e., code that will change the state) into the following IF block. And only leave combinational logic
-        // out of the IF block
-        if (enqCnt != 0 && selectedInputChannelMetaMIMO.enqReadyN(enqCnt)) begin
+        if (enqCnt != 0) begin
             curInputRoundRobinIdxReg <= curInputRoundRobinIdx;
 
             if (needDeqFlagVec[0] == True) begin
@@ -2990,17 +3025,16 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             if (needDeqFlagVec[3] == True) begin
                 packetMetaPipeInQueueVec[3].deq;
             end
-
-            // selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
-
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork prepareRoundRobinChannelOrder"),
-            //     toBlue(", enqCnt="), fshow(enqCnt),
-            //     toBlue(", vecToEnq="), fshow(vecToEnq)
-            // );
         end
 
         flowControlCheckPipelineQueue.enq(tuple2(vecToEnq, enqCnt));
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork prepareRoundRobinChannelOrder"),
+        //     toBlue(", inputQueueStatus="), fshow(inputQueueStatus),
+        //     toBlue(", enqCnt="), fshow(enqCnt),
+        //     toBlue(", vecToEnq="), fshow(vecToEnq)
+        // );
     endrule
 
     rule checkFlowControlCredit;
@@ -3059,12 +3093,15 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         let {availableCreditPh, availableCreditNph, availableCreditCplh, availableCreditPd, availableCreditNpd, availableCreditCpld} = txFlowControlAvaliablePipeInQueue.first;
         txFlowControlAvaliablePipeInQueue.deq;
 
-        if (phToConsume <= availableCreditPh        && 
-            nphToConsume <= availableCreditNph      &&
-            cplhToConsume <= availableCreditCplh    &&
-            pdToConsume <= availableCreditPd        &&
-            npdToConsume <= availableCreditNpd      &&
-            cpldToConsume <= availableCreditCpld) begin
+        if (enqCnt == 0) begin
+            flowControlCheckPipelineQueue.deq;
+        end
+        else if (phToConsume <= availableCreditPh        && 
+                 nphToConsume <= availableCreditNph      &&
+                 cplhToConsume <= availableCreditCplh    &&
+                 pdToConsume <= availableCreditPd        &&
+                 npdToConsume <= availableCreditNpd      &&
+                 cpldToConsume <= availableCreditCpld) begin
 
             // IMPORTANT!!!!
             // since MIMO's enq doesn't have guard (infact, it has guard, but the guard only check if it can enq at least one element), to make sure 
@@ -3074,8 +3111,29 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             if (enqCnt != 0 && selectedInputChannelMetaMIMO.enqReadyN(enqCnt)) begin
                 flowControlCheckPipelineQueue.deq;
                 selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork checkFlowControlCredit enough credit, pass"),
+                //     toBlue(", enqCnt="), fshow(enqCnt),
+                //     toBlue(", vecToEnq="), fshow(vecToEnq)
+                // );
             end
         end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork checkFlowControlCredit"),
+        //     toBlue(", phToConsume="), fshow(phToConsume),
+        //     toBlue(", availableCreditPh="), fshow(availableCreditPh),
+        //     toBlue(", nphToConsume="), fshow(nphToConsume),
+        //     toBlue(", availableCreditNph="), fshow(availableCreditNph),
+        //     toBlue(", cplhToConsume="), fshow(cplhToConsume),
+        //     toBlue(", availableCreditCplh="), fshow(availableCreditCplh),
+        //     toBlue(", pdToConsume="), fshow(pdToConsume),
+        //     toBlue(", availableCreditPd="), fshow(availableCreditPd),
+        //     toBlue(", npdToConsume="), fshow(npdToConsume),
+        //     toBlue(", availableCreditNpd="), fshow(availableCreditNpd),
+        //     toBlue(", cpldToConsume="), fshow(cpldToConsume),
+        //     toBlue(", availableCreditCpld="), fshow(availableCreditCpld)
+        // );
     endrule
 
     // rule forwardRoundRobinResultToMimoBuffer;

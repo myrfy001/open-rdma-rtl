@@ -528,7 +528,7 @@ async def small_desc_fp_test(dut):
     # cocotb.start_soon(tb.start_completer_read_write_req_send())
     # cocotb.start_soon(tb.start_completer_read_write_req_handler())
 
-    await Timer(1000, units='ns')
+    await Timer(5000, units='ns')
 
 
 def test_dma():
