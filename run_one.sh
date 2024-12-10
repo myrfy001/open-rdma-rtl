@@ -44,8 +44,8 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestFourChannelButterflyMergeSingleBeatTest
 
 
-# FILE=`ls TestAddressChunker.bsv`
-# TESTCASE=mkTestAddressChunker
+FILE=`ls TestAddressChunker.bsv`
+TESTCASE=mkTestAddressChunker
 
 # FILE=`ls TestPayloadGenAndCon.bsv`
 # TESTCASE=mkTestPayloadGenAndCon
@@ -91,8 +91,8 @@ truncate -s 0 $TEST_LOG
 # FILE=`ls TestStreamShifterG.bsv`
 # TESTCASE=mkTestBiDirectionStreamShifterG
 
-FILE=`ls TestDtldStream.bsv`
-TESTCASE=mkTestDtldStreamSpliterAndConcator
+# FILE=`ls TestDtldStream.bsv`
+# TESTCASE=mkTestDtldStreamSpliterAndConcator
 
 # FILE=`ls TestTop.bsv`
 # TESTCASE=mkTestTop

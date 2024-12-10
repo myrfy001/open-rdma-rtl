@@ -32,6 +32,7 @@ typedef 32 DWORD_WIDTH;
 typedef Bit#(BYTE_WIDTH) Byte;
 typedef Bit#(WORD_WIDTH) Word;
 typedef Bit#(DWORD_WIDTH) Dword;
+typedef Bit#(BYTE_DWORD_CONVERT_SHIFT_NUM) ByteIdxInDword;
 
 // Protocol settings
 typedef TExp#(31) RDMA_MAX_LEN;

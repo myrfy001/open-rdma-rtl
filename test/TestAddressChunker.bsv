@@ -16,28 +16,24 @@ import ClientServer :: *;
 import ConnectableF::*;
 
 
+typedef Bit#(4) ChunkAlignLogValue;
+
 (* doc = "testcase" *)
 module mkTestAddressChunker(Empty);
     Reg#(Bit#(32)) quitCounterReg <- mkReg(10000000);
 
 
-    AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunkerMetaCalculator <- mkAddressChunkMetaCalculator(
-        alignAddrByPMTU,
-        devideLengthByPMTU,
-        isAddrAndLengthLowerPartSumOverflowPMTU,
-        getChunkSizeForPMTU
-    );
 
-    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunker <- mkAddressChunker;
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerNoOutputAlign <- mkAddressChunker(0);
+    
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerWithOutputAlign <- mkAddressChunker(2);
 
+    PipeOut#(Length) withOutputAlignOrNotRandPipeOut <- mkRandomLenPipeOut(1, 2);
     PipeOut#(Length) pmtuRandPipeOut <- mkRandomLenPipeOut(1, 5);
     PipeOut#(Length) lengthRandPipeOut <- mkRandomLenPipeOut(1, 1024 * 16);
     PipeOut#(ADDR) addrRandPipeOut <- mkGenericRandomPipeOut;
 
-    FIFOF#(AddressChunkReq#(ADDR, Length, PMTU)) originReqForCheckerQ <- mkFIFOF;
-    FIFOF#(AddressChunkMeta#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH))) chunkMetaForCheckerQ <- mkFIFOF;
-
-    Reg#(AddressChunkReq#(ADDR, Length, PMTU)) curCheckingReqReg <- mkRegU;
+    FIFOF#(Tuple3#(AddressChunkReq#(ADDR, Length, ChunkAlignLogValue), PMTU, Bool)) originReqForCheckerQ <- mkFIFOF;
     Reg#(Length) totalLenSumReg <- mkRegU;
     Reg#(Bool) canGenReqReg <- mkReg(True);
 
@@ -45,8 +41,13 @@ module mkTestAddressChunker(Empty);
 
     rule reqGen if (canGenReqReg);
         canGenReqReg <= False;
+
+        
         PMTU pmtu = unpack(truncate(pack(pmtuRandPipeOut.first)));
         pmtuRandPipeOut.deq;
+
+        // random value is 1~5, after plus 7, it is between 8~12, which means 2^8 ~ 2^12, which is 256 ~ 4096
+        ChunkAlignLogValue pmtuSizeInLog = zeroExtend(pack(pmtu)) + 7;
 
         Length len = lengthRandPipeOut.first;
         lengthRandPipeOut.deq;
@@ -63,39 +64,44 @@ module mkTestAddressChunker(Empty);
         end
 
         if (isAccepted) begin
+
+            Bool withOutputAlign = withOutputAlignOrNotRandPipeOut.first == 1;
+            withOutputAlignOrNotRandPipeOut.deq;
+
             let req = AddressChunkReq{
                 startAddr: addr,
                 len: len,
-                chunk: pmtu 
+                chunk: pmtuSizeInLog 
             };
 
-            dutAddrChunkerMetaCalculator.requestPipeIn.enq(req);
-            originReqForCheckerQ.enq(req);
+            
+            if (withOutputAlign) begin
+                dutAddrChunkerWithOutputAlign.requestPipeIn.enq(req);
+            end
+            else begin
+                dutAddrChunkerNoOutputAlign.requestPipeIn.enq(req);
+            end
+            originReqForCheckerQ.enq(tuple3(req, pmtu, withOutputAlign));
         end
     endrule
 
-    rule forwardChunkMeta;
-        let meta = dutAddrChunkerMetaCalculator.metaPipeOut.first;
-        dutAddrChunkerMetaCalculator.metaPipeOut.deq;
-        dutAddrChunker.requestPipeIn.enq(meta);
-        chunkMetaForCheckerQ.enq(meta);
-    endrule
-
     rule checkResp if (!canGenReqReg);
-        let chunk = dutAddrChunker.responsePipeOut.first;
-        dutAddrChunker.responsePipeOut.deq;
 
-        let meta = ?;
+        let {expectedReq, pmtuExpected, withOutputAlign} = originReqForCheckerQ.first;
 
-        let expectedReq = curCheckingReqReg;
+        let chunk;
+        if (withOutputAlign) begin
+            chunk = dutAddrChunkerWithOutputAlign.responsePipeOut.first;
+            dutAddrChunkerWithOutputAlign.responsePipeOut.deq;
+        end
+        else begin
+            chunk =dutAddrChunkerNoOutputAlign.responsePipeOut.first;
+            dutAddrChunkerNoOutputAlign.responsePipeOut.deq;
+        end
+
+        
         let totalLenSum = totalLenSumReg;
         if (chunk.isFirst) begin
-            expectedReq = originReqForCheckerQ.first;
-            curCheckingReqReg <= expectedReq;
-            originReqForCheckerQ.deq;
-
-            meta = chunkMetaForCheckerQ.first;
-            chunkMetaForCheckerQ.deq;
             totalLenSum = chunk.len;
         end
         else begin
@@ -104,17 +110,9 @@ module mkTestAddressChunker(Empty);
         totalLenSumReg <= totalLenSum;
 
 
-        Length pamuInByteNum = 128 << pack(expectedReq.chunk);
-
-
+        Length expectedFullChunkSize = 1 << pack(expectedReq.chunk);
 
         if (chunk.isFirst && chunk.isLast) begin
-            immAssert(
-                meta.zeroBasedChunkNum == 0,
-                "For ONLY chunk, meta.zeroBasedChunkNum should be zero.",
-                $format("Got meta=", fshow(meta))
-            );
-
             immAssert(
                 chunk.len == expectedReq.len,
                 "For ONLY chunk, expect chunk.len == expectedReq.len",
@@ -130,45 +128,29 @@ module mkTestAddressChunker(Empty);
             );
         end
 
-        immAssert(
-            chunk.len <= pamuInByteNum && chunk.len != 0,
-            "resp chunk len must not greater than req chunk size, and must not be zero",
-            $format("Got chunk=", fshow(chunk), ", pamuInByteNum=", fshow(pamuInByteNum))
-        );
-
-        let {devidedLen, lenRemainderTmp} = devideLengthByPMTU(chunk.len, expectedReq.chunk);
-        let {alignedAddr, addrRemainderTmp} = alignAddrByPMTU(chunk.startAddr, expectedReq.chunk);
-        immAssert(
-            lenRemainderTmp + truncate(addrRemainderTmp) <= pamuInByteNum,
-            "a split should not across align boundary.",
-            $format(
-                "lenRemainderTmp=", fshow(lenRemainderTmp), 
-                ", addrRemainderTmp=", fshow(addrRemainderTmp),
-                ", pamuInByteNum=", fshow(pamuInByteNum)
-            ) 
-        );
-
-        if (!chunk.isFirst) begin
-            immAssert(
-                addrRemainderTmp == 0,
-                "address not aligned",
-                $format(
-                    ", addrRemainderTmp=", fshow(addrRemainderTmp)
-                ) 
-            );
-        end
-
         if (!chunk.isFirst && !chunk.isLast) begin
             immAssert(
-                chunk.len == pamuInByteNum,
+                chunk.len == expectedFullChunkSize,
                 "middle chunk shoud have full length",
                 $format(
-                    "lenRemainderTmp=", fshow(lenRemainderTmp), 
-                    ", addrRemainderTmp=", fshow(addrRemainderTmp),
-                    ", expectedReq=", fshow(expectedReq)
+                    "chunk=", fshow(chunk), 
+                    ", expectedFullChunkSize=", fshow(expectedFullChunkSize)
                 ) 
             );
         end
+
+        immAssert(
+            chunk.len != 0,
+            "resp chunk len must not be zero",
+            $format("Got chunk=", fshow(chunk))
+        );
+
+        immAssert(
+            chunk.len <= expectedFullChunkSize,
+            "resp chunk len must not greater than req chunk size",
+            $format("Got chunk=", fshow(chunk), ", expectedFullChunkSize=", fshow(expectedFullChunkSize))
+        );
+
 
         if (chunk.isLast) begin
             immAssert(
@@ -179,7 +161,56 @@ module mkTestAddressChunker(Empty);
                     ", expectedReq=", fshow(expectedReq)
                 ) 
             );
+            originReqForCheckerQ.deq;
         end
+
+        if (!withOutputAlign) begin
+            let {devidedLen, lenRemainderTmp} = devideLengthByPMTU(chunk.len, pmtuExpected);
+            let {alignedAddr, addrRemainderTmp} = alignAddrByPMTU(chunk.startAddr, pmtuExpected);
+            immAssert(
+                lenRemainderTmp + truncate(addrRemainderTmp) <= expectedFullChunkSize,
+                "a split should not across align boundary.",
+                $format(
+                    "lenRemainderTmp=", fshow(lenRemainderTmp), 
+                    ", addrRemainderTmp=", fshow(addrRemainderTmp),
+                    ", expectedFullChunkSize=", fshow(expectedFullChunkSize)
+                ) 
+            );
+
+            if (!chunk.isFirst) begin
+                immAssert(
+                    addrRemainderTmp == 0,
+                    "address not aligned",
+                    $format(
+                        ", addrRemainderTmp=", fshow(addrRemainderTmp)
+                    ) 
+                );
+            end
+        end
+        else begin
+            if (chunk.isFirst && !chunk.isLast) begin
+                let invalidByteCnt = expectedFullChunkSize - chunk.len;
+                immAssert(
+                    invalidByteCnt <= 3,
+                    "since output is aligned to 4 byte, no more than 3 invalid byte is allowed",
+                    $format(
+                        ", chunk=", fshow(chunk),
+                        ", expectedFullChunkSize=", fshow(expectedFullChunkSize)
+                    )
+                );
+            end
+            if (!chunk.isFirst) begin
+                immAssert(
+                    chunk.startAddr[1:0] == 2'b0,
+                    "output address not aligned",
+                    $format(
+                        ", chunk=", fshow(chunk)
+                    ) 
+                );
+            end
+            
+        end
+
 
         if (chunk.isLast) begin
             quitCounterReg <= quitCounterReg - 1;
@@ -198,8 +229,62 @@ endmodule
 
 
 
+
+function Tuple2#(ADDR, ADDR) alignAddrByPMTU(ADDR addr, PMTU pmtu);
+    return case (pmtu)
+        IBV_MTU_256 : begin
+            // 8 = log2(256)
+            tuple2({ addr[valueOf(ADDR_WIDTH)-1 : 8], 8'b0 }, zeroExtend(addr[7 : 0]));
+        end
+        IBV_MTU_512 : begin
+            // 9 = log2(512)
+            tuple2({ addr[valueOf(ADDR_WIDTH)-1 : 9], 9'b0 }, zeroExtend(addr[8 : 0]));
+        end
+        IBV_MTU_1024: begin
+            // 10 = log2(1024)
+            tuple2({ addr[valueOf(ADDR_WIDTH)-1 : 10], 10'b0 }, zeroExtend(addr[9 : 0]));
+        end
+        IBV_MTU_2048: begin
+            // 11 = log2(2048)
+            tuple2({ addr[valueOf(ADDR_WIDTH)-1 : 11], 11'b0 }, zeroExtend(addr[10 : 0]));
+        end
+        IBV_MTU_4096: begin
+            // 12 = log2(4096)
+            tuple2({ addr[valueOf(ADDR_WIDTH)-1 : 12], 12'b0 }, zeroExtend(addr[11 : 0]));
+        end
+    endcase;
+endfunction
+
+
+function Tuple2#(Length, Length) devideLengthByPMTU(Length len, PMTU pmtu);
+    return case (pmtu)
+        IBV_MTU_256 : begin
+            // 8 = log2(256)
+            tuple2({ 8'b0, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : 8] }, zeroExtend(len[7 : 0]));
+        end
+        IBV_MTU_512 : begin
+            // 9 = log2(512)
+            tuple2({ 9'b0, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : 9] }, zeroExtend(len[8 : 0]));
+        end
+        IBV_MTU_1024: begin
+            // 10 = log2(1024)
+            tuple2({ 10'b0, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : 10] }, zeroExtend(len[9 : 0]));
+        end
+        IBV_MTU_2048: begin
+            // 11 = log2(2048)
+            tuple2({ 11'b0, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : 11] }, zeroExtend(len[10 : 0]));
+        end
+        IBV_MTU_4096: begin
+            // 12 = log2(4096)
+            tuple2({ 12'b0, len[valueOf(RDMA_MAX_LEN_WIDTH)-1 : 12] }, zeroExtend(len[11 : 0]));
+        end
+    endcase;
+endfunction
+
+
+
 interface TestAddressChunkerTiming;
-    method Bit#(512) getOutput;
+    method Byte getOutput;
 endinterface
 
 
@@ -208,46 +293,24 @@ endinterface
 (* doc = "testcase" *)
 module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
     
-    AddressChunkMetaCalculator#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunkerMetaCalculator <- mkAddressChunkMetaCalculator(
-        alignAddrByPMTU,
-        devideLengthByPMTU,
-        isAddrAndLengthLowerPartSumOverflowPMTU,
-        getChunkSizeForPMTU
-    );
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerWithOutputAlign <- mkAddressChunker(2);
 
-    AddressChunker#(ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)) dutAddrChunker <- mkAddressChunker;
 
-    mkConnection(dutAddrChunkerMetaCalculator.metaPipeOut, dutAddrChunker.requestPipeIn);
+    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+    ForceKeepWideSignals#(Bit#(256), Byte) signalKeeper1 <- mkForceKeepWideSignals; 
 
-    Reg#(PMTU) chunkSizeReg <- mkRegU;
-    Reg#(ADDR) addrReg <- mkReg(0);
-    Reg#(Length) lengthReg <- mkReg(0);
-
-    Reg#(AddressChunkResp#(ADDR, Length)) outReg <- mkRegU;
-
-    rule t;
-        chunkSizeReg <= unpack(pack(chunkSizeReg) + 1);
-        addrReg <= (addrReg << 1)  + zeroExtend(pack(chunkSizeReg));
-        lengthReg <= truncate(addrReg);
-    endrule
 
     rule injectInput1;
-        dutAddrChunkerMetaCalculator.requestPipeIn.enq(
-            AddressChunkReq{
-                startAddr: addrReg,
-                len: lengthReg,
-                chunk: chunkSizeReg 
-            });
+        let randValue1 <- randSource1.get;
+        dutAddrChunkerWithOutputAlign.requestPipeIn.enq(unpack(truncate(randValue1)));
     endrule
 
+    rule handleOutput;
+        let t1 = dutAddrChunkerWithOutputAlign.responsePipeOut.first;
+        dutAddrChunkerWithOutputAlign.responsePipeOut.deq;
 
-    
-    rule merge;
-        let t1 = dutAddrChunker.responsePipeOut.first;
-        dutAddrChunker.responsePipeOut.deq;
-
-        outReg <= unpack(pack(t1));
+        signalKeeper1.bitsPipeIn.enq(zeroExtend(pack(t1)));
     endrule
 
-    method getOutput = zeroExtend(pack(outReg));
+    method getOutput = signalKeeper1.out;
 endmodule
