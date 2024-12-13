@@ -4,7 +4,7 @@ import PrimUtils :: *;
 import Arbiter :: *;
 
 import ConnectableF :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 
 
 typedef struct {
@@ -18,7 +18,7 @@ typedef struct {
     Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))              startByteIdx;
     Bool                                                        isFirst;
     Bool                                                        isLast;
-} DtldStreamData#(type tData) deriving (FShow, Bits);
+} DtldStreamData#(type tData) deriving (FShow, Bits, Eq);
 
 
 
@@ -368,11 +368,9 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
 
         let byteNum;
         if (isFirst && isLast) begin
-            // byteNum = previousDsReg.byteNum + dsIn.byteNum;
             byteNum = dsIn.byteNum + previousBeatByteLeftReg;
         end
         else if (isLast) begin
-            // byteNum = dsIn.byteNum + (fromInteger(valueOf(szDataInByte)) - previousBeatEmptyByteCnt);
             byteNum = dsIn.byteNum + previousBeatByteLeftReg;
         end
         else begin
@@ -491,6 +489,7 @@ endinterface
 
 typedef enum {
     DtldStreamSplitorStateOutput,
+    DtldStreamSplitorStateOutputLastBeat,
     DtldStreamSplitorStateOutputLastStream
 } DtldStreamSplitorState deriving(Eq, FShow, Bits);
 
@@ -649,7 +648,7 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
             end
             else begin
                 byteNum = fromInteger(valueOf(szDataInByte));
-                curStateReg <= DtldStreamSplitorStateOutputLastStream;
+                curStateReg <= DtldStreamSplitorStateOutputLastBeat;
             end
         end
         else begin
@@ -688,6 +687,7 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputState"),
+        //     toBlue(", totalAvailableBlockCnt="), fshow(totalAvailableBlockCnt),
         //     toBlue(", subDsAlignBlockCount="), fshow(subDsAlignBlockCount),
         //     toBlue(", alignBlockCntOfInputDs="), fshow(alignBlockCntOfInputDs),
         //     toBlue(", curDsAlignBlockRightShiftCnt="), fshow(curDsAlignBlockRightShiftCnt),
@@ -701,6 +701,36 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         // );
     endrule
 
+    rule outputLastBeatState if (curStateReg == DtldStreamSplitorStateOutputLastBeat);
+        let subDsAlignBlockCount = alignBlockCntLeftForSubDsReg;
+
+
+        immAssert(
+            unpack(zeroExtend(((previousDsReg.byteNum-1) >> valueOf(nLogOfByteAlign)) + 1)) == subDsAlignBlockCount,
+            "last sub stream doesn't match input stream length",
+            $format("previousDsReg=", fshow(previousDsReg), ", subDsAlignBlockCount=", fshow(subDsAlignBlockCount))
+        );
+
+        let ds = DtldStreamData {
+            data: previousDsReg.data,
+            byteNum: previousDsReg.byteNum,
+            startByteIdx: 0,
+            isFirst: False,
+            isLast: True
+        };
+        dataPipeOutQueue.enq(ds);
+
+        curStateReg <= DtldStreamSplitorStateOutput;
+        isSubStreamFirstReg <= True;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamSplitor outputLastBeatState"),
+        //     toBlue(", previousDsReg="), fshow(previousDsReg),
+        //     toBlue(", ds="), fshow(ds)
+        // );
+    endrule
+
+    // Note, this is to output the last STREAM (which is also a ONLY beat stream), It's a new stream, NOT THE LAST BEAT OF PREVIOUS BEAT.
     rule outputLastStreamState if (curStateReg == DtldStreamSplitorStateOutputLastStream);
         let subDsAlignBlockCount = streamAlignBlockCountPipeInQueue.first;
         streamAlignBlockCountPipeInQueue.deq;
