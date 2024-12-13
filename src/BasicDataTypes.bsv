@@ -34,6 +34,8 @@ typedef Bit#(WORD_WIDTH) Word;
 typedef Bit#(DWORD_WIDTH) Dword;
 typedef Bit#(BYTE_DWORD_CONVERT_SHIFT_NUM) ByteIdxInDword;
 
+typedef Bit#(TLog#(TLog#(MAX_PMTU))) ChunkAlignLogValue;
+
 // Protocol settings
 typedef TExp#(31) RDMA_MAX_LEN;
 typedef 8         ATOMIC_WORK_REQ_LEN;
@@ -158,14 +160,6 @@ typedef Bit#(TLog#(ATOMIC_ADDR_BYTE_ALIGNMENT)) AtomicAddrByteAlignment;
 
 typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 
-typedef PipeOut#(DataStream) DataStreamPipeOut;
-typedef Put#(DataStream) DataStreamPipeIn;
-
-typedef Tuple3#(DataStream, Bool, RecvPacketSrcMacIpBufferIdx) RqDataStreamWithExtraInfo;
-typedef PipeOut#(RqDataStreamWithExtraInfo) RqDataStreamWithExtraInfoPipeOut;
-typedef Put#(RqDataStreamWithExtraInfo) RqDataStreamWithExtraInfoPipeIn;
-
-
 
 
 typedef Bit#(TLog#(MAX_PTE_ENTRY_CNT)) PTEIndex;
@@ -218,33 +212,7 @@ typedef Client#(PgtAddrTranslateReq, ADDR) PgtQueryClt;
 // Common types
 
 
-// DATA are right aligned for first and only beat, and are left aligned for middle and last beat
-// startByteIdx is valid when isFirst = True, and in other case, startByteIdx must be 0
-// For the recv side, currently the received payload is already aligned to the receiver side address,
-// so no shift is need at received side, in this case, both byteNum and startByteIdx is useless, since 
-// the valid bytes in first and last beat can be calculated from RDMA RETH's address and length.
-// But for the send side, it need to shift data to match recv side address, so byteNum and startByteIdx
-// is needed. startByteIdx is need only for "ONLY beat" datastream when doing right shift.
-// for example, if a datastream has only one beat, and it's valid byte has something like:
-// 00000XXXXXX000
-// since it has some invalid byte at it's lower bits, when doing right shift, if the shift is small, it won't 
-// need another beat, but if shift is large, it may need a second beat to hold the overflow bits. so only when doing 
-// right shift with only beat, the startByteIdx is necessary.
-typedef struct {
-    DATA               data;
-    ByteEnBitNum       byteNum;
-    ByteIndexInBeat    startByteIdx;
-    Bool               isFirst;
-    Bool               isLast;
-} DataStream deriving(Bits, Bounded, Eq, FShow);
 
-// DATA and ByteEn are left aligned
-typedef struct {
-    DATA data;
-    ByteEn byteEn;
-    Bool isFirst;
-    Bool isLast;
-} DataStreamEn deriving(Bits, FShow);
 
 // This buffer should be able to contain the largest extend header combinations.
 // For now, the largest one is 36 Byte;

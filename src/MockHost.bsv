@@ -9,7 +9,7 @@ import FIFOF :: *;
 import DReg :: *;
 import GetPut :: *;
 import SpecialFIFOs :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import PrimUtils :: *;
 
 //  Export  section

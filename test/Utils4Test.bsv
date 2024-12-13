@@ -8,7 +8,9 @@ import Vector :: *;
 import PAClib :: *;
 import LFSR::*;
 
-import DataTypes :: *;
+import DtldStream :: *;
+import BasicDataTypes :: *;
+import StreamDataTypes :: *;
 import ConnectableF :: *;
 import RdmaHeaders :: *;
 import PrimUtils :: *;
@@ -219,8 +221,6 @@ module mkFixedLengthDateStreamRandomGen(FixedLengthDateStreamRandomGen);
     Reg#(Length) leftLenReg <- mkRegU;
     Reg#(Bool) isFirstReg <- mkReg(True);
 
-    
-
     rule gen;
         let len = leftLenReg;
         Bool isFirst = False;
@@ -235,18 +235,11 @@ module mkFixedLengthDateStreamRandomGen(FixedLengthDateStreamRandomGen);
         let data = dataRandomGenPipeOut.first;
         dataRandomGenPipeOut.deq;
 
-        BusBitNum tmpShiftCnt = 0;
         ByteIndexInBeat startByteIdx = 0;
         ByteEnBitNum byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
         if (len <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
-            tmpShiftCnt = (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(len)) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
-            data = (data << tmpShiftCnt);
             isLast = True;
-            if (isFirst) begin
-                ByteEnBitNum busWidth = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-                startByteIdx = truncate(busWidth) - truncate(len);
-            end
             byteNum = truncate(len);
             isFirstReg <= True;
         end

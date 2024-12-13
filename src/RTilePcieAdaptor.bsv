@@ -11,7 +11,7 @@ import MIMO :: *;
 import Reserved :: *;
 
 
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import PAClib :: *;
 import ConnectableF :: *;

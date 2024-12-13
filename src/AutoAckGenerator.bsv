@@ -9,7 +9,7 @@ import GetPut :: *;
 import Printf:: *;
 
 import Settings :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaUtils :: *;
 import RdmaHeaders :: *;
 

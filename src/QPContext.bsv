@@ -3,7 +3,7 @@ import GetPut :: *;
 import FIFOF :: *;
 import Connectable :: *;
 
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaUtils :: *;
 import RdmaHeaders :: *;
 

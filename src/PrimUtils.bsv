@@ -10,7 +10,7 @@ import SpecialFIFOs :: *;
 import Cntrs :: * ;
 
 import ConnectableF :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 
 function Bool isZero(Bit#(nSz) bits); // provisos(Add#(1, anysize, nSz));
     Bool ret = unpack(|bits);
@@ -192,21 +192,7 @@ function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, w
 endfunction
 
 
-function DataStream reverseStream(DataStream st);
-    st.data = swapEndianByte(st.data);
-    return st;
-endfunction
 
-function DataStreamEn reverseStreamEnAndData(DataStreamEn st);
-    st.data = swapEndianByte(st.data);
-    st.byteEn = swapEndianBit(st.byteEn);
-    return st;
-endfunction
-
-function DataStreamEn reverseStreamEnOnly(DataStreamEn st);
-    st.byteEn = swapEndianBit(st.byteEn);
-    return st;
-endfunction
 
 
 
@@ -476,31 +462,7 @@ module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
 endmodule
 
 
-// PipeOut related
 
-function PipeOut#(anytype) toPipeOut(FIFOF#(anytype) queue);
-    return f_FIFOF_to_PipeOut(queue);
-endfunction
-
-function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
-    return f_FIFOF_to_PipeIn(queue);
-endfunction
-
-function PipeOut#(anytype) toPipeOutSync(SyncFIFOIfc#(anytype) queue);
-    return f_Sync_FIFOF_to_PipeOut(queue);
-endfunction
-
-function PipeIn#(anytype) toPipeInSync(SyncFIFOIfc#(anytype) queue);
-    return f_Sync_FIFOF_to_PipeIn(queue);
-endfunction
-
-function PipeOut#(anytype) ugToPipeOut(FIFOF#(anytype) queue);
-    return f_UGFIFOF_to_PipeOut(queue);
-endfunction
-
-function PipeIn#(anytype) ugToPipeIn(FIFOF#(anytype) queue);
-    return f_UGFIFOF_to_PipeIn(queue);
-endfunction
 
 
 

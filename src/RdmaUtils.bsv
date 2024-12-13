@@ -2,7 +2,7 @@ import FIFOF :: *;
 import SpecialFIFOs :: *;
 import ClientServer :: *;
 import GetPut :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import Vector :: *;
 import BRAM :: *;

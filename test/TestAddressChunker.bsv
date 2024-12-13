@@ -10,13 +10,11 @@ import PrimUtils :: *;
 import Utils4Test :: *;
 
 import AddressChunker :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ClientServer :: *;
 import ConnectableF::*;
 
-
-typedef Bit#(4) ChunkAlignLogValue;
 
 (* doc = "testcase" *)
 module mkTestAddressChunker(Empty);

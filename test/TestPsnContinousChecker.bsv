@@ -9,7 +9,7 @@ import PrimUtils :: *;
 import RdmaUtils :: *;
 import Utils4Test :: *;
 import EthernetTypes :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ConnectableF :: *;
 

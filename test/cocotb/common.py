@@ -1,6 +1,7 @@
 import os
 from collections import deque, OrderedDict
 from abc import ABC
+import logging
 
 import asyncio
 
@@ -287,3 +288,139 @@ class BluespecPipeIn:
 
     async def enq(self, data):
         await self.bsv_enq(data=data)
+
+
+class SimplePcieBehaviorModel(object):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_name):
+        self.dut = dut
+
+        self.log = logging.getLogger("cocotb.tb")
+        self.log.setLevel(logging.INFO)
+
+        self.clock = dut.CLK
+        self.resetn = dut.RST_N
+
+        self.requester_write_meta_pipes = []
+        self.requester_write_data_pipes = []
+        self.requester_read_meta_pipes = []
+        self.requester_read_data_pipes = []
+
+        for base_name in requester_ifc_base_names:
+            self.requester_write_meta_pipes.append(BluespecPipeOut(
+                dut, f"{base_name}_writePipeIfc_writeMetaPipeOut", self.clock))
+            self.requester_write_data_pipes.append(BluespecPipeOut(
+                dut, f"{base_name}_writePipeIfc_writeDataPipeOut", self.clock))
+            self.requester_read_meta_pipes.append(BluespecPipeOut(
+                dut, f"{base_name}_readPipeIfc_readMetaPipeOut", self.clock))
+            self.requester_read_data_pipes.append(BluespecPipeIn(
+                dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
+
+        self.channel_cnt = len(requester_ifc_base_names)
+
+        self.mem = [0] * (1 << 25)
+
+        for channel_idx in range(self.channel_cnt):
+            cocotb.start_soon(self.handle_requester_write_req(channel_idx))
+            cocotb.start_soon(self.handle_requester_read_req(channel_idx))
+
+    async def handle_requester_write_req(self, channel_idx):
+        # loop to handle each request
+        while True:
+            if await self.requester_write_meta_pipes[channel_idx].not_empty():
+                write_meta_raw = await self.requester_write_meta_pipes[channel_idx].first()
+                await self.requester_write_meta_pipes[channel_idx].deq()
+                write_meta = BlueRdmaDtldStreamMemAccessMeta.unpack(
+                    write_meta_raw)
+
+                cur_write_addr = write_meta.addr()
+                total_len = 0
+
+                self.log.debug(
+                    f"cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
+                # loop to handle each beat in a request
+                while True:
+                    if await self.requester_write_data_pipes[channel_idx].not_empty():
+                        write_data_raw = await self.requester_write_data_pipes[channel_idx].first()
+                        await self.requester_write_data_pipes[channel_idx].deq()
+                        write_data = BlueRdmaDataStream256.unpack(
+                            write_data_raw)
+
+                        data = write_data.data()
+                        if (write_data.is_first()):
+                            data >>= (write_data.start_byte_index() * 8)
+
+                        old_write_addr = cur_write_addr
+                        for _ in range(write_data.byte_num()):
+                            self.mem[cur_write_addr] = data & 0xff
+                            data >>= 8
+                            cur_write_addr += 1
+
+                        total_len += write_data.byte_num()
+                        self.log.debug(
+                            f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
+
+                        if (write_data.is_last()):
+                            assert total_len == write_meta.total_len()
+                            break
+                    await RisingEdge(self.clock)  # wait for next beat
+
+            await RisingEdge(self.clock)  # wait for next write req
+
+    async def handle_requester_read_req(self, channel_idx):
+        # loop to handle each request
+        while True:
+            if await self.requester_read_meta_pipes[channel_idx].not_empty():
+                read_meta_raw = await self.requester_read_meta_pipes[channel_idx].first()
+                await self.requester_read_meta_pipes[channel_idx].deq()
+                read_meta = BlueRdmaDtldStreamMemAccessMeta.unpack(
+                    read_meta_raw)
+
+                cur_read_addr = read_meta.addr()
+                bytes_left = read_meta.total_len()
+                is_first = True
+                self.log.debug(
+                    f"cur_read_addr={hex(cur_read_addr)}, bytes_left={hex(bytes_left)}")
+                # loop to handle each beat in a request
+                while True:
+                    if await self.requester_read_data_pipes[channel_idx].not_full():
+                        data = 0
+
+                        if is_first:
+                            start_byte_index = cur_read_addr & 0x03
+                        else:
+                            start_byte_index = 0
+
+                        if bytes_left + start_byte_index <= 32:
+                            is_last = True
+                            byte_num = bytes_left
+                        else:
+                            is_last = False
+                            byte_num = 32 - start_byte_index
+
+                        old_read_addr = cur_read_addr
+                        for byte_idx in range(byte_num):
+                            data |= (self.mem[cur_read_addr] << (byte_idx * 8))
+                            cur_read_addr += 1
+
+                        if (is_first):
+                            data <<= (start_byte_index * 8)
+
+                        read_data = BlueRdmaDataStream256(
+                            data=data.to_bytes(32, byteorder="little"),
+                            byte_num=byte_num,
+                            start_byte_index=start_byte_index,
+                            is_first=is_first,
+                            is_last=is_last
+                        )
+                        await self.requester_read_data_pipes[channel_idx].enq(read_data.pack())
+                        self.log.debug(
+                            f"addr={hex(old_read_addr)}, read_data={read_data}")
+
+                        is_first = False
+                        bytes_left -= byte_num
+
+                        if (is_last):
+                            break
+                    await RisingEdge(self.clock)  # wait for next beat
+
+            await RisingEdge(self.clock)  # wait for next read req

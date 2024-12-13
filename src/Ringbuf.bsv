@@ -1,6 +1,8 @@
 import Vector :: *;
 import Settings :: *;
-import DataTypes :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import FIFOF :: *;
 import Cntrs :: * ;
@@ -18,7 +20,6 @@ import RdmaUtils :: *;
 import ConnectableF :: *;
 import NapWrapper :: *;
 import Descriptors :: *;
-import PacketGenAndParse :: *;
 
 typedef 3 RINGBUF_NUMBER_WIDTH;
 

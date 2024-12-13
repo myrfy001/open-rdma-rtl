@@ -11,13 +11,16 @@ import Utils4Test :: *;
 
 import AddressChunker :: *;
 import PayloadGenAndCon :: *;
-import DataTypes :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ClientServer :: *;
 import ConnectableF::*;
 import NapWrapper :: *;
-import StreamShifter :: *;
+import StreamShifterG :: *;
 import MemRegionAndAddressTranslate :: *;
+import IoChannels :: *;
 
 
 typedef enum {
@@ -26,19 +29,21 @@ typedef enum {
     TestPayloadGenAndConStateCheckReadResp = 2
 } TestPayloadGenAndConState deriving(FShow, Bits, Eq);
 
+
+
+interface TestCocotbPayloadGenAndCon;
+    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
+endinterface
+
 (* doc = "testcase" *)
-module mkTestPayloadGenAndCon(Empty);
+module mkTestCocotbPayloadGenAndCon(TestCocotbPayloadGenAndCon);
 
     Reg#(Bit#(32)) quitCounterReg <- mkReg(1000000);
 
-    PayloadGenAndCon dut <- mkPayloadGenAndCon;
-    AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
+    let clk <- exposeCurrentClock;
+    let rst <- exposeCurrentReset;
 
-    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
-    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
-    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
-    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
-    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
+    PayloadGenAndCon dut <- mkPayloadGenAndCon(clk, rst);
 
     let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
     let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
@@ -46,23 +51,42 @@ module mkTestPayloadGenAndCon(Empty);
     mkConnection(dut.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
 
     let payloadStreamGen <- mkFixedLengthDateStreamRandomGen;
-    let writeStreamShifter <- mkBiDirectionStreamShifter;
-    mkConnection(payloadStreamGen.streamPipeOut, writeStreamShifter.streamPipeIn);
+    let writeStreamShifter <- mkLsbRightStreamLeftShifterG;
+    // mkConnection(payloadStreamGen.streamPipeOut, writeStreamShifter.streamPipeIn);
+
+    rule debug;
+        let ds = payloadStreamGen.streamPipeOut.first;
+        payloadStreamGen.streamPipeOut.deq;
+        writeStreamShifter.streamPipeIn.enq(ds);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkTestCocotbPayloadGenAndCon debug"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
+    endrule
 
     FIFOF#(PayloadGenReq) payloadGenReqQ <- mkFIFOF;
     FIFOF#(DataStream) expectedStreamQ <- mkSizedFIFOF(1024);
 
-    Vector#(2, PipeOut#(DataStream)) rdmaPayloadDataStreamPipeOutForkedVec <- mkForkVector(writeStreamShifter.streamPipeOut);
-    mkConnection(rdmaPayloadDataStreamPipeOutForkedVec[0], dut.payloadConStreamPipeIn);
-    mkConnection(rdmaPayloadDataStreamPipeOutForkedVec[1], toPipeIn(expectedStreamQ));
+    // Vector#(2, PipeOut#(DataStream)) rdmaPayloadDataStreamPipeOutForkedVec <- mkForkVector(writeStreamShifter.streamPipeOut);
+    // mkConnection(rdmaPayloadDataStreamPipeOutForkedVec[0], dut.payloadConStreamPipeIn);
+    // mkConnection(rdmaPayloadDataStreamPipeOutForkedVec[1], toPipeIn(expectedStreamQ));
+
+    rule forkShiftResult;
+        let ds = writeStreamShifter.streamPipeOut.first;
+        writeStreamShifter.streamPipeOut.deq;
+        dut.payloadConStreamPipeIn.enq(ds);
+        expectedStreamQ.enq(ds);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkTestCocotbPayloadGenAndCon forkShiftResult"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
+    endrule
 
     PipeOut#(Length) payloadLenRandPipeOut <- mkRandomLenPipeOut(1, 2048);//fromInteger(valueOf(MAX_PMTU)));
-    PipeOut#(Length)   payloadAddrRandPipeOut <- mkRandomLenPipeOut(0, 1 << (valueOf(MOCK_HOST_ADDR_WIDTH)-1) );
+    PipeOut#(Length) payloadAddrRandPipeOut <- mkRandomLenPipeOut(0, 1 << (valueOf(MOCK_HOST_ADDR_WIDTH)-1) );
 
 
     Reg#(TestPayloadGenAndConState) stateReg <- mkReg(TestPayloadGenAndConStateGenWriteReq);
-
-
 
 
     rule genWriteReq if (stateReg == TestPayloadGenAndConStateGenWriteReq);
@@ -76,8 +100,8 @@ module mkTestPayloadGenAndCon(Empty);
 
         payloadStreamGen.reqPipeIn.enq(zeroExtend(rdmaPayloadLen));
 
-        ByteIndexInBeat startByteOffset = truncate(rdmaPayloadStartAddr);
-        DataBusSignedShiftOffset signedShiftOffset = zeroExtend(startByteOffset);
+        ByteIdxInDword startByteOffset = truncate(rdmaPayloadStartAddr);
+        DataBusShiftOffset signedShiftOffset = zeroExtend(startByteOffset);
         writeStreamShifter.offsetPipeIn.enq(signedShiftOffset);
 
         let conReq = PayloadConReq{
@@ -98,6 +122,11 @@ module mkTestPayloadGenAndCon(Empty);
         payloadGenReqQ.enq(genReq);
 
         stateReg <= TestPayloadGenAndConStateWaitWriteFinish;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkTestCocotbPayloadGenAndCon genWriteReq"),
+        //     toBlue(", conReq="), fshow(conReq)
+        // );
     endrule
 
     rule waitWriteFinished if (stateReg == TestPayloadGenAndConStateWaitWriteFinish);
@@ -114,6 +143,11 @@ module mkTestPayloadGenAndCon(Empty);
         dut.genReqPipeIn.enq(genReq);
 
         stateReg <= TestPayloadGenAndConStateCheckReadResp;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkTestCocotbPayloadGenAndCon waitWriteFinished"),
+        //     toBlue(", genReq="), fshow(genReq)
+        // );
     endrule
 
     rule checkReadResp if (stateReg == TestPayloadGenAndConStateCheckReadResp);
@@ -133,11 +167,13 @@ module mkTestPayloadGenAndCon(Empty);
             DATA maskForByteNum = (1 << shiftOffset) - 1;
 
             ds.data = ds.data & maskForStartByteIdx & maskForByteNum;
+            expectedDs.data = expectedDs.data & maskForStartByteIdx & maskForByteNum;
         end
         else if (ds.isLast) begin
             BusBitNum shiftOffset = zeroExtend(ds.byteNum) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
-            DATA maskForByteNum = ~((-1) >> shiftOffset);
+            DATA maskForByteNum = (1 << shiftOffset) - 1;
             ds.data = ds.data & maskForByteNum;
+            expectedDs.data = expectedDs.data & maskForByteNum;
         end
         
 
@@ -150,8 +186,10 @@ module mkTestPayloadGenAndCon(Empty);
         if (ds.isLast) begin
             stateReg <= TestPayloadGenAndConStateGenWriteReq;
 
+            // $display("----------one check finished ----------------\n\n\n");
+
             quitCounterReg <= quitCounterReg - 1;
-            if (quitCounterReg % 50000 == 0) begin
+            if (quitCounterReg % 50 == 0) begin
                 $display(quitCounterReg);
             end
             if (quitCounterReg == 0) begin
@@ -160,86 +198,91 @@ module mkTestPayloadGenAndCon(Empty);
             end
         end
     endrule
+
+    interface ioChannelMemoryMasterPipeIfc = dut.ioChannelMemoryMasterPipeIfc;
 endmodule
 
 
 
-interface TestPayloadGenAndConTiming;
-    method Bool getOutput;
-endinterface
+// interface TestPayloadGenAndConTiming;
+//     method Bool getOutput;
+// endinterface
 
 
-(* doc = "testcase" *)
-(* synthesize *)
-module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
+// (* doc = "testcase" *)
+// (* synthesize *)
+// module mkTestPayloadGenAndConTiming(TestPayloadGenAndConTiming);
 
-    PayloadGenAndCon dut <- mkPayloadGenAndCon;
-    AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
+//     let clk <- exposeCurrentClock;
+//     let rst <- exposeCurrentReset;
 
-    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
-    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
-    mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
-    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
-    mkConnection(dut.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
+//     PayloadGenAndCon dut <- mkPayloadGenAndCon(clk, rst);
+//     AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
 
-    ForceKeepWideSignals#(DataStream, Bool) signalKeeperForGen <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Bool, Bool) signalKeeperForCon <- mkForceKeepWideSignals; 
-    let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
-    let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
-    Reg#(Bool) outReg <- mkRegU;
+//     mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
+//     mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
+//     mkConnection(dut.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
+//     mkConnection(dut.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
+//     mkConnection(dut.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
 
-    let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
-    let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
-    mkConnection(dut.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
-    mkConnection(dut.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
+//     ForceKeepWideSignals#(DataStream, Bool) signalKeeperForGen <- mkForceKeepWideSignals; 
+//     ForceKeepWideSignals#(Bool, Bool) signalKeeperForCon <- mkForceKeepWideSignals; 
+//     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
+//     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
+//     Reg#(Bool) outReg <- mkRegU;
 
-    rule genWriteReq;
+//     let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
+//     let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
+//     mkConnection(dut.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
+//     mkConnection(dut.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
+
+//     rule genWriteReq;
         
-        let randData512 <- randSource1.get;
+//         let randData512 <- randSource1.get;
 
-        Length rdmaPayloadLen = truncate(randData512 >> 2);
-        ADDR rdmaPayloadStartAddr = truncate(randData512 >> 12);
+//         Length rdmaPayloadLen = truncate(randData512 >> 2);
+//         ADDR rdmaPayloadStartAddr = truncate(randData512 >> 12);
 
-        let conReq = PayloadConReq{
-            addr: rdmaPayloadStartAddr,
-            len: rdmaPayloadLen,
-            baseVA: dontCareValue,    // since we use a fake addr translator in test.
-            pgtOffset: dontCareValue  // since we use a fake addr translator in test.
-        };
-        dut.conReqPipeIn.enq(conReq);
+//         let conReq = PayloadConReq{
+//             addr: rdmaPayloadStartAddr,
+//             len: rdmaPayloadLen,
+//             baseVA: dontCareValue,    // since we use a fake addr translator in test.
+//             pgtOffset: dontCareValue  // since we use a fake addr translator in test.
+//         };
+//         dut.conReqPipeIn.enq(conReq);
 
 
-        let genReq = PayloadGenReq{
-            addr: rdmaPayloadStartAddr,
-            len: rdmaPayloadLen,
-            baseVA: dontCareValue,    // since we use a fake addr translator in test.
-            pgtOffset: dontCareValue  // since we use a fake addr tr
-        };
-        dut.genReqPipeIn.enq(genReq);
+//         let genReq = PayloadGenReq{
+//             addr: rdmaPayloadStartAddr,
+//             len: rdmaPayloadLen,
+//             baseVA: dontCareValue,    // since we use a fake addr translator in test.
+//             pgtOffset: dontCareValue  // since we use a fake addr tr
+//         };
+//         dut.genReqPipeIn.enq(genReq);
 
-    endrule
+//     endrule
 
-    rule genWriteData;
-        let randData512 <- randSource2.get;
-        dut.payloadConStreamPipeIn.enq(unpack(truncate(randData512)));
-    endrule
+//     rule genWriteData;
+//         let randData512 <- randSource2.get;
+//         dut.payloadConStreamPipeIn.enq(unpack(truncate(randData512)));
+//     endrule
 
-    rule getConResult;
-        let writeFinishResp = dut.conRespPipeOut.first;
-        dut.conRespPipeOut.deq;
-        signalKeeperForCon.bitsPipeIn.enq(writeFinishResp);
-    endrule
+//     rule getConResult;
+//         let writeFinishResp = dut.conRespPipeOut.first;
+//         dut.conRespPipeOut.deq;
+//         signalKeeperForCon.bitsPipeIn.enq(writeFinishResp);
+//     endrule
 
-    rule getGenResult;
-        let ds = dut.payloadGenStreamPipeOut.first;
-        dut.payloadGenStreamPipeOut.deq;
-        signalKeeperForGen.bitsPipeIn.enq(ds);
-    endrule
+//     rule getGenResult;
+//         let ds = dut.payloadGenStreamPipeOut.first;
+//         dut.payloadGenStreamPipeOut.deq;
+//         signalKeeperForGen.bitsPipeIn.enq(ds);
+//     endrule
 
-    rule gatherKeptSignals;
-        outReg <= signalKeeperForCon.out && signalKeeperForGen.out;
-    endrule
+//     rule gatherKeptSignals;
+//         outReg <= signalKeeperForCon.out && signalKeeperForGen.out;
+//     endrule
 
-    method getOutput = outReg;
-endmodule
+//     method getOutput = outReg;
+// endmodule
 

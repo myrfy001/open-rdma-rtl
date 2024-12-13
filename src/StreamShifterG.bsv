@@ -5,7 +5,7 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import DtldStream :: *;
 
 /*

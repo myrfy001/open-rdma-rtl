@@ -8,7 +8,7 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import Settings :: *;
 import RdmaHeaders :: *;
 import RdmaHeaders :: *;
@@ -440,29 +440,11 @@ module mkPacketGen#(
     SyncFIFOIfc#(PayloadGenReq) genReqPipeOutQ  <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
     FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
 
-    AddressChunkMetaCalculator#(
-            ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)
-        ) wqeToPacketChunkMetaCalc <- mkAddressChunkMetaCalculator(
-            alignAddrByPMTU,
-            devideLengthByPMTU,
-            isAddrAndLengthLowerPartSumOverflowPMTU,
-            getChunkSizeForPMTU
-        );
     AddressChunker#(
             ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)
         ) wqeToPacketChunker <- mkAddressChunker;
     mkConnection(wqeToPacketChunkMetaCalc.metaPipeOut, wqeToPacketChunker.requestPipeIn);
 
-    AddressChunkMetaCalculator#(
-            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder, TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) packetToBeatChunkMetaCalc <- mkAddressChunkMetaCalculator(
-            alignAddrForBeat,
-            devideLengthForBeat,
-            isAddrAndLengthLowerPartSumOverflowForBeat,
-            getChunkSizeForBeat,
-            clocked_by clkEthNap,
-            reset_by rstEthNap
-        );
     AddressChunker#(
             ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder, TAdd#(1, BEAT_ALIGN_BIT_NUM)
         ) packetToBeatChunker <- mkAddressChunker(
@@ -585,8 +567,8 @@ module mkPacketGen#(
             };
             genReqPipeOutQ.enq(payloadGenReq);
 
-            ByteIndexInBeat localAddrOffset = truncate(wqe.laddr);
-            ByteIndexInBeat remoteAddrOffset = truncate(wqe.raddr);
+            ByteIdxInDword localAddrOffset = truncate(wqe.laddr);
+            ByteIdxInDword remoteAddrOffset = truncate(wqe.raddr);
             DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(remoteAddrOffset) - zeroExtend(localAddrOffset);
             payloadStreamShifterOffsetPipeInSyncQ.enq(localToRemoteAlignShiftOffset);
         end

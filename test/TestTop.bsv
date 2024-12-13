@@ -13,7 +13,7 @@ import Utils4Test :: *;
 
 import AddressChunker :: *;
 import PayloadGenAndCon :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ClientServer :: *;
 import ConnectableF::*;

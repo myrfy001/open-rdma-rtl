@@ -1,6 +1,6 @@
 import Vector :: *;
 import Settings :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import FIFOF :: *;
 import Cntrs :: * ;

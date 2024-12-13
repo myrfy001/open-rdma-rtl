@@ -12,7 +12,7 @@ import PrimUtils :: *;
 import Utils4Test :: *;
 
 import FTileMacAdaptor :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ClientServer :: *;
 import ConnectableF::*;

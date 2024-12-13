@@ -3,7 +3,7 @@ import FIFOF :: *;
 import Cntrs :: * ;
 
 import ConnectableF :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import PrimUtils :: *;
 import AxiBus :: *;
 

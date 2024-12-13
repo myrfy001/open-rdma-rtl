@@ -7,13 +7,17 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
-import DataTypes :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
+import BasicDataTypes :: *;
 import Settings :: *;
-import RdmaHeaders :: *;
 import RdmaHeaders :: *;
 import NapWrapper :: *;
 import AddressChunker :: *;
 import EthernetTypes :: *;
+import DtldStream :: *;
+import IoChannels :: *;
+
 
 typedef struct {
     ADDR   addr;
@@ -29,14 +33,21 @@ typedef struct {
     ADDR baseVA;
 } PayloadConReq deriving(Bits, FShow);
 
+typedef IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE                          PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE;
+typedef TAdd#(1, TDiv#(MAX_PMTU, PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE))   PAYLOAD_CON_AND_GEN_MAX_BURST_CNT_PER_REQUEST;
 
+typedef TDiv#(PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE, BYTE_CNT_PER_DWOED)   PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST;
+typedef TAdd#(1, TLog#(PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST))    PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST_WIDTH;
+typedef Bit#(PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST_WIDTH)         AlignBlockCntInPayloadConAndGenBurst;
+
+typedef NUMERIC_TYPE_TWO    LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE;
 
 interface PayloadGen;
     interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
     interface PipeIn#(PayloadGenReq) genReqPipeIn;
-    interface PipeOut#(DataStream) payloadGenStreamPipeOut;
+    interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
-    interface AcxNapMasterWrapperReadPipe dmaReadPipe;
+    interface IoChannelMemoryReadMasterPipe dmaReadMasterPipe;
 endinterface
 
 interface PayloadCon;
@@ -44,9 +55,9 @@ interface PayloadCon;
     interface PipeIn#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
 
-    interface PipeIn#(DataStream) payloadConStreamPipeIn;
+    interface PipeIn#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
-    interface AcxNapMasterWrapperWritePipe dmaWritePipe;
+    interface IoChannelMemoryWriteMasterPipe dmaWriteMasterPipe;
 endinterface
 
 
@@ -54,14 +65,14 @@ endinterface
 interface PayloadGenAndCon;
     interface Client#(PgtAddrTranslateReq, ADDR) genAddrTranslateClt;
     interface PipeIn#(PayloadGenReq) genReqPipeIn;
-    interface PipeOut#(DataStream) payloadGenStreamPipeOut;
+    interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
     interface Client#(PgtAddrTranslateReq, ADDR) conAddrTranslateClt;
     interface PipeIn#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
-    interface PipeIn#(DataStream) payloadConStreamPipeIn;
+    interface PipeIn#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
-    interface AcxNapMasterWrapperPipe axiNapPipeIfc;
+    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -82,9 +93,9 @@ module mkPayloadGenAndCon#(
     interface conRespPipeOut = payloadCon.conRespPipeOut;
     interface payloadConStreamPipeIn = payloadCon.payloadConStreamPipeIn;
 
-    interface AcxNapMasterWrapperPipe axiNapPipeIfc;
-        interface writePipeIfc  = payloadCon.dmaWritePipe;
-        interface readPipeIfc   = payloadGen.dmaReadPipe;
+    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
+        interface writePipeIfc  = payloadCon.dmaWriteMasterPipe;
+        interface readPipeIfc   = payloadGen.dmaReadMasterPipe;
     endinterface
 endmodule
 
@@ -95,49 +106,33 @@ module mkPayloadGen#(
     )(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
-    FIFOF#(DataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
 
-    FIFOF#(AxiMmNapBeatAr) dmaReadReqPipeOutQ   <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatR)  dmaReadRespPipeInQ   <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkFIFOF;
 
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadGen addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker(0);
 
+    DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator;
+    mkConnection(toPipeOut(dmaReadRespPipeInQ), dsConcator.dataPipeIn);
 
-    AddressChunkMetaCalculator#(
-            ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
-        ) rawReqToBurstChunkMetaCalc <- mkAddressChunkMetaCalculator(
-            alignAddrForPcieBurst,
-            devideLengthForPcieBurst,
-            isAddrAndLengthLowerPartSumOverflowForPcieBurst,
-            getChunkSizeForPcieBurst
-        );
-    AddressChunker#(
-            ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
-        ) rawReqToBurstChunker <- mkAddressChunker;
-    AddressChunkMetaCalculator#(
-            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) burstToBeatChunkMetaCalc <- mkAddressChunkMetaCalculator(
-            alignAddrForBeat,
-            devideLengthForBeat,
-            isAddrAndLengthLowerPartSumOverflowForBeat,
-            getChunkSizeForBeat
-        );
-    AddressChunker#(
-            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) burstToBeatChunker <- mkAddressChunker;
+    // rule forwardReadRespToConcator;
+    //     let ds = dmaReadRespPipeInQ.first;
+    //     dmaReadRespPipeInQ.deq;
+    //     dsConcator.dataPipeIn.enq(ds);
 
-    Reg#(Bool) outputIsFirstReg <- mkReg(True);
+    //     // $display(
+    //     //     "time=%0t:", $time, toGreen(" mkPayloadGen forwardReadRespToConcator"),
+    //     //     toBlue(", ds="), fshow(ds)
+    //     // );
+    // endrule
 
-    mkConnection(rawReqToBurstChunkMetaCalc.metaPipeOut, rawReqToBurstChunker.requestPipeIn);
 
     // Pipeline FIFOs
-    FIFOF#(AddressChunkResp#(ADDR, Length)) chunkedBurstMetaQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkFIFOF;
 
     rule handleInReq;
         let req = genReqPipeInQ.first;
@@ -146,11 +141,11 @@ module mkPayloadGen#(
         let chunkReq = AddressChunkReq{
             startAddr: req.addr,
             len: req.len,
-            chunk: dontCareValue
+            chunk: fromInteger(valueOf(TLog#(IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE)))
         };
 
-        rawReqToBurstChunkMetaCalc.requestPipeIn.enq(chunkReq);
-        getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.enq(
+        rawReqToBurstChunker.requestPipeIn.enq(chunkReq);
+        getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple2(req.pgtOffset, req.baseVA));
 
         // $display(
@@ -159,21 +154,14 @@ module mkPayloadGen#(
         // );
     endrule
 
-    rule getBurstChunRespAndIssueBeatChunkMetaCalculateReq;
+    rule getBurstChunRespAndIssueAddrTranslateReq;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
-        let {pgtOffset, baseVA} = getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.first;
+        let {pgtOffset, baseVA} = getBurstChunRespAndIssueAddrTranslateReqPipelineQ.first;
         if (burstAddrBoundry.isLast) begin
-            getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.deq;
+            getBurstChunRespAndIssueAddrTranslateReqPipelineQ.deq;
         end
-
-        let chunkReq = AddressChunkReq{
-            startAddr: burstAddrBoundry.startAddr,
-            len: burstAddrBoundry.len,
-            chunk: dontCareValue
-        };
-        burstToBeatChunkMetaCalc.requestPipeIn.enq(chunkReq);
 
         let addrTranslateReq = PgtAddrTranslateReq {
             pgtOffset: pgtOffset,
@@ -181,99 +169,43 @@ module mkPayloadGen#(
             addrToTrans: burstAddrBoundry.startAddr
         };
         addrTranslateCltInst.putReq(addrTranslateReq);
-
-        chunkedBurstMetaQ.enq(burstAddrBoundry);
+        issueDmaReadPipelineQ.enq(tuple2(burstAddrBoundry.len, burstAddrBoundry.isLast));
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadGen getBurstChunRespAndIssueBeatChunkMetaCalculateReq"),
+        //     "time=%0t:", $time, toGreen(" mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq"),
         //     toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry),
         //     toBlue(", pgtOffset="), fshow(pgtOffset),
         //     toBlue(", baseVA="), fshow(baseVA)
         // );
     endrule
 
-
-    rule issueAxiRead;
-        let burstToBeatChunkMeta = burstToBeatChunkMetaCalc.metaPipeOut.first;
-        burstToBeatChunkMetaCalc.metaPipeOut.deq;
-
+    rule issueDmaRead;
         let translatedAddr <- addrTranslateCltInst.getResp;
+        let {len, isLast} = issueDmaReadPipelineQ.first;
+        issueDmaReadPipelineQ.deq;
         
-        let ar = AxiMmNapBeatAr {
-            arid: 0,
-            araddr: truncate(translatedAddr),
-            arlen: unpack(truncate(burstToBeatChunkMeta.zeroBasedChunkNum)),
-            arsize: unpack(pack(NapAxiSize32B)),
-            arburst: unpack(pack(NapAxiBurstIncr)),
-            arlock: False,
-            arqos: 0
+        let readReq = DtldStreamMemAccessMeta {
+            addr: translatedAddr,
+            totalLen: len
         };
-
-        dmaReadReqPipeOutQ.enq(ar);
-        burstToBeatChunker.requestPipeIn.enq(burstToBeatChunkMeta);
+        dmaReadReqPipeOutQ.enq(readReq);
+        dsConcator.isLastStreamFlagPipeIn.enq(isLast);
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadGen issueAxiRead"),
-        //     toBlue(", burstToBeatChunkMeta="), fshow(burstToBeatChunkMeta)
+        //     "time=%0t:", $time, toGreen(" mkPayloadGen issueDmaRead"),
+        //     toBlue(", translatedAddr="), fshow(translatedAddr),
+        //     toBlue(", len="), fshow(len),
+        //     toBlue(", isLast="), fshow(isLast)
         // );
-    endrule
-
-    rule gatherAxiReadResp;
-        let axiReadResp = dmaReadRespPipeInQ.first;
-        dmaReadRespPipeInQ.deq;
-        let burstMeta = chunkedBurstMetaQ.first;
-        let beatMeta = burstToBeatChunker.responsePipeOut.first;
-        burstToBeatChunker.responsePipeOut.deq;
-
-        Bool isLast = False;
-        if (axiReadResp.rlast) begin
-            immAssert(
-                beatMeta.isLast,
-                "beatMeta.isLast should also be true here, but it doesn't, which means our chunk algroithm is not the same as the NAP hardware",
-                $format("")
-            );
-            chunkedBurstMetaQ.deq;
-            if (burstMeta.isLast) begin
-                isLast = True;
-            end
-        end
-
-        outputIsFirstReg <= isLast;
-
-        Bool isFirst = outputIsFirstReg;
-
-        ByteEnBitNum    startByteIdx = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        ByteIndexInBeat startAddrByteOffsetInBeat = truncate(burstMeta.startAddr);
-        ByteEnBitNum    byteNum = truncate(beatMeta.len);
-
-        // TODO: maybe we can split this calculate into previous beat and this beat
-        startByteIdx = isFirst ? startByteIdx - zeroExtend(startAddrByteOffsetInBeat) - byteNum : 0;
-
-        let ds = DataStream {
-            data: axiReadResp.rdata,
-            byteNum: byteNum,
-            startByteIdx: truncate(startByteIdx),
-            isFirst: isFirst,
-            isLast: isLast
-        };
-        ds = reverseStream(ds);
-
-        payloadGenStreamPipeOutQ.enq(ds);
-
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadGen gatherAxiReadResp"),
-        //     toBlue(", ds="), fshow(ds)
-        // );
-
     endrule
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
     interface genReqPipeIn = toPipeIn(genReqPipeInQ);
-    interface payloadGenStreamPipeOut = toPipeOut(payloadGenStreamPipeOutQ);
+    interface payloadGenStreamPipeOut = dsConcator.dataPipeOut;
 
-    interface AcxNapMasterWrapperReadPipe dmaReadPipe;
-        interface readAddrPipeOut = toPipeOut(dmaReadReqPipeOutQ);
-        interface readRespPipeIn = toPipeIn(dmaReadRespPipeInQ);
+    interface IoChannelMemoryReadMasterPipe dmaReadMasterPipe;
+        interface readMetaPipeOut = toPipeOut(dmaReadReqPipeOutQ);
+        interface readDataPipeIn = toPipeIn(dmaReadRespPipeInQ);
     endinterface
 
 endmodule
@@ -286,52 +218,22 @@ module mkPayloadCon#(
     )(PayloadCon);
 
     FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;
-    FIFOF#(DataStream) payloadConStreamPipeInQ <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkFIFOF;
     FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;
 
-    FIFOF#(AxiMmNapBeatAw) dmaWriteReqAddrPipeOutQ <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatW) dmaWriteReqDataPipeOutQ <- mkFIFOF;
-    FIFOF#(AxiMmNapBeatB) dmaWriteRespPipeInQ <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkFIFOF;
+
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadCon addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker(0);
 
-    AddressChunkMetaCalculator#(
-            ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
-        ) rawReqToBurstChunkMetaCalc <- mkAddressChunkMetaCalculator(
-            alignAddrForPcieBurst,
-            devideLengthForPcieBurst,
-            isAddrAndLengthLowerPartSumOverflowForPcieBurst,
-            getChunkSizeForPcieBurst
-        );
-    AddressChunker#(
-            ADDR, Length, PcieAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, PCIE_BURST_ALIGN_BIT_NUM)
-        ) rawReqToBurstChunker <- mkAddressChunker;
-    AddressChunkMetaCalculator#(
-            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) burstToBeatChunkMetaCalc <- mkAddressChunkMetaCalculator(
-            alignAddrForBeat,
-            devideLengthForBeat,
-            isAddrAndLengthLowerPartSumOverflowForBeat,
-            getChunkSizeForBeat
-        );
-    AddressChunker#(
-            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder,
-            TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) burstToBeatChunker <- mkAddressChunker;
-
-    
+    DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
 
     FIFOF#(AddressChunkResp#(ADDR, Length)) chunkedBurstMetaQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkFIFOF;
     FIFOF#(Tuple2#(DataStreamEn, ByteIndexInBeat)) dataStreamEnPreCalcPipelineQ <- mkFIFOF;
-    FIFOF#(AddressChunkResp#(ADDR, Length)) inflightAxiWriteBurstMetaQ <- mkFIFOF; 
-
-    mkConnection(rawReqToBurstChunkMetaCalc.metaPipeOut, rawReqToBurstChunker.requestPipeIn);
-
-    Reg#(Bool) errorOccuredReg <- mkReg(False);
+    FIFOF#(Length) issueDmaWritePipelineQ <- mkFIFOF;
 
     rule handleInReq;
         let req = conReqPipeInQ.first;
@@ -340,29 +242,22 @@ module mkPayloadCon#(
         let chunkReq = AddressChunkReq{
             startAddr: req.addr,
             len: req.len,
-            chunk: dontCareValue
+            chunk: fromInteger(valueOf(TLog#(IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE)))
         };
 
-        rawReqToBurstChunkMetaCalc.requestPipeIn.enq(chunkReq);
-        getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.enq(
+        rawReqToBurstChunker.requestPipeIn.enq(chunkReq);
+        getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple2(req.pgtOffset, req.baseVA));
     endrule
 
-    rule getBurstChunRespAndIssueBeatChunkMetaCalculateReq;
+    rule getBurstChunRespAndIssueAddrTranslateReq;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
-        let {pgtOffset, baseVA} = getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.first;
+        let {pgtOffset, baseVA} = getBurstChunRespAndIssueAddrTranslateReqPipelineQ.first;
         if (burstAddrBoundry.isLast) begin
-            getBurstChunRespAndIssueBeatChunkMetaCalculateReqPipelineQ.deq;
+            getBurstChunRespAndIssueAddrTranslateReqPipelineQ.deq;
         end
-
-        let chunkReq = AddressChunkReq{
-            startAddr: burstAddrBoundry.startAddr,
-            len: burstAddrBoundry.len,
-            chunk: dontCareValue
-        };
-        burstToBeatChunkMetaCalc.requestPipeIn.enq(chunkReq);
 
         let addrTranslateReq = PgtAddrTranslateReq {
             pgtOffset: pgtOffset,
@@ -371,101 +266,65 @@ module mkPayloadCon#(
         };
         addrTranslateCltInst.putReq(addrTranslateReq);
 
-        chunkedBurstMetaQ.enq(burstAddrBoundry);
+        issueDmaWritePipelineQ.enq(burstAddrBoundry.len);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq"),
+        //     toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
+        // );
     endrule
 
     rule getBeatChunkMetaCalculateRespAndIssueAxiWrite;
-        let burstToBeatChunkMeta = burstToBeatChunkMetaCalc.metaPipeOut.first;
-        burstToBeatChunkMetaCalc.metaPipeOut.deq;
-
-        let burstAddrBoundry = chunkedBurstMetaQ.first;
-        chunkedBurstMetaQ.deq;
+        let len = issueDmaWritePipelineQ.first;
+        issueDmaWritePipelineQ.deq;
 
         let translatedAddr <- addrTranslateCltInst.getResp;
 
-        let awReq = AxiMmNapBeatAw {
-            awid: 0,
-            awaddr: truncate(translatedAddr),
-            awlen: unpack(truncate(burstToBeatChunkMeta.zeroBasedChunkNum)),
-            awsize: unpack(pack(NapAxiSize32B)),
-            awburst: unpack(pack(NapAxiBurstIncr)),
-            awlock: False,
-            awqos: 0
+        Length truncatedStartAddr = truncate(translatedAddr);
+        Length truncatedEndAddrForALignCalc = truncate(translatedAddr) + len - 1;
+
+        AlignBlockCntInPayloadConAndGenBurst alignBlockCntForStreamSplit = truncate( 
+            (truncatedEndAddrForALignCalc >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE)) - 
+            (truncatedStartAddr >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE))
+        ) + 1;
+
+        dsSpliter.streamAlignBlockCountPipeIn.enq(alignBlockCntForStreamSplit);
+
+        let writeReq = DtldStreamMemAccessMeta {
+            addr: translatedAddr,
+            totalLen: len
         };
-        dmaWriteReqAddrPipeOutQ.enq(awReq);
-        burstToBeatChunker.requestPipeIn.enq(burstToBeatChunkMeta);
-        inflightAxiWriteBurstMetaQ.enq(burstAddrBoundry);
+        dmaWriteReqAddrPipeOutQ.enq(writeReq);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite"),
+        //     toBlue(", writeReq="), fshow(writeReq),
+        //     toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
+        //     toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc),
+        //     toBlue(", alignBlockCntForStreamSplit="), fshow(alignBlockCntForStreamSplit)
+        // );
     endrule
 
-
-    rule preCalcWriteStreamByteEn;
+    rule forwardConsumedFinishedSignal;
         let ds = payloadConStreamPipeInQ.first;
         payloadConStreamPipeInQ.deq;
-        ByteEn allOneByteEn = -1;
-        ByteEn allZeroByteEn = 0;
-        ByteEn byteEn = truncate({allOneByteEn, allZeroByteEn} >> ds.byteNum);
-
-        let dsEn = DataStreamEn {
-            data: ds.data,
-            byteEn: byteEn,
-            isFirst: ds.isFirst,
-            isLast: ds.isLast
-        };
-        dataStreamEnPreCalcPipelineQ.enq(tuple2(dsEn, ds.startByteIdx));
+        dsSpliter.dataPipeIn.enq(ds);
+       
+        if (ds.isLast) begin
+            conRespPipeOutQ.enq(True);
+        end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon forwardConsumedFinishedSignal"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
-    rule sendAxiWriteBeat;
-        let beatInfo = burstToBeatChunker.responsePipeOut.first;
-        burstToBeatChunker.responsePipeOut.deq;
-
-        let {dsEn, startByteIdx} = dataStreamEnPreCalcPipelineQ.first;
-        dataStreamEnPreCalcPipelineQ.deq;
-
-        // Note: the following lines complete the byteEN generation. Those lines of code should 
-        // be placed in the `rule preCalcWriteStreamByteEn`, but the shift timing is worse.
-        // to fix timing, split the byteEn generation into this rule and `rule preCalcWriteStreamByteEn`
-        dsEn.byteEn = dsEn.byteEn >> startByteIdx;
-        if (dsEn.isFirst) begin
-            // since only first beat in the stream is right aligned
-            dsEn.byteEn = swapEndianBit(dsEn.byteEn);
-        end
-
-
-        dsEn = reverseStreamEnAndData(dsEn);
-
-        let wlast = beatInfo.isLast;
-
-        let wReq = AxiMmNapBeatW {
-            wdata: dsEn.data,
-            wstrb: dsEn.byteEn,
-            wlast: wlast
-        };
-        dmaWriteReqDataPipeOutQ.enq(wReq);
-
-        if (dsEn.isLast) begin
-            immAssert(
-                wlast,
-                "wlast should also be true here, but it doesn't, which means the chunk calculated from address and len doesn't match the received stream",
-                $format("")
-            );
-        end
-    endrule
-
-    rule forwardAxiB;
-        let resp = dmaWriteRespPipeInQ.first;
-        dmaWriteRespPipeInQ.deq;
-
-        let burstMeta = inflightAxiWriteBurstMetaQ.first;
-        inflightAxiWriteBurstMetaQ.deq;
-
-        let errorOccured = errorOccuredReg || (resp.bresp != 0);
-        if (burstMeta.isLast) begin
-            conRespPipeOutQ.enq(!errorOccured);
-            errorOccuredReg <= False;
-        end
-        else begin
-            errorOccuredReg <= errorOccured;
-        end
+    rule debugFOrwardSplitOutput;
+        let ds = dsSpliter.dataPipeOut.first;
+        dsSpliter.dataPipeOut.deq;
+        dmaWriteReqDataPipeOutQ.enq(ds);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon debugFOrwardSplitOutput"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
@@ -473,10 +332,10 @@ module mkPayloadCon#(
     interface conRespPipeOut = toPipeOut(conRespPipeOutQ);
     interface payloadConStreamPipeIn = toPipeIn(payloadConStreamPipeInQ);
 
-    interface AcxNapMasterWrapperWritePipe dmaWritePipe;
-        interface writeAddrPipeOut = toPipeOut(dmaWriteReqAddrPipeOutQ);
+    interface IoChannelMemoryWriteMasterPipe dmaWriteMasterPipe;
+        interface writeMetaPipeOut = toPipeOut(dmaWriteReqAddrPipeOutQ);
+        // interface writeDataPipeOut = dsSpliter.dataPipeOut;
         interface writeDataPipeOut = toPipeOut(dmaWriteReqDataPipeOutQ);
-        interface writeRespPipeIn  = toPipeIn(dmaWriteRespPipeInQ);
     endinterface
 
 endmodule

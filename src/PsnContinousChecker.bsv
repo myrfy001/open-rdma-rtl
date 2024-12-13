@@ -4,7 +4,7 @@ import FIFOF :: *;
 import ConfigReg :: * ;
 
 import PrimUtils :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 
 import RdmaHeaders :: *;
 

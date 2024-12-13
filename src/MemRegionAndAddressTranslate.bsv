@@ -7,7 +7,9 @@ import PAClib :: *;
 import Vector :: *;
 import Cntrs :: * ;
 
-import DataTypes :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import PrimUtils :: *;
 import Settings :: *;

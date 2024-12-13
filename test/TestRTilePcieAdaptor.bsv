@@ -10,7 +10,7 @@ import PrimUtils :: *;
 import Utils4Test :: *;
 
 import RTilePcieAdaptor :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ClientServer :: *;
 import ConnectableF::*;

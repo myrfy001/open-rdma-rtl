@@ -21,7 +21,12 @@ export f_UGFIFOF_to_PipeOut;
 export f_Sync_FIFOF_to_FIFOF;
 export f_Sync_FIFOF_to_PipeIn;
 export f_Sync_FIFOF_to_PipeOut;
-
+export toPipeOut;
+export toPipeIn;
+export toPipeOutSync;
+export toPipeInSync;
+export ugToPipeOut;
+export ugToPipeIn;
 export Connectable;
 
 
@@ -146,23 +151,28 @@ instance Connectable#(PipeIn#(t), PipeOut#(t));
     endmodule
 endinstance
 
-// interface PipeIn2PipeOut#(type tData);
-//     interface PipeIn#(tData) pipeIn;
-//     interface PipeOut#(tData) pipeOut;
-// endinterface
+// PipeOut related
 
-// module mkPipelinePipeIn2PipeOut(PipeIn2PipeOut#(tData)) provisos (Bits#(tData, szData));
+function PipeOut#(anytype) toPipeOut(FIFOF#(anytype) queue);
+    return f_FIFOF_to_PipeOut(queue);
+endfunction
 
-//     Wire#(tData) dataWire <- mkWire;
+function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
+    return f_FIFOF_to_PipeIn(queue);
+endfunction
 
-//     interface PipeIn#(tData) pipeIn;
-//         method Action enq(tData data);
-//         method Bool notFull;
-//     endinterface
+function PipeOut#(anytype) toPipeOutSync(SyncFIFOIfc#(anytype) queue);
+    return f_Sync_FIFOF_to_PipeOut(queue);
+endfunction
 
-//     interface PipeOut#(tData) pipeOut;
-//         method tData first;
-//         method Action deq;
-//         method Bool notEmpty;
-//     endinterface
-// endmodule
+function PipeIn#(anytype) toPipeInSync(SyncFIFOIfc#(anytype) queue);
+    return f_Sync_FIFOF_to_PipeIn(queue);
+endfunction
+
+function PipeOut#(anytype) ugToPipeOut(FIFOF#(anytype) queue);
+    return f_UGFIFOF_to_PipeOut(queue);
+endfunction
+
+function PipeIn#(anytype) ugToPipeIn(FIFOF#(anytype) queue);
+    return f_UGFIFOF_to_PipeIn(queue);
+endfunction

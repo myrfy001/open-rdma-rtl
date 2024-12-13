@@ -4,7 +4,7 @@ import PrimUtils :: *;
 import Arbiter :: *;
 
 import ConnectableF :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 
 // Common ==================
 typedef 8 AXI_AXLEN_WIDTH;

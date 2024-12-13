@@ -6,7 +6,7 @@ import Reserved :: *;
 import BRAM :: *;
 import PAClib :: *;
 
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import PrimUtils :: *;
 import ConnectableF :: *;
 import MockHost :: *;

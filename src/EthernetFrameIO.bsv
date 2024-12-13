@@ -11,7 +11,7 @@ import EthernetTypes :: *;
 import NapWrapper :: *;
 
 import Settings :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import RdmaUtils :: *;
 import RdmaHeaders :: *;
 

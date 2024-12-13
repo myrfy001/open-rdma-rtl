@@ -1,7 +1,7 @@
 import Reserved :: *;
 
 import RdmaHeaders :: *;
-import DataTypes :: *;
+import BasicDataTypes :: *;
 import EthernetTypes :: *;
 
 
