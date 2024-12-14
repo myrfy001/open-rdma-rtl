@@ -22,9 +22,10 @@ module mkTestAddressChunker(Empty);
 
 
 
-    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerNoOutputAlign <- mkAddressChunker(0);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerNoOutputAlign <- mkAddressChunker;
     
-    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerWithOutputAlign <- mkAddressChunker(2);
+    // TODO: the function for this should be fixed. Or this function should be removed.
+    // AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerWithOutputAlign <- mkAddressChunker;
 
     PipeOut#(Length) withOutputAlignOrNotRandPipeOut <- mkRandomLenPipeOut(1, 2);
     PipeOut#(Length) pmtuRandPipeOut <- mkRandomLenPipeOut(1, 5);
@@ -63,8 +64,10 @@ module mkTestAddressChunker(Empty);
 
         if (isAccepted) begin
 
-            Bool withOutputAlign = withOutputAlignOrNotRandPipeOut.first == 1;
-            withOutputAlignOrNotRandPipeOut.deq;
+            // TODO: the function for this should be fixed. Or this function should be removed.
+            // Bool withOutputAlign = withOutputAlignOrNotRandPipeOut.first == 1;
+            // withOutputAlignOrNotRandPipeOut.deq;
+            Bool withOutputAlign = False;
 
             let req = AddressChunkReq{
                 startAddr: addr,
@@ -74,7 +77,7 @@ module mkTestAddressChunker(Empty);
 
             
             if (withOutputAlign) begin
-                dutAddrChunkerWithOutputAlign.requestPipeIn.enq(req);
+                // dutAddrChunkerWithOutputAlign.requestPipeIn.enq(req);
             end
             else begin
                 dutAddrChunkerNoOutputAlign.requestPipeIn.enq(req);
@@ -89,8 +92,8 @@ module mkTestAddressChunker(Empty);
 
         let chunk;
         if (withOutputAlign) begin
-            chunk = dutAddrChunkerWithOutputAlign.responsePipeOut.first;
-            dutAddrChunkerWithOutputAlign.responsePipeOut.deq;
+            // chunk = dutAddrChunkerWithOutputAlign.responsePipeOut.first;
+            // dutAddrChunkerWithOutputAlign.responsePipeOut.deq;
         end
         else begin
             chunk =dutAddrChunkerNoOutputAlign.responsePipeOut.first;
@@ -291,7 +294,7 @@ endinterface
 (* doc = "testcase" *)
 module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
     
-    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerWithOutputAlign <- mkAddressChunker(2);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) dutAddrChunkerNoOutputAlign <- mkAddressChunker;
 
 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
@@ -300,12 +303,12 @@ module mkTestAddressChunkerTiming(TestAddressChunkerTiming);
 
     rule injectInput1;
         let randValue1 <- randSource1.get;
-        dutAddrChunkerWithOutputAlign.requestPipeIn.enq(unpack(truncate(randValue1)));
+        dutAddrChunkerNoOutputAlign.requestPipeIn.enq(unpack(truncate(randValue1)));
     endrule
 
     rule handleOutput;
-        let t1 = dutAddrChunkerWithOutputAlign.responsePipeOut.first;
-        dutAddrChunkerWithOutputAlign.responsePipeOut.deq;
+        let t1 = dutAddrChunkerNoOutputAlign.responsePipeOut.first;
+        dutAddrChunkerNoOutputAlign.responsePipeOut.deq;
 
         signalKeeper1.bitsPipeIn.enq(zeroExtend(pack(t1)));
     endrule

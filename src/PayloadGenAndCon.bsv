@@ -40,8 +40,6 @@ typedef TDiv#(PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE, BYTE_CNT_PER_DWOED)   PAYLOAD_
 typedef TAdd#(1, TLog#(PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST))    PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST_WIDTH;
 typedef Bit#(PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST_WIDTH)         AlignBlockCntInPayloadConAndGenBurst;
 
-typedef NUMERIC_TYPE_TWO    LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE;
-
 interface PayloadGen;
     interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
     interface PipeIn#(PayloadGenReq) genReqPipeIn;
@@ -113,7 +111,7 @@ module mkPayloadGen#(
 
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadGen addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
-    AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker(0);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
 
     DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator;
     mkConnection(toPipeOut(dmaReadRespPipeInQ), dsConcator.dataPipeIn);
@@ -226,7 +224,7 @@ module mkPayloadCon#(
 
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadCon addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
-    AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker(0);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
 
     DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
 
@@ -234,6 +232,7 @@ module mkPayloadCon#(
     FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkFIFOF;
     FIFOF#(Tuple2#(DataStreamEn, ByteIndexInBeat)) dataStreamEnPreCalcPipelineQ <- mkFIFOF;
     FIFOF#(Length) issueDmaWritePipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkFIFOF;
 
     rule handleInReq;
         let req = conReqPipeInQ.first;
@@ -279,15 +278,10 @@ module mkPayloadCon#(
 
         let translatedAddr <- addrTranslateCltInst.getResp;
 
-        Length truncatedStartAddr = truncate(translatedAddr);
-        Length truncatedEndAddrForALignCalc = truncate(translatedAddr) + len - 1;
+        ADDR truncatedStartAddr = translatedAddr;
+        ADDR truncatedEndAddrForALignCalc = translatedAddr + zeroExtend(len - 1);
 
-        AlignBlockCntInPayloadConAndGenBurst alignBlockCntForStreamSplit = truncate( 
-            (truncatedEndAddrForALignCalc >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE)) - 
-            (truncatedStartAddr >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE))
-        ) + 1;
-
-        dsSpliter.streamAlignBlockCountPipeIn.enq(alignBlockCntForStreamSplit);
+        streamSplitorMetaCalcPipelineQ.enq(tuple2(truncate(truncatedStartAddr), truncate(truncatedEndAddrForALignCalc)));
 
         let writeReq = DtldStreamMemAccessMeta {
             addr: translatedAddr,
@@ -301,6 +295,18 @@ module mkPayloadCon#(
         //     toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc),
         //     toBlue(", alignBlockCntForStreamSplit="), fshow(alignBlockCntForStreamSplit)
         // );
+    endrule
+
+    rule calcStreamSpliterMeta;
+        let {truncatedStartAddr, truncatedEndAddrForALignCalc} = streamSplitorMetaCalcPipelineQ.first;
+        streamSplitorMetaCalcPipelineQ.deq;
+
+        AlignBlockCntInPayloadConAndGenBurst alignBlockCntForStreamSplit = truncate( 
+            (truncatedEndAddrForALignCalc >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE)) - 
+            (truncatedStartAddr >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE))
+        ) + 1;
+
+        dsSpliter.streamAlignBlockCountPipeIn.enq(alignBlockCntForStreamSplit);
     endrule
 
     rule forwardConsumedFinishedSignal;

@@ -35,6 +35,7 @@ typedef Bit#(DWORD_WIDTH) Dword;
 typedef Bit#(BYTE_DWORD_CONVERT_SHIFT_NUM) ByteIdxInDword;
 
 typedef Bit#(TLog#(TLog#(MAX_PMTU))) ChunkAlignLogValue;
+typedef NUMERIC_TYPE_TWO    LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE;
 
 // Protocol settings
 typedef TExp#(31) RDMA_MAX_LEN;

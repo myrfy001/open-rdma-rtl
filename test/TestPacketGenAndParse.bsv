@@ -11,38 +11,39 @@ import Utils4Test :: *;
 
 import AddressChunker :: *;
 import PayloadGenAndCon :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ClientServer :: *;
 import ConnectableF::*;
 import NapWrapper :: *;
-import StreamShifter :: *;
 import EthernetTypes :: *;
 import PacketGenAndParse :: *;
 import MemRegionAndAddressTranslate :: *;
+import IoChannels :: *;
 
+interface TestCocotbPacketGenAndParse;
+    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
+    interface PipeIn#(WorkQueueElem) wqePipeIn;
+endinterface
 
-module mkTestPacketGen(Empty);
+module mkTestCocotbPacketGenAndParse(TestCocotbPacketGenAndParse);
     // TODO: This Testcase is too simple now. should add more checkers.
+    
+    let clk <- exposeCurrentClock;
+    let rst <- exposeCurrentReset;
 
     Reg#(Bit#(32)) exitCounterReg <- mkReg(10000);
 
-    PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon;
-    AcxNapSlaveWrapperPipe dmaReadWriteSlaveNap <- mkAcxNapSlaveWrapperPipe;
+    PayloadGenAndCon payloadGenAndCon <- mkPayloadGenAndCon(clk, rst);
     let fakeAddrTranslatorForGen <- mkBypassAddressTranslateForTest;
     let fakeAddrTranslatorForCon <- mkBypassAddressTranslateForTest;
     mkConnection(payloadGenAndCon.genAddrTranslateClt, fakeAddrTranslatorForGen.translateSrv);
     mkConnection(payloadGenAndCon.conAddrTranslateClt, fakeAddrTranslatorForCon.translateSrv);
 
 
-    mkConnection(payloadGenAndCon.axiNapPipeIfc.writePipeIfc.writeAddrPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeAddrPipeIn);
-    mkConnection(payloadGenAndCon.axiNapPipeIfc.writePipeIfc.writeDataPipeOut, dmaReadWriteSlaveNap.writePipeIfc.writeDataPipeIn);
-    mkConnection(payloadGenAndCon.axiNapPipeIfc.writePipeIfc.writeRespPipeIn, dmaReadWriteSlaveNap.writePipeIfc.writeRespPipeOut);
-    mkConnection(payloadGenAndCon.axiNapPipeIfc.readPipeIfc.readAddrPipeOut, dmaReadWriteSlaveNap.readPipeIfc.readAddrPipeIn);
-    mkConnection(payloadGenAndCon.axiNapPipeIfc.readPipeIfc.readRespPipeIn, dmaReadWriteSlaveNap.readPipeIfc.readRespPipeOut);
-
-
-    let dut <- mkPacketGen;
+    let dut <- mkPacketGen(clk, rst, clk, rst);
 
     mkConnection(dut.genReqPipeOut, payloadGenAndCon.genReqPipeIn);
     mkConnection(dut.genRespPipeIn, payloadGenAndCon.payloadGenStreamPipeOut);
@@ -62,36 +63,6 @@ module mkTestPacketGen(Empty);
         });
     endrule
 
-    rule injectStimulate;
-        let wqe = WorkQueueElem{
-            pkey: 0,
-            opcode: IBV_WR_RDMA_WRITE_WITH_IMM,
-            flags: enum2Flag(IBV_SEND_SIGNALED) | enum2Flag(IBV_SEND_SOLICITED),
-            qpType: IBV_QPT_RC,
-            psn: 0,
-            pmtu: IBV_MTU_256,
-            dqpIP: unpack(0),
-            macAddr: unpack(0),
-            laddr: unpack(0),
-            lkey: unpack(0),
-            raddr: unpack(0),
-            rkey: unpack(0),
-            len: 8192,
-            totalLen: 8192,
-            dqpn: unpack(0),
-            sqpn: unpack(0),
-            comp: tagged Invalid,
-            swap: tagged Invalid,
-            immDtOrInvRKey: tagged Valid tagged Imm unpack(0),
-            srqn: tagged Invalid,
-            qkey: tagged Invalid,
-            isFirst: True,
-            isLast: True
-        };
-
-        dut.wqePipeIn.enq(wqe);
-    endrule
-
     rule getResponse;
         let ds = dut.packetPipeOut.first;
         dut.packetPipeOut.deq;
@@ -105,6 +76,13 @@ module mkTestPacketGen(Empty);
                 $display(exitCounterReg);
             end
         end
-        // $display(fshow(ds));
+        $display(
+            "time=%0t:", $time, toGreen(" mkTestCocotbPacketGenAndParse getResponse"),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
+
+
+    interface ioChannelMemoryMasterPipeIfc = payloadGenAndCon.ioChannelMemoryMasterPipeIfc;
+    interface wqePipeIn = dut.wqePipeIn;
 endmodule

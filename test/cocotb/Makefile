@@ -20,9 +20,13 @@ GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 # TOP_MODULE ?= mkTestFtileMacCocotbLoopBackTest
 # TB_FILE = tb_ftile_mac_loopback.py
 
-TOP_BSV_SRC_FILE ?= ../test/TestPayloadGenAndCon.bsv
-TOP_MODULE ?= mkTestCocotbPayloadGenAndCon
-TB_FILE = tb_payload_con_and_gen.py
+# TOP_BSV_SRC_FILE ?= ../test/TestPayloadGenAndCon.bsv
+# TOP_MODULE ?= mkTestCocotbPayloadGenAndCon
+# TB_FILE = tb_payload_con_and_gen.py
+
+TOP_BSV_SRC_FILE ?= ../test/TestPacketGenAndParse.bsv
+TOP_MODULE ?= mkTestCocotbPacketGenAndParse
+TB_FILE = tb_packet_gen_and_parse.py
 
 
 

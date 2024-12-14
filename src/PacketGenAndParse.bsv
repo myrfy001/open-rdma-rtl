@@ -8,6 +8,8 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
+import StreamDataTypes :: *;
+import BasicDataTypes :: *;
 import BasicDataTypes :: *;
 import Settings :: *;
 import RdmaHeaders :: *;
@@ -17,7 +19,8 @@ import AddressChunker :: *;
 import EthernetTypes :: *;
 import PayloadGenAndCon :: *;
 import EthernetFrameIO :: *;
-import StreamShifter :: *;
+import StreamShifterG :: *;
+import DtldStream :: *;
 import QPContext :: *;
 
 typedef union tagged {
@@ -409,6 +412,7 @@ typedef struct {
     ADDR remoteAddr;
     Length dlen;
     UdpLength udpPayloadLen;
+    Length truncatedStreamSplitEndAddrForAlignCalc;
 } GenPacketHeaderStep2PipelineEntry deriving (Bits, FShow);
 
 
@@ -416,6 +420,10 @@ typedef struct {
     WorkQueueElem wqe;
     Bool hasPayload;
 } SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry deriving (Bits, FShow);
+
+typedef TDiv#(MAX_PMTU, BYTE_CNT_PER_DWOED)   PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET;
+typedef TAdd#(1, TLog#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET))     PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET_WIDTH;
+typedef Bit#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET_WIDTH)         AlignBlockCntInPmtu;
 
 interface PacketGen;
     interface PipeIn#(WorkQueueElem) wqePipeIn;
@@ -440,27 +448,25 @@ module mkPacketGen#(
     SyncFIFOIfc#(PayloadGenReq) genReqPipeOutQ  <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
     FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
 
-    AddressChunker#(
-            ADDR, Length, PMTU, TAdd#(1, MAX_PMTU_WIDTH)
-        ) wqeToPacketChunker <- mkAddressChunker;
-    mkConnection(wqeToPacketChunkMetaCalc.metaPipeOut, wqeToPacketChunker.requestPipeIn);
+    AddressChunker#(ADDR, Length, ChunkAlignLogValue) wqeToPacketChunker <- mkAddressChunker;
 
-    AddressChunker#(
-            ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder, TAdd#(1, BEAT_ALIGN_BIT_NUM)
-        ) packetToBeatChunker <- mkAddressChunker(
-            clocked_by clkEthNap,
-            reset_by rstEthNap
-        );
-    mkConnection(packetToBeatChunkMetaCalc.metaPipeOut, packetToBeatChunker.requestPipeIn);
+    // AddressChunker#(
+    //         ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder, TAdd#(1, BEAT_ALIGN_BIT_NUM)
+    //     ) packetToBeatChunker <- mkAddressChunker(
+    //         clocked_by clkEthNap,
+    //         reset_by rstEthNap
+    //     );
 
-    StreamShifter payloadStreamShifter <- mkBiDirectionStreamShifter(clocked_by clkEthNap, reset_by rstEthNap);
+    StreamShifterG#(DATA) payloadStreamShifter <- mkBiDirectionStreamShifterLsbRightG;
+    mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn);
 
-    mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+    DtldStreamSplitor#(DATA, AlignBlockCntInPmtu, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) payloadSplitor <- mkDtldStreamSplitor;
+    mkConnection(payloadStreamShifter.streamPipeOut, payloadSplitor.dataPipeIn);
 
-    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
+    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF;
 
-    EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator(clocked_by clkEthNap, reset_by rstEthNap);
-    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+    EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator;
+    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);
 
     Reg#(PSN) psnReg <- mkRegU;
 
@@ -468,19 +474,15 @@ module mkPacketGen#(
 
     
     // Clock domain convert queues
-    SyncFIFOIfc#(
-            AddressChunkReq#(
-                ADDR, 
-                Length, 
-                BeatAddressChunkTypeDontCarePlaceHolder
-            )
-        )                                       packetToBeatChunkMetaCalcReqSyncQ               <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    // SyncFIFOIfc#(
+    //         AddressChunkReq#(ADDR, Length, ChunkAlignLogValue)
+    //     )                                       packetToBeatChunkMetaCalcReqSyncQ               <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
     SyncFIFOIfc#(DataBusSignedShiftOffset)      payloadStreamShifterOffsetPipeInSyncQ           <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
     SyncFIFOIfc#(ThinMacIpUdpMetaDataForSend)   ethernetPacketGenMacIpUdpMetaPipeInSyncQ        <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
     SyncFIFOIfc#(RdmaSendPacketMeta)            ethernetPacketGenRdmaPacketMetaPipeInSyncQ      <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
 
 
-    mkConnection(toPipeOutSync(packetToBeatChunkMetaCalcReqSyncQ), packetToBeatChunkMetaCalc.requestPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+    // mkConnection(toPipeOutSync(packetToBeatChunkMetaCalcReqSyncQ), packetToBeatChunkMetaCalc.requestPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
     mkConnection(toPipeOutSync(payloadStreamShifterOffsetPipeInSyncQ), payloadStreamShifter.offsetPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
 
     mkConnection(toPipeOutSync(ethernetPacketGenMacIpUdpMetaPipeInSyncQ), ethernetPacketGen.macIpUdpMetaPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
@@ -494,7 +496,7 @@ module mkPacketGen#(
     
     rule debugRule;
 
-        if (!packetToBeatChunkMetaCalcReqSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: packetToBeatChunkMetaCalcReqSyncQ");
+        // if (!packetToBeatChunkMetaCalcReqSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: packetToBeatChunkMetaCalcReqSyncQ");
         if (!payloadStreamShifterOffsetPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: payloadStreamShifterOffsetPipeInSyncQ");
         if (!ethernetPacketGenMacIpUdpMetaPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: ethernetPacketGenMacIpUdpMetaPipeInSyncQ");
         if (!ethernetPacketGenRdmaPacketMetaPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: ethernetPacketGenRdmaPacketMetaPipeInSyncQ");
@@ -525,11 +527,11 @@ module mkPacketGen#(
         };
         sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.enq(pipelineEntryOut);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPacketGen queryMrTable"),
-        //     toBlue(", wqe="), fshow(wqe),
-        //     toBlue(", hasPayload="), fshow(hasPayload)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPacketGen queryMrTable"),
+            toBlue(", wqe="), fshow(wqe),
+            toBlue(", hasPayload="), fshow(hasPayload)
+        );
     endrule
 
     rule sendChunkByRemoteAddrReqAndPayloadGenReq;
@@ -544,9 +546,9 @@ module mkPacketGen#(
             let remoteAddrChunkReq = AddressChunkReq{
                 startAddr: wqe.raddr,
                 len: wqe.len,
-                chunk: wqe.pmtu 
+                chunk: unpack(zeroExtend(pack(wqe.pmtu)) + 7) // wqe.pmtu=1 means 256Byte PMTU, 256 is 2^8, so +7 to convert from wqe.pmtu to PMTU chunk size
             };
-            wqeToPacketChunkMetaCalc.requestPipeIn.enq(remoteAddrChunkReq);
+            wqeToPacketChunker.requestPipeIn.enq(remoteAddrChunkReq);
 
 
             let mrTableMaybe <- mrTableQueryCltInst.getResp;
@@ -569,7 +571,7 @@ module mkPacketGen#(
 
             ByteIdxInDword localAddrOffset = truncate(wqe.laddr);
             ByteIdxInDword remoteAddrOffset = truncate(wqe.raddr);
-            DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(remoteAddrOffset) - zeroExtend(localAddrOffset);
+            DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(localAddrOffset) - zeroExtend(remoteAddrOffset);
             payloadStreamShifterOffsetPipeInSyncQ.enq(localToRemoteAlignShiftOffset);
         end
 
@@ -580,11 +582,11 @@ module mkPacketGen#(
         };
         genPacketHeaderStep1PipelineQ.enq(pipelineEntryOut);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq"),
-        //     toBlue(", wqe="), fshow(wqe),
-        //     toBlue(", hasPayload="), fshow(hasPayload)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq"),
+            toBlue(", wqe="), fshow(wqe),
+            toBlue(", hasPayload="), fshow(hasPayload)
+        );
     endrule
 
     rule genPacketHeaderStep1;
@@ -604,12 +606,17 @@ module mkPacketGen#(
         let remoteAddr = dontCareValue;
         let dlen = dontCareValue;
 
+        Length truncatedStreamSplitEndAddrForAlignCalc = dontCareValue;
+
         UdpLength udpPayloadLen = fromInteger(valueOf(RDMA_FIXED_HEADER_BYTE_NUM));
 
+        let packetInfo = ?;
         if (hasPayload) begin
 
-            let packetInfo = wqeToPacketChunker.responsePipeOut.first;
+            packetInfo = wqeToPacketChunker.responsePipeOut.first;
             wqeToPacketChunker.responsePipeOut.deq;
+
+            truncatedStreamSplitEndAddrForAlignCalc = truncate(packetInfo.startAddr + zeroExtend(packetInfo.len - 1));
         
             isFirstPacket = isFirstPacket && packetInfo.isFirst;
             isLastPacket = isLastPacket && packetInfo.isLast;
@@ -623,7 +630,6 @@ module mkPacketGen#(
                 len: packetInfo.len,
                 chunk: dontCareValue
             };
-            packetToBeatChunkMetaCalcReqSyncQ.enq(packetToBeatChunkReq);
 
             if (packetInfo.isFirst) begin
                 psn = wqe.psn;
@@ -660,10 +666,16 @@ module mkPacketGen#(
             ackReq: ackReq,
             remoteAddr: remoteAddr,
             dlen: dlen,
-            udpPayloadLen: udpPayloadLen
+            udpPayloadLen: udpPayloadLen,
+            truncatedStreamSplitEndAddrForAlignCalc: truncatedStreamSplitEndAddrForAlignCalc
         };
         genPacketHeaderStep2PipelineQ.enq(pipelineEntryOut);
-
+        $display(
+            "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeaderStep1"),
+            toBlue(", pipelineEntryIn="), fshow(pipelineEntryIn),
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut),
+            toBlue(", packetInfo="), hasPayload ? fshow(packetInfo) : fshow("No payload")
+        );
     endrule
 
     rule genPacketHeaderStep2;
@@ -671,6 +683,7 @@ module mkPacketGen#(
         let pipelineEntryIn = genPacketHeaderStep2PipelineQ.first;
         genPacketHeaderStep2PipelineQ.deq;
         let wqe = pipelineEntryIn.wqe;
+        let hasPayload = pipelineEntryIn.hasPayload;
         let isFirstPacket = pipelineEntryIn.isFirstPacket;
         let isLastPacket = pipelineEntryIn.isLastPacket;
         let solicited = pipelineEntryIn.solicited;
@@ -679,6 +692,8 @@ module mkPacketGen#(
         let remoteAddr = pipelineEntryIn.remoteAddr;
         let dlen = pipelineEntryIn.dlen;
         let udpPayloadLen = pipelineEntryIn.udpPayloadLen;
+        Length truncatedStreamSplitStartAddr = truncate(pipelineEntryIn.remoteAddr);
+        Length truncatedStreamSplitEndAddrForAlignCalc = pipelineEntryIn.truncatedStreamSplitEndAddrForAlignCalc;
 
         let padCnt = 0;  // since payload is already aligned to remote address, no padding is needed.
 
@@ -691,7 +706,7 @@ module mkPacketGen#(
                     bth: bth,
                     rdmaExtendHeaderBuf: extendHeaderBuffer
                 },
-                hasPayload: pipelineEntryIn.hasPayload
+                hasPayload: hasPayload
             };
             ethernetPacketGenRdmaPacketMetaPipeInSyncQ.enq(rdmaPacketMeta);
         end
@@ -700,6 +715,14 @@ module mkPacketGen#(
                 "bthMaybe and extendHeaderBufferMaybe should not be Invalid", 
                 $format("bthMaybe=", fshow(bthMaybe), ", extendHeaderBufferMaybe=", fshow(extendHeaderBufferMaybe))
             );
+        end
+
+        if (hasPayload) begin
+            AlignBlockCntInPmtu alignBlockCntForStreamSplit = truncate( 
+                    (truncatedStreamSplitEndAddrForAlignCalc >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE)) - 
+                    (truncatedStreamSplitStartAddr >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE))
+                ) + 1;
+            payloadSplitor.streamAlignBlockCountPipeIn.enq(alignBlockCntForStreamSplit);
         end
 
         let macIpUdpMeta = ThinMacIpUdpMetaDataForSend{
@@ -729,48 +752,18 @@ module mkPacketGen#(
         // genEthernetPacketReqPipelineQ.enq(pipelineEntryOut);
     endrule
 
-    rule reSplitStream;
+    rule forwardSplitStream;
         // since the output of payloadGen is a single very long stream, we need to split it into
         // multi sub-stream according to packet boundary.
 
-        let beatInfo = packetToBeatChunker.responsePipeOut.first;
-        packetToBeatChunker.responsePipeOut.deq;
-
-        let ds = payloadStreamShifter.streamPipeOut.first;
-        payloadStreamShifter.streamPipeOut.deq;
-
-        if (ds.isFirst) begin
-            immAssert(
-                beatInfo.isFirst,
-                "when ds (the long datastream) is isFirst, the sub-packet should also be isFirst",
-                $format("")
-            );
-        end
-
-        if (ds.isLast) begin
-            immAssert(
-                beatInfo.isLast,
-                "when ds (the long datastream) is isLast, the sub-packet should also be isLast",
-                $format("")
-            );
-        end
-
-        immAssert(
-            truncate(beatInfo.len) == ds.byteNum,
-            "the shifted payload stream's beat length should match the calculated beat length",
-            $format("beatInfo=", fshow(beatInfo), ", ds=", fshow(ds))
-        );
-
-        ds.isFirst = beatInfo.isFirst;
-        ds.isLast = beatInfo.isLast;
-
+        let ds = payloadSplitor.dataPipeOut.first;
+        payloadSplitor.dataPipeOut.deq;
         perPacketPayloadDataStreamQ.enq(ds);
 
-
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPacketGen reSplitStream"),
-        //     toBlue(", ds="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPacketGen forwardSplitStream"),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
 

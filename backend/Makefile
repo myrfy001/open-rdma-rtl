@@ -43,11 +43,11 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestEthernetFrameIO.bsv
 # BSV_TOP_MODULE ?= mkTestEthernetFrameIoTiming
 
-TARGETFILE ?= ../test/TestAddressChunker.bsv
-BSV_TOP_MODULE ?= mkTestAddressChunkerTiming
+# TARGETFILE ?= ../test/TestAddressChunker.bsv
+# BSV_TOP_MODULE ?= mkTestAddressChunkerTiming
 
-# TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
-# BSV_TOP_MODULE ?= mkTestPayloadGenAndConTiming
+TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
+BSV_TOP_MODULE ?= mkTestPayloadGenAndConTiming
 
 # TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
 # BSV_TOP_MODULE ?= mkTestBitmapWindowStorageTiming

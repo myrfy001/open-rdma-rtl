@@ -2,6 +2,7 @@ import os
 from collections import deque, OrderedDict
 from abc import ABC
 import logging
+import math
 
 import asyncio
 
@@ -128,15 +129,17 @@ class BluespecBits(BluespecType):
 
 class BluespecStruct(BluespecType):
     _members_def = OrderedDict()
+    _width = -1  # lazy calc
 
     def __init__(self, *members):
         self.__dict__["_members"] = OrderedDict()
-        self._width = 0
 
         for ((member_name, member_type), member_inst) in zip(self._members_def.items(), members):
-            assert isinstance(member_inst, member_type)
-            self._members[member_name] = member_inst
-            self._width += member_type.width()
+            if isinstance(member_inst, BluespecType):
+                assert isinstance(member_inst, member_type)
+                self._members[member_name] = member_inst
+            else:
+                self._members[member_name] = member_type(member_inst)
 
     def pack(self):
         packed_val = 0
@@ -145,8 +148,15 @@ class BluespecStruct(BluespecType):
             packed_val = (packed_val << member.width()) | member_packed_val
         return packed_val
 
-    def width(self):
-        return self._width
+    @classmethod
+    def width(cls):
+        if cls._width == -1:
+            _width = 0
+            for member_type in cls._members_def.values():
+                _width += member_type.width()
+            cls._width = _width
+
+        return cls._width
 
     def __getattr__(self, name):
         if name in self._members:
@@ -173,12 +183,91 @@ class BluespecStruct(BluespecType):
         return ret
 
 
+class BluespecTaggedUnion(BluespecType):
+    _members_def = OrderedDict()
+    _width = -1  # lazy calc
+
+    def __init__(self, tag, value):
+        self.__dict__["_members"] = OrderedDict()
+
+        assert type(value) == self._members_def[tag]
+
+        self._tag = tag
+        self._value = value
+        self._tag_idx = -1
+
+        tag_bit_len = (len(self._members_def)).bit_length()
+
+        for (idx, (tag_name, member_type)) in enumerate(self._members_def.items()):
+            self._width = max(self._width, member_type.width())
+            if tag_name == tag:
+                self._tag_idx = idx
+        self._width += tag_bit_len
+
+        self.tag_bits = self._tag_idx << (self._width - tag_bit_len)
+
+    def pack(self):
+        return self._value.pack() | self.tag_bits
+
+    @classmethod
+    def width(cls):
+        if cls._width == -1:
+            _width = 0
+            for member_type in cls._members_def.values():
+                _width = max(_width, member_type.width())
+            tag_bit_len = (len(cls._members_def)).bit_length()
+            _width += tag_bit_len
+
+            cls._width = _width
+
+        return cls._width
+
+    def __getattr__(self, name):
+        if name in self._members:
+            return self._members[name]
+        return super().__getattribute__(name)
+
+    def __setattr__(self, name, value):
+        if name in self._members:
+            self._members[name] = self._members_def[name].unpack(value)
+            return
+        return super().__setattr__(name, value)
+
+    @classmethod
+    def unpack(cls, val):
+        payload_width = 0
+        for member_type in cls._members_def.values():
+            payload_width = max(payload_width, member_type.width())
+
+        tag_bits = val >> payload_width
+        type_of_payload = list(cls._members_def.values())[tag_bits]
+
+        mask = (1 << type_of_payload.width()) - 1
+        member_val = val & mask
+
+        ret = type_of_payload.unpack(member_val)
+        return ret
+
+
 class BluespecBool(BluespecBits):
     _width = 1
 
     def __call__(self):
         ret = super().__call__()
         return ret == 1
+
+
+class BluespecVoid(BluespecBits):
+    _width = 0
+
+
+def BluespecMaybe(inner_type):
+    class BluespecMaybeInner(BluespecTaggedUnion):
+        _members_def = OrderedDict(
+            valid=inner_type,
+            invalid=BluespecVoid
+        )
+    return BluespecMaybeInner
 
 
 class BlueRdmaData256(BluespecBits):
@@ -249,6 +338,89 @@ class BlueRdmaDtldStreamMemAccessMeta(BluespecStruct):
         )
 
 
+class BlueRdmaPKEY(BluespecBits):
+    _width = 16
+
+
+class BlueRdmaWorkReqOpCode(BluespecBits):
+    _width = 4
+
+
+class BlueRdmaWorkReqSendFlag(BluespecBits):
+    _width = 5
+
+
+class BlueRdmaTypeQP(BluespecBits):
+    _width = 4
+
+
+class BlueRdmaPSN(BluespecBits):
+    _width = 24
+
+
+class BlueRdmaPMTU(BluespecBits):
+    _width = 3
+
+
+class BlueRdmaIpAddr(BluespecBits):
+    _width = 32
+
+
+class BlueRdmaEthMacAddr(BluespecBits):
+    _width = 48
+
+
+class BlueRdmaLKEY(BluespecBits):
+    _width = 32
+
+
+class BlueRdmaRKEY(BluespecBits):
+    _width = 32
+
+
+class BlueRdmaQPN(BluespecBits):
+    _width = 24
+
+
+def BlueRdmaReservedZero(width):
+    class BlueRdmaReservedZeroInner(BluespecBits):
+        _width = width
+    return BlueRdmaReservedZeroInner
+
+
+class BlueRdmaWorkQueueElem(BluespecStruct):
+    _members_def = OrderedDict(
+        pkey=BlueRdmaPKEY,
+        opcode=BlueRdmaWorkReqOpCode,
+        flags=BlueRdmaWorkReqSendFlag,
+        qp_type=BlueRdmaTypeQP,
+        psn=BlueRdmaPSN,
+        pmtu=BlueRdmaPMTU,
+        dqp_ip=BlueRdmaIpAddr,
+        mac_addr=BlueRdmaEthMacAddr,
+        laddr=BlueRdmaAddr,
+        lkey=BlueRdmaLKEY,
+        raddr=BlueRdmaAddr,
+        rkey=BlueRdmaRKEY,
+        len=BlueRdmaLength,
+        totalLen=BlueRdmaLength,
+        dqpn=BlueRdmaQPN,
+        sqpn=BlueRdmaQPN,
+        comp=BlueRdmaReservedZero(65),
+        swap=BlueRdmaReservedZero(65),
+        immDtOrInvRKey=BlueRdmaReservedZero(34),
+        srqn=BlueRdmaReservedZero(25),
+        qkey=BlueRdmaReservedZero(33),
+        is_first=BluespecBool,
+        is_last=BluespecBool,
+    )
+
+    def __init__(self, pkey, opcode, flags, qp_type, psn, pmtu, dqp_ip,
+                 mac_addr, laddr, lkey, raddr, rkey, len, totalLen, dqpn, sqpn, is_first, is_last):
+        super().__init__(pkey, opcode, flags, qp_type, psn, pmtu, dqp_ip,
+                         mac_addr, laddr, lkey, raddr, rkey, len, totalLen, dqpn, sqpn, 0, 0, 0, 0, 0, is_first, is_last)
+
+
 class BluespecPipeOut:
     def __init__(self, dut, signal_base_name, clk):
         self.dut = dut
@@ -291,7 +463,7 @@ class BluespecPipeIn:
 
 
 class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_name):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_name, mem=None):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -317,7 +489,7 @@ class SimplePcieBehaviorModel(object):
 
         self.channel_cnt = len(requester_ifc_base_names)
 
-        self.mem = [0] * (1 << 25)
+        self.mem = mem or [0] * (1 << 25)
 
         for channel_idx in range(self.channel_cnt):
             cocotb.start_soon(self.handle_requester_write_req(channel_idx))

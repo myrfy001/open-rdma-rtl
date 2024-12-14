@@ -11,6 +11,8 @@ import EthernetTypes :: *;
 import NapWrapper :: *;
 
 import Settings :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import RdmaUtils :: *;
 import RdmaHeaders :: *;

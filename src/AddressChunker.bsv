@@ -61,12 +61,8 @@ interface AddressChunker#(type tAddr, type tLen, type tChunkAlignLog);
 endinterface
 
 
-// outputAlign is different from chunk align. and outputAlign must be smaller than chunk align
-// For example, the PCIe's TLP payload is aligned to 4 Bytes, but a beat of PCIe payload data is 
-// 32 Bytes, if we want to use this module to split a PCIe request into beats, then the 4Bytes 
-// is output align, and the 32 Bytes is chunk align.
-// In most cases, output align should be set to zero.
-module mkAddressChunker#(Integer outputAlignLog)(AddressChunker#(tAddr, tLen, tChunkAlignLog)) provisos (
+
+module mkAddressChunker(AddressChunker#(tAddr, tLen, tChunkAlignLog)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tLen, szLen),
         Bits#(tChunkAlignLog, szChunkAlignLog),
@@ -106,27 +102,15 @@ module mkAddressChunker#(Integer outputAlignLog)(AddressChunker#(tAddr, tLen, tC
         tLen zeroBasedOutputAlignChunkCnt;
         tLen zeroBasedChunkCnt;
         tLen nonValidByteCntInFirstChunk;
-        if (outputAlignLog != 0) begin
-            zeroBasedOutputAlignChunkCnt = unpack(
-                ((truncate(pack(chunkReq.startAddr)) + zeroExtend(pack(chunkReq.len) - 1)) >> outputAlignLog) -
-                (truncate(pack(chunkReq.startAddr)) >> outputAlignLog)
-            );
-            tChunkAlignLog outputAlignChunkPerChunkLog = (chunkReq.chunk - fromInteger(outputAlignLog));
-            zeroBasedChunkCnt = zeroBasedOutputAlignChunkCnt >> outputAlignChunkPerChunkLog;
-            tLen outputAlignRemainingMask = unpack((1 << outputAlignLog) - 1);
-            nonValidByteCntInFirstChunk = unpack(truncate(pack(chunkReq.startAddr)) & pack(outputAlignRemainingMask));
-            
-        end
-        else begin
-            zeroBasedOutputAlignChunkCnt = 0;
-            zeroBasedChunkCnt = unpack(
-                ((truncate(pack(chunkReq.startAddr)) + zeroExtend(pack(chunkReq.len) - 1)) >> chunkReq.chunk) -
-                (truncate(pack(chunkReq.startAddr)) >> chunkReq.chunk)
-            );
-            tLen chunkRemainingMask = chunkSize - 1;
-            nonValidByteCntInFirstChunk = unpack(truncate(pack(chunkReq.startAddr)) & pack(chunkRemainingMask));
-        end
 
+        zeroBasedOutputAlignChunkCnt = 0;
+        zeroBasedChunkCnt = unpack(
+            ((truncate(pack(chunkReq.startAddr)) + zeroExtend(pack(chunkReq.len) - 1)) >> chunkReq.chunk) -
+            (truncate(pack(chunkReq.startAddr)) >> chunkReq.chunk)
+        );
+        tLen chunkRemainingMask = chunkSize - 1;
+        nonValidByteCntInFirstChunk = unpack(truncate(pack(chunkReq.startAddr)) & pack(chunkRemainingMask));
+        
         preCalcResultQueue.enq(tuple5(chunkSize, nonValidByteCntInFirstChunk, zeroBasedChunkCnt, chunkReq.startAddr, chunkReq.len));
     endrule
 
@@ -211,152 +195,145 @@ module mkAddressChunker#(Integer outputAlignLog)(AddressChunker#(tAddr, tLen, tC
 endmodule
 
 
-
-// interface AddressChunkMetaCalculator#(type tAddr, type tLen, type tChunk, numeric type tMaxChunkSizeWidth);
-//     interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunk)) requestPipeIn;
-//     interface PipeOut#(AddressChunkMeta#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) metaPipeOut;
-// endinterface
-
-
-// module mkAddressChunkMetaCalculator#(
-//         function Tuple2#(tAddr, tAddr) alignAddrByChunk(tAddr addr, tChunk chunk),
-//         function Tuple2#(tLen, tLen) divideLenByChunk(tLen len, tChunk chunk),
-//         function Bool isAddrAndLengthLowerPartSumOverflow(tLen len, tChunk chunk),
-//         function tLen getChunkSize(tChunk chunk)
-//     )(AddressChunkMetaCalculator#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) provisos (
+// TODO: the following has bug. Or this module should be removed.
+// outputAlign is different from chunk align. and outputAlign must be smaller than chunk align
+// For example, the PCIe's TLP payload is aligned to 4 Bytes, but a beat of PCIe payload data is 
+// 32 Bytes, if we want to use this module to split a PCIe request into beats, then the 4Bytes 
+// is output align, and the 32 Bytes is chunk align.
+// For now, the algorithm is only correct for calc beat count in a read req for PCIe TLP (beat boundary).
+// It doesn't handle align to Memory boundary.
+// module mkOutputAlignAddressChunker#(Integer outputAlignLog)(AddressChunker#(tAddr, tLen, tChunkAlignLog)) provisos (
 //         Bits#(tAddr, szAddr),
 //         Bits#(tLen, szLen),
-//         Bits#(tChunk, szChunk),
+//         Bits#(tChunkAlignLog, szChunkAlignLog),
 //         Bitwise#(tAddr),
 //         Bitwise#(tLen),
+//         Eq#(tLen),
 //         Arith#(tLen),
+//         Arith#(tChunkAlignLog),
 //         Add#(b__, szLen, szAddr),
 //         Ord#(tLen),
 //         Arith#(tAddr), 
-//         Alias#(Bit#(TAdd#(1, tMaxChunkSizeWidth)), tInternalMathOp),
+//         Alias#(Bit#(TAdd#(1, szLen)), tInternalMathOp),
 //         Bits#(tInternalMathOp, szInternalMathOp),
 //         Add#(a__, szInternalMathOp, szAddr),
-//         Add#(c__, szInternalMathOp, szLen),
-//         FShow#(AddressChunker::AddressChunkReq#(tAddr, tLen, tChunk))
+//         FShow#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)),
+//         PrimShiftIndex#(tChunkAlignLog, c__)
 //     );
 
-//     FIFOF#(AddressChunkReq#(tAddr, tLen, tChunk)) reqQ <- mkFIFOF;
-//     FIFOF#(AddressChunkMeta#(tAddr, tLen, tChunk, tMaxChunkSizeWidth)) respMetaQ <- mkFIFOF;
+//     FIFOF#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) reqQ <- mkFIFOF;
+//     FIFOF#(AddressChunkResp#(tAddr, tLen)) respQ <- mkFIFOF;
 
-//     // Pipeline FIFOs
-//     FIFOF#(Tuple6#(AddressChunkReq#(tAddr, tLen, tChunk), tLen, Tuple5#(Bool, Bool, Bool, Bool, Bool), tInternalMathOp, tInternalMathOp, tAddr)) preCalcPipelineQ <- mkFIFOF;
+//     FIFOF#(Tuple5#(tLen, tLen, tLen, tAddr, tLen)) preCalcResultQueue <- mkLFIFOF;
 
-//     rule preCalculate;
+//     Reg#(Bool) busyReg <- mkReg(False);
+    
+//     Reg#(tLen) remainingChunkNumReg <- mkRegU;
+//     Reg#(tAddr) nextAddrReg <- mkRegU;
+//     Reg#(tLen) remainingLenReg <- mkRegU;
+//     Reg#(tLen) chunkSizeReg <- mkRegU;
 
-//         let req = reqQ.first;
+//     rule preCalc;
+//         let chunkReq = reqQ.first;
 //         reqQ.deq;
 
-//         let {devidedLen, lenRemainderTmp} = divideLenByChunk(req.len, req.chunk);
-//         let {alignedAddr, addrRemainderTmp} = alignAddrByChunk(req.startAddr, req.chunk);
-//         tInternalMathOp chunkSize = unpack(truncate(pack(getChunkSize(req.chunk))));
+//         tLen chunkSize = unpack(1 << chunkReq.chunk);
 
-//         tInternalMathOp lenRemainder = unpack(truncate(pack(lenRemainderTmp)));
-//         tInternalMathOp addrRemainder = unpack(truncate(pack(addrRemainderTmp)));
-        
-//         tLen zeroBasedChunkNum = ?;
-        
-//         tInternalMathOp tmpSumResult = lenRemainder + addrRemainder;
+//         tLen zeroBasedOutputAlignChunkCnt;
+//         tLen zeroBasedChunkCnt;
+//         tLen nonValidByteCntInFirstChunk;
 
-//         // TODO: Use (( addr + ( len - 1 )) / batch_size ) - ( addr / batch_size )
-//         // to simpilify calculate logic.
-//         let lenRemainderIsZero = isZeroR(pack(lenRemainder));
-//         let addrRemainderIsZero = isZeroR(pack(addrRemainder));
-//         let devidedLenIsZero = isZeroR(pack(devidedLen));
-//         let devidedLenIsOne = isOneR(pack(devidedLen));
-//         let isAddrAndLengthLowerPartSumOverflowResult = isAddrAndLengthLowerPartSumOverflow(unpack(zeroExtend(pack(tmpSumResult))), req.chunk);
-        
-//         let nextAddr = alignedAddr + unpack(zeroExtend(pack(chunkSize)));  // should we extract it to a function to reduce add bits?
-
-//         let pipeLineEntry = tuple6(
-//             req,
-//             devidedLen, 
-//             tuple5(lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne),
-//             chunkSize,
-//             addrRemainder,
-//             nextAddr
+//         zeroBasedOutputAlignChunkCnt = unpack(
+//             ((truncate(pack(chunkReq.startAddr)) + zeroExtend(pack(chunkReq.len) - 1)) >> outputAlignLog) -
+//             (truncate(pack(chunkReq.startAddr)) >> outputAlignLog)
 //         );
-//         preCalcPipelineQ.enq(pipeLineEntry);
-
-//         // $display(
-//         //     "time=%0t:", $time, toGreen(" mkAddressChunkMetaCalculator preCalculate"),
-//         //     toBlue(", req="), fshow(req),
-//         //     toBlue(", devidedLen="), fshow(devidedLen),
-//         //     toBlue(", chunkSize="), fshow(chunkSize),
-//         //     toBlue(", addrRemainder="), fshow(addrRemainder),
-//         //     toBlue(", nextAddr="), fshow(nextAddr)
-//         // );
+//         tChunkAlignLog outputAlignChunkPerChunkLog = (chunkReq.chunk - fromInteger(outputAlignLog));
+//         zeroBasedChunkCnt = zeroBasedOutputAlignChunkCnt >> outputAlignChunkPerChunkLog;
+//         tLen outputAlignRemainingMask = unpack((1 << outputAlignLog) - 1);
+//         nonValidByteCntInFirstChunk = unpack(truncate(pack(chunkReq.startAddr)) & pack(outputAlignRemainingMask));
+            
+//         preCalcResultQueue.enq(tuple5(chunkSize, nonValidByteCntInFirstChunk, zeroBasedChunkCnt, chunkReq.startAddr, chunkReq.len));
 //     endrule
 
-//     rule outputMeta;
+//     rule doFirstBeat if (!busyReg);
 
-//         let {req, devidedLen, boolTuple, chunkSize, addrRemainder, nextAddr} = preCalcPipelineQ.first;
-//         let {lenRemainderIsZero, addrRemainderIsZero, isAddrAndLengthLowerPartSumOverflowResult, devidedLenIsZero, devidedLenIsOne} = boolTuple;
-//         preCalcPipelineQ.deq;
+//         let {chunkSize, nonValidByteCntInFirstChunk, zeroBasedChunkCnt, reqStartAddr, reqLen} = preCalcResultQueue.first;
+//         preCalcResultQueue.deq;
+        
+//         tLen outputLen = chunkSize - nonValidByteCntInFirstChunk;
+//         Bool isOnlyChunk = zeroBasedChunkCnt == 0;
 
-//         tLen zeroBasedChunkNum = ?;
-//         let isOnlyChunk = False;
+//         chunkSizeReg <= chunkSize;
+//         nextAddrReg <= reqStartAddr + unpack(zeroExtend(pack(outputLen)));
+//         busyReg <= !isOnlyChunk;
+//         remainingLenReg <= reqLen - outputLen;
+//         remainingChunkNumReg <= zeroBasedChunkCnt;
 
-//         if (addrRemainderIsZero && lenRemainderIsZero) begin
-//             zeroBasedChunkNum = devidedLen - 1;
-//             if (devidedLenIsOne) begin
-//                 isOnlyChunk = True;
-//             end
-//         end
-//         else if (addrRemainderIsZero && !lenRemainderIsZero) begin
-//             zeroBasedChunkNum = devidedLen;
-//             if (devidedLenIsZero) begin
-//                 isOnlyChunk = True;
-//             end
-//         end
-//         else if (!addrRemainderIsZero && lenRemainderIsZero) begin
-//             zeroBasedChunkNum = devidedLen;
-//             if (devidedLenIsZero) begin
-//                 isOnlyChunk = True;
-//             end
-//         end
-//         else begin
-//             if (isAddrAndLengthLowerPartSumOverflowResult) begin
-//                 zeroBasedChunkNum = devidedLen + 1;
-//             end
-//             else begin
-//                 zeroBasedChunkNum = devidedLen;
-//                 if (devidedLenIsZero) begin
-//                     isOnlyChunk = True;
-//                 end
-//             end
-//         end
+//         tAddr startAddr = reqStartAddr;
+//         tLen len = isOnlyChunk ? reqLen : outputLen;
+//         let isFirst = True;
+//         let isLast = isOnlyChunk;
 
-
-//         let outMeta = AddressChunkMeta{
-//             zeroBasedChunkNum: zeroBasedChunkNum,
-//             req: req,
-//             devidedLen: devidedLen,
-//             chunkSize: chunkSize,
-//             addrRemainder: addrRemainder,
-//             nextAddr: nextAddr,
-//             isOnlyChunk: isOnlyChunk
+//         let outEntry = AddressChunkResp {
+//             startAddr: startAddr,
+//             len: len, 
+//             isFirst: isFirst,
+//             isLast: isLast
 //         };
 
-//         respMetaQ.enq(outMeta);
+//         respQ.enq(outEntry);
 
 //         // $display(
-//         //     "time=%0t:", $time, toGreen(" mkAddressChunkMetaCalculator outputMeta"),
-//         //     toBlue(", outMeta="), fshow(outMeta)
+//         //     "time=%0t:", $time, toGreen(" mkAddressChunker doFirstBeat"),
+//         //     toBlue(", req="), fshow(req),
+//         //     toBlue(", remainingChunkNum="), fshow(remainingChunkNum),
+//         //     toBlue(", isOnlyChunk="), fshow(isOnlyChunk),
+//         //     toBlue(", chunkSize="), fshow(chunkSize),
+//         //     toBlue(", addrRemainder="), fshow(addrRemainder),
+//         //     toBlue(", nextAddr="), fshow(nextAddr),
+//         //     toBlue(", startAddr="), fshow(startAddr),
+//         //     toBlue(", len="), fshow(len),
+//         //     toBlue(", outEntry="), fshow(outEntry)
 //         // );
 
 //     endrule
 
+//     rule doOtherBeat if (busyReg);
+//         let isLast = isOneR(pack(remainingChunkNumReg));
+//         if (isLast) begin
+//             busyReg <= False;
+//         end
+//         else begin
+//             remainingChunkNumReg <= remainingChunkNumReg - 1;
+//         end
+
+//         let newNextAddr = nextAddrReg + unpack(zeroExtend(pack(chunkSizeReg)));
+//         nextAddrReg <= newNextAddr;
+//         let newRemainingLen = remainingLenReg - unpack(zeroExtend(pack(chunkSizeReg)));
+//         remainingLenReg <= newRemainingLen;
+
+//         let outEntry = AddressChunkResp {
+//             startAddr: nextAddrReg,
+//             len: isLast ? remainingLenReg : unpack(zeroExtend(pack(chunkSizeReg))), 
+//             isFirst: False,
+//             isLast: isLast
+//         };
+//         respQ.enq(outEntry);
+
+//         // $display(
+//         //     "time=%0t:", $time, toGreen(" mkAddressChunker doOtherBeat"),
+//         //     toBlue(", remainingChunkNumReg="), fshow(remainingChunkNumReg),
+//         //     toBlue(", nextAddrReg="), fshow(nextAddrReg),
+//         //     toBlue(", newNextAddr="), fshow(newNextAddr),
+//         //     toBlue(", remainingLenReg="), fshow(remainingLenReg),
+//         //     toBlue(", newRemainingLen="), fshow(newRemainingLen),
+//         //     toBlue(", outEntry="), fshow(outEntry)
+//         // );
+//     endrule
+    
 //     interface requestPipeIn = toPipeIn(reqQ);
-//     interface metaPipeOut = toPipeOut(respMetaQ);
+//     interface responsePipeOut = toPipeOut(respQ);
 // endmodule
-
-
-
 
 
 
