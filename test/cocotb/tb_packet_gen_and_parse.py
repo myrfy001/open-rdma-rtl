@@ -78,7 +78,7 @@ async def small_desc_fp_test(dut):
         is_last=True
     )
 
-    # await tb.wqe_pipe_in.enq(wqe.pack())
+    await tb.wqe_pipe_in.enq(wqe.pack())
 
     await Timer(4000, units='ns')
 

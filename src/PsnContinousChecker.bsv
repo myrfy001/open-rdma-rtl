@@ -144,6 +144,9 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
             end
             maxPsnBroadcastPipelineQueueVec[0].enq(outVec);
             bitonicSortQpnInputPipelineQueue.enq(bitonicSortQpnPipelineEntryOutVec);
+            // $display("time=%0t", $time, ", mkFourChannelPsnBitmapPreMerge handleInputReqEveryTwoBeta", 
+            //     ", outVec=", fshow(outVec)
+            // );
         end
     endrule
 
@@ -220,7 +223,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
         Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeOnehotGenInternalState)) outputVec = newVector;
         
-
+        Bool overFlowOccured = False;
         for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
             let channelInfoMaybe = pipelineEntryIn[idx];
             if (channelInfoMaybe matches tagged Valid .channelInfo) begin
@@ -230,6 +233,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
                 let shiftDelta = boundaryPSN - channelInfo.psn;
 
                 Bool isOverflow = (shiftDelta >= fromInteger(valueOf(OOO_WINDOW_SIZE)));
+                overFlowOccured = overFlowOccured || isOverflow;
 
                 let outInfo = FourChannelPsnBitmapPreMergeOnehotGenInternalState {
                     qpn: channelInfo.qpn,
@@ -245,6 +249,12 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
             end
         end
         onehotGenMetaCalcPipelineQueue.enq(outputVec);
+        if (overFlowOccured) begin
+            $display("time=%0t", $time, ", mkFourChannelPsnBitmapPreMerge preCalcOneHotBitmapMetaForEachChannel", 
+                toRed(" WARNING overflow occured in psn bitmap permerge"),
+                ", outputVec=", fshow(outputVec)
+            );
+        end
     endrule
 
     rule genOneHotBitmapForEachChannel;
@@ -487,7 +497,12 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
             end
 
         endcase
+
         respPipeOutQueue.enq(outVec);
+
+        // $display("time=%0t", $time, ", mkFourChannelPsnBitmapPreMerge preMergeChannels", 
+        //     ", outVec=", fshow(outVec)
+        // );
     endrule
 
 
@@ -503,10 +518,16 @@ endmodule
 typedef 128 OOO_WINDOW_SIZE;
 typedef 16  OOO_WINDOW_STRIDE;  
 typedef Bit#(OOO_WINDOW_SIZE) OooWindowBitmap;
+typedef 4  OOO_WINDOW_BITMAP_STORAGE_EPOCH_WIDTH;
+typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_EPOCH_WIDTH) OooWindowBitmapStorageEntryEpoch;
+typedef 1  OOO_WINDOW_BITMAP_STORAGE_CHANNEL_IDX_WIDTH;
+typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_CHANNEL_IDX_WIDTH) OooWindowBitmapStorageChannelIdx;
 
 typedef struct {
-    tData       data;
-    tBoundary   leftBound;
+    tData                               data;
+    tBoundary                           leftBound;
+    OooWindowBitmapStorageEntryEpoch    epoch;
+    OooWindowBitmapStorageChannelIdx    channelIdx;
 } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
 
 typedef struct {
@@ -563,7 +584,7 @@ interface BitmapWindowStorage#(type tRowAddr, type tData, type tBoundary, numeri
     interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
 
-module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tData, tBoundary, szStride)) provisos (
+module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, szStride)) provisos (
         Bits#(tRowAddr, szRowAddr),
         Bits#(tData, szData),
         Bitwise#(tData),
@@ -592,7 +613,13 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage <- replicateM(replicateM(mkAutoInferBramUG(True, initFile)));
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage = newVector;
+    storage[0][0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
+    storage[0][1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
+    storage[1][0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch1.bin");
+    storage[1][1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch1.bin");
+    
+
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))))) reorderBuf <- replicateM(replicateM(mkReg(tagged Invalid)));
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) prevReqRowAddrVec <- replicateM(mkReg(tagged Invalid));
@@ -790,7 +817,7 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                     newEntry: pipelineEntryIn.entry
                 };
                 stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
-                // if (pipelineEntryIn.rowAddr == 4) begin
+                // if (pipelineEntryIn.rowAddr == 3) begin
                 //     $display("time=%0t", $time, "mkBitmapWindowStorage 1 sendBramQueryReq", 
                 //             ", pipelineEntryIn=", fshow(pipelineEntryIn)
                 //     );
@@ -815,11 +842,31 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 let selfResp <- storage[selfChannelIdx][0].getReadResp;
                 let otherResp <- storage[otherChannelIdx][1].getReadResp;
 
+                
+                immAssert(
+                    selfResp.channelIdx == fromInteger(selfChannelIdx),
+                    "all entry from channel N must have this field as N.",
+                    $format(
+                        ", selfChannelIdx=%d", selfChannelIdx,
+                        ", selfResp=", fshow(selfResp)
+                    )
+                );
+                
+                
+
                 Maybe#(BitmapWindowStorageEntry#(tData, tBoundary)) forwardedRespMaybe = tagged Invalid;
                 if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
                     forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+                    immAssert(
+                        forwardedEntry.entry.channelIdx == 0,
+                        "all entry from channel 0 must have this field as 0.",
+                        $format(
+                            ", selfChannelIdx=%d", selfChannelIdx,
+                            ", forwardedEntry=", fshow(forwardedEntry)
+                        )
+                    );
 
-                    // if (pipelineEntryIn.rowAddr == 4) begin
+                    // if (pipelineEntryIn.rowAddr == 3) begin
                     //     $display("time=%0t", $time, "mkBitmapWindowStorage 2 getBramQueryRespAndPreMergeThem", 
                     //             ", forwardRegVec[0]=", fshow(forwardRegVec[0])
                     //     );
@@ -827,15 +874,23 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 end
                 else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
                     forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+                    immAssert(
+                        forwardedEntry.entry.channelIdx == 1,
+                        "all entry from channel 1 must have this field as 1.",
+                        $format(
+                            ", selfChannelIdx=%d", selfChannelIdx,
+                            ", forwardedEntry=", fshow(forwardedEntry)
+                        )
+                    );
 
-                    // if (pipelineEntryIn.rowAddr == 4) begin
+                    // if (pipelineEntryIn.rowAddr == 3) begin
                     //     $display("time=%0t", $time, "mkBitmapWindowStorage 2 getBramQueryRespAndPreMergeThem", 
                     //             ", forwardRegVec[1]=", fshow(forwardRegVec[1])
                     //     );
                     // end
                 end
                 
-                let delta = selfResp.leftBound - otherResp.leftBound;
+                let delta = selfResp.epoch - otherResp.epoch;
 
                 // if forward path has data, then use the newest value from forward path.
                 // else, if delta is non-negative, means `selfResp` is newer or equal to `otherResp`, so choose `selfResp`.
@@ -852,7 +907,7 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
 
 
                 stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
-                // if (pipelineEntryIn.rowAddr == 4) begin
+                // if (pipelineEntryIn.rowAddr == 3) begin
                 //     $display("time=%0t", $time, "mkBitmapWindowStorage 2 getBramQueryRespAndPreMergeThem", 
                 //             ", pipelineEntryIn=", fshow(pipelineEntryIn),
                 //             ", pipelineEntryOut=", fshow(pipelineEntryOut),
@@ -885,8 +940,15 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 // forwarded data, just use it.
                 if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
                     newestAlreadyExistEntry = forwardedEntry.entry;
-
-                    // if (pipelineEntryIn.rowAddr == 4) begin
+                    immAssert(
+                        newestAlreadyExistEntry.channelIdx == 0,
+                        "all entry from channel 0 must have this field as 0.",
+                        $format(
+                            ", selfChannelIdx=%d", selfChannelIdx,
+                            ", forwardedEntry=", fshow(forwardedEntry)
+                        )
+                    );
+                    // if (pipelineEntryIn.rowAddr == 3) begin
                     //     $display("time=%0t", $time, "mkBitmapWindowStorage 3 doNewOldPreMerge", 
                     //             ", forwardRegVec[0]=", fshow(forwardRegVec[0])
                     //     );
@@ -894,8 +956,15 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 end
                 else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
                     newestAlreadyExistEntry = forwardedEntry.entry;
-
-                    // if (pipelineEntryIn.rowAddr == 4) begin
+                    immAssert(
+                        newestAlreadyExistEntry.channelIdx == 1,
+                        "all entry from channel 1 must have this field as 1.",
+                        $format(
+                            ", selfChannelIdx=%d", selfChannelIdx,
+                            ", forwardedEntry=", fshow(forwardedEntry)
+                        )
+                    );
+                    // if (pipelineEntryIn.rowAddr == 3) begin
                     //     $display("time=%0t", $time, "mkBitmapWindowStorage 3 doNewOldPreMerge", 
                     //             ", forwardRegVec[1]=", fshow(forwardRegVec[1])
                     //     );
@@ -919,7 +988,7 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 };
 
                 stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
-                // if (pipelineEntryIn.rowAddr == 4) begin
+                // if (pipelineEntryIn.rowAddr == 3) begin
                 //     $display("time=%0t", $time, "mkBitmapWindowStorage 3 doNewOldPreMerge", 
                 //             ", pipelineEntryIn=", fshow(pipelineEntryIn),
                 //             ", pipelineEntryOut=", fshow(pipelineEntryOut)
@@ -947,6 +1016,15 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 let newEntry = pipelineEntryIn.newEntry;
                 tData windowShiftedOutData = -1;
 
+                immAssert(
+                    newEntry.channelIdx == fromInteger(selfChannelIdx),
+                    "all entry from channel N must have this field as N.",
+                    $format(
+                        ", selfChannelIdx=%d", selfChannelIdx,
+                        ", pipelineEntryIn=", fshow(pipelineEntryIn)
+                    )
+                );
+
                 let isShiftOutOfBoundary = pipelineEntryIn.boundaryDeltaAbs > fromInteger(valueOf(TDiv#(szData, szStride)));
 
                 if (pipelineEntryIn.isShiftWindow) begin
@@ -971,6 +1049,20 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
 
 
                 newEntry.data = newEntry.data | alreadyExistEntry.data;
+                if (newEntry.channelIdx != pipelineEntryIn.oldEntry.channelIdx || pipelineEntryIn.oldEntry.epoch == 0) begin
+                    // for example, when a very big message is send on the wire, it's likely that the continous packet will from the same channel,
+                    // and there will be only one valid channel per beat, which always goes into first channel, leading the other channel stall.
+                    // so, we only increase epoch when the channel changes, to make sure when merging from two channels, the newest one will be selected.
+                    // and the first beat is tricky, since the init epoch of every channel is 0, suppose the followinf case:
+                    // channel 0 comes the first req, old epoch is 0, and then the second req for the same row comes from channel 1, if we didn't
+                    // update the epoch to 1 in the first request, then the second request may select the wrong path as the newest entry.
+
+                    newEntry.epoch = pipelineEntryIn.oldEntry.epoch + 1;
+                end
+                else begin
+                    // we need this branch, because the input newEntry's epoch is a random one, it should be set to the oldEntry's
+                    newEntry.epoch = pipelineEntryIn.oldEntry.epoch;
+                end
 
                 let forwardEntry = BitmapWindowStorageInternalForwardEntry {
                     rowAddr: pipelineEntryIn.rowAddr,
@@ -995,13 +1087,15 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 };
                 stageFourToFivePipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
 
-                // if (pipelineEntryIn.rowAddr == 4) begin
+                // if (pipelineEntryIn.rowAddr == 3) begin
                 //     $display("time=%0t", $time, "mkBitmapWindowStorage 4 doMerge", 
-                //             ", pipelineEntryIn=", fshow(pipelineEntryIn),
                 //             ", resp=", fshow(resp)
                 //     );
+                //     // $display("time=%0t", $time, "mkBitmapWindowStorage 4 doMerge", 
+                //     //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                //     //         ", resp=", fshow(resp)
+                //     // );
                 // end
-
             end
             else begin
                 forwardRegVec[selfChannelIdx] <= tagged Invalid;
@@ -1011,7 +1105,9 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
                 if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
                     let resetValue = BitmapWindowStorageEntry{
                         leftBound: -1,
-                        data: -1
+                        data: -1,
+                        epoch: 0,
+                        channelIdx: fromInteger(selfChannelIdx)
                     };
                     let bramWriteBackReq = BitmapWindowStorageStageFourToFivePipelineEntry {
                         rowAddr: resetReqAddr,
@@ -1083,544 +1179,108 @@ module mkBitmapWindowStorage#(String initFile)(BitmapWindowStorage#(tRowAddr, tD
 endmodule
 
 
-typedef struct {
-    BitmapWindowStorageEntry#(tData, tBoundary) bitmapEntryNew;
-    tData                                       windowShiftedOutData;
-} CpsnCounterReq#(type tData, type tBoundary) deriving(FShow, Bits);
+interface PsnPerMergeAndStorage;
+    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary)))) respPipeOutVec;
 
-
-
-interface CpsnCounter#(type tData, type tBoundary, numeric type szStride);
-    interface PipeIn#(Maybe#(CpsnCounterReq#(tData, tBoundary))) reqPipeIn;
-    interface PipeOut#(Maybe#(PSN)) respPipeOut;
-endinterface
-
-module mkCpsnCounter(CpsnCounter#(tData, tBoundary, szStride)) provisos (
-    Bits#(tData, szData),
-    NumAlias#(32, szCompareBlock),
-    Alias#(Bit#(szCompareBlock), tCompareBlock),
-    NumAlias#(TLog#(TAdd#(szData, 1)), szDataBitCount),
-    Alias#(Bit#(szDataBitCount), tDataBitCount),
-    NumAlias#(TDiv#(szData, szCompareBlock), nCompareBlockCount),
-    NumAlias#(TLog#(nCompareBlockCount), szCompareBlockCount),
-    Alias#(Bit#(szCompareBlockCount), tCompareBlockIdx),
-    Alias#(Bit#(nCompareBlockCount), tBlockCompareResultBitmap),
-    Bits#(tBoundary, szBoundary),
-    Add#(a__, szBoundary, PSN_WIDTH),
-    Arith#(tBoundary),
-    Add#(b__, szDataBitCount, PSN_WIDTH),
-    Add#(szCompareBlockCount, c__, szDataBitCount),
-    FShow#(Tuple5#(Bool, Bit#(TLog#(TDiv#(szData, 32))), Bit#(32), Bit#(32),
-    tBoundary))
-
-);
-
-    // Some trick here. Since when moving the the window there is a stride, some corner case will happen when moved out stride has 0 in it.
-    // for example, suppose before moving, the bitmap is like this, then the cpsn calculated should be ('h0F9 << 'd4) + 'hE = 'h0F9E
-
-    // left boundary | bitmap                                   | right bound
-    //     'h100     | FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_7FFF  |   'h0F9
-    //                                                    ^ 'h0F9E
-
-    // suppose a new psn comes, and it has bitmap as follows:
-    // left boundary | bitmap                                   | right bound
-    //     'h101     | 0001_0000_0000_0000_0000_0000_0000_0000  |   'h0FA
-    // 
-    // After merge, we got:
-
-    // left boundary | bitmap                                   | right bound   | moved out part
-    //     'h101     | 0001_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF  |   'h0FA       | 7FFF
-    //                    ^ 'h1010                                
-
-    // if when calc cpsn, we don't care the moved out part, then the new cpsn calculated will be ('h0FA << 'd4) + 'h70 = 'h1010
-    // so the cpsn increament is 'h1010 - 'h0F9E = 'd114, which is less than window size. If the following MonoInrcNumberStorage 
-    // update this cpsn, it's legal to replace the old cpsn with the new one, which is wrong.
-    // 
-    // To solve this problem, we need to check if the shifted out bitmap has 0 in it, if it has, then we should not output a valid 
-    // CPSN since that CPSN is not accurate.
-
-    FIFOF#(Maybe#(CpsnCounterReq#(tData, tBoundary))) reqPipeInQ <- mkFIFOF;
-    FIFOF#(Maybe#(PSN)) respPipeOutQ <- mkFIFOF;
-
-    FIFOF#(Maybe#((Tuple6#(Bool, Bool, tCompareBlockIdx, tCompareBlock, tCompareBlock, tBoundary)))) stageOneToTwoPipelineQueue <- mkFIFOF;
-    rule firstState;
-        let reqMaybe = reqPipeInQ.first;
-        reqPipeInQ.deq;
-
-        if (reqMaybe matches tagged Valid .req) begin
-            tBoundary rightBoundary = req.bitmapEntryNew.leftBound - fromInteger(valueOf(TDiv#(szData, szStride))-1);
-            
-            tBlockCompareResultBitmap fullOneBlockBitmap = 0;
-
-            Bit#(szData) windowBitmap = unpack(pack(req.bitmapEntryNew.data));
-            Vector#(nCompareBlockCount, tCompareBlock) invBlockVec = newVector;
-            for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
-                tCompareBlock block = windowBitmap[ valueOf(szCompareBlock) * (idx + 1) - 1 : valueOf(szCompareBlock) * idx ];
-                fullOneBlockBitmap[idx] = pack(block == -1);
-                invBlockVec[idx] = ~block;
-            end
-
-            Bool foundNonFullOneBlock = False;
-            tCompareBlockIdx firstNonFullOneBlockIdx = 0;
-            tCompareBlock firstNonFullOneBlockPos = 0;
-            tCompareBlock firstNonFullOneBlockNeg = 0;
-            for (Integer idx = 0; idx < valueOf(nCompareBlockCount); idx = idx + 1) begin
-                if ( !foundNonFullOneBlock && fullOneBlockBitmap[idx] == 0 ) begin
-                    foundNonFullOneBlock = True;
-                    firstNonFullOneBlockIdx = fromInteger(idx);
-                    firstNonFullOneBlockPos = invBlockVec[idx];
-                    firstNonFullOneBlockNeg = -invBlockVec[idx];
-                end
-            end
-
-            let isShiftOutWindowHasZero = req.windowShiftedOutData != -1;
-            stageOneToTwoPipelineQueue.enq(tagged Valid tuple6(isShiftOutWindowHasZero, foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary));
-        end
-        else begin
-            stageOneToTwoPipelineQueue.enq(tagged Invalid);
-        end
-    endrule
-
-
-    rule secondStage;
-        let pipelineEntryInMaybe = stageOneToTwoPipelineQueue.first;
-        stageOneToTwoPipelineQueue.deq;
-
-        if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
-            let {isShiftOutWindowHasZero, foundNonFullOneBlock, firstNonFullOneBlockIdx, firstNonFullOneBlockPos, firstNonFullOneBlockNeg, rightBoundary} = pipelineEntryIn;
-            
-            PSN rightMostPsn = zeroExtendLSB(pack(rightBoundary));
-            PSN cpsn = rightMostPsn;
-
-            if (!foundNonFullOneBlock) begin
-                cpsn = cpsn + fromInteger(valueOf(szCompareBlock) * valueOf(nCompareBlockCount));
-            end
-            else begin
-                tDataBitCount continousOneCntHighPart = zeroExtend(pack(firstNonFullOneBlockIdx)) << valueOf(TLog#(szCompareBlock));
-                tDataBitCount continousOneCntLowPart = 0;
-
-                tCompareBlock oneHot = firstNonFullOneBlockPos & firstNonFullOneBlockNeg;
-
-                for (Integer idx = 0; idx < valueOf(szCompareBlock); idx = idx + 1) begin
-                    if ( oneHot[idx] == 1 ) begin
-                        continousOneCntLowPart = fromInteger(idx);
-                    end
-                end
-                tDataBitCount continousOneInBlock = continousOneCntHighPart + continousOneCntLowPart;
-                cpsn = cpsn + zeroExtend(continousOneInBlock);
-            end
-            respPipeOutQ.enq(isShiftOutWindowHasZero ? tagged Invalid : tagged Valid cpsn);
-        end
-        else begin
-            respPipeOutQ.enq(tagged Invalid);
-        end
-    endrule
-
-    interface reqPipeIn = toPipeIn(reqPipeInQ);
-    interface respPipeOut = toPipeOut(respPipeOutQ);
-endmodule
-
-
-
-
-
-typedef struct {
-    tRowAddr    rowAddr;
-    tData       value;
-} MonoInrcNumberStorageUpdateReq#(type tRowAddr, type tData) deriving(Bits, FShow);
-
-typedef struct {
-    tRowAddr    rowAddr;
-    tData       oldValue;
-    tData       newValue;
-} MonoInrcNumberStorageUpdateResp#(type tRowAddr, type tData) deriving(Bits, FShow);
-
-typedef struct {
-    tData       data;
-} MonoInrcNumberStorageEntry#(type tData) deriving(Bits, FShow);
-
-typedef struct {
-    tRowAddr    rowAddr;
-    MonoInrcNumberStorageEntry#(tData) newEntry;
-} MonoInrcNumberStorageStageOneToTwoPipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
-
-typedef struct {
-    tRowAddr    rowAddr;
-    MonoInrcNumberStorageEntry#(tData) oldEntry;
-    MonoInrcNumberStorageEntry#(tData) newEntry;
-} MonoInrcNumberStorageStageTwoToThreePipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
-
-typedef struct {
-    tRowAddr        rowAddr;
-    MonoInrcNumberStorageEntry#(tData) newEntry;
-} MonoInrcNumberStorageStageThreeToFourPipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
-
-typedef struct {
-    tRowAddr    rowAddr;
-    MonoInrcNumberStorageEntry#(tData) entry;
-} MonoInrcNumberStorageInternalForwardEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
-
-interface MonoInrcNumberStorage#(type tRowAddr, type tData);
-    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInVec;
-    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVec;
-    
-    interface PipeIn#(tRowAddr) resetReqPipeIn;
+    interface PipeIn#(IndexQP) resetReqPipeIn;
     interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
 
-module mkMonoInrcNumberStorage#(
-        String initFile,
-        Maybe#(tData) maxDeltaLimitMaybe
-    )(MonoInrcNumberStorage#(tRowAddr, tData)) provisos (
-        Bits#(tRowAddr, szRowAddr),
-        Bits#(tData, szData),
-        Bitwise#(tData),
-        Literal#(tData),
-        Arith#(tData),
-        Ord#(tData),
-        Bounded#(tRowAddr),
-        Literal#(tRowAddr),
-        Eq#(tRowAddr),
-        FShow#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData))
-    );
-    Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInVecInst = newVector;
-    Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVecInst = newVector;
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageUpdateReq#(tRowAddr, tData)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
+(* synthesize *)
+module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
+    FourChannelPsnBitmapPreMerge allPacketPsnPermerge <- mkFourChannelPsnBitmapPreMerge;
 
-    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, MonoInrcNumberStorageEntry#(tData)))) storage <- replicateM(replicateM(mkAutoInferBramUG(True, initFile)));
+    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) allPacketPsnBitmapStorage <- mkBitmapWindowStorage;
 
-    // Forward Registers (use config reg to solve rule schedule order)
-    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(MonoInrcNumberStorageInternalForwardEntry#(tRowAddr, tData)))) forwardRegVec <- replicateM(mkConfigReg(tagged Invalid));
+    Reg#(Bool) forwardToStorageEvenOddReg <- mkReg(True);
 
-    // Pipeline Queues
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageStageOneToTwoPipelineEntry#(tRowAddr, tData)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(MonoInrcNumberStorageStageTwoToThreePipelineEntry#(tRowAddr, tData)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(MonoInrcNumberStorageStageThreeToFourPipelineEntry#(tRowAddr, tData))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
+    rule forwardPremergeToStorage;
+        forwardToStorageEvenOddReg <= !forwardToStorageEvenOddReg;
+        let allPacketStorageResp = allPacketPsnPermerge.respPipeOut.first;
 
-    function Integer getSelfIdx(Integer idx) = idx;
-    function Integer getOtherIdx(Integer idx) = 1 - idx;
+        // if (forwardToStorageEvenOddReg) begin
+        //     $display("time=%0t", $time, "mkPsnPerMergeAndStorage forwardPremergeToStorage", 
+        //             ", allPacketStorageResp=", fshow(allPacketStorageResp)
+        //     );
+        // end
 
-    FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
-    FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
-
-    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
-    Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);
-
-    // Merge Pipeline Stage One
-    rule sendBramQueryReq;
-        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-            let selfChannelIdx = getSelfIdx(idx);
-            let otherChannelIdx = getOtherIdx(idx);
-
-            let pipelineEntryInMaybe = reqPipeInQueueVec[selfChannelIdx].first;
-            reqPipeInQueueVec[selfChannelIdx].deq;
-
-            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
-                storage[selfChannelIdx][0].putReadReq(pipelineEntryIn.rowAddr);
-                storage[otherChannelIdx][1].putReadReq(pipelineEntryIn.rowAddr);
-
-                let pipelineEntryOut = MonoInrcNumberStorageStageOneToTwoPipelineEntry {
-                    rowAddr: pipelineEntryIn.rowAddr,
-                    newEntry: MonoInrcNumberStorageEntry {
-                        data: pipelineEntryIn.value
+        if (forwardToStorageEvenOddReg) begin
+            if (allPacketStorageResp[0] matches tagged Valid .req) begin
+                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
+                    rowAddr: getIndexQP(req.qpn),
+                    entry: BitmapWindowStorageEntry {
+                        data: req.bitmap,
+                        leftBound: req.maxLeftBoundary,
+                        epoch: ?,
+                        channelIdx: 0
                     }
-                };
-                stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
-                if (pipelineEntryIn.rowAddr == 4) begin
-                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 1 sendBramQueryReq", 
-                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn)
-                    // );
-                end
+                });
+               
             end
             else begin
-                stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
+                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Invalid);
             end
-        end
-    endrule
 
-    // Merge Pipeline Stage Two
-    rule getBramQueryRespAndPreMergeThem;
-        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-            let selfChannelIdx = getSelfIdx(idx);
-            let otherChannelIdx = getOtherIdx(idx);
-
-            let pipelineEntryInMaybe = stageOneToTwoPipelineQueueVec[selfChannelIdx].first;
-            stageOneToTwoPipelineQueueVec[selfChannelIdx].deq;
-
-            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
-                let selfResp <- storage[selfChannelIdx][0].getReadResp;
-                let otherResp <- storage[otherChannelIdx][1].getReadResp;
-
-                Maybe#(MonoInrcNumberStorageEntry#(tData)) forwardedRespMaybe = tagged Invalid;
-                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
-                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
-
-                    if (pipelineEntryIn.rowAddr == 4) begin
-                        // $display("time=%0t", $time, "mkMonoInrcNumberStorage 2 getBramQueryRespAndPreMergeThem", 
-                        //         ", forwardRegVec[0]=", fshow(forwardRegVec[0])
-                        // );
-                    end
-                end
-                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
-                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
-
-                    if (pipelineEntryIn.rowAddr == 4) begin
-                        // $display("time=%0t", $time, "mkMonoInrcNumberStorage 2 getBramQueryRespAndPreMergeThem", 
-                        //         ", forwardRegVec[1]=", fshow(forwardRegVec[1])
-                        // );
-                    end
-                end
-                
-                let delta = selfResp.data - otherResp.data;
-
-                // if forward path has data, then use the newest value from forward path.
-                // else, if delta is non-negative, means `selfResp` is newer or equal to `otherResp`, so choose `selfResp`.
-                let selectedResp = isValid(forwardedRespMaybe) ? fromMaybe(?, forwardedRespMaybe) : ( msb(delta) == 0 ? selfResp : otherResp);
-
-                let pipelineEntryOut = MonoInrcNumberStorageStageTwoToThreePipelineEntry {
-                    rowAddr: pipelineEntryIn.rowAddr,
-                    oldEntry: selectedResp,
-                    newEntry: pipelineEntryIn.newEntry
-                };
-
-                stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
-                if (pipelineEntryIn.rowAddr == 4) begin
-                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 2 getBramQueryRespAndPreMergeThem", 
-                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
-                    //         ", pipelineEntryOut=", fshow(pipelineEntryOut),
-                    //         ", selfResp=", fshow(selfResp),
-                    //         ", otherResp=", fshow(otherResp)
-                    // );
-                end
-            end
-            else begin
-                stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
-            end
-        end
-    endrule
-
-    // Merge Pipeline Stage Three
-    rule doMerge;
-
-        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-            let selfChannelIdx = getSelfIdx(idx);
-            let otherChannelIdx = getOtherIdx(idx);
-
-            let pipelineEntryInMaybe = stageTwoToThreePipelineQueueVec[selfChannelIdx].first;
-            stageTwoToThreePipelineQueueVec[selfChannelIdx].deq;
-
-            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
-                let alreadyExistEntry = pipelineEntryIn.oldEntry;
-                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
-                    alreadyExistEntry = forwardedEntry.entry;
-                end
-                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
-                    alreadyExistEntry = forwardedEntry.entry;
-                end
-
-                let delta = pipelineEntryIn.newEntry.data - alreadyExistEntry.data;
-
-                let newEntry = ?;
-                if (maxDeltaLimitMaybe matches tagged Valid .maxDeltaLimit) begin
-                    let limitDelta = maxDeltaLimit - delta;
-                    newEntry = msb(delta) == 0 && msb(limitDelta) == 0 ? pipelineEntryIn.newEntry : alreadyExistEntry;
-                end
-                else begin
-                    newEntry = msb(delta) == 0 ? pipelineEntryIn.newEntry : alreadyExistEntry;
-                end
-                
-
-                let forwardEntry = MonoInrcNumberStorageInternalForwardEntry {
-                    rowAddr: pipelineEntryIn.rowAddr,
-                    entry: newEntry
-                };
-                forwardRegVec[selfChannelIdx] <= tagged Valid forwardEntry;
-
-                let resp = MonoInrcNumberStorageUpdateResp {
-                    rowAddr: pipelineEntryIn.rowAddr,
-                    oldValue: alreadyExistEntry.data,
-                    newValue: newEntry.data
-                };
-                respPipeOutQueueVec[selfChannelIdx].enq(tagged Valid resp);
-
-                let bramWriteBackReq = MonoInrcNumberStorageStageThreeToFourPipelineEntry {
-                    rowAddr: pipelineEntryIn.rowAddr,
-                    newEntry: newEntry
-                };
-                stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
-
-                if (pipelineEntryIn.rowAddr == 4) begin
-                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 3 doMerge", 
-                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
-                    //         ", resp=", fshow(resp)
-                    // );
-                end
+            if (allPacketStorageResp[1] matches tagged Valid .req) begin
+                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
+                    rowAddr: getIndexQP(req.qpn),
+                    entry: BitmapWindowStorageEntry {
+                        data: req.bitmap,
+                        leftBound: req.maxLeftBoundary,
+                        epoch: ?,
+                        channelIdx: 1
+                    }
+                });
 
             end
             else begin
-                forwardRegVec[selfChannelIdx] <= tagged Invalid;
-                respPipeOutQueueVec[selfChannelIdx].enq(tagged Invalid);
-            end
-        end
-    endrule
-
-    // Merge Pipeline Stage Four
-    (* conflict_free = "doBramWriteBack, handleResetRequest" *)
-    rule doBramWriteBack;
-        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-            let selfChannelIdx = getSelfIdx(idx);
-            let otherChannelIdx = getOtherIdx(idx);
-            if (stageThreeToFourPipelineQueueVec[idx].notEmpty) begin
-                let writeBackReq = stageThreeToFourPipelineQueueVec[idx].first;
-                stageThreeToFourPipelineQueueVec[idx].deq;
-
-                storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
-                storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
-
-                if (writeBackReq.rowAddr == 4) begin
-                    // $display("time=%0t", $time, "mkMonoInrcNumberStorage 4 doBramWriteBack", 
-                    //         ", writeBackReq=", fshow(writeBackReq)
-                    // );
-                end
-            end
-            else begin
-                // Reset is low priority.
-                if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
-                    let resetValue = MonoInrcNumberStorageEntry{
-                        data: 0
-                    };
-                    storage[selfChannelIdx][0].write(resetReqAddr, resetValue);
-                    storage[selfChannelIdx][1].write(resetReqAddr, resetValue);
-                    curResetReqRegVec[selfChannelIdx] <= tagged Invalid;
-                end
-            end
-        end
-    endrule
-
-    rule handleResetRequest;
-        if (!hasPendingResetRequestReg) begin
-            if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
-                if (resetReqPipeInQ.notEmpty) begin
-                    curResetReqRegVec[0] <= tagged Valid resetReqPipeInQ.first;
-                    curResetReqRegVec[1] <= tagged Valid resetReqPipeInQ.first;
-                    resetReqPipeInQ.deq;
-                    hasPendingResetRequestReg <= True;
-                end
+                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Invalid);
             end
         end
         else begin
-            if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
-                hasPendingResetRequestReg <= False;
-                resetRespPipeOutQ.enq(0);
-            end
-        end
-    endrule
+            if (allPacketStorageResp[2] matches tagged Valid .req) begin
+                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
+                    rowAddr: getIndexQP(req.qpn),
+                    entry: BitmapWindowStorageEntry {
+                        data: req.bitmap,
+                        leftBound: req.maxLeftBoundary,
+                        epoch: ?,
+                        channelIdx: 0
+                    }
+                });
 
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
-        respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
-    end
-
-    interface reqPipeInVec = reqPipeInVecInst;
-    interface respPipeOutVec = respPipeOutVecInst;
-
-    interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
-    interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
-endmodule
-
-
-typedef struct {
-    BitmapWindowStorageEntry#(tData, tBoundary) needAckBitmap;
-    PSN cpsn;
-} MaxAckPsnCalculatorReq#(type tData, type tBoundary) deriving(Bits, FShow);
-
-
-interface MaxAckPsnCalculator#(type tData, type tBoundary);
-    interface PipeIn#(Maybe#(MaxAckPsnCalculatorReq#(tData, tBoundary))) reqPipeIn;
-    interface PipeOut#(Maybe#(PSN)) respPipeOut;
-endinterface
-
-module mkMaxAckPsnCalculator(MaxAckPsnCalculator#(tData, tBoundary)) provisos (
-        Bits#(tData, szData),
-        NumAlias#(TLog#(szData), szShiftOffset),
-        Alias#(Bit#(szShiftOffset), tShiftOffset),
-        Add#(a__, szShiftOffset, PSN_WIDTH),
-        Bits#(tBoundary, szBoundary),
-        Add#(b__, szBoundary, 24),
-        Eq#(tData),
-        Bitwise#(tData),
-        Literal#(tData)
-    );
-    FIFOF#(Maybe#(MaxAckPsnCalculatorReq#(tData, tBoundary))) reqPipeInQueue <- mkFIFOF;
-    FIFOF#(Maybe#(PSN)) respPipeOutQueue <- mkFIFOF;
-
-
-    FIFOF#(Maybe#(Tuple4#(Bool, Bool, tShiftOffset, MaxAckPsnCalculatorReq#(tData, tBoundary)))) doShiftPipelineQ <- mkFIFOF;
-    FIFOF#(Maybe#(Tuple2#(BitmapWindowStorageEntry#(tData, tBoundary), MaxAckPsnCalculatorReq#(tData, tBoundary)))) doBitmapCompareQ <- mkFIFOF;
-    rule preClac;
-        let reqMaybe = reqPipeInQueue.first;
-        reqPipeInQueue.deq;
-        if (reqMaybe matches tagged Valid .req) begin
-            PSN leftMostPsnValOfBitmapWindow = unpack({pack(req.needAckBitmap.leftBound), -1});
-            PSN psnDelta = leftMostPsnValOfBitmapWindow - req.cpsn;
-            Bool isCpsnFallBehindExceedWindow = psnDelta >= fromInteger(valueOf(szData));
-            Bool isCpsnGreaterThanWholeWindow = msb(psnDelta) == 1;
-            tShiftOffset shiftOffset = truncate(psnDelta);
-
-            doShiftPipelineQ.enq(tagged Valid tuple4(isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req));
-        end
-        else begin
-            doShiftPipelineQ.enq(tagged Invalid);
-        end
-    endrule
-
-    rule doShift;
-        let pipelineEntryInMaybe = doShiftPipelineQ.first;
-        doShiftPipelineQ.deq;
-
-        if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
-            let {isCpsnFallBehindExceedWindow, isCpsnGreaterThanWholeWindow, shiftOffset, req} = pipelineEntryIn;
-            
-            BitmapWindowStorageEntry#(tData, tBoundary) psnBitmapEntry = req.needAckBitmap;
-            if (isCpsnGreaterThanWholeWindow) begin
-                psnBitmapEntry.data = -1;
-            end
-            else if (isCpsnFallBehindExceedWindow) begin
-                psnBitmapEntry.data = 0;
             end
             else begin
-                psnBitmapEntry.data = -1;
-                psnBitmapEntry.data = psnBitmapEntry.data >> shiftOffset;
+                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Invalid);
             end
-            doBitmapCompareQ.enq(tagged Valid tuple2(psnBitmapEntry, req));
-        end
-        else begin
-            doBitmapCompareQ.enq(tagged Invalid);
-        end
-    endrule
 
-    rule doBitmapCompare;
-        let pipelineEntryInMaybe = doBitmapCompareQ.first;
-        doBitmapCompareQ.deq;
+            if (allPacketStorageResp[3] matches tagged Valid .req) begin
+                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
+                    rowAddr: getIndexQP(req.qpn),
+                    entry: BitmapWindowStorageEntry {
+                        data: req.bitmap,
+                        leftBound: req.maxLeftBoundary,
+                        epoch: ?,
+                        channelIdx: 1
+                    }
+                });
 
-        if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
-            let {psnBitmapEntry, req} = pipelineEntryIn;
-            let maskedNeedAckBitmap = req.needAckBitmap.data & psnBitmapEntry.data;
-            if (maskedNeedAckBitmap != 0) begin
-                respPipeOutQueue.enq(tagged Valid req.cpsn);
             end
             else begin
-                respPipeOutQueue.enq(tagged Invalid);
+                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Invalid);
             end
-        end
-        else begin
-            respPipeOutQueue.enq(tagged Invalid);
+
+            allPacketPsnPermerge.respPipeOut.deq;
         end
     endrule
 
-    interface reqPipeIn = toPipeIn(reqPipeInQueue);
-    interface respPipeOut = toPipeOut(respPipeOutQueue);
+
+    interface reqPipeInVec = allPacketPsnPermerge.reqPipeInVec;
+    interface respPipeOutVec = allPacketPsnBitmapStorage.respPipeOutVec;
+
+    interface resetReqPipeIn = allPacketPsnBitmapStorage.resetReqPipeIn;
+    interface resetRespPipeOut = allPacketPsnBitmapStorage.resetRespPipeOut;
 endmodule

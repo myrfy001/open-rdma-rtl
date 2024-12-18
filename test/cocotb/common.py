@@ -1,3 +1,4 @@
+import shutil
 import os
 from collections import deque, OrderedDict
 from abc import ABC
@@ -22,6 +23,15 @@ def gen_rtl_file_list(top_paths):
                         filelist.append(os.path.join(dirpath, filename))
                         fileset.add(filename)
     return filelist
+
+
+def copy_mem_file_to_sim_build_dir(src_dirs, target_dir):
+    for top_path in src_dirs.split(":"):
+        for (dirpath, dirnames, filenames) in os.walk(top_path):
+            for filename in filenames:
+                if filename.endswith(".bin") or filename.endswith(".hex"):
+                    shutil.copyfile(os.path.join(
+                        dirpath, filename), os.path.join(target_dir, filename))
 
 
 class BluespecValueMethod:
@@ -123,6 +133,9 @@ class BluespecBits(BluespecType):
     def __str__(self):
         return str(hex(self._inner.integer))
 
+    def __repr__(self):
+        return str(hex(self._inner.integer))
+
     def __call__(self):
         return self.pack()
 
@@ -182,6 +195,13 @@ class BluespecStruct(BluespecType):
         ret = cls(*args)
         return ret
 
+    def __repr__(self):
+        return f"<{type(self)} {self._members}>"
+
+
+class BluespecUnionTagNotMatchError(Exception):
+    pass
+
 
 class BluespecTaggedUnion(BluespecType):
     _members_def = OrderedDict()
@@ -222,16 +242,21 @@ class BluespecTaggedUnion(BluespecType):
 
         return cls._width
 
-    def __getattr__(self, name):
-        if name in self._members:
-            return self._members[name]
-        return super().__getattribute__(name)
+    def get_by_tag(self, tag):
+        if tag == self._tag:
+            return self._value
+        else:
+            raise BluespecUnionTagNotMatchError(
+                f"inner data tag is {self._tag}")
 
-    def __setattr__(self, name, value):
-        if name in self._members:
-            self._members[name] = self._members_def[name].unpack(value)
-            return
-        return super().__setattr__(name, value)
+    def get_by_tag_default(self, tag, default=None):
+        if tag == self._tag:
+            return self._value
+        else:
+            return default
+
+    def is_match_tag(self, tag):
+        return tag == self._tag
 
     @classmethod
     def unpack(cls, val):
@@ -240,13 +265,17 @@ class BluespecTaggedUnion(BluespecType):
             payload_width = max(payload_width, member_type.width())
 
         tag_bits = val >> payload_width
-        type_of_payload = list(cls._members_def.values())[tag_bits]
+
+        tag_name, type_of_payload = list(cls._members_def.items())[tag_bits]
 
         mask = (1 << type_of_payload.width()) - 1
         member_val = val & mask
 
-        ret = type_of_payload.unpack(member_val)
-        return ret
+        payload = type_of_payload.unpack(member_val)
+        return cls(tag_name, payload)
+
+    def __repr__(self):
+        return f"<{type(self)} {self._tag}: {self._value}>"
 
 
 class BluespecBool(BluespecBits):
@@ -264,10 +293,26 @@ class BluespecVoid(BluespecBits):
 def BluespecMaybe(inner_type):
     class BluespecMaybeInner(BluespecTaggedUnion):
         _members_def = OrderedDict(
+            invalid=BluespecVoid,
             valid=inner_type,
-            invalid=BluespecVoid
         )
+
+        def __repr__(self):
+            return f"<BluespecMaybe#({inner_type.__class__}) {self._tag} {self._value}>"
     return BluespecMaybeInner
+
+
+#####################################################
+#####################################################
+#####################################################
+BLUERDMA_MAX_QP = 512
+BLUERDMA_QPN_WIDTH = 24
+BLUERDMA_QP_INDEX_WIDTH = int(math.log(BLUERDMA_MAX_QP, 2))
+BLUERDMA_QPN_KEY_PART_WIDTH = BLUERDMA_QPN_WIDTH - BLUERDMA_QP_INDEX_WIDTH
+
+
+def get_qpn(qp_index, qp_key):
+    return (qp_index << BLUERDMA_QPN_KEY_PART_WIDTH) | qp_key
 
 
 class BlueRdmaData256(BluespecBits):
@@ -421,16 +466,79 @@ class BlueRdmaWorkQueueElem(BluespecStruct):
                          mac_addr, laddr, lkey, raddr, rkey, len, totalLen, dqpn, sqpn, 0, 0, 0, 0, 0, is_first, is_last)
 
 
+class BlueRdmaFourChannelPsnBitmapPreMergeReq(BluespecStruct):
+    _members_def = OrderedDict(
+        psn=BlueRdmaPSN,
+        qpn=BlueRdmaQPN,
+    )
+
+    def __init__(self, psn, qpn):
+        super().__init__(psn, qpn)
+
+
+class BlueRdmaOooWindowBitmap(BluespecBits):
+    _width = 128
+
+
+class BlueRdmaPsnMergeWindowBoundary(BluespecBits):
+    _width = 20
+
+
+class BlueRdmaOooWindowBitmapStorageEntryEpoch(BluespecBits):
+    _width = 4
+
+
+class BlueRdmaOooWindowBitmapStorageChannelIdx(BluespecBits):
+    _width = 1
+
+
+class BlueRdmaIndexQP(BluespecBits):
+    _width = BLUERDMA_QP_INDEX_WIDTH
+
+
+class BlueRdmaBitmapWindowStorageEntry(BluespecStruct):
+    _members_def = OrderedDict(
+        data=BlueRdmaOooWindowBitmap,
+        leftBound=BlueRdmaPsnMergeWindowBoundary,
+        epoch=BlueRdmaOooWindowBitmapStorageEntryEpoch,
+        channelIdx=BlueRdmaOooWindowBitmapStorageChannelIdx,
+    )
+
+    def __init__(self, data, leftBound, epoch, channelIdx):
+        super().__init__(data, leftBound, epoch, channelIdx)
+
+
+class BlueRdmaBitmapWindowStorageUpdateResp(BluespecStruct):
+    _members_def = OrderedDict(
+        rowAddr=BlueRdmaIndexQP,
+        isShiftWindow=BluespecBool,
+        isShiftOutOfBoundary=BluespecBool,
+        windowShiftedOutData=BlueRdmaOooWindowBitmap,
+        oldEntry=BlueRdmaBitmapWindowStorageEntry,
+        newEntry=BlueRdmaBitmapWindowStorageEntry
+    )
+
+    def __init__(self, rowAddr, isShiftWindow, isShiftOutOfBoundary, windowShiftedOutData, oldEntry, newEntry):
+        super().__init__(rowAddr, isShiftWindow, isShiftOutOfBoundary,
+                         windowShiftedOutData, oldEntry, newEntry)
+
+
+BlueRdmaBitmapWindowStorageUpdateRespMaybe = BluespecMaybe(
+    BlueRdmaBitmapWindowStorageUpdateResp)
+
+
 class BluespecPipeOut:
-    def __init__(self, dut, signal_base_name, clk):
+    def __init__(self, dut, signal_base_name, clk, is_zero_width_signal=False):
         self.dut = dut
         self.clk = clk
         self.signal_base_name = signal_base_name
+        self.is_zero_width_signal = is_zero_width_signal
 
         self.bsv_not_empty = BluespecValueMethod(
             dut, signal_base_name + "_notEmpty", clk)
-        self.bsv_first = BluespecValueMethod(
-            dut, signal_base_name + "_first", clk)
+        if not is_zero_width_signal:
+            self.bsv_first = BluespecValueMethod(
+                dut, signal_base_name + "_first", clk)
         self.bsv_deq = BluespecActionMethod(
             dut, signal_base_name + "_deq", clk)
 
@@ -441,6 +549,8 @@ class BluespecPipeOut:
         await self.bsv_deq()
 
     async def first(self):
+        if self.is_zero_width_signal:
+            return 0
         return await self.bsv_first()
 
 

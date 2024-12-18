@@ -24,9 +24,13 @@ GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 # TOP_MODULE ?= mkTestCocotbPayloadGenAndCon
 # TB_FILE = tb_payload_con_and_gen.py
 
-TOP_BSV_SRC_FILE ?= ../test/TestPacketGenAndParse.bsv
-TOP_MODULE ?= mkTestCocotbPacketGenAndParse
-TB_FILE = tb_packet_gen_and_parse.py
+# TOP_BSV_SRC_FILE ?= ../test/TestPacketGenAndParse.bsv
+# TOP_MODULE ?= mkTestCocotbPacketGenAndParse
+# TB_FILE = tb_packet_gen_and_parse.py
+
+TOP_BSV_SRC_FILE ?= ../test/TestPsnContinousChecker.bsv
+TOP_MODULE ?= mkTestCocotbPsnPerMergeAndStorage
+TB_FILE = tb_psn_per_merge_and_storage.py
 
 
 
@@ -38,7 +42,11 @@ VLOG_FILE = $(TB_DIR)/$(TOP_FILE)
 DATE = $(shell date "+%Y%m%d")
 LOG_FILE = $(TB_DIR)/log/$(DATE)_$(TOP_MODULE).log
 
-verilog:
+gen_bram_hex:
+	cd $(BACKEND_DIR) && python3 ../scripts/gen_bram_init_file.py $(GENERATED_VSRC_DIR)
+
+
+verilog: gen_bram_hex
 	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} BSV_TOP_MODULE=${TOP_MODULE} verilog
 
 prepare:

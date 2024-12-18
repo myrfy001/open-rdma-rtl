@@ -14,6 +14,8 @@ RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			$(BACKENDDIR)/quartus/rtl/*.v
 
 QUARTUS_SDC_DIRS ?= $(QUARTUS_BACKEND_DIR)/sdc/*.sdc
+
+BRAM_INIT_FILE_DIRS ?= $(BACKENDDIR)/$(BUILDDIR)/*.bin
 			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
@@ -46,14 +48,14 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestAddressChunker.bsv
 # BSV_TOP_MODULE ?= mkTestAddressChunkerTiming
 
-TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
-BSV_TOP_MODULE ?= mkTestPayloadGenAndConTiming
+# TARGETFILE ?= ../test/TestPayloadGenAndCon.bsv
+# BSV_TOP_MODULE ?= mkTestPayloadGenAndConTiming
 
 # TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
 # BSV_TOP_MODULE ?= mkTestBitmapWindowStorageTiming
 
-# TARGETFILE ?= ../src/AutoAckGenerator.bsv
-# BSV_TOP_MODULE ?= mkAutoAckGenerator
+TARGETFILE ?= ../test/TestAutoAckGenerator.bsv
+BSV_TOP_MODULE ?= mkTestAutoAckGeneratorTiming
 
 # TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
 # BSV_TOP_MODULE ?= mkRTilePcieAdaptor
@@ -112,6 +114,7 @@ TOP ?= $(BSV_TOP_MODULE)
 
 export QUARTUS_WORKDIR
 export QUARTUS_BACKEND_DIR
+export BRAM_INIT_FILE_DIRS
 export PROJ_NAME = $(BSV_TOP_MODULE)
 export REV_NAME = rev1
 export TOP
@@ -123,7 +126,11 @@ export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
 
 
 
-compile:
+gen_bram_hex:
+	mkdir -p $(BUILDDIR)	
+	python3 ../scripts/gen_bram_init_file.py $(BUILDDIR)
+
+compile: gen_bram_hex
 	mkdir -p $(BUILDDIR)
 	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)
 

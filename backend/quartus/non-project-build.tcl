@@ -9,6 +9,7 @@ set revision_name   		$::env(REV_NAME)
 set top_module 				$::env(TOP)
 set rtl_dirs 				$::env(RTL_DIRS)
 set sdc_dirs 				$::env(QUARTUS_SDC_DIRS)
+set bram_init_file_dirs		$::env(BRAM_INIT_FILE_DIRS)
 set device 					$::env(DEVICE)
 set family 					$::env(FAMILY)
 
@@ -30,7 +31,7 @@ proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype 
 	return $snapshot_file_list
 }
 
-proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list quartus_backend_dir} {
+proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list quartus_backend_dir} {
 
 	set verilog_snapshot_dir "$quartus_work_dir/verilog_snapshot_dir"
 	set sdc_snapshot_dir "$quartus_work_dir/sdc_snapshot_dir"
@@ -48,6 +49,7 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list quartus_backend_
 
 	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
 	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
+	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "TEXT_FILE" $bram_init_file_dir_list]
 
 	# Add ips to the project
 	lappend snapshot_file_list [list "IP_FILE" $pcie_ip_file_path]
@@ -96,7 +98,7 @@ set need_to_close_project 1
 
 # Make assignments
 if {$make_assignments} {
-	addFilesToProj $quartus_work_dir $rtl_dirs $sdc_dirs $quartus_backend_dir
+	addFilesToProj $quartus_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $quartus_backend_dir
 
 	# assign pin location
 	source "$quartus_backend_dir/sdc/set_pin_loc.tcl"
