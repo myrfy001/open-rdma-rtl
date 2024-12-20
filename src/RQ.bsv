@@ -8,6 +8,8 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
+import DtldStream :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import Settings :: *;
 import RdmaHeaders :: *;
@@ -17,9 +19,9 @@ import AddressChunker :: *;
 import EthernetTypes :: *;
 import PayloadGenAndCon :: *;
 import EthernetFrameIO :: *;
-import StreamShifter :: *;
 import QPContext :: *;
 import PacketGenAndParse :: *;
+import IoChannels :: *;
 
 typedef Bit#(TAdd#(1, SizeOf#(Length))) TruncatedAddrForMrBoundCheck;
 
@@ -87,7 +89,7 @@ interface RQ;
     interface Client#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
-    interface PipeIn#(EthernetNapBeatEntry) ethernetFramePipeIn;
+    interface PipeIn#(IoChannelEthDataStream) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 
@@ -101,34 +103,26 @@ endinterface
 //        And for packet that isn't normal, make sure all related queues are dequeued. otherwise deadlock.
 (* synthesize *)
 module mkRQ#(
-        Clock clkEthNap, 
-        Reset rstEthNap,
         Clock clkQpcMrPgtSrv, 
         Reset rstQpcMrPgtSrv
     )(RQ);
 
-    PacketParse packetParser <- mkPacketParse(clocked_by clkEthNap, reset_by rstEthNap);
-    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ), clocked_by clkEthNap, reset_by rstEthNap);
-    SyncFIFOIfc#(ThinMacIpUdpMetaDataForRecv) peerMetaStorage <- mkSyncFIFOToCC(valueOf(MAX_PEER_META_STORAGE_CAPACITY_PER_RQ), clkEthNap, rstEthNap);
-    mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage), clocked_by clkEthNap, reset_by rstEthNap);
-    mkConnection(packetParser.rdmaMacIpUdpMetaPipeOut, toPipeInSync(peerMetaStorage), clocked_by clkEthNap, reset_by rstEthNap);
+    PacketParse packetParser <- mkPacketParse;
+    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
+    mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
+    rule drainRdmaMacIpUdpMetaPipeOut;
+        packetParser.rdmaMacIpUdpMetaPipeOut.deq;
+    endrule
 
     QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkSyncQueuedClient("qpcQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
-    SyncFIFOIfc#(PayloadConReq) conReqPipeOutQ <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_4), clkEthNap);
-    SyncFIFOIfc#(Bool) conRespPipeInQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_4), clkEthNap, rstEthNap);
+    FIFOF#(PayloadConReq) conReqPipeOutQ <- mkSizedFIFOF(4);
+    FIFOF#(Bool) conRespPipeInQ <- mkSizedFIFOF(4);
 
     // invalid request payload filter related
-    SyncFIFOIfc#(Bool) filterCmdSyncQ <-  mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_4), clkEthNap);
-    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
-
-    // Clock domain convert queues
-    SyncFIFOIfc#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_4), clkEthNap, rstEthNap);
-    SyncFIFOIfc#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutSyncQ <- mkSyncFIFOToCC(valueOf(QUEUE_DEPTH_4), clkEthNap, rstEthNap);
-
-    mkConnection(packetParser.rdmaPacketMetaPipeOut, toPipeInSync(rdmaPacketMetaPipeOutSyncQ), clocked_by clkEthNap, reset_by rstEthNap);
-    mkConnection(packetParser.rdmaPacketTailMetaPipeOut, toPipeInSync(rdmaPacketTailMetaPipeOutSyncQ), clocked_by clkEthNap, reset_by rstEthNap);
+    FIFOF#(Bool) filterCmdQ <-  mkSizedFIFOF(4);
+    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF;
 
     // Pipeline Queues
     FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkSizedFIFOF(4);
@@ -148,8 +142,8 @@ module mkRQ#(
 
 
     rule sendQpcQueryReqAndSomeSimpleParse;
-        let rdmaPacketMeta = rdmaPacketMetaPipeOutSyncQ.first;
-        rdmaPacketMetaPipeOutSyncQ.deq;
+        let rdmaPacketMeta = packetParser.rdmaPacketMetaPipeOut.first;
+        packetParser.rdmaPacketMetaPipeOut.deq;
         let bth = rdmaPacketMeta.header.bth;
         let reth = extractPriRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans);
 
@@ -255,8 +249,11 @@ module mkRQ#(
             end
 
             // Note: For "Only" type packet the reth.len is also the packet len, only the "First" type packet has to calculate.
-            let {_, startAddrOffsetAlignedToPmtu} = alignAddrByPMTU(reth.va, qpc.pmtu);
-            Length calculatedFirstPacketLen = getChunkSizeForPMTU(qpc.pmtu) - truncate(startAddrOffsetAlignedToPmtu);
+            ChunkAlignLogValue pmtuAlignLogVal = getPmtuSizeByPmtuEnum(qpc.pmtu);
+            Length pmtuByteSize = 1 << pmtuAlignLogVal;
+            Length addrALignToPmtuMask = pmtuByteSize - 1;
+            let startAddrOffsetAlignedToPmtu = reth.va & (signExtend(addrALignToPmtuMask));
+            Length calculatedFirstPacketLen = pmtuByteSize - truncate(startAddrOffsetAlignedToPmtu);
             packetLen = isFirstPacket ? calculatedFirstPacketLen : reth.dlen;
 
             ADDR rethEndAddrForBeatCountCalc = reth.va + zeroExtend(packetLen) - 1;
@@ -400,8 +397,8 @@ module mkRQ#(
 
         if (isRecvPacketStatusNormal(packetStatus)) begin
             if (rdmaPacketMeta.hasPayload) begin
-                let packetTailMeta = rdmaPacketTailMetaPipeOutSyncQ.first;
-                rdmaPacketTailMetaPipeOutSyncQ.deq;
+                let packetTailMeta = packetParser.rdmaPacketTailMetaPipeOut.first;
+                packetParser.rdmaPacketTailMetaPipeOut.deq;
                 if (packetTailMeta.beatCnt - 1 == zerobasedExpectedPayloadBeatNum) begin
                     isPacketBeatCountCheckPass = True;
                 end
@@ -456,7 +453,7 @@ module mkRQ#(
         Bool discardDebugFlag = True;
         if (rdmaPacketMeta.hasPayload) begin
             let isDiscard = !isRecvPacketStatusNormal(packetStatus);
-            filterCmdSyncQ.enq(isDiscard);
+            filterCmdQ.enq(isDiscard);
             if (!isDiscard) begin
                 let payloadConReq = PayloadConReq{
                     addr: reth.va,
@@ -501,7 +498,6 @@ module mkRQ#(
             if (!isDiscard) begin
                 let resp = conRespPipeInQ.first;
                 conRespPipeInQ.deq;
-                peerMetaStorage.deq;
                 $display("payload con resp = ", fshow(resp));
             end
         end
@@ -513,7 +509,7 @@ module mkRQ#(
 
 
     rule filterDiscardedPayloadStream;
-        let isDiscard = filterCmdSyncQ.first;
+        let isDiscard = filterCmdQ.first;
         let ds = payloadStorage.first;
         payloadStorage.deq;
 
@@ -522,7 +518,7 @@ module mkRQ#(
         end
 
         if (ds.isLast) begin
-            filterCmdSyncQ.deq;
+            filterCmdQ.deq;
         end
 
         $display(
@@ -538,9 +534,9 @@ module mkRQ#(
     interface ethernetFramePipeIn = packetParser.ethernetFramePipeIn;
     interface otherRawPacketPipeOut = packetParser.otherRawPacketPipeOut;
 
-    interface payloadConReqPipeOut      = toPipeOutSync(conReqPipeOutQ);
+    interface payloadConReqPipeOut      = toPipeOut(conReqPipeOutQ);
     interface payloadConStreamPipeOut   = toPipeOut(filteredDataStreamForConsumeQ);
-    interface payloadConRespPipeIn      = toPipeInSync(conRespPipeInQ);
+    interface payloadConRespPipeIn      = toPipeIn(conRespPipeInQ);
 
     method setLocalNetworkSettings = packetParser.setLocalNetworkSettings; 
 

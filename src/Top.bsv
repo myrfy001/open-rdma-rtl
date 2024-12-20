@@ -8,14 +8,26 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
+import DtldStream :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
+import IoChannels :: *;
+import PacketGenAndParse :: *;
+import EthernetTypes :: *;
+import MemRegionAndAddressTranslate :: *;
+import QPContext :: *;
+import PayloadGenAndCon :: *;
+
+
 import Settings :: *;
 import Utils4Test :: *;
-import DtldStream :: *;
 
+import SQ :: *;
+import RQ :: *;
 
 import RTilePcieAdaptor :: *;
 import FTileMacAdaptor :: *;
+
 
 interface BsvTop;
         (* always_ready, always_enabled *)
@@ -192,3 +204,93 @@ module mkBsvTop(BsvTop);
     interface ftileMacAdaptorTxRawIfc = ftileMacAdaptor.tx;
 endmodule
 
+
+interface QpMrPgtQpc;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       qpDmaRequestMasterIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)  qpEthDataStreamIfcVec;
+        
+    interface Server#(WriteReqQPC, Bool) qpContextUpdateSrv;
+    interface Server#(PgtModifyReq, PgtModifyResp) pgtModifySrv;
+    interface Server#(MrTableModifyReq, MrTableModifyResp) mrTableModifySrv;
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+endinterface
+
+
+
+(* synthesize *)
+module mkQpMrPgtQpc(QpMrPgtQpc);
+
+    Clock clkEthNap <- exposeCurrentClock;
+    Reset rstEthNap <- exposeCurrentReset;
+    Clock clkQpcMrPgtSrv <- exposeCurrentClock;
+    Reset rstQpcMrPgtSrv <- exposeCurrentReset;
+
+
+    QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    MemRegionTableEightWayQuery mrTable <- mkMemRegionTableEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    AddressTranslateEightWayQuery addrTranslator <- mkAddressTranslateEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)         qpDmaRequestMasterIfcVecInst    = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)    qpEthDataStreamIfcVecInst       = newVector;
+    
+
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+
+        // Payload gen and con
+        mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);
+        mkConnection(sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
+
+        mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+
+        // ethernet nap
+        qpEthDataStreamIfcVecInst[idx] = (
+                interface DtldStreamNoMetaBiDirPipes
+                    interface dataPipeIn = rqVec[idx].ethernetFramePipeIn;
+                    interface dataPipeOut = sqVec[idx].packetPipeOut;
+                endinterface
+            );
+
+
+        // QPContext, MR Table and PGT
+        mkConnection(rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+
+        mkConnection(sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+
+        mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+
+        // RDMA payload DMA Ifc
+        qpDmaRequestMasterIfcVecInst[idx] = payloadGenAndConVec[idx].ioChannelMemoryMasterPipeIfc;
+    
+        // IO interface 
+        wqePipeInVecInst[idx]               = sqVec[idx].wqePipeIn;
+        otherRawPacketPipeOutVecInst[idx]   = rqVec[idx].otherRawPacketPipeOut;
+    end
+
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+        for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+            sqVec[idx].setLocalNetworkSettings(networkSettings);
+            rqVec[idx].setLocalNetworkSettings(networkSettings);
+        end
+    endmethod
+
+    interface wqePipeInVec              = wqePipeInVecInst;
+    interface otherRawPacketPipeOutVec  = otherRawPacketPipeOutVecInst;
+    interface qpDmaRequestMasterIfcVec = qpDmaRequestMasterIfcVecInst;
+    interface qpEthDataStreamIfcVec = qpEthDataStreamIfcVecInst;
+    interface qpContextUpdateSrv = qpContext.updateSrv;
+    interface pgtModifySrv = addrTranslator.modifySrv;
+    interface mrTableModifySrv = mrTable.modifySrv;
+endmodule

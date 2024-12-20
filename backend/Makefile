@@ -54,8 +54,8 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestPsnContinousChecker.bsv
 # BSV_TOP_MODULE ?= mkTestBitmapWindowStorageTiming
 
-TARGETFILE ?= ../test/TestAutoAckGenerator.bsv
-BSV_TOP_MODULE ?= mkTestAutoAckGeneratorTiming
+# TARGETFILE ?= ../test/TestAutoAckGenerator.bsv
+# BSV_TOP_MODULE ?= mkTestAutoAckGeneratorTiming
 
 # TARGETFILE ?= ../src/RTilePcieAdaptor.bsv
 # BSV_TOP_MODULE ?= mkRTilePcieAdaptor
@@ -103,9 +103,9 @@ BSV_TOP_MODULE ?= mkTestAutoAckGeneratorTiming
 # BSV_TOP_MODULE ?= mkTestDtldStreamSpliterTimingTest
 
 
-# TARGETFILE ?= ../src/Top.bsv
-# BSV_TOP_MODULE ?= mkBsvTop
-# TOP = bluerdma_top
+TARGETFILE ?= ../src/Top.bsv
+BSV_TOP_MODULE ?= mkBsvTop
+TOP = bluerdma_top
 
 
 

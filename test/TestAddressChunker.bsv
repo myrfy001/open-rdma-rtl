@@ -46,7 +46,7 @@ module mkTestAddressChunker(Empty);
         pmtuRandPipeOut.deq;
 
         // random value is 1~5, after plus 7, it is between 8~12, which means 2^8 ~ 2^12, which is 256 ~ 4096
-        ChunkAlignLogValue pmtuSizeInLog = zeroExtend(pack(pmtu)) + 7;
+        ChunkAlignLogValue pmtuSizeInLog = getPmtuSizeByPmtuEnum(pmtu);
 
         Length len = lengthRandPipeOut.first;
         lengthRandPipeOut.deq;

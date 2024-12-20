@@ -7,6 +7,8 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
+import DtldStream :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import Settings :: *;
 import RdmaHeaders :: *;
@@ -16,13 +18,13 @@ import AddressChunker :: *;
 import EthernetTypes :: *;
 import PayloadGenAndCon :: *;
 import EthernetFrameIO :: *;
-import StreamShifter :: *;
 import QPContext :: *;
 import PacketGenAndParse :: *;
+import IoChannels :: *;
 
 interface SQ;
     interface PipeIn#(WorkQueueElem) wqePipeIn;
-    interface PipeOut#(EthernetNapBeatEntry) packetPipeOut;
+    interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
@@ -34,13 +36,11 @@ endinterface
 
 (* synthesize *)
 module mkSQ#(
-        Clock clkEthNap, 
-        Reset rstEthNap,
         Clock clkQpcMrPgtSrv, 
         Reset rstQpcMrPgtSrv
     )(SQ);
 
-    let packetGen <- mkPacketGen(clkEthNap, rstEthNap, clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    let packetGen <- mkPacketGen(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     
     interface wqePipeIn = packetGen.wqePipeIn;
     interface packetPipeOut = packetGen.packetPipeOut;

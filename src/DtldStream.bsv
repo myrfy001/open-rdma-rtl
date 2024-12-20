@@ -52,12 +52,16 @@ interface DtldStreamBiDirSlavePipes#(type tData, type tAddr, type tLen);
     interface DtldStreamSlaveReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
 
+interface DtldStreamNoMetaBiDirPipes#(type tData);
+    interface PipeIn#(DtldStreamData#(tData))                   dataPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
+endinterface
 
 
 
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);
     interface Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))       slaveIfcVec;
-    interface DtldStreamBiDirMasterPipes#(tData, tAddr, tLen)                                masterIfc;
+    interface DtldStreamBiDirMasterPipes#(tData, tAddr, tLen)                           masterIfc;
     interface PipeOut#(Bit#(TLog#(channelCnt)))                                         writeSourceChannelIdPipeOut;
     interface PipeOut#(Bit#(TLog#(channelCnt)))                                         readSourceChannelIdPipeOut;
 endinterface

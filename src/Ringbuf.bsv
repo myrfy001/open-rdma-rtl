@@ -16,6 +16,7 @@ import ConfigReg :: * ;
 import Randomizable :: *;
 import PrimUtils :: *;
 import RdmaUtils :: *;
+import IoChannels :: *;
 
 import ConnectableF :: *;
 import NapWrapper :: *;
@@ -303,9 +304,9 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkFIFOF;
 
     Reg#(Bit#(NUMERIC_TYPE_TWO))       batchDelayCounterReg        <- mkReg(0);
-    Reg#(Bool)                          isSendingDescBodyReg        <- mkReg(False);
-    Reg#(RingBufWriteBlockOffset)       zeroBasedDescWriteCntReg    <- mkRegU;
-    
+    Reg#(Bool)                         isSendingDescBodyReg        <- mkReg(False);
+    Reg#(RingBufWriteBlockOffset)      zeroBasedDescWriteCntReg    <- mkRegU;
+    Reg#(Bool)                         isWriteStreamFirstBeatReg   <- mkReg(True);                     
 
     rule handleBatchDelay;
         if (!bufQ.notEmpty) begin
@@ -372,7 +373,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
 
         DataStream ds;
         ds.isLast = isLast; 
-        ds.isFirst = ?;       // since AXI interface don't care isFirst Flag.
+        ds.isFirst = isWriteStreamFirstBeatReg;
         ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
         ds.data = unpack(pack(bufQ.first));
         ds.startByteIdx = 0;
@@ -383,6 +384,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
         
         zeroBasedDescWriteCntReg <= zeroBasedDescWriteCntReg - 1;
         headShadowReg <= newHeadShadow;
+        isWriteStreamFirstBeatReg <= isLast;
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRingbufC2h doDmaWrite"),
@@ -425,11 +427,15 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
 endmodule
 
 interface RingbufDmaNapWrappr;
+    // ringbuf side interface
     interface PipeIn#(RingbufDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(RingbufDmaReadResp) dmaReadRespPipeOut;
     interface PipeIn#(RingbufDmaWriteReq) dmaWriteReqPipeIn;
     interface PipeIn#(DataStream) dmaWriteDataPipeIn;
     interface PipeOut#(Bool) dmaWriteRespPipeOut;
+
+    // dma side interface
+    interface IoChannelMemoryMasterPipe dmaMasterPipeIfc;
 endinterface
 
 module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
@@ -439,73 +445,50 @@ module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
     FIFOF#(DataStream)          dmaWriteDataPipeInQ     <- mkFIFOF;
     FIFOF#(Bool)                dmaWriteRespPipeOutQ    <- mkFIFOF;
 
-    AcxNapSlaveWrapperPipe nap <- mkAcxNapSlaveWrapperPipe;
+    FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
 
     rule forwardWriteAddr;
         let req = dmaWriteReqPipeInQ.first;
         dmaWriteReqPipeInQ.deq;
 
-        let aw = AxiMmNapBeatAw {
-            awid: 0,
-            awaddr: truncate(req.addr),
-            awlen: unpack(zeroExtend(req.zeroBasedDescWriteCnt)),
-            awsize: unpack(pack(NapAxiSize32B)),
-            awburst: unpack(pack(NapAxiBurstIncr)),
-            awlock: False,
-            awqos: 0
+        let meta = IoChannelMemoryAccessMeta {
+            addr: req.addr,
+            totalLen: unpack((zeroExtend(req.zeroBasedDescWriteCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH)))
         };
-        nap.writePipeIfc.writeAddrPipeIn.enq(aw);
+        dmaWriteMetaPipeOutQueue.enq(meta);
     endrule
 
     rule forwardWriteData;
-        let req = dmaWriteDataPipeInQ.first;
+        let ds = dmaWriteDataPipeInQ.first;
         dmaWriteDataPipeInQ.deq;
-
-        let w = AxiMmNapBeatW {
-            wdata: unpack(pack(req.data)),
-            wstrb: -1,
-            wlast: req.isLast
-        };
-        nap.writePipeIfc.writeDataPipeIn.enq(w);
+        dmaWriteDataPipeOutQueue.enq(ds);
     endrule
 
-    rule forwardWriteResp;
-        let resp = nap.writePipeIfc.writeRespPipeOut.first;
-        nap.writePipeIfc.writeRespPipeOut.deq;
-        dmaWriteRespPipeOutQ.enq(resp.bresp == 0);
-    endrule
+
 
     rule forwardReadReq;
         let req = dmaReadReqPipeInQ.first;
         dmaReadReqPipeInQ.deq;
 
-        let ar = AxiMmNapBeatAr {
-            arid: 0,
-            araddr: truncate(req.addr),
-            arlen: unpack(zeroExtend(req.zeroBasedDescReadCnt)),
-            arsize: unpack(pack(NapAxiSize32B)),
-            arburst: unpack(pack(NapAxiBurstIncr)),
-            arlock: False,
-            arqos: 0
+        let meta = IoChannelMemoryAccessMeta {
+            addr: req.addr,
+            totalLen: unpack((zeroExtend(req.zeroBasedDescReadCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH)))
         };
-        nap.readPipeIfc.readAddrPipeIn.enq(ar);
+        dmaReadMetaPipeOutQueue.enq(meta);
     endrule
 
     rule forwardReadResp;
-        let resp = nap.readPipeIfc.readRespPipeOut.first;
-        nap.readPipeIfc.readRespPipeOut.deq;
+        let dmaResp = dmaReadDataPipeInQueue.first;
+        dmaReadDataPipeInQueue.deq;
 
-        let ds = RingbufDmaReadResp {
-            data: DataStream {
-                data: resp.rdata,
-                byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
-                startByteIdx: 0,
-                isFirst: dontCareValue,
-                isLast: resp.rlast
-            }
+        let resp = RingbufDmaReadResp {
+            data: dmaResp
         };
 
-        dmaReadRespPipeOutQ.enq(ds);
+        dmaReadRespPipeOutQ.enq(resp);
     endrule
 
     interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);
@@ -513,6 +496,17 @@ module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
     interface dmaWriteReqPipeIn = toPipeIn(dmaWriteReqPipeInQ);
     interface dmaWriteDataPipeIn = toPipeIn(dmaWriteDataPipeInQ);
     interface dmaWriteRespPipeOut = toPipeOut(dmaWriteRespPipeOutQ);
+
+    interface IoChannelMemoryMasterPipe dmaMasterPipeIfc;
+        interface DtldStreamMasterWritePipes  writePipeIfc ;
+            interface writeMetaPipeOut = toPipeOut(dmaWriteMetaPipeOutQueue);
+            interface writeDataPipeOut = toPipeOut(dmaWriteDataPipeOutQueue);
+        endinterface
+        interface DtldStreamMasterReadPipes  readPipeIfc;
+            interface readMetaPipeOut = toPipeOut(dmaReadMetaPipeOutQueue);
+            interface readDataPipeIn = toPipeIn(dmaReadDataPipeInQueue);
+        endinterface
+    endinterface
 endmodule
 
 typedef 3 DESCRIPTOR_MAX_SEGMENT_CNT;

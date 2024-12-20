@@ -209,3 +209,9 @@ endfunction
 function Bool workReqHasInv(WorkReqOpCode opcode);
     return opcode == IBV_WR_SEND_WITH_INV;
 endfunction
+
+function ChunkAlignLogValue getPmtuSizeByPmtuEnum(PMTU pmtu);
+    // Note: For "Only" type packet the reth.len is also the packet len, only the "First" type packet has to calculate.
+    ChunkAlignLogValue pmtuAlignLogVal = unpack(zeroExtend(pack(pmtu)) + 7); // pmtu=1 means 256Byte PMTU, 256 is 2^8, so +7 to convert from wqe.pmtu to PMTU chunk size
+    return pmtuAlignLogVal;
+endfunction

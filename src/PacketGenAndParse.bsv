@@ -10,7 +10,6 @@ import PrimUtils :: *;
 
 import StreamDataTypes :: *;
 import BasicDataTypes :: *;
-import BasicDataTypes :: *;
 import Settings :: *;
 import RdmaHeaders :: *;
 import RdmaHeaders :: *;
@@ -22,6 +21,7 @@ import EthernetFrameIO :: *;
 import StreamShifterG :: *;
 import DtldStream :: *;
 import QPContext :: *;
+import IoChannels :: *;
 
 typedef union tagged {
     IMM  Imm;
@@ -186,12 +186,13 @@ function IETH genIETH(WorkQueueElem wqe);
 endfunction
 
 function AETH genAETH(WorkQueueElem wqe);
-    return AETH {
-        rsvd1: unpack(0),
-        code : AETH_CODE_ACK,
-        value: unpack(pack(AETH_ACK_VALUE_INVALID_CREDIT_CNT)),
-        msn  : zeroExtend(wqe.pkey)
-    };
+    return ?;
+    // return AETH {
+    //     rsvd1: unpack(0),
+    //     code : AETH_CODE_ACK,
+    //     value: unpack(pack(AETH_ACK_VALUE_INVALID_CREDIT_CNT)),
+    //     msn  : zeroExtend(wqe.pkey)
+    // };
 endfunction
 
 function NRETH genNRETH(WorkQueueElem wqe);
@@ -368,7 +369,7 @@ function ActionValue#(Maybe#(RdmaExtendHeaderBuffer)) genRdmaExtendHeader(
                 end
                 IBV_WR_RDMA_ACK: begin
                     return case (wqe.qpType)
-                        IBV_QPT_RC: tagged Valid buildRdmaExtendHeaderBuffer({ pack((aeth)), pack((nreth)) });
+                        IBV_QPT_RC      : tagged Valid buildRdmaExtendHeaderBuffer({ pack((aeth)) });
                         default         : tagged Invalid;
                     endcase;
                 end
@@ -427,7 +428,7 @@ typedef Bit#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET_WIDTH)         Align
 
 interface PacketGen;
     interface PipeIn#(WorkQueueElem) wqePipeIn;
-    interface PipeOut#(EthernetNapBeatEntry) packetPipeOut;
+    interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
@@ -438,24 +439,16 @@ interface PacketGen;
 endinterface
 
 module mkPacketGen#(
-        Clock clkEthNap, 
-        Reset rstEthNap,
         Clock clkQpcMrPgtSrv, 
         Reset rstQpcMrPgtSrv
     )(PacketGen);
 
     FIFOF#(WorkQueueElem)       wqePipeInQ      <- mkFIFOF;
-    SyncFIFOIfc#(PayloadGenReq) genReqPipeOutQ  <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
-    FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF(clocked_by clkEthNap, reset_by rstEthNap);
+    FIFOF#(PayloadGenReq) genReqPipeOutQ  <- mkFIFOF;
+    FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF;
 
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) wqeToPacketChunker <- mkAddressChunker;
 
-    // AddressChunker#(
-    //         ADDR, Length, BeatAddressChunkTypeDontCarePlaceHolder, TAdd#(1, BEAT_ALIGN_BIT_NUM)
-    //     ) packetToBeatChunker <- mkAddressChunker(
-    //         clocked_by clkEthNap,
-    //         reset_by rstEthNap
-    //     );
 
     StreamShifterG#(DATA) payloadStreamShifter <- mkBiDirectionStreamShifterLsbRightG;
     mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn);
@@ -472,35 +465,12 @@ module mkPacketGen#(
 
     QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
 
-    
-    // Clock domain convert queues
-    // SyncFIFOIfc#(
-    //         AddressChunkReq#(ADDR, Length, ChunkAlignLogValue)
-    //     )                                       packetToBeatChunkMetaCalcReqSyncQ               <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
-    SyncFIFOIfc#(DataBusSignedShiftOffset)      payloadStreamShifterOffsetPipeInSyncQ           <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
-    SyncFIFOIfc#(ThinMacIpUdpMetaDataForSend)   ethernetPacketGenMacIpUdpMetaPipeInSyncQ        <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
-    SyncFIFOIfc#(RdmaSendPacketMeta)            ethernetPacketGenRdmaPacketMetaPipeInSyncQ      <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
-
-
-    // mkConnection(toPipeOutSync(packetToBeatChunkMetaCalcReqSyncQ), packetToBeatChunkMetaCalc.requestPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-    mkConnection(toPipeOutSync(payloadStreamShifterOffsetPipeInSyncQ), payloadStreamShifter.offsetPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-
-    mkConnection(toPipeOutSync(ethernetPacketGenMacIpUdpMetaPipeInSyncQ), ethernetPacketGen.macIpUdpMetaPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-    mkConnection(toPipeOutSync(ethernetPacketGenRdmaPacketMetaPipeInSyncQ), ethernetPacketGen.rdmaPacketMetaPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        
-
     // Pipeline Queues
     FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkSizedFIFOF(4);
     FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkSizedFIFOF(4);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkFIFOF;
     
     rule debugRule;
-
-        // if (!packetToBeatChunkMetaCalcReqSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: packetToBeatChunkMetaCalcReqSyncQ");
-        if (!payloadStreamShifterOffsetPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: payloadStreamShifterOffsetPipeInSyncQ");
-        if (!ethernetPacketGenMacIpUdpMetaPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: ethernetPacketGenMacIpUdpMetaPipeInSyncQ");
-        if (!ethernetPacketGenRdmaPacketMetaPipeInSyncQ.notFull) $display("time=%0t, ", $time, "FullQueue: ethernetPacketGenRdmaPacketMetaPipeInSyncQ");
-
         if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
         if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
         if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
@@ -546,7 +516,7 @@ module mkPacketGen#(
             let remoteAddrChunkReq = AddressChunkReq{
                 startAddr: wqe.raddr,
                 len: wqe.len,
-                chunk: unpack(zeroExtend(pack(wqe.pmtu)) + 7) // wqe.pmtu=1 means 256Byte PMTU, 256 is 2^8, so +7 to convert from wqe.pmtu to PMTU chunk size
+                chunk: getPmtuSizeByPmtuEnum(wqe.pmtu)
             };
             wqeToPacketChunker.requestPipeIn.enq(remoteAddrChunkReq);
 
@@ -572,7 +542,7 @@ module mkPacketGen#(
             ByteIdxInDword localAddrOffset = truncate(wqe.laddr);
             ByteIdxInDword remoteAddrOffset = truncate(wqe.raddr);
             DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(localAddrOffset) - zeroExtend(remoteAddrOffset);
-            payloadStreamShifterOffsetPipeInSyncQ.enq(localToRemoteAlignShiftOffset);
+            payloadStreamShifter.offsetPipeIn.enq(localToRemoteAlignShiftOffset);
         end
 
 
@@ -708,7 +678,7 @@ module mkPacketGen#(
                 },
                 hasPayload: hasPayload
             };
-            ethernetPacketGenRdmaPacketMetaPipeInSyncQ.enq(rdmaPacketMeta);
+            ethernetPacketGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
         end
         else begin
             immFail(
@@ -735,7 +705,7 @@ module mkPacketGen#(
             udpPayloadLen: udpPayloadLen,
             ethType: fromInteger(valueOf(ETH_TYPE_IP))
         };
-        ethernetPacketGenMacIpUdpMetaPipeInSyncQ.enq(macIpUdpMeta);
+        ethernetPacketGen.macIpUdpMetaPipeIn.enq(macIpUdpMeta);
 
 
         // $display(
@@ -772,13 +742,13 @@ module mkPacketGen#(
     interface wqePipeIn = toPipeIn(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
     interface mrTableQueryClt = mrTableQueryCltInst.clt;
-    interface genReqPipeOut = toPipeOutSync(genReqPipeOutQ);
+    interface genReqPipeOut = toPipeOut(genReqPipeOutQ);
     interface genRespPipeIn = toPipeIn(genRespPipeInQ);
 endmodule
 
 
 interface PacketParse;
-    interface PipeIn#(EthernetNapBeatEntry) ethernetFramePipeIn;
+    interface PipeIn#(IoChannelEthDataStream) ethernetFramePipeIn;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOut;
