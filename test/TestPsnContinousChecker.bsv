@@ -35,10 +35,10 @@ endinterface
 (* doc = "testcase" *)
 module mkTestBitmapWindowStorageTiming(TestBitmapWindowStorageTiming);
  
-    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) dut <- mkBitmapWindowStorage;
+    BitmapWindowStorage#(IndexQP, AckBitmap, PsnMergeWindowBoundary, ACK_WINDOW_STRIDE) dut <- mkBitmapWindowStorage;
 
-    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary)), Bit#(32)) signalKeeperForResp1 <- mkForceKeepWideSignals; 
-    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary)), Bit#(32)) signalKeeperForResp2 <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary)), Bit#(32)) signalKeeperForResp1 <- mkForceKeepWideSignals; 
+    ForceKeepWideSignals#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary)), Bit#(32)) signalKeeperForResp2 <- mkForceKeepWideSignals; 
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
 
     Reg#(Bit#(32)) outReg <- mkRegU;

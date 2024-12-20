@@ -19,8 +19,10 @@ import RdmaHeaders :: *;
 
 import ConnectableF :: *;
 
+import IoChannels :: *;
+
 interface InputPacketClassifier;
-    interface PipeIn#(EthernetNapBeatEntry) ethRawPacketPipeIn;
+    interface PipeIn#(IoChannelEthDataStream) ethRawPacketPipeIn;
     interface PipeOut#(DataStream) rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
@@ -60,7 +62,7 @@ typedef struct {
 module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
-    FIFOF#(EthernetNapBeatEntry) ethRawPacketInQ <- mkFIFOF;
+    FIFOF#(IoChannelEthDataStream) ethRawPacketInQ <- mkFIFOF;
     FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
     FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkFIFOF;
     FIFOF#(DataStream) otherRawPacketOutQ <- mkFIFOF;
@@ -77,70 +79,43 @@ module mkInputPacketClassifier(InputPacketClassifier);
     // the dst IP filed begins at #30 byte of first beat, so the first beat only has the higher 16 bits
     Reg#(Bool) partialDstIpAddrHigher16BitsMatchReg <- mkRegU;
 
-    FIFOF#(Tuple3#(DataStream, EthernetExtraInfo, Bool)) ethRawPacketForHandleQ <- mkFIFOF;
+    FIFOF#(Tuple2#(DataStream, Bool)) ethRawPacketForHandleQ <- mkFIFOF;
 
     rule discardPacketWhenNetworkSettingsNotReady;
-        let beat = ethRawPacketInQ.first;
+        let ds = ethRawPacketInQ.first;
         ethRawPacketInQ.deq;
 
-        if (networkSettingsIsSetReg && beat.sop) begin
+        EthHeader ethHeader         = unpack(truncateLSB(swapEndianByte(pack(ds.data))));
+        Bool macUnicastMatch = ethHeader.dstMacAddr == networkSettingsReg.macAddr;
+
+        if (networkSettingsIsSetReg && ds.isFirst) begin
             canAcceptRawInputPacketReg <= True;
 
-            EthernetNapRecvFirstBeat beatPayload = unpack(beat.data);
-
-            let ds = DataStream{
-                data: swapEndianByte(beatPayload.data),
-                byteNum: fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)),
-                startByteIdx: 0,
-                isFirst: beat.sop,
-                isLast: beat.eop
-            };
-            let beatExtraInfo = pack(beatPayload.extraInfo);
-
-            EthHeader ethHeader         = unpack(truncateLSB(pack(ds.data)));
-            Bool macUnicastMatch = ethHeader.dstMacAddr == networkSettingsReg.macAddr;
-
-            ethRawPacketForHandleQ.enq(tuple3(ds, beatExtraInfo, macUnicastMatch));
+            ethRawPacketForHandleQ.enq(tuple2(ds, macUnicastMatch));
             waitingForRouteQ.enq(ds);
         end
         else if (canAcceptRawInputPacketReg) begin
-
-            EthernetNapRecvOtherBeat beatPayload = unpack(beat.data);
-
-            ByteEnBitNum byteNum =  beat.eop ? (
-                    beatPayload.extraInfo.mod == 0 ? fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH)) : zeroExtend(beatPayload.extraInfo.mod)
-                ) : fromInteger(valueOf(NOC_DATA_BUS_BYTE_WIDTH));
-
-            let ds = DataStream{
-                data: swapEndianByte(beatPayload.data),
-                byteNum: unpack(zeroExtend(byteNum)),
-                startByteIdx: 0,
-                isFirst: beat.sop,
-                isLast: beat.eop
-            };
-            let beatExtraInfo = pack(beatPayload.extraInfo);
-
-            ethRawPacketForHandleQ.enq(tuple3(ds, beatExtraInfo, ?));
+            ethRawPacketForHandleQ.enq(tuple2(ds, macUnicastMatch));
             waitingForRouteQ.enq(ds);
         end
         else begin
             $display(
                 "time=%0t:", $time, toRed(" mkInputPacketClassifier discardPacketWhenNetworkSettingsNotReady >>>>> DISCARD PACKET <<<<< since network settings not set"),
-                toBlue(", beat="), fshow(beat)
+                toBlue(", ds="), fshow(ds)
             );
         end
     endrule
 
     rule handleFirstBeatStage if (stateReg == InputPacketClassifierStateHandleFirstBeat);
-        let {ds, beatExtraInfo, macUnicastMatch} = ethRawPacketForHandleQ.first;
+        let {ds, macUnicastMatch} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
+        ds.data = swapEndianByte(ds.data);
 
-
-        // Achronix Ethernet NAP make sure that each ethernet frame is at least two beat.
+        // Ethernet packet is atleast 64 byte, smaller packet should already be filtered by ETH IP.
         immAssert(
             ds.isFirst && !ds.isLast,
             "mkInputPacketClassifier first beat error",
-            $format("sop should be True and eop should be False in handleFirstBeatStage, ds=", fshow(ds))
+            $format("isFirst should be True and isLast should be False in handleFirstBeatStage, ds=", fshow(ds))
         );
 
         EthHeader ethHeader         = unpack(truncateLSB(pack(ds.data)));
@@ -211,15 +186,14 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleSecondBeatStage if (stateReg == InputPacketClassifierStateHandleSecondBeat);
-        let {ds, beatExtraInfo, _dontCareMacUnicastMatch} = ethRawPacketForHandleQ.first;
+        let {ds, _dontCareMacUnicastMatch} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
-
-        EthernetNapRecvOtherBeatExtraInfo decodedExtraInfoForSecondBeat = unpack(beatExtraInfo);
+        ds.data = swapEndianByte(ds.data);
 
         immAssert(
             !ds.isFirst,
             "mkInputPacketClassifier second beat error",
-            $format("sop should be False handleSecondBeatStage, ds=", fshow(ds))
+            $format("isFirst should be False handleSecondBeatStage, ds=", fshow(ds))
         );
 
         Bit#(IP_ADDR_COMPARE_PARTIAL_POINT) partialDstIpAddrLower16Bits = truncateLSB({pack(ds.data)});
@@ -257,7 +231,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
         end
         mustNotBeRdmaPacket = mustNotBeRdmaPacket || ethPacketMetaExtractPipelineEntryReg.mustNotBeRdmaPacket;
 
-        let isError = decodedExtraInfoForSecondBeat.flags.error;
+        // error packet should already be filtered by Eth Mac
+        let isError = False;
 
         // This is the final check condition. so if it is not "mustn't be RDMA", then it is RDMA
         Bool isRDMA = !mustNotBeRdmaPacket;
@@ -284,13 +259,13 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);
-        let {ds, beatExtraInfo, macUnicastMatch} = ethRawPacketForHandleQ.first;
+        let {ds, macUnicastMatch} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
 
         immAssert(
             !ds.isFirst,
             "mkInputPacketClassifier second beat error",
-            $format("sop should be False handleMoreBeatStage, ds=", fshow(ds))
+            $format("isFirst should be False handleMoreBeatStage, ds=", fshow(ds))
         );
 
 
@@ -316,7 +291,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
                 rdmaRawPacketOutQ.enq(ds);
             end
             else begin
-                otherRawPacketOutQ.enq(reverseStream(ds));
+                otherRawPacketOutQ.enq(ds);
             end
         end
         else begin
@@ -423,6 +398,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
+        ds.data = swapEndianByte(ds.data);
 
         BTH bth = unpack(ds.data[valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - 1 : bthEndBitOneBasedPosInSecondBeat]);
         let hasPayload = rdmaOpCodeHasPayload(bth.opcode);
@@ -466,6 +442,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     rule handleThirdBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleThirdBeat);
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
+        ds.data = swapEndianByte(ds.data);
 
         let rdmaMeta = partialRdmaMetaReg;
         RdmaExtendHeaderFragmentInSecondBeat rdmaExtendHeaderSecondBeatFragment = truncateLSB(rdmaMeta.header.rdmaExtendHeaderBuf);
@@ -572,7 +549,7 @@ interface EthernetPacketGenerator;
     interface PipeIn#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
     interface PipeIn#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
     interface PipeIn#(DataStream) rdmaPayloadPipeIn;
-    interface PipeOut#(EthernetNapBeatEntry) ethernetPacketPipeOut;
+    interface PipeOut#(IoChannelEthDataStream) ethernetPacketPipeOut;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
@@ -639,7 +616,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkFIFOF;
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkFIFOF;
     FIFOF#(DataStream) rdmaPayloadPipeInQ <- mkFIFOF;
-    FIFOF#(EthernetNapBeatEntry) ethernetPacketPipeOutQ <- mkFIFOF;
+    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
 
     FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
 
@@ -659,21 +636,19 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
     IpID defaultIpId = 1;
 
-    function EthernetNapBeatEntry genEthernetPacket(NocData data, EthernetNapMod mod, EthernetNapSendFlags flags, Bool isSop, Bool isEop);
-        let beatData = EthernetNapSendOtherBeat {
-            data: data,
-            extraInfo: EthernetNapSendOtherBeatExtraInfo {
-                mod: mod,
-                flags: flags,
-                rsvd1: unpack(0)
-            }
-        };
 
-        let outBeat = EthernetNapBeatEntry {
-            srcOrDstNodeId: ?,    // For Eth nap, the id is hardcoded, so don't care for now.
-            data: pack(beatData),
-            sop: isSop,
-            eop: isEop
+    function IoChannelEthDataStream genEthernetPacket(NocData data, EthernetNapMod mod, Bool isFirst, Bool isLast);
+        
+        let byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        if (isLast) begin
+            byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(mod);
+        end
+        let outBeat = IoChannelEthDataStream{
+            data: data,
+            byteNum: byteNum,
+            startByteIdx: 0,
+            isFirst: isFirst,
+            isLast: isLast
         };
 
         return outBeat;
@@ -724,20 +699,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         pipelineEntry.macIpUdpHeader.ipHeader.ipChecksum = checksum;
         ethernetFrameLeftByteCounterReg <= pipelineEntry.totalEthernetFrameLen - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
-        let beatData = EthernetNapSendFirstBeat{
+        IoChannelEthDataStream outBeat = IoChannelEthDataStream{
             data: swapEndianByte(truncateLSB(pack(pipelineEntry.macIpUdpHeader))),
-            extraInfo: EthernetNapSendFirstBeatExtraInfo {
-                rsvd1: unpack(0),
-                timestamp: 0,
-                rsvd2: unpack(0)
-            }
-        };
-
-        let outBeat = EthernetNapBeatEntry{
-            srcOrDstNodeId: ?,    // For Eth nap, the id is hardcoded, so don't care for now.
-            data: pack(beatData),
-            sop: True,
-            eop: False
+            byteNum: fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
+            startByteIdx: 0,
+            isFirst: True,
+            isLast: False
         };
 
         ethernetPacketPipeOutQ.enq(outBeat);
@@ -764,23 +731,22 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         rdmaPacketMetaPipeInQ.deq;
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        let isEop = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let isLast = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
         immAssert(
-            !isEop,
-            "The second beat should not be eop",
+            !isLast,
+            "The second beat should not be isLast",
             $format("ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
         );
 
         let mod = 0;
-        let flags = unpack(0);
-        flags.crcInsert = True;
+
 
         let macIpUdpHeader = firstBeatToSecondBeatPipelineReg.macIpUdpHeader;
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(DATA_BUS_WIDTH));
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
+        let outBeat = genEthernetPacket(swapEndianByte(data), mod, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -790,7 +756,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         };
         secondBeatToThirdBeatPipelineReg <= outPipelineEntry;
 
-        if (isEop) begin
+        if (isLast) begin
             // this is defensive code, shoud not enter this branch. but if it does, goto handle first packet state.
             immFail(
                 "The second beat must not be last beat.",
@@ -803,8 +769,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         end
 
         immAssert(
-            !outBeat.sop,
-            "The second beat's sop should be false",
+            !outBeat.isFirst,
+            "The second beat's isFirst should be false",
             $format("outBeat=", fshow(outBeat))
         );
 
@@ -821,21 +787,18 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let rdmaMeta = secondBeatToThirdBeatPipelineReg.rdmaMeta;
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        let isEop = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let isLast = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         let mod = truncate(ethernetFrameLeftByteCounterReg);
-
-        let flags = unpack(0);
-        flags.crcInsert = True;
 
         let macIpUdpHeader = secondBeatToThirdBeatPipelineReg.macIpUdpHeader;
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS) * valueOf(BYTE_WIDTH));
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
+        let outBeat = genEthernetPacket(swapEndianByte(data), mod, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
-        if (isEop) begin
+        if (isLast) begin
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
         end
         else begin
@@ -843,8 +806,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         end
 
         immAssert(
-            !outBeat.sop,
-            "The third beat's sop should be false",
+            !outBeat.isFirst,
+            "The third beat's isFirst should be false",
             $format("outBeat=", fshow(outBeat))
         );
 
@@ -861,23 +824,21 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     rule genMoreBeat if (statusReg == EthernetPacketGeneratorStateGenMoreBeat);
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        let isEop = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        let mod = truncate(ethernetFrameLeftByteCounterReg);
-
-        let flags = unpack(0);
-        flags.crcInsert = True;
+        let isLast = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        EthernetNapMod mod = truncate(ethernetFrameLeftByteCounterReg);
 
         let payload = rdmaPayloadPipeInQ.first;
         rdmaPayloadPipeInQ.deq;
         NocData data = payload.data;
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), mod, flags, False, isEop);
+        // Form the forth beat and so on, these beats are payloads, no need to change byte order.
+        let outBeat = genEthernetPacket(data, mod, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
         immAssert(
-            !outBeat.sop,
-            "The more beat's sop should be false",
+            !outBeat.isFirst,
+            "The more beat's isFirst should be false",
             $format("outBeat=", fshow(outBeat))
         );
 
@@ -887,10 +848,21 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         //     toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg)
         // );
 
-        if (isEop) begin
+        if (isLast) begin
             immAssert(
                 payload.isLast,
-                "payload should be last packet when isEop is true. mismatch between two calculate method",
+                "payload should be last packet when isLast is true. mismatch between two calculate method",
+                $format("Got payload = ", fshow(payload), "ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
+            );
+
+            ByteEnBitNum byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+            if (isLast) begin
+                byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(pack(mod));
+            end
+
+            immAssert(
+                payload.byteNum == byteNum,
+                "last beat of payload length calcaluted by two different ways have different result.",
                 $format("Got payload = ", fshow(payload), "ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
             );
 

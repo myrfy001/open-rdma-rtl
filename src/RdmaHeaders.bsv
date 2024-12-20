@@ -10,9 +10,13 @@ typedef 32 RDMA_MAX_LEN_WIDTH;
 typedef 2  PAD_WIDTH;
 typedef 16 PKEY_WIDTH;
 typedef 5  AETH_VALUE_WIDTH;
-typedef 24 MSN_WIDTH;
+typedef 16 MSN_WIDTH;
 typedef 32 KEY_WIDTH;
 typedef 32 IMM_WIDTH;
+
+typedef 128 ACK_BITMAP_WIDTH;
+typedef 16  ACK_WINDOW_STRIDE;  
+
 
 typedef 256  MIN_PMTU;
 typedef 4096 MAX_PMTU;
@@ -32,6 +36,7 @@ typedef Bit#(KEY_WIDTH) RKEY;
 typedef Bit#(KEY_WIDTH) LKEY;
 typedef Bit#(KEY_WIDTH) QKEY;
 typedef Bit#(IMM_WIDTH) IMM;
+typedef Bit#(ACK_BITMAP_WIDTH) AckBitmap;
 
 typedef 8'h00 RC_SEND_FIRST;
 typedef 8'h01 RC_SEND_MIDDLE;
@@ -178,12 +183,14 @@ typedef struct {
 typedef SizeOf#(BTH)        BTH_WIDTH;
 typedef TDiv#(BTH_WIDTH, 8) BTH_BYTE_WIDTH;
 
-// 4 bytes
+// 38 bytes
 typedef struct {
-    ReservedZero#(1) rsvd1;
-    AethCode code;
-    AethValue value;
-    MSN msn;
+    AckBitmap           preBitmap;      // 16 Bytes
+    AckBitmap           newBitmap;      // 16 Bytes
+    Bool                isPacketLost;   // 1 Bit 
+    ReservedZero#(7)    resv7;          // 7 Bits
+    PSN                 preBitmapPsn;   // 3 Bytes
+    MSN                 lastAckMsn;     // 2 Bytes
 } AETH deriving(Bits, Bounded, FShow);
 
 typedef SizeOf#(AETH)        AETH_WIDTH;

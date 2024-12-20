@@ -20,36 +20,36 @@ import PsnContinousChecker :: *;
 typedef struct {
     PSN psn;
     QPN qpn;
-    Bool needAck;
 } AutoAckGeneratorReq deriving(Bits, FShow);
 
 typedef struct {
-    IndexQP qpnIdx;
-    Bool needGenAck;
-    Bool needReportToHost;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) newBitmapEntry;
+    IndexQP                                                             qpnIdx;
+    Bool                                                                isPacketLost;
+    MSN                                                                 lastAckMsn;
+    MSN                                                                 curAckMsn;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary)  oldBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary)  newBitmapEntry;
 } AutoAckGeneratorResp deriving(Bits, FShow);
 
 typedef struct {
     IndexQP qpnIdx;
     Bool bitmapUnrecoverable;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) newBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) newBitmapEntry;
 } AutoAckGeneratorToCpsnCounterPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
     IndexQP qpnIdx;
     Bool bitmapUnrecoverable;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) newBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) newBitmapEntry;
 } AutoAckGeneratorToMaxAckPsnCalculatorPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
     IndexQP qpnIdx;
     Bool bitmapUnrecoverable;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(OooWindowBitmap, PsnMergeWindowBoundary) newBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
+    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) newBitmapEntry;
 } AutoAckGeneratorToMaxAckPsnStoragePipelineEntry deriving(Bits, FShow);
 
 
@@ -76,13 +76,9 @@ module mkAutoAckGenerator(AutoAckGenerator);
         respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
     end
 
+    PsnPerMergeAndStorage psnMergeAndStorage <- mkPsnPerMergeAndStorage;
 
-    FourChannelPsnBitmapPreMerge allPacketPsnPermerge <- mkFourChannelPsnBitmapPreMerge;
-
-    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) allPacketPsnBitmapStorage <- mkBitmapWindowStorage;
-
-    Reg#(Bool) forwardToStorageEvenOddReg <- mkReg(True);
-
+    // TODO: maybe we can remove this rule
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
         rule forwardInputReqToPsnPreMerge;
             let req = reqPipeInQueueVec[idx].first;
@@ -92,84 +88,9 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 psn: req.psn,
                 qpn: req.qpn
             };
-            allPacketPsnPermerge.reqPipeInVec[idx].enq(preMergeReq);
+            psnMergeAndStorage.reqPipeInVec[idx].enq(preMergeReq);
         endrule
     end
-
-
-    rule forwardPremergeToStorage;
-        forwardToStorageEvenOddReg <= !forwardToStorageEvenOddReg;
-        let allPacketStorageResp = allPacketPsnPermerge.respPipeOut.first;
-
-        if (forwardToStorageEvenOddReg) begin
-            if (allPacketStorageResp[0] matches tagged Valid .req) begin
-                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
-                    rowAddr: getIndexQP(req.qpn),
-                    entry: BitmapWindowStorageEntry {
-                        data: req.bitmap,
-                        leftBound: req.maxLeftBoundary,
-                        epoch: ?,
-                        channelIdx: 0
-                    }
-                });
-               
-            end
-            else begin
-                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Invalid);
-            end
-
-            if (allPacketStorageResp[1] matches tagged Valid .req) begin
-                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
-                    rowAddr: getIndexQP(req.qpn),
-                    entry: BitmapWindowStorageEntry {
-                        data: req.bitmap,
-                        leftBound: req.maxLeftBoundary,
-                        epoch: ?,
-                        channelIdx: 1
-                    }
-                });
-
-            end
-            else begin
-                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Invalid);
-            end
-        end
-        else begin
-            if (allPacketStorageResp[2] matches tagged Valid .req) begin
-                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Valid BitmapWindowStorageUpdateReq {
-                    rowAddr: getIndexQP(req.qpn),
-                    entry: BitmapWindowStorageEntry {
-                        data: req.bitmap,
-                        leftBound: req.maxLeftBoundary,
-                        epoch: ?,
-                        channelIdx: 0
-                    }
-                });
-
-            end
-            else begin
-                allPacketPsnBitmapStorage.reqPipeInVec[0].enq(tagged Invalid);
-            end
-
-            if (allPacketStorageResp[3] matches tagged Valid .req) begin
-                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Valid BitmapWindowStorageUpdateReq {
-                    rowAddr: getIndexQP(req.qpn),
-                    entry: BitmapWindowStorageEntry {
-                        data: req.bitmap,
-                        leftBound: req.maxLeftBoundary,
-                        epoch: ?,
-                        channelIdx: 1
-                    }
-                });
-
-            end
-            else begin
-                allPacketPsnBitmapStorage.reqPipeInVec[1].enq(tagged Invalid);
-            end
-
-            allPacketPsnPermerge.respPipeOut.deq;
-        end
-    endrule
 
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin

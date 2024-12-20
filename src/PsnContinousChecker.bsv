@@ -16,9 +16,9 @@ typedef Bit#(TLog#(CPSN_CHECKER_CHANNEL_NUM)) CpsnCheckerChannelIdx;
 
 
 
-typedef TSub#(PSN_WIDTH, TLog#(OOO_WINDOW_STRIDE)) PSN_MERGE_WINDOW_BOUNDARY_WIDTH;
+typedef TSub#(PSN_WIDTH, TLog#(ACK_WINDOW_STRIDE)) PSN_MERGE_WINDOW_BOUNDARY_WIDTH;
 typedef Bit#(PSN_MERGE_WINDOW_BOUNDARY_WIDTH) PsnMergeWindowBoundary;
-typedef Bit#(TLog#(OOO_WINDOW_SIZE)) PsnMergeWindowBitOffset;
+typedef Bit#(TLog#(ACK_BITMAP_WIDTH)) PsnMergeWindowBitOffset;
 
 
 typedef struct {
@@ -30,7 +30,7 @@ typedef struct {
     QPN qpn;
     PSN psn;  // for debug use
     PsnMergeWindowBoundary maxLeftBoundary;
-    OooWindowBitmap  bitmap;
+    AckBitmap  bitmap;
 } FourChannelPsnBitmapPreMergeResp deriving(Bits, FShow);
 
 typedef struct {
@@ -232,7 +232,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
                 PSN boundaryPSN = unpack({pack(channelInfo.maxLeftBoundary), -1});
                 let shiftDelta = boundaryPSN - channelInfo.psn;
 
-                Bool isOverflow = (shiftDelta >= fromInteger(valueOf(OOO_WINDOW_SIZE)));
+                Bool isOverflow = (shiftDelta >= fromInteger(valueOf(ACK_BITMAP_WIDTH)));
                 overFlowOccured = overFlowOccured || isOverflow;
 
                 let outInfo = FourChannelPsnBitmapPreMergeOnehotGenInternalState {
@@ -267,7 +267,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
         for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
             let channelInfoMaybe = pipelineEntryIn[idx];
             if (channelInfoMaybe matches tagged Valid .channelInfo) begin
-                OooWindowBitmap  bitmap = channelInfo.isOverflow ? 0 : swapEndianBit(1 << channelInfo.shiftOffset);
+                AckBitmap  bitmap = channelInfo.isOverflow ? 0 : swapEndianBit(1 << channelInfo.shiftOffset);
 
                 let outInfo = FourChannelPsnBitmapPreMergeResp {
                     qpn: channelInfo.qpn,
@@ -515,19 +515,16 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 endmodule
 
 // Must be 2^N
-typedef 128 OOO_WINDOW_SIZE;
-typedef 16  OOO_WINDOW_STRIDE;  
-typedef Bit#(OOO_WINDOW_SIZE) OooWindowBitmap;
 typedef 4  OOO_WINDOW_BITMAP_STORAGE_EPOCH_WIDTH;
-typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_EPOCH_WIDTH) OooWindowBitmapStorageEntryEpoch;
+typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_EPOCH_WIDTH) AckBitmapStorageEntryEpoch;
 typedef 1  OOO_WINDOW_BITMAP_STORAGE_CHANNEL_IDX_WIDTH;
-typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_CHANNEL_IDX_WIDTH) OooWindowBitmapStorageChannelIdx;
+typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_CHANNEL_IDX_WIDTH) AckBitmapStorageChannelIdx;
 
 typedef struct {
     tData                               data;
     tBoundary                           leftBound;
-    OooWindowBitmapStorageEntryEpoch    epoch;
-    OooWindowBitmapStorageChannelIdx    channelIdx;
+    AckBitmapStorageEntryEpoch    epoch;
+    AckBitmapStorageChannelIdx    channelIdx;
 } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
 
 typedef struct {
@@ -1181,7 +1178,7 @@ endmodule
 
 interface PsnPerMergeAndStorage;
     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
-    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary)))) respPipeOutVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary)))) respPipeOutVec;
 
     interface PipeIn#(IndexQP) resetReqPipeIn;
     interface PipeOut#(Bit#(0)) resetRespPipeOut;
@@ -1192,7 +1189,7 @@ endinterface
 module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
     FourChannelPsnBitmapPreMerge allPacketPsnPermerge <- mkFourChannelPsnBitmapPreMerge;
 
-    BitmapWindowStorage#(IndexQP, OooWindowBitmap, PsnMergeWindowBoundary, OOO_WINDOW_STRIDE) allPacketPsnBitmapStorage <- mkBitmapWindowStorage;
+    BitmapWindowStorage#(IndexQP, AckBitmap, PsnMergeWindowBoundary, ACK_WINDOW_STRIDE) allPacketPsnBitmapStorage <- mkBitmapWindowStorage;
 
     Reg#(Bool) forwardToStorageEvenOddReg <- mkReg(True);
 

@@ -23,6 +23,7 @@ typedef PCIE_MPS IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE;
 
 typedef DtldStreamMemAccessMeta#(ADDR, Length) IoChannelMemoryAccessMeta;
 typedef DtldStreamData#(DATA) IoChannelMemoryAccessDataStream;
+typedef DtldStreamData#(DATA) IoChannelEthDataStream;
 
 typedef DtldStreamMasterReadPipes#(DATA, ADDR, Length) IoChannelMemoryReadMasterPipe;
 typedef DtldStreamMasterWritePipes#(DATA, ADDR, Length) IoChannelMemoryWriteMasterPipe;

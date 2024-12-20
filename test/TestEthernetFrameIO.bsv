@@ -9,11 +9,13 @@ import PrimUtils :: *;
 
 import Utils4Test :: *;
 import EthernetTypes :: *;
+import DtldStream :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import ConnectableF :: *;
 import EthernetFrameIO :: *;
-import StreamShifter :: *;
+import StreamShifterG :: *;
 
 typedef enum {
     TestEthernetFrameIoStateGenReq = 0,
@@ -73,7 +75,7 @@ module mkTestEthernetFrameIO(Empty);
     FIFOF#(DataStream) rdmaHeaderExtractorPayloadExpectedQ <- mkFIFOF;
 
     let payloadStreamGen <- mkFixedLengthDateStreamRandomGen;
-    let txStreamShifter <- mkBiDirectionStreamShifter;
+    let txStreamShifter <- mkBiDirectionStreamShifterLsbRightG;
     mkConnection(payloadStreamGen.streamPipeOut, txStreamShifter.streamPipeIn);
     Vector#(2, PipeOut#(DataStream)) rdmaPayloadDataStreamPipeOutForkedVec <- mkForkVector(txStreamShifter.streamPipeOut);
     mkConnection(rdmaPayloadDataStreamPipeOutForkedVec[0], packetGen.rdmaPayloadPipeIn);
@@ -161,7 +163,7 @@ module mkTestEthernetFrameIO(Empty);
                 DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - truncate(bthAndEthTotalLength);
                 ByteIndexInBeat firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue = truncate(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
                 firstPayloadByteOneBasedOffsetInFirstPayloadBeat = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue);
-                DataBusSignedShiftOffset signedShiftOffset = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
+                DataBusSignedShiftOffset signedShiftOffset = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeat) - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
                 txStreamShifter.offsetPipeIn.enq(signedShiftOffset);
             end
             packetGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
@@ -309,7 +311,7 @@ module mkTestEthernetFrameIoTiming(TestEthernetFrameIoTiming);
     mkConnection(packetGen.ethernetPacketPipeOut, packetClassifier.ethRawPacketPipeIn);
     mkConnection(packetClassifier.rdmaRawPacketPipeOut, packetCon.ethPipeIn);
 
-    let txStreamShifter <- mkBiDirectionStreamShifter;
+    StreamShifterG#(DATA) txStreamShifter <- mkBiDirectionStreamShifterLsbRightG;
     mkConnection(txStreamShifter.streamPipeOut, packetGen.rdmaPayloadPipeIn);
     let randSource1 <- mkSynthesizableRng512('hAAAAAAAA);
     let randSource2 <- mkSynthesizableRng512('hBBBBBBBB);
