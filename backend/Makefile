@@ -102,6 +102,9 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestDtldStream.bsv
 # BSV_TOP_MODULE ?= mkTestDtldStreamSpliterTimingTest
 
+# TARGETFILE ?= ../test/TestCsrFramework.bsv
+# BSV_TOP_MODULE ?= mkTestCsrNodeTiming
+
 
 TARGETFILE ?= ../src/Top.bsv
 BSV_TOP_MODULE ?= mkBsvTop

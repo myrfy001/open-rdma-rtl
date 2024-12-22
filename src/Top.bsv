@@ -14,10 +14,14 @@ import BasicDataTypes :: *;
 import IoChannels :: *;
 import PacketGenAndParse :: *;
 import EthernetTypes :: *;
+import PacketGenAndParse :: *;
 import MemRegionAndAddressTranslate :: *;
 import QPContext :: *;
 import PayloadGenAndCon :: *;
-
+import CsrRootConnector :: *;
+import CsrFramework :: *;
+import Ringbuf :: *;
+import DescriptorParsers :: *;
 
 import Settings :: *;
 import Utils4Test :: *;
@@ -52,6 +56,8 @@ module mkBsvTop(BsvTop);
     FTileMacAdaptor  ftileMacAdaptor    <- mkFTileMacAdaptor;
     FTileMac         ftileMac           <- mkFTileMac;
 
+    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
+
     mkConnection(rtilePcieAdaptor.pcieRxPipeOut, rtilePcie.pcieRxPipeIn);
     mkConnection(rtilePcieAdaptor.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
     mkConnection(rtilePcieAdaptor.rxFlowControlReleaseReqPipeIn, rtilePcie.rxFlowControlReleaseReqPipeOut);
@@ -62,6 +68,7 @@ module mkBsvTop(BsvTop);
     mkConnection(ftileMacAdaptor.ftilemacTxPipeIn, ftileMac.ftilemacTxPipeOut);
 
  
+
 
     ForceKeepWideSignals#(Bit#(4164), Bit#(32)) signalKeeperForPcieUserLogicReadOutput   <- mkForceKeepWideSignals; 
     ForceKeepWideSignals#(Bit#(4164), Bit#(32)) signalKeeperForEthUserLogicReadOutput   <- mkForceKeepWideSignals; 
@@ -202,6 +209,75 @@ module mkBsvTop(BsvTop);
     interface rtilePcieAdaptorTxRawIfc = rtilePcieAdaptor.tx;
     interface ftileMacAdaptorRxRawIfc = ftileMacAdaptor.rx;
     interface ftileMacAdaptorTxRawIfc = ftileMacAdaptor.tx;
+endmodule
+
+
+
+
+interface BsvTopWithoutHardIpInstance;
+
+endinterface
+
+
+
+module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
+    let qpMrPgtQpc <- mkQpMrPgtQpc;
+    
+    
+    
+endmodule
+
+
+
+interface RingbufAndDescriptorHandler;
+    interface IoChannelMemorySlavePipe dmaSidePipeIfc;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem)) wqePipeOutVec;
+endinterface
+
+module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
+
+
+    Clock clkQpcMrPgtSrv <- exposeCurrentClock;
+    Reset rstQpcMrPgtSrv <- exposeCurrentReset;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufH2cSlot4096) wqeRingbufVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufC2hSlot4096) rqMetaReportRingbufVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueDescParser) workQueueDescParserVec <- replicateM(mkWorkQueueDescParser);
+    CommandQueueDescParserAndDispatcher cmdQueueDescParserAndDispatcher <- mkCommandQueueDescParserAndDispatcher(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem)) wqePipeOutVecInst = newVector;
+
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        wqeRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
+        rqMetaReportRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
+        mkConnection(wqeRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
+        wqePipeOutVecInst[idx] = workQueueDescParserVec[idx].workReqPipeOut;
+    end
+    
+    RingbufH2cSlot4096 cmdReqQueueRingbuf <- mkRingbufH2c(4);
+    RingbufC2hSlot4096 cmdRespQueueRingbuf <- mkRingbufC2h(4);
+
+
+    let csrRootConnector <- mkCsrRootConnector;
+    function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAddr addr);
+        actionvalue
+            case (CsrAddr'(addr)) matches
+                'h0: begin
+                    return tagged CsrNodeResultForward 2;
+                end
+                default: begin
+                    return tagged CsrNodeResultNotMatched;
+                end
+            endcase
+        endactionvalue
+    endfunction
+    
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO));
+
+    mkConnection(csrRootConnector.csrNodeRootPortIfc, csrNode.upStreamPort);
+
+    interface dmaSidePipeIfc = csrRootConnector.dmaSidePipeIfc;
+    interface wqePipeOutVec = wqePipeOutVecInst;
 endmodule
 
 

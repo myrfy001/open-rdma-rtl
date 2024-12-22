@@ -7,6 +7,7 @@ import RdmaHeaders :: *;
 import Settings :: *;
 import EthernetTypes :: *;
 
+typedef 0 NUMERIC_TYPE_ZERO;
 typedef 1 NUMERIC_TYPE_ONE;
 typedef 2 NUMERIC_TYPE_TWO;
 typedef 3 NUMERIC_TYPE_THREE;

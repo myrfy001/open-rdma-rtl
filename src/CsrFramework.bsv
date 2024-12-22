@@ -13,302 +13,96 @@ typedef struct {
 } CsrReadWriteReq#(type tAddr, type tValue) deriving(Bits, FShow);
 
 typedef struct {
-    Maybe#(tValue) valueMaybe;
+    tValue value;
 } CsrReadWriteResp#(type tValue) deriving(Bits, FShow);
 
 
-typedef Server#(CsrReadWriteReq#(tAddr, tValue), CsrReadWriteResp#(tValue)) CsrReadWriteSrvIfc#(type tAddr, type tValue);
-typedef Client#(CsrReadWriteReq#(tAddr, tValue), CsrReadWriteResp#(tValue)) CsrReadWriteCltIfc#(type tAddr, type tValue);
+typedef Client#(CsrReadWriteReq#(tAddr, tValue), CsrReadWriteResp#(tValue)) CsrNodeDownStreamPort#(type tAddr, type tValue);
+typedef Server#(CsrReadWriteReq#(tAddr, tValue), CsrReadWriteResp#(tValue)) CsrNodeUpStreamPort#(type tAddr, type tValue);
 
-interface CsrSwitch#(type tAddr, type tValue, type downStreamPortCnt);
-    interface CsrReadWriteSrvIfc#(tAddr, tValue) busInputSrv;
-    interface Vector#(downStreamPortCnt, CsrReadWriteCltIfc#(tAddr, tValue)) busOutputCltVecIfc;
+
+typedef union tagged {
+    void                         CsrNodeResultWriteHandled;
+    CsrReadWriteResp#(tValue)    CsrNodeResultReadHandled;
+    tDownStreamPordIdx           CsrNodeResultForward;
+    void                         CsrNodeResultNotMatched;
+} CsrNodeResult#(type tDownStreamPordIdx, type tValue) deriving (FShow, Bits, Eq);
+
+interface CsrNode#(type tAddr, type tValue, numeric type nDownStreamPortCnt);
+    interface CsrNodeUpStreamPort#(tAddr, tValue) upStreamPort;
+    interface Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) upStreamPortsVec;
 endinterface
 
-
-interface PutToGetProxy#(type tData);
-    interface Put#(tData) in;
-    interface Get#(tData) out;
-endinterface
-
-module mkPutToGetProxy(PutToGetProxy#(tData)) provisos (
-    Bits#(tData, szData)
-);
-
-    Wire#(tData) relayWire <- mkWire;
-
-    interface Put in;
-        
-        method Action put(tData value);
-            relayWire <= value;
-        endmethod
-    endinterface
-
-    interface Get out;
-        method ActionValue#(tData) get;
-            return relayWire;
-        endmethod
-    endinterface
-endmodule
-
-
-
-module mkCombinationalCsrSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provisos (
-    Bits#(tAddr, szAddr),
-    Bits#(tValue, szValue)
-);
-
-    Wire#(CsrReadWriteReq#(tAddr, tValue)) reqInputRelayWire <- mkWire;
-    Vector#(downStreamPortCnt, PutToGetProxy#(CsrReadWriteReq#(tAddr, tValue))) reqRelayVec <- replicateM(mkPutToGetProxy);
-    Vector#(downStreamPortCnt, PutToGetProxy#(CsrReadWriteResp#(tValue))) respRelayVec <- replicateM(mkPutToGetProxy);
-    Vector#(downStreamPortCnt, CsrReadWriteCltIfc#(tAddr, tValue)) busOutputCltVec = newVector;
-
-    for (Integer idx = 0; idx < valueOf(downStreamPortCnt); idx = idx + 1) begin
-        busOutputCltVec[idx] = interface CsrReadWriteCltIfc#(tAddr, tValue)
-            interface request = reqRelayVec[idx].out;
-            interface response = respRelayVec[idx].in;
-        endinterface;
-    end
-
-    interface CsrReadWriteSrvIfc busInputSrv;
-        interface Put request;
-            method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-                for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
-                    reqRelayVec[portIdx].in.put(req);
-                end
-            endmethod
-        endinterface
-
-        interface Get response;
-            method ActionValue#(CsrReadWriteResp#(tValue)) get;
-                Bool foundValidResp = False;
-                CsrReadWriteResp#(tValue) finalResp = CsrReadWriteResp{valueMaybe: tagged Invalid};
-
-                for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
-                    let resp <- respRelayVec[portIdx].out.get;
-                    if (isValid(resp.valueMaybe)) begin
-                        immAssert(
-                            !foundValidResp,
-                            "More than one CSR generate response to the same address @ mkPipelineCsrSwitch",
-                            $format("port index = %x", portIdx)
-                        );
-
-                        foundValidResp = True;
-                        finalResp = resp;
-                    end
-                end
-                return finalResp;
-            endmethod
-        endinterface
-    endinterface
-
-    interface busOutputCltVecIfc = busOutputCltVec;
-endmodule
-
-
-module mkPipelineCsrSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provisos (
+module mkCsrNode#(
+        function ActionValue#(CsrNodeResult#(tDownStreamPordIdx, tValue)) matchFunc(tAddr addr),
+        Integer queueDepth
+    )(CsrNode#(tAddr, tValue, nDownStreamPortCnt)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tValue, szValue),
-        FShow#(CsrFramework::CsrReadWriteResp#(tValue))
+        NumAlias#(TLog#(TMax#(1, nDownStreamPortCnt)), szDownStreamPordIdx),
+        Bits#(tDownStreamPordIdx, szDownStreamPordIdx),
+        FShow#(CsrFramework::CsrReadWriteResp#(tValue)),
+        Literal#(tValue),
+        PrimIndex#(tDownStreamPordIdx, a__),
+        FShow#(tAddr)
     );
 
-    Vector#(downStreamPortCnt, FIFOF#(CsrReadWriteReq#(tAddr, tValue))) reqRelayVec <- replicateM(mkPipelineFIFOF);
-    Vector#(downStreamPortCnt, FIFOF#(CsrReadWriteResp#(tValue))) respRelayVec <- replicateM(mkPipelineFIFOF);
-    Vector#(downStreamPortCnt, CsrReadWriteCltIfc#(tAddr, tValue)) busOutputCltVec = newVector;
+    Vector#(nDownStreamPortCnt, Wire#(CsrReadWriteReq#(tAddr, tValue))) reqWireVec <- replicateM(mkWire);
+    Vector#(nDownStreamPortCnt, FIFOF#(CsrReadWriteReq#(tAddr, tValue))) reqRelayQueueVec <- replicateM(mkLFIFOF);
+    Vector#(nDownStreamPortCnt, FIFOF#(CsrReadWriteResp#(tValue))) respRelayQueueVec <- replicateM(mkLFIFOF);
 
-    for (Integer idx = 0; idx < valueOf(downStreamPortCnt); idx = idx + 1) begin
-        busOutputCltVec[idx] = toGPClient(reqRelayVec[idx], respRelayVec[idx]);
+    FIFOF#(CsrReadWriteResp#(tValue)) selfRespQueue <- mkLFIFOF;
+    FIFOF#(Tuple2#(Bool, tDownStreamPordIdx)) keepOrderQueue <- mkSizedFIFOF(queueDepth);
+
+    Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) upStreamPortsVecInst = newVector;
+    for (Integer idx = 0; idx < 3; idx = idx + 1) begin
+        upStreamPortsVecInst[idx] = toGPClient(reqRelayQueueVec[idx], respRelayQueueVec[idx]);
     end
 
-    interface CsrReadWriteSrvIfc busInputSrv;
+    interface CsrNodeUpStreamPort upStreamPort;
         interface Put request;
             method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-                for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
-                    reqRelayVec[portIdx].enq(req);
-                end
+                let matchResult <- matchFunc(req.addr);
+                case (matchResult) matches
+                    tagged CsrNodeResultWriteHandled: begin
+                        // nothing to do
+                    end
+                    tagged CsrNodeResultReadHandled .resp: begin
+                        selfRespQueue.enq(resp);
+                        let isSelfResp = True;
+                        keepOrderQueue.enq(tuple2(isSelfResp, ?));
+                    end
+                    tagged CsrNodeResultForward .portIdx: begin
+                        reqRelayQueueVec[portIdx].enq(req);
+                        let isSelfResp = False;
+                        keepOrderQueue.enq(tuple2(isSelfResp, portIdx));
+                    end
+                    tagged CsrNodeResultNotMatched: begin
+                        immFail(
+                            "CSR routing found an unknown address",
+                            $format("req=", fshow(req))
+                        );
+                    end
+                endcase
             endmethod
         endinterface
 
         interface Get response;
             method ActionValue#(CsrReadWriteResp#(tValue)) get;
-                Bool foundValidResp = False;
-                CsrReadWriteResp#(tValue) finalResp = CsrReadWriteResp{valueMaybe: tagged Invalid};
-
-                for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
-                    let resp = respRelayVec[portIdx].first; 
-                    respRelayVec[portIdx].deq;
-                    // $display("time=%0t", $time, "mkPipelineCsrSwitch idx=%x", portIdx, "resp=", fshow(resp));
-                    if (isValid(resp.valueMaybe)) begin
-                        immAssert(
-                            !foundValidResp,
-                            "More than one CSR generate response to the same address @ mkPipelineCsrSwitch",
-                            $format("port index = %x", portIdx)
-                        );
-
-                        foundValidResp = True;
-                        finalResp = resp;
-                    end
-                end
-                return finalResp;
-            endmethod
-
-        endinterface
-    endinterface
-
-    interface busOutputCltVecIfc = busOutputCltVec;
-
-
-endmodule
-
-interface CsrLeaf#(type tAddr, type tValue);
-    interface CsrReadWriteSrvIfc#(tAddr, tValue) busInputSrv;
-
-    method Action _write (tValue value);
-    method tValue _read;
-    method ActionValue#(tValue) readWithSideEffecct;
-endinterface
-
-module mkCsrLeaf#(Integer myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
-        Bits#(tAddr, szAddr),
-        Bits#(tValue, szData),
-        Literal#(tAddr),
-        Eq#(tAddr)
-    );
-
-    Reg#(tValue) storageReg <- mkReg(unpack(0));
-    RWire#(tValue) userWriteReqWire <- mkRWire;
-    RWire#(tValue) busWriteReqWire <- mkRWire;
-
-    PulseWire busReqIsReadWire <- mkPulseWire;
-    PulseWire busReqOccuredWire <- mkPulseWire;
-
-
-
-    rule arbitUserAndBusWrite;
-        if (busWriteReqWire.wget matches tagged Valid .value) begin
-            storageReg <= value;
-        end
-        else if (userWriteReqWire.wget matches tagged Valid .value) begin
-            storageReg <= value;
-        end
-    endrule
-
-    method Action _write (tValue value);
-        userWriteReqWire.wset(value);
-    endmethod
-    method ActionValue#(tValue) readWithSideEffecct;
-        return storageReg;
-    endmethod
-    method tValue _read;
-        return storageReg;
-    endmethod
-
-    interface CsrReadWriteSrvIfc busInputSrv;
-        interface Put request;
-            method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-                busReqOccuredWire.send;
-
-                Bool isAddrHit = req.addr == fromInteger(myAddr);
-
-                // $display("leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
-
-                if (isAddrHit) begin
-                    if (req.isWrite) begin
-                        busWriteReqWire.wset(req.value);
-                    end
-                    else begin
-                        busReqIsReadWire.send;
-                    end
-                end
-            endmethod
-        endinterface
-
-        interface Get response;
-
-            method ActionValue#(CsrReadWriteResp#(tValue)) get if (busReqOccuredWire);
-                if (busReqIsReadWire) begin
-                    return CsrReadWriteResp{valueMaybe: tagged Valid storageReg};
+                let {isSelfResp, portIdx} = keepOrderQueue.first;
+                keepOrderQueue.deq;
+                if (isSelfResp) begin
+                    selfRespQueue.deq;
+                    return selfRespQueue.first;
                 end
                 else begin
-                    return CsrReadWriteResp{valueMaybe: tagged Invalid};
+                    respRelayQueueVec[portIdx].deq;
+                    return respRelayQueueVec[portIdx].first;
                 end
             endmethod
+
         endinterface
     endinterface
 
-endmodule
-
-interface CsrLeafAccessor#(type tAddr, type tValue);
-    interface CsrReadWriteSrvIfc#(tAddr, tValue) busInputSrv;
-
-    method Action readValIn (tValue value);
-    method tValue writeValOut;
-endinterface
-
-
-module mkCsrLeafAccessor#(Integer myAddr) (CsrLeafAccessor#(tAddr, tValue)) provisos (
-        Bits#(tAddr, szAddr),
-        Bits#(tValue, szData),
-        Literal#(tAddr),
-        Eq#(tAddr)
-    );
-
-    RWire#(tValue) readValueWire <- mkRWire;
-    Wire#(tValue) busWriteReqWire <- mkWire;
-
-    PulseWire busReqIsReadWire  <- mkPulseWire;
-    PulseWire isAddrMatchWire   <- mkPulseWire;
-
-    method Action readValIn (tValue value);
-        readValueWire.wset(value);
-    endmethod
-
-    method tValue writeValOut;
-        return busWriteReqWire;
-    endmethod
-
-    interface CsrReadWriteSrvIfc busInputSrv;
-        interface Put request;
-            method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-
-                Bool isAddrHit = req.addr == fromInteger(myAddr);
-                if (isAddrHit) begin
-                    isAddrMatchWire.send;
-                end
-                if (!req.isWrite) begin
-                    busReqIsReadWire.send;
-                end
-
-                // $display("time=%0t, ", $time, "leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
-
-                if (isAddrHit) begin
-                    if (req.isWrite) begin
-                        busWriteReqWire <= req.value;
-                    end
-                end
-            endmethod
-        endinterface
-
-        interface Get response;
-
-            method ActionValue#(CsrReadWriteResp#(tValue)) get if (busReqIsReadWire);
-                
-                if (readValueWire.wget matches tagged Valid .inputReadData) begin
-                    if (isAddrMatchWire) begin
-                        // $display("time=%0t, ", $time, "leaf node send resp, addr=%x", myAddr, "valid");
-                        return CsrReadWriteResp{valueMaybe: tagged Valid inputReadData};
-                    end
-                    else begin
-                        return CsrReadWriteResp{valueMaybe: tagged Invalid};
-                    end
-                end 
-                else begin
-                    immFail("mkCsrLeafAccessor, read value should be valid", $format(""));
-                    return ?;
-                end
-               
-            endmethod
-        endinterface
-    endinterface
-
+    interface upStreamPortsVec = upStreamPortsVecInst;
 endmodule

@@ -101,8 +101,6 @@ endinterface
 
 (* synthesize *)
 module mkCommandQueueDescParserAndDispatcher#(
-        Clock clkEthNap,
-        Reset rstEthNap,
         Clock clkQpcMrPgtSrv,
         Reset rstQpcMrPgtSrv
     )(CommandQueueDescParserAndDispatcher ifc);
@@ -117,7 +115,7 @@ module mkCommandQueueDescParserAndDispatcher#(
     QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkSyncQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
 
-    SyncFIFOIfc#(LocalNetworkSettings) setNetworkParamPipeOutQ                              <- mkSyncFIFOFromCC(valueOf(QUEUE_DEPTH_2), clkEthNap);
+    FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;
     FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkFIFOF;
     // FIFOF#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))    setRqExpectedPsnReqQ      <- mkFIFOF;
 
@@ -254,7 +252,7 @@ module mkCommandQueueDescParserAndDispatcher#(
     interface mrAndPgtManagerClt = toGPClient(mrAndPgtReqQ, mrAndPgtRespQ);
     interface qpcModifyClt = qpcUpdateCltInst.clt;
 
-    interface setNetworkParamReqPipeOut = toPipeOutSync(setNetworkParamPipeOutQ);
+    interface setNetworkParamReqPipeOut = toPipeOut(setNetworkParamPipeOutQ);
     interface setRawPacketReceiveMetaReqOut = toGet(setRawPacketReceiveMetaReqQ);
     // interface setRqExpectedPsnReqOut = toGet(setRqExpectedPsnReqQ);
 endmodule
