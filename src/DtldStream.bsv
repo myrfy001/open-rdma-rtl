@@ -2,7 +2,7 @@ import Vector :: *;
 import FIFOF :: *;
 import PrimUtils :: *;
 import Arbiter :: *;
-
+import Connectable :: *;
 import ConnectableF :: *;
 import BasicDataTypes :: *;
 
@@ -57,6 +57,15 @@ interface DtldStreamNoMetaBiDirPipes#(type tData);
     interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
 endinterface
 
+
+instance Connectable#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen), DtldStreamBiDirSlavePipes#(tData, tAddr, tLen));
+    module mkConnection#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen) master, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen) slave)(Empty);
+        mkConnection(master.writePipeIfc.writeMetaPipeOut, slave.writePipeIfc.writeMetaPipeIn);
+        mkConnection(master.writePipeIfc.writeDataPipeOut, slave.writePipeIfc.writeDataPipeIn);
+        mkConnection(master.readPipeIfc.readMetaPipeOut, slave.readPipeIfc.readMetaPipeIn);
+        mkConnection(master.readPipeIfc.readDataPipeIn, slave.readPipeIfc.readDataPipeOut);
+    endmodule
+endinstance
 
 
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);

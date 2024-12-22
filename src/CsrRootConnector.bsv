@@ -103,9 +103,10 @@ typedef CsrNode#(CsrAddr, CsrData, NUMERIC_TYPE_TWO)    CsrNodeFork2;
 typedef CsrNode#(CsrAddr, CsrData, NUMERIC_TYPE_FOUR)   CsrNodeFork4;
 typedef CsrNode#(CsrAddr, CsrData, NUMERIC_TYPE_EIGHT)  CsrNodeFork8;
 
+typedef CsrReadWriteReq#(CsrAddr, CsrData) CsrAccessReq;
+
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_ONE)), CsrData) CsrNodeResultLeaf;
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_ONE)), CsrData) CsrNodeResultFork1;
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_TWO)), CsrData) CsrNodeResultFork2;
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_FOUR)), CsrData) CsrNodeResultFork4;
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_EIGHT)), CsrData) CsrNodeResultFork8;
-typedef function ActionValue#(CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_EIGHT)), CsrData)) f(CsrAddr addr)  CsrMatchFuncFork8;

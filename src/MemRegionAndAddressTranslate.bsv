@@ -18,7 +18,8 @@ import Arbitration :: *;
 import Ringbuf :: *;
 import ConnectableF :: *;
 import Descriptors :: *;
-import NapWrapper :: *;
+
+import IoChannels :: *;
 
 typedef Server#(addrType, dataType)                    BramRead#(type addrType, type dataType);
 typedef Server#(Tuple2#(addrType, dataType), Bool)     BramWrite#(type addrType, type dataType);
@@ -519,7 +520,7 @@ module mkMrAndPgtUpdater#(
 
                 dmaReadReqQ.enq(PgtUpdateDmaReadReq{
                     addr: desc.dmaAddr,
-                    zeroBasedPgtUpdateReadBlockNum: truncate(desc.zeroBasedEntryCount)
+                    zeroBasedEntryCount: truncate(desc.zeroBasedEntryCount)
                 });
                 curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
                 zeroBasedPgtEntryTotalCntReg <= truncate(desc.zeroBasedEntryCount);
@@ -597,12 +598,9 @@ endmodule
 
 
 
-
-typedef Bit#(TLog#(PCIE_NAP_MAX_BURST_LEN)) ZeroBasedPgtUpdateReadBlockNum;
-
 typedef struct {
     ADDR addr;
-    ZeroBasedPgtUpdateReadBlockNum zeroBasedPgtUpdateReadBlockNum;
+    ZeroBasedPgtSecondStageEntryCnt zeroBasedEntryCount;
 } PgtUpdateDmaReadReq deriving(Bits, FShow);
 
 typedef struct {
@@ -613,49 +611,56 @@ typedef struct {
 
 
 
-interface PgtUpdateDmaNapWrappr;
+interface PgtUpdateDmaInterfaceConvertor;
+    interface IoChannelMemoryMasterPipe dmaSidePipeIfc;
+
     interface PipeIn#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(PgtUpdateDmaReadResp) dmaReadRespPipeOut;
 endinterface
 
-module mkPgtUpdateDmaNapWrappr(PgtUpdateDmaNapWrappr);
+module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
+    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkFIFOF;
+
     FIFOF#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkFIFOF;
     FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
-
-    AcxNapSlaveWrapperPipe nap <- mkAcxNapSlaveWrapperPipe;
 
     rule forwardReadReq;
         let req = dmaReadReqPipeInQ.first;
         dmaReadReqPipeInQ.deq;
 
-        let ar = AxiMmNapBeatAr {
-            arid: 0,
-            araddr: truncate(req.addr),
-            arlen: unpack(zeroExtend(req.zeroBasedPgtUpdateReadBlockNum)),
-            arsize: unpack(pack(NapAxiSize32B)),
-            arburst: unpack(pack(NapAxiBurstIncr)),
-            arlock: False,
-            arqos: 0
+        Length dmaReadLengthInByte = (zeroExtend(req.zeroBasedEntryCount) + 1) << valueOf(TLog#(PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED)); 
+
+        let meta = IoChannelMemoryAccessMeta {
+            addr: req.addr,
+            totalLen: dmaReadLengthInByte
         };
-        nap.readPipeIfc.readAddrPipeIn.enq(ar);
+        busReadMetaPipeOutQueue.enq(meta);
     endrule
 
     rule forwardReadResp;
-        let resp = nap.readPipeIfc.readRespPipeOut.first;
-        nap.readPipeIfc.readRespPipeOut.deq;
+        let resp = busReadDataPipeInQueue.first;
+        busReadDataPipeInQueue.deq;
 
         let ds = PgtUpdateDmaReadResp {
-            data: DataStream {
-                data: resp.rdata,
-                byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
-                startByteIdx: 0,
-                isFirst: dontCareValue,
-                isLast: resp.rlast
-            }
+            data: resp
         };
 
         dmaReadRespPipeOutQ.enq(ds);
     endrule
+
+    interface IoChannelMemoryMasterPipe dmaSidePipeIfc;
+        interface DtldStreamMasterWritePipes writePipeIfc;
+            interface writeMetaPipeOut = toPipeOut(busWriteMetaPipeOutQueue);
+            interface writeDataPipeOut = toPipeOut(busWriteDataPipeOutQueue);
+        endinterface
+        interface DtldStreamMasterReadPipes readPipeIfc;
+            interface readMetaPipeOut = toPipeOut(busReadMetaPipeOutQueue);
+            interface readDataPipeIn  = toPipeIn(busReadDataPipeInQueue);
+        endinterface
+    endinterface
 
     interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);
     interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);

@@ -34,7 +34,7 @@ interface CsrNode#(type tAddr, type tValue, numeric type nDownStreamPortCnt);
 endinterface
 
 module mkCsrNode#(
-        function ActionValue#(CsrNodeResult#(tDownStreamPordIdx, tValue)) matchFunc(tAddr addr),
+        function ActionValue#(CsrNodeResult#(tDownStreamPordIdx, tValue)) matchFunc(CsrReadWriteReq#(tAddr, tValue) req),
         Integer queueDepth
     )(CsrNode#(tAddr, tValue, nDownStreamPortCnt)) provisos (
         Bits#(tAddr, szAddr),
@@ -62,7 +62,7 @@ module mkCsrNode#(
     interface CsrNodeUpStreamPort upStreamPort;
         interface Put request;
             method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-                let matchResult <- matchFunc(req.addr);
+                let matchResult <- matchFunc(req);
                 case (matchResult) matches
                     tagged CsrNodeResultWriteHandled: begin
                         // nothing to do

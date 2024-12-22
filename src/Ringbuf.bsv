@@ -426,7 +426,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     interface descPipeIn = toPipeIn(inputQ);
 endmodule
 
-interface RingbufDmaNapWrappr;
+interface RingbufDmaIfcConvertor;
     // ringbuf side interface
     interface PipeIn#(RingbufDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(RingbufDmaReadResp) dmaReadRespPipeOut;
@@ -438,7 +438,8 @@ interface RingbufDmaNapWrappr;
     interface IoChannelMemoryMasterPipe dmaMasterPipeIfc;
 endinterface
 
-module mkRingbufDmaNapWrappr(RingbufDmaNapWrappr);
+(* synthesize *)
+module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
     FIFOF#(RingbufDmaReadReq)   dmaReadReqPipeInQ       <- mkFIFOF;
     FIFOF#(RingbufDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
     FIFOF#(RingbufDmaWriteReq)  dmaWriteReqPipeInQ      <- mkFIFOF;
