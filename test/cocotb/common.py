@@ -573,7 +573,7 @@ class BluespecPipeIn:
 
 
 class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_name, mem=None):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -597,15 +597,39 @@ class SimplePcieBehaviorModel(object):
             self.requester_read_data_pipes.append(BluespecPipeIn(
                 dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
 
-        self.channel_cnt = len(requester_ifc_base_names)
+        self.requester_channel_cnt = len(requester_ifc_base_names)
+
+        self.completer_write_meta_pipes = []
+        self.completer_write_data_pipes = []
+        self.completer_read_meta_pipes = []
+        self.completer_read_data_pipes = []
+        for base_name in completer_ifc_base_names:
+            self.completer_write_meta_pipes.append(BluespecPipeIn(
+                dut, f"{base_name}_writePipeIfc_writeMetaPipeIn", self.clock))
+            self.completer_write_data_pipes.append(BluespecPipeIn(
+                dut, f"{base_name}_writePipeIfc_writeDataPipeIn", self.clock))
+            self.completer_read_meta_pipes.append(BluespecPipeIn(
+                dut, f"{base_name}_readPipeIfc_readMetaPipeIn", self.clock))
+            self.completer_read_data_pipes.append(BluespecPipeOut(
+                dut, f"{base_name}_readPipeIfc_readDataPipeOut", self.clock))
+
+        self.completer_channel_cnt = len(completer_ifc_base_names)
+
+        self.completer_inflight_read_enevts = [
+            [] for _ in range(self.completer_channel_cnt)]
+        self.completer_inflight_read_resps = [
+            [] for _ in range(self.completer_channel_cnt)]
 
         self.mem = mem or [0] * (1 << 25)
 
-        for channel_idx in range(self.channel_cnt):
-            cocotb.start_soon(self.handle_requester_write_req(channel_idx))
-            cocotb.start_soon(self.handle_requester_read_req(channel_idx))
+        for channel_idx in range(self.requester_channel_cnt):
+            cocotb.start_soon(self._handle_requester_write_req(channel_idx))
+            cocotb.start_soon(self._handle_requester_read_req(channel_idx))
 
-    async def handle_requester_write_req(self, channel_idx):
+        for channel_idx in range(self.completer_channel_cnt):
+            cocotb.start_soon(self._handle_completer_read_resp(channel_idx))
+
+    async def _handle_requester_write_req(self, channel_idx):
         # loop to handle each request
         while True:
             if await self.requester_write_meta_pipes[channel_idx].not_empty():
@@ -648,7 +672,7 @@ class SimplePcieBehaviorModel(object):
 
             await RisingEdge(self.clock)  # wait for next write req
 
-    async def handle_requester_read_req(self, channel_idx):
+    async def _handle_requester_read_req(self, channel_idx):
         # loop to handle each request
         while True:
             if await self.requester_read_meta_pipes[channel_idx].not_empty():
@@ -706,3 +730,52 @@ class SimplePcieBehaviorModel(object):
                     await RisingEdge(self.clock)  # wait for next beat
 
             await RisingEdge(self.clock)  # wait for next read req
+
+    async def _handle_completer_read_resp(self, channel_idx):
+        while True:
+            if (await self.completer_read_data_pipes[channel_idx].not_empty()):
+                raw_resp = await self.completer_read_data_pipes[channel_idx].first()
+                await self.completer_read_data_pipes[channel_idx].deq()
+                resp = BlueRdmaDataStream256.unpack(raw_resp)
+                assert await resp.is_first() == True
+                assert await resp.is_last() == True
+                assert await resp.byte_num() == 4
+                assert await resp.start_byte_idx() == 0
+                beat_data = resp.data() & 0xFFFFFFFF
+                self.completer_inflight_read_resps[channel_idx].append(
+                    beat_data)
+                evt = self.completer_inflight_read_enevts[channel_idx].pop(0)
+                evt.set()
+            await RisingEdge(self.clock)
+
+    async def host_read_blocking(self, addr):
+        read_meta = BlueRdmaDtldStreamMemAccessMeta(
+            addr=addr,
+            total_len=4
+        )
+        while not (await self.completer_read_meta_pipes[0].not_full()):
+            await cocotb.triggers.Timer(2, "ns")
+        await self.completer_read_meta_pipes[0].enq(read_meta.pack())
+        await self.completer_read_data_pipes[0].enq(read_data.pack())
+        evt = cocotb.triggers.Event()
+        self.completer_inflight_read_enevts[0].append(evt)
+        await evt.wait()
+        resp = self.completer_inflight_read_resps[0].pop(0)
+        return resp
+
+    async def host_write_blocking(self, addr, value):
+        write_meta = BlueRdmaDtldStreamMemAccessMeta(
+            addr=addr,
+            total_len=4
+        )
+        write_data = BlueRdmaDataStream256(
+            data=value.to_bytes(32, byteorder="little"),
+            byte_num=4,
+            start_byte_index=0,
+            is_first=True,
+            is_last=True
+        )
+        while not (await self.completer_write_meta_pipes[0].not_full()) and (await self.completer_write_data_pipes[0].not_full()):
+            await cocotb.triggers.Timer(2, "ns")
+        await self.completer_write_meta_pipes[0].enq(write_meta.pack())
+        await self.completer_write_data_pipes[0].enq(write_data.pack())

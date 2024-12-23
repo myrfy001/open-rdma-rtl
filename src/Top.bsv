@@ -250,12 +250,12 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
 endmodule
 
 interface BsvTopWithoutHardIpInstance;
-    interface IoChannelMemorySlavePipe dmaSidePipeIfc;
+    interface IoChannelMemorySlavePipe dmaSlavePipeIfc;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)   dmaMasterPipeIfcVec;
 endinterface
 
 
-
+(* synthesize *)
 module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     let qpMrPgtQpc <- mkQpMrPgtQpc;
     let ringbufAndDescriptorHandler <- mkRingbufAndDescriptorHandler;
@@ -267,20 +267,13 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     let csrRootConnector <- mkCsrRootConnector;
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
-            case (req.addr) matches
-                'h0: begin
-                    return tagged CsrNodeResultForward 2;
-                end
-                default: begin
-                    return tagged CsrNodeResultNotMatched;
-                end
-            endcase
+            return tagged CsrNodeResultForward 0;
         endactionvalue
     endfunction
     
     CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO));
-
     mkConnection(csrRootConnector.csrNodeRootPortIfc, csrNode.upStreamPort);
+    mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
 
 
     mkConnection(qpMrPgtQpc.pgtUpdateDmaMasterPipe, topLevelDmaChannelMux.pgtUpdateDmaSlavePipe);
@@ -290,7 +283,7 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
 
  
 
-    interface dmaSidePipeIfc = csrRootConnector.dmaSidePipeIfc;
+    interface dmaSlavePipeIfc = csrRootConnector.dmaSidePipeIfc;
     interface dmaMasterPipeIfcVec = topLevelDmaChannelMux.dmaMasterPipeIfcVec;
 endmodule
 
@@ -299,6 +292,7 @@ endmodule
 interface RingbufAndDescriptorHandler;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)   qpRingbufDmaMasterPipeIfcVec;
     interface IoChannelMemoryMasterPipe cmdQueueRingbufDmaMasterPipeIfc;
+    interface BlueRdmaCsrUpStreamPort csrUpStreamPort;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem))     wqePipeOutVec;
     interface Client#(RingbufRawDescriptor, Bool)                           mrAndPgtManagerClt;
@@ -306,6 +300,7 @@ interface RingbufAndDescriptorHandler;
     interface PipeOut#(LocalNetworkSettings)                                setNetworkParamReqPipeOut;
 endinterface
 
+(* synthesize *)
 module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
 
@@ -351,6 +346,7 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
+            $display("aaaaa=", fshow(req));
             if (req.isWrite) begin
                 case (req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM))
                     // QP ring bufs
@@ -703,6 +699,7 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
     interface qpRingbufDmaMasterPipeIfcVec = qpRingbufDmaMasterPipeIfcVecInst;
     interface cmdQueueRingbufDmaMasterPipeIfc = cmdQueueRingbufDmaIfcConvertor.dmaMasterPipeIfc;
+    interface csrUpStreamPort = csrNode.upStreamPort;
     
     interface wqePipeOutVec = wqePipeOutVecInst;
     interface mrAndPgtManagerClt = cmdQueueDescParserAndDispatcher.mrAndPgtManagerClt;

@@ -30,7 +30,7 @@ typedef union tagged {
 
 interface CsrNode#(type tAddr, type tValue, numeric type nDownStreamPortCnt);
     interface CsrNodeUpStreamPort#(tAddr, tValue) upStreamPort;
-    interface Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) upStreamPortsVec;
+    interface Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) downStreamPortsVec;
 endinterface
 
 module mkCsrNode#(
@@ -54,9 +54,9 @@ module mkCsrNode#(
     FIFOF#(CsrReadWriteResp#(tValue)) selfRespQueue <- mkLFIFOF;
     FIFOF#(Tuple2#(Bool, tDownStreamPordIdx)) keepOrderQueue <- mkSizedFIFOF(queueDepth);
 
-    Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) upStreamPortsVecInst = newVector;
+    Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) downStreamPortsVecInst = newVector;
     for (Integer idx = 0; idx < 3; idx = idx + 1) begin
-        upStreamPortsVecInst[idx] = toGPClient(reqRelayQueueVec[idx], respRelayQueueVec[idx]);
+        downStreamPortsVecInst[idx] = toGPClient(reqRelayQueueVec[idx], respRelayQueueVec[idx]);
     end
 
     interface CsrNodeUpStreamPort upStreamPort;
@@ -104,5 +104,5 @@ module mkCsrNode#(
         endinterface
     endinterface
 
-    interface upStreamPortsVec = upStreamPortsVecInst;
+    interface downStreamPortsVec = downStreamPortsVecInst;
 endmodule

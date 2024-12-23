@@ -28,9 +28,13 @@ GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 # TOP_MODULE ?= mkTestCocotbPacketGenAndParse
 # TB_FILE = tb_packet_gen_and_parse.py
 
-TOP_BSV_SRC_FILE ?= ../test/TestPsnContinousChecker.bsv
-TOP_MODULE ?= mkTestCocotbPsnPerMergeAndStorage
-TB_FILE = tb_psn_per_merge_and_storage.py
+# TOP_BSV_SRC_FILE ?= ../test/TestPsnContinousChecker.bsv
+# TOP_MODULE ?= mkTestCocotbPsnPerMergeAndStorage
+# TB_FILE = tb_psn_per_merge_and_storage.py
+
+TOP_BSV_SRC_FILE ?= ../src/Top.bsv
+TOP_MODULE ?= mkBsvTopWithoutHardIpInstance
+TB_FILE = tb_top_without_hard_ip.py
 
 
 

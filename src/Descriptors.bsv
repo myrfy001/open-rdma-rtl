@@ -141,9 +141,9 @@ typedef struct {
 } CmdQueueReqDescSetRawPacketReceiveMeta deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)               reserved3;              // 136 bits
-    ReservedZero#(64)               reserved2;              // 136 bits
-    ReservedZero#(8)                reserved1;              // 136 bits
+    ReservedZero#(64)               reserved3;              // 64  bits
+    ReservedZero#(64)               reserved2;              // 64  bits
+    ReservedZero#(8)                reserved1;              // 8   bits
     QPN                             qpn;                    // 24  bits
     ReservedZero#(8)                reserved0;              // 8   bits
     PSN                             recoverPoint;           // 24  bits

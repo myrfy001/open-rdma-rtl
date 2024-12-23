@@ -110,3 +110,5 @@ typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_ONE)), CsrData) CsrNodeResultFork
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_TWO)), CsrData) CsrNodeResultFork2;
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_FOUR)), CsrData) CsrNodeResultFork4;
 typedef CsrNodeResult#(Bit#(TLog#(NUMERIC_TYPE_EIGHT)), CsrData) CsrNodeResultFork8;
+
+typedef CsrNodeUpStreamPort#(CsrAddr, CsrData) BlueRdmaCsrUpStreamPort;
