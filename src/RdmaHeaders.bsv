@@ -91,7 +91,6 @@ typedef 8'h65 UD_SEND_ONLY_WITH_IMMEDIATE;
 
 typedef 8'h81 ROCE_CNP; // RoCEv2 CNP 8'b10000001
 
-typedef 8'hcb DTLD_EXT_RAW_PACKET_WRITE_ONLY_WITH_IMMEDIATE;
 
 typedef enum {
     TRANS_TYPE_RC            = 3'h0, // 3'b000
@@ -162,15 +161,14 @@ typedef enum {
 // Headers
 
 // 12 bytes
-// Reserved fields (except tver and migReq) not count for ICRC
 typedef struct {
     TransType trans;
     RdmaOpCode opcode;
     Bool solicited;
-    ReservedZero#(1) migReq; // Not support path migration
+    Bool isRetry;
     PAD padCnt;
     ReservedZero#(4) tver;
-    PKEY pkey;
+    MSN msn;
     ReservedZero#(1) fecn; // Not used in RoCEv2
     ReservedZero#(1) becn; // Not used in RoCEv2
     ReservedZero#(6) resv6;
@@ -188,9 +186,10 @@ typedef struct {
     AckBitmap           preBitmap;      // 16 Bytes
     AckBitmap           newBitmap;      // 16 Bytes
     Bool                isPacketLost;   // 1 Bit 
-    ReservedZero#(7)    resv7;          // 7 Bits
+    Bool                isWindowSlided; // 1 Bit
+    Bool                isSendByDriver; // 1 Bit
+    ReservedZero#(5)    resv0;          // 5 Bits
     PSN                 preBitmapPsn;   // 3 Bytes
-    MSN                 lastAckMsn;     // 2 Bytes
 } AETH deriving(Bits, Bounded, FShow);
 
 typedef SizeOf#(AETH)        AETH_WIDTH;
@@ -217,15 +216,15 @@ typedef struct {
 typedef SizeOf#(RETH)        RETH_WIDTH;
 typedef TDiv#(RETH_WIDTH, 8) RETH_BYTE_WIDTH;
 
-// 16 bytes
+// 12 bytes
 typedef struct {
     ADDR va;
     LKEY lkey;
-    Length dlen;
-} LETH deriving(Bits, Bounded, FShow);
+} RRETH deriving(Bits, Bounded, FShow);
 
-typedef SizeOf#(LETH)        LETH_WIDTH;
-typedef TDiv#(LETH_WIDTH, 8) LETH_BYTE_WIDTH;
+typedef SizeOf#(RRETH)        RRETH_WIDTH;
+typedef TDiv#(RRETH_WIDTH, 8) RRETH_BYTE_WIDTH;
+
 
 // 28 bytes
 typedef struct {
@@ -290,27 +289,6 @@ typedef struct {
 typedef SizeOf#(PayloadCNP)         CNP_PAYLOAD_WIDTH;
 typedef TDiv#(CNP_PAYLOAD_WIDTH, 8) CNP_PAYLOAD_BYTE_WIDTH;
 
-// RC headers:
-// BTH + IETH = 20 bytes
-// BTH + RETH + LETH = 44 bytes
-// BTH + RETH + ImmDT = 32 bytes
-// BTH + AtomicEth = 40 bytes
-// BTH + 28 + AtomicAckEth = 24 bytes
-
-// XRC headers:
-// BTH + XRCETH + IETH = 24 bytes
-// BTH + XRCETH + RETH = 32 bytes
-// BTH + XRCETH + RETH + LETH = 48 bytes
-// BTH + XRCETH + RETH + ImmDT = 36 bytes
-// BTH + XRCETH + AtomicEth = 44 bytes
-// BTH + AETH + AtomicAckEth = 28 bytes
-
-// UD headers:
-// BTH + DETH + ImmDT = 24 bytes
-// BTH + AETH = 20 bytes
-
-// Datenlord Extended headers:
-// RAWPACKET = 32 bytes
 
 function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
     TransType transType, RdmaOpCode rdmaOpCode
@@ -329,7 +307,7 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
         fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);       // 32
         fromInteger(valueOf(RC_RDMA_WRITE_ONLY))               : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);                                    // 28
         fromInteger(valueOf(RC_RDMA_WRITE_ONLY_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);       // 32
-        fromInteger(valueOf(RC_RDMA_READ_REQUEST))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);         // 44
+        fromInteger(valueOf(RC_RDMA_READ_REQUEST))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RRETH_BYTE_WIDTH);        // 40
         fromInteger(valueOf(RC_COMPARE_SWAP))                  : valueOf(BTH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH);                              // 40
         fromInteger(valueOf(RC_FETCH_ADD))                     : valueOf(BTH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH);                              // 40
         fromInteger(valueOf(RC_SEND_LAST_WITH_INVALIDATE))     : valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH);                                    // 16
@@ -368,9 +346,6 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
 
         // CNP notification
         fromInteger(valueOf(ROCE_CNP)): valueOf(BTH_BYTE_WIDTH) + valueOf(CNP_PAYLOAD_BYTE_WIDTH);                                                              // 28
-
-        // make it 32 byte (data bus width) to make insert fake header stream easy, infact the last 4 bytes of IMM_DT is not used, it acts as a padding. 
-        fromInteger(valueOf(DTLD_EXT_RAW_PACKET_WRITE_ONLY_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);   // 32
         
         default: 0; // error("invalid transType and rdmaOpCode in calcHeaderLenByTransTypeAndRdmaOpCode()");
     endcase;
@@ -414,8 +389,8 @@ typedef struct {
 
 typedef struct {
     RETH reth; 
-    RETH secondaryReth; 
-} RdmaExtendHeaderRethReth deriving(Bits, FShow);
+    RRETH secondaryReth; 
+} RdmaExtendHeaderRethRreth deriving(Bits, FShow);
 
 typedef struct {
     AtomicEth atomiceth; 

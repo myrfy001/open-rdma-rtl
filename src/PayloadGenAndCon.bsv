@@ -323,12 +323,12 @@ module mkPayloadCon#(
         // );
     endrule
 
-    rule debugFOrwardSplitOutput;
+    rule debugForwardSplitOutput;
         let ds = dsSpliter.dataPipeOut.first;
         dsSpliter.dataPipeOut.deq;
         dmaWriteReqDataPipeOutQ.enq(ds);
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadCon debugFOrwardSplitOutput"),
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon debugForwardSplitOutput"),
         //     toBlue(", ds="), fshow(ds)
         // );
     endrule

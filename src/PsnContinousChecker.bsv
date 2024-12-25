@@ -523,8 +523,8 @@ typedef Bit#(OOO_WINDOW_BITMAP_STORAGE_CHANNEL_IDX_WIDTH) AckBitmapStorageChanne
 typedef struct {
     tData                               data;
     tBoundary                           leftBound;
-    AckBitmapStorageEntryEpoch    epoch;
-    AckBitmapStorageChannelIdx    channelIdx;
+    AckBitmapStorageEntryEpoch          epoch;
+    AckBitmapStorageChannelIdx          channelIdx;
 } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
 
 typedef struct {
@@ -577,6 +577,9 @@ interface BitmapWindowStorage#(type tRowAddr, type tData, type tBoundary, numeri
     interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVec;
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVec;
     
+    interface PipeIn#(tRowAddr)                                         readOnlyReqPipeIn;
+    interface PipeOut#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOut;
+
     interface PipeIn#(tRowAddr) resetReqPipeIn;
     interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
@@ -610,11 +613,16 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage = newVector;
+    FIFOF#(tRowAddr)                                        readOnlyReqPipeInQueue <- mkFIFOF;
+    FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
+
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_THREE, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage = newVector;
     storage[0][0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
     storage[0][1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
+    storage[0][2] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
     storage[1][0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch1.bin");
     storage[1][1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch1.bin");
+    storage[1][2] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch1.bin");
     
 
 
@@ -1050,7 +1058,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                     // for example, when a very big message is send on the wire, it's likely that the continous packet will from the same channel,
                     // and there will be only one valid channel per beat, which always goes into first channel, leading the other channel stall.
                     // so, we only increase epoch when the channel changes, to make sure when merging from two channels, the newest one will be selected.
-                    // and the first beat is tricky, since the init epoch of every channel is 0, suppose the followinf case:
+                    // and the first beat is tricky, since the init epoch of every channel is 0, suppose the following case:
                     // channel 0 comes the first req, old epoch is 0, and then the second req for the same row comes from channel 1, if we didn't
                     // update the epoch to 1 in the first request, then the second request may select the wrong path as the newest entry.
 
@@ -1130,7 +1138,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
                 storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
                 storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
-                
+                storage[selfChannelIdx][2].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+
                 if (writeBackReq.isReset) begin
                     curResetReqRegVec[selfChannelIdx] <= tagged Invalid;
                 end
@@ -1163,6 +1172,23 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
     endrule
 
+    rule handleReadOnlyReq;
+        let addr = readOnlyReqPipeInQueue.first;
+        readOnlyReqPipeInQueue.deq;
+        storage[0][2].putReadReq(addr);
+        storage[1][2].putReadReq(addr);
+    endrule
+
+    rule handleReadOnlyResp;
+        let resp0 <- storage[0][2].getReadResp;
+        let resp1 <- storage[1][2].getReadResp;
+        
+        let delta = resp0.epoch - resp1.epoch;
+
+        let selectedResp = (msb(delta) == 0 ? resp0 : resp1);
+        readOnlyRespPipeOutQueue.enq(selectedResp);
+    endrule
+
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
         respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
@@ -1170,6 +1196,9 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     interface reqPipeInVec = reqPipeInVecInst;
     interface respPipeOutVec = respPipeOutVecInst;
+
+    interface readOnlyReqPipeIn     = toPipeIn(readOnlyReqPipeInQueue);
+    interface readOnlyRespPipeOut   = toPipeOut(readOnlyRespPipeOutQueue);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
     interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
@@ -1280,4 +1309,374 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
 
     interface resetReqPipeIn = allPacketPsnBitmapStorage.resetReqPipeIn;
     interface resetRespPipeOut = allPacketPsnBitmapStorage.resetRespPipeOut;
+endmodule
+
+
+
+// Must be 2^N
+typedef 4  ATOMIC_UPDATE_STORAGE_EPOCH_WIDTH;
+typedef Bit#(ATOMIC_UPDATE_STORAGE_EPOCH_WIDTH) AtomicUpdateStorageEntryEpoch;
+typedef 1  ATOMIC_UPDATE_STORAGE_CHANNEL_IDX_WIDTH;
+typedef Bit#(ATOMIC_UPDATE_STORAGE_CHANNEL_IDX_WIDTH) AtomicUpdateStorageChannelIdx;
+
+
+typedef struct {
+    tRowAddr    rowAddr;
+    tReq        reqData;
+} AtomicUpdateStorageUpdateReq#(type tRowAddr, type tReq) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    tData       oldValue;
+    tData       newValue;
+} AtomicUpdateStorageUpdateResp#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tData       data;
+    AtomicUpdateStorageEntryEpoch     epoch;
+    AtomicUpdateStorageChannelIdx     channelIdx;
+} AtomicUpdateStorageEntry#(type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    tReq        reqData;
+} AtomicUpdateStorageStageOneToTwoPipelineEntry#(type tRowAddr, type tReq) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    AtomicUpdateStorageEntry#(tData) oldEntry;
+    tReq        reqData;
+} AtomicUpdateStorageStageTwoToThreePipelineEntry#(type tRowAddr, type tData, type tReq) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr                            rowAddr;
+    AtomicUpdateStorageEntry#(tData)    newEntry;
+    Bool                                isReset;
+} AtomicUpdateStorageStageThreeToFourPipelineEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+typedef struct {
+    tRowAddr    rowAddr;
+    AtomicUpdateStorageEntry#(tData) entry;
+} AtomicUpdateStorageInternalForwardEntry#(type tRowAddr, type tData) deriving(Bits, FShow);
+
+interface AtomicUpdateStorage#(type tRowAddr, type tData, type tReq);
+    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVec;
+    
+    interface PipeIn#(tRowAddr) readOnlyReqPipeIn;
+    interface PipeOut#(tData)   readOnlyRespPipeOut;
+
+    interface PipeIn#(tRowAddr) resetReqPipeIn;
+    interface PipeOut#(Bit#(0)) resetRespPipeOut;
+endinterface
+
+module mkAtomicUpdateStorage#(
+        function tData updateFunc(tData oldVal, tReq reqVal),
+        String initRamFileBaseName
+    )(AtomicUpdateStorage#(tRowAddr, tData, tReq)) provisos (
+        Bits#(tRowAddr, szRowAddr),
+        Bits#(tData, szData),
+        Bits#(tReq, szReq),
+        Bitwise#(tData),
+        Literal#(tData),
+        Arith#(tData),
+        Ord#(tData),
+        Bounded#(tRowAddr),
+        Literal#(tRowAddr),
+        Eq#(tRowAddr),
+        FShow#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)),
+        FShow#(AtomicUpdateStorageEntry#(tData))
+    );
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVecInst = newVector;
+
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
+
+    FIFOF#(tRowAddr) readOnlyReqPipeInQueue    <- mkFIFOF;
+    FIFOF#(tData)    readOnlyRespPipeOutQueue  <- mkFIFOF;
+
+
+    Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_THREE, AutoInferBram#(tRowAddr, AtomicUpdateStorageEntry#(tData)))) storage = newVector;
+    storage[0][0] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin");
+    storage[0][1] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin");
+    storage[0][2] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin");
+    storage[1][0] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch1.bin");
+    storage[1][1] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch1.bin");
+    storage[1][2] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch1.bin");
+    
+
+    // Forward Registers (use config reg to solve rule schedule order)
+    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(AtomicUpdateStorageInternalForwardEntry#(tRowAddr, tData)))) forwardRegVec <- replicateM(mkConfigReg(tagged Invalid));
+
+    // Pipeline Queues
+
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageStageOneToTwoPipelineEntry#(tRowAddr, tReq)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageStageTwoToThreePipelineEntry#(tRowAddr, tData, tReq)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(AtomicUpdateStorageStageThreeToFourPipelineEntry#(tRowAddr, tData))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
+
+    function Integer getSelfIdx(Integer idx) = idx;
+    function Integer getOtherIdx(Integer idx) = 1 - idx;
+
+    FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
+    FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
+
+    Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
+    Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);
+
+    // Merge Pipeline Stage One
+    rule sendBramQueryReq;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+
+            let pipelineEntryInMaybe = reqPipeInQueueVec[selfChannelIdx].first;
+            reqPipeInQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                storage[selfChannelIdx][0].putReadReq(pipelineEntryIn.rowAddr);
+                storage[otherChannelIdx][1].putReadReq(pipelineEntryIn.rowAddr);
+
+                let pipelineEntryOut = AtomicUpdateStorageStageOneToTwoPipelineEntry {
+                    rowAddr     : pipelineEntryIn.rowAddr,
+                    reqData     : pipelineEntryIn.reqData
+                };
+                stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkAtomicUpdateStorage 1 sendBramQueryReq", 
+                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn)
+                    // );
+                end
+            end
+            else begin
+                stageOneToTwoPipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
+            end
+        end
+    endrule
+
+    // Merge Pipeline Stage Two
+    rule getBramQueryRespAndPreMergeThem;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+
+            let pipelineEntryInMaybe = stageOneToTwoPipelineQueueVec[selfChannelIdx].first;
+            stageOneToTwoPipelineQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                let selfResp <- storage[selfChannelIdx][0].getReadResp;
+                let otherResp <- storage[otherChannelIdx][1].getReadResp;
+
+                Maybe#(AtomicUpdateStorageEntry#(tData)) forwardedRespMaybe = tagged Invalid;
+                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        // $display("time=%0t", $time, "mkAtomicUpdateStorage 2 getBramQueryRespAndPreMergeThem", 
+                        //         ", forwardRegVec[0]=", fshow(forwardRegVec[0])
+                        // );
+                    end
+                end
+                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    forwardedRespMaybe = tagged Valid forwardedEntry.entry;
+
+                    if (pipelineEntryIn.rowAddr == 4) begin
+                        // $display("time=%0t", $time, "mkAtomicUpdateStorage 2 getBramQueryRespAndPreMergeThem", 
+                        //         ", forwardRegVec[1]=", fshow(forwardRegVec[1])
+                        // );
+                    end
+                end
+                
+                let delta = selfResp.epoch - otherResp.epoch;
+
+                // if forward path has data, then use the newest value from forward path.
+                // else, if delta is non-negative, means `selfResp` is newer or equal to `otherResp`, so choose `selfResp`.
+                let selectedResp = isValid(forwardedRespMaybe) ? fromMaybe(?, forwardedRespMaybe) : ( msb(delta) == 0 ? selfResp : otherResp);
+
+                let pipelineEntryOut = AtomicUpdateStorageStageTwoToThreePipelineEntry {
+                    rowAddr     : pipelineEntryIn.rowAddr,
+                    oldEntry    : selectedResp,
+                    reqData     : pipelineEntryIn.reqData
+                };
+
+                stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Valid pipelineEntryOut);
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkAtomicUpdateStorage 2 getBramQueryRespAndPreMergeThem", 
+                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                    //         ", pipelineEntryOut=", fshow(pipelineEntryOut),
+                    //         ", selfResp=", fshow(selfResp),
+                    //         ", otherResp=", fshow(otherResp)
+                    // );
+                end
+            end
+            else begin
+                stageTwoToThreePipelineQueueVec[selfChannelIdx].enq(tagged Invalid);
+            end
+        end
+    endrule
+
+    // Merge Pipeline Stage Three
+    rule doMerge;
+
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+
+            let pipelineEntryInMaybe = stageTwoToThreePipelineQueueVec[selfChannelIdx].first;
+            stageTwoToThreePipelineQueueVec[selfChannelIdx].deq;
+
+            if (pipelineEntryInMaybe matches tagged Valid .pipelineEntryIn) begin
+                let alreadyExistEntry = pipelineEntryIn.oldEntry;
+                if (forwardRegVec[0] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    alreadyExistEntry = forwardedEntry.entry;
+                end
+                else if (forwardRegVec[1] matches tagged Valid .forwardedEntry &&& forwardedEntry.rowAddr == pipelineEntryIn.rowAddr) begin
+                    alreadyExistEntry = forwardedEntry.entry;
+                end
+
+                let newEntry = alreadyExistEntry;
+                newEntry.channelIdx = fromInteger(selfChannelIdx);
+                newEntry.data = updateFunc(alreadyExistEntry.data, pipelineEntryIn.reqData);
+                if (newEntry.channelIdx != pipelineEntryIn.oldEntry.channelIdx || pipelineEntryIn.oldEntry.epoch == 0) begin
+                    // for example, when a very big message is send on the wire, it's likely that the continous packet will from the same channel,
+                    // and there will be only one valid channel per beat, which always goes into first channel, leading the other channel stall.
+                    // so, we only increase epoch when the channel changes, to make sure when merging from two channels, the newest one will be selected.
+                    // and the first beat is tricky, since the init epoch of every channel is 0, suppose the following case:
+                    // channel 0 comes the first req, old epoch is 0, and then the second req for the same row comes from channel 1, if we didn't
+                    // update the epoch to 1 in the first request, then the second request may select the wrong path as the newest entry.
+
+                    newEntry.epoch = pipelineEntryIn.oldEntry.epoch + 1;
+                end
+                else begin
+                    // we need this branch, because the input newEntry's epoch is a random one, it should be set to the oldEntry's
+                    newEntry.epoch = pipelineEntryIn.oldEntry.epoch;
+                end
+                
+
+                let forwardEntry = AtomicUpdateStorageInternalForwardEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    entry: newEntry
+                };
+                forwardRegVec[selfChannelIdx] <= tagged Valid forwardEntry;
+
+                let resp = AtomicUpdateStorageUpdateResp {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    oldValue: alreadyExistEntry.data,
+                    newValue: newEntry.data
+                };
+                respPipeOutQueueVec[selfChannelIdx].enq(tagged Valid resp);
+
+                let bramWriteBackReq = AtomicUpdateStorageStageThreeToFourPipelineEntry {
+                    rowAddr: pipelineEntryIn.rowAddr,
+                    newEntry: newEntry,
+                    isReset: False
+                };
+                stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
+
+                if (pipelineEntryIn.rowAddr == 4) begin
+                    // $display("time=%0t", $time, "mkAtomicUpdateStorage 3 doMerge", 
+                    //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
+                    //         ", resp=", fshow(resp)
+                    // );
+                end
+
+            end
+            else begin
+                forwardRegVec[selfChannelIdx] <= tagged Invalid;
+                respPipeOutQueueVec[selfChannelIdx].enq(tagged Invalid);
+
+                // Reset is low priority.
+                if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
+                    let resetValue = AtomicUpdateStorageEntry{
+                        data: 0,
+                        epoch: 0,
+                        channelIdx: fromInteger(selfChannelIdx)
+                    };
+                    let bramWriteBackReq = AtomicUpdateStorageStageThreeToFourPipelineEntry {
+                        rowAddr: resetReqAddr,
+                        newEntry: resetValue,
+                        isReset: True
+                    };
+                    stageThreeToFourPipelineQueueVec[selfChannelIdx].enq(bramWriteBackReq);
+                end
+            end
+        end
+    endrule
+
+    // Merge Pipeline Stage Four
+    (* conflict_free = "doBramWriteBack, handleResetRequest" *)
+    rule doBramWriteBack;
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            let selfChannelIdx = getSelfIdx(idx);
+            let otherChannelIdx = getOtherIdx(idx);
+            if (stageThreeToFourPipelineQueueVec[idx].notEmpty) begin
+                let writeBackReq = stageThreeToFourPipelineQueueVec[idx].first;
+                stageThreeToFourPipelineQueueVec[idx].deq;
+
+                storage[selfChannelIdx][0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+                storage[selfChannelIdx][1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+                storage[selfChannelIdx][2].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+
+                if (writeBackReq.isReset) begin
+                    curResetReqRegVec[selfChannelIdx] <= tagged Invalid;
+                end
+
+                // if (writeBackReq.rowAddr == 4) begin
+                //     // $display("time=%0t", $time, "mkAtomicUpdateStorage 4 doBramWriteBack", 
+                //     //         ", writeBackReq=", fshow(writeBackReq)
+                //     // );
+                // end
+            end
+        end
+    endrule
+
+    rule handleResetRequest;
+        if (!hasPendingResetRequestReg) begin
+            if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
+                if (resetReqPipeInQ.notEmpty) begin
+                    curResetReqRegVec[0] <= tagged Valid resetReqPipeInQ.first;
+                    curResetReqRegVec[1] <= tagged Valid resetReqPipeInQ.first;
+                    resetReqPipeInQ.deq;
+                    hasPendingResetRequestReg <= True;
+                end
+            end
+        end
+        else begin
+            if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
+                hasPendingResetRequestReg <= False;
+                resetRespPipeOutQ.enq(0);
+            end
+        end
+    endrule
+
+    rule handleReadOnlyReq;
+        let addr = readOnlyReqPipeInQueue.first;
+        readOnlyReqPipeInQueue.deq;
+        storage[0][2].putReadReq(addr);
+        storage[1][2].putReadReq(addr);
+    endrule
+
+    rule handleReadOnlyResp;
+        let resp0 <- storage[0][2].getReadResp;
+        let resp1 <- storage[1][2].getReadResp;
+        
+        let delta = resp0.epoch - resp1.epoch;
+
+        let selectedResp = (msb(delta) == 0 ? resp0 : resp1);
+        readOnlyRespPipeOutQueue.enq(selectedResp.data);
+    endrule
+
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
+        respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
+    end
+
+    interface reqPipeInVec = reqPipeInVecInst;
+    interface respPipeOutVec = respPipeOutVecInst;
+
+    interface readOnlyReqPipeIn     = toPipeIn(readOnlyReqPipeInQueue);
+    interface readOnlyRespPipeOut   = toPipeOut(readOnlyRespPipeOutQueue);
+
+    interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
+    interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule

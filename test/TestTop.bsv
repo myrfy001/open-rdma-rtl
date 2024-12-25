@@ -134,7 +134,7 @@ module mkTestTopNoMockHostInner(
         // sentReg <= True;
 
         let wqe = WorkQueueElem {
-            pkey: 0,
+            msn: 0,
             opcode: IBV_WR_RDMA_WRITE_WITH_IMM,
             flags:  enum2Flag(IBV_SEND_NO_FLAGS),
             qpType: IBV_QPT_RC,

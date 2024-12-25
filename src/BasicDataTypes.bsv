@@ -66,7 +66,7 @@ typedef AETH_VALUE_WIDTH TIMER_WIDTH;
 
 
 // 12 + 4 + 16 + 16 = 48 bytes
-typedef TAdd#(TAdd#(BTH_BYTE_WIDTH, XRCETH_BYTE_WIDTH), TAdd#(RETH_BYTE_WIDTH, LETH_BYTE_WIDTH)) RDMA_HEADER_MAX_BYTE_LENGTH;
+typedef 48 RDMA_HEADER_MAX_BYTE_LENGTH;
 typedef 42 ETH_IP_UDP_HEADER_BYTE_LENGTH; // 14(MAC) + 20(IP) + 8(UDP) = 42
 typedef TAdd#(ETH_IP_UDP_HEADER_BYTE_LENGTH, RDMA_HEADER_MAX_BYTE_LENGTH) ETH_IP_UDP_RDMA_HEADER_MAX_BYTE_LENGTH;
 typedef TAdd#(ETH_IP_UDP_RDMA_HEADER_MAX_BYTE_LENGTH, MAX_PMTU) RDMA_ETHERNET_FRAME_MAX_BYTE_LENGTH;
@@ -418,6 +418,8 @@ typedef struct {
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
     PMTU                            pmtu;               // 3 bits
     QPN                             peerQPN;            // 24 bits
+    EthMacAddr                      peerMacAddr;        // 48  bits
+    IpAddr                          peerIpAddr;         // 32  bits
 } EntryQPC deriving(Bits, Eq, FShow);
 
 
@@ -529,12 +531,6 @@ typedef struct {
     EthMacAddr macAddr;
 } RecvPacketSrcMacIpBufferEntry deriving(Bits, FShow);
 
-typedef struct {
-    RecvPacketSrcMacIpBufferIdx srcMacIpIdx;
-    PKEY pkey;
-    PSN expectedPsn;
-    QPN qpn;
-} AutoAckGenMetaData deriving(Bits, FShow);
 
 // FlagsType related
 

@@ -29,7 +29,7 @@ typedef union tagged {
 } ImmOrRKey deriving(Bits, FShow);
 
 typedef struct {
-    PKEY pkey;                                      // 16 bits
+    MSN msn;                                        // 16 bits
     WorkReqOpCode opcode;                           // 4  bits
     FlagsType#(WorkReqSendFlag) flags;              // 5  bits
     TypeQP qpType;                                  // 4  bits
@@ -52,6 +52,7 @@ typedef struct {
     Maybe#(QKEY) qkey; // for UD                    // 33 bits
     Bool isFirst;                                   // 1  bit
     Bool isLast;                                    // 1  bit
+    Bool isRetry;                                   // 1  bit
 } WorkQueueElem deriving(Bits, FShow);
 
 
@@ -131,11 +132,10 @@ function RETH genRETH(
         };
 endfunction
 
-function LETH genLETH(WorkQueueElem wqe, Length dlen);
-    return LETH {
+function RRETH genRRETH(WorkQueueElem wqe);
+    return RRETH {
             va  : wqe.laddr,
-            lkey: wqe.lkey,
-            dlen: dlen
+            lkey: wqe.lkey
         };
 endfunction
 
@@ -226,10 +226,10 @@ function ActionValue#(Maybe#(BTH)) genRdmaBTH(
                 trans    : trans,
                 opcode   : opcode,
                 solicited: isOnlyReqPkt && solicited,
-                migReq   : unpack(0),
+                isRetry  : wqe.isRetry,
                 padCnt   : padCnt,
                 tver     : unpack(0),
-                pkey     : wqe.pkey,
+                msn      : wqe.msn,
                 fecn     : unpack(0),
                 becn     : unpack(0),
                 resv6    : unpack(0),
@@ -262,7 +262,7 @@ function ActionValue#(Maybe#(RdmaExtendHeaderBuffer)) genRdmaExtendHeader(
             let xrceth    = genXRCETH(wqe);
             let deth      = genDETH(wqe);
             let reth      = genRETH(wqe.opcode, remoteAddr, wqe.rkey, dlen);
-            let leth      = genLETH(wqe, dlen);
+            let rreth     = genRRETH(wqe);
             let atomicEth = genAtomicEth(wqe);
             let immDt     = genImmDt(wqe);
             let ieth      = genIETH(wqe);
@@ -346,8 +346,8 @@ function ActionValue#(Maybe#(RdmaExtendHeaderBuffer)) genRdmaExtendHeader(
                 end
                 IBV_WR_RDMA_READ: begin
                     return case (wqe.qpType)
-                        IBV_QPT_RC: tagged Valid buildRdmaExtendHeaderBuffer({ pack((reth)), pack((leth)) });
-                        IBV_QPT_XRC_SEND: tagged Valid buildRdmaExtendHeaderBuffer({ pack((xrceth)), pack((reth)), pack((leth)) });
+                        IBV_QPT_RC: tagged Valid buildRdmaExtendHeaderBuffer({ pack((reth)), pack((rreth)) });
+                        IBV_QPT_XRC_SEND: tagged Valid buildRdmaExtendHeaderBuffer({ pack((xrceth)), pack((reth)), pack((rreth)) });
                         default: tagged Invalid;
                     endcase;
                 end

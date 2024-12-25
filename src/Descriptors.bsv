@@ -16,9 +16,10 @@ typedef enum {
 
 typedef struct {
     Bool                    valid;          //  1  bits
-    Bit#(7)                 opCode;         //  7  bits
-    ReservedZero#(7)        reserved0;      //  7  bits
     Bool                    hasNextFrag;    //  1  bits
+    ReservedZero#(5)        reserved0;      //  7  bits
+    Bool                    isExtendOpcode; //  1  bits  Reserved for extension. For MetaReport queue, if this is false, opcode is equal to RDMA's opcode, otherwise, the opcode has different meaning.
+    Bit#(8)                 opCode;         //  8  bits
 } RingbufDescCommonHead deriving(Bits, FShow);
 
 
@@ -35,7 +36,7 @@ typedef struct {
     RKEY                        rkey;             // 32 bits
     Length                      totalLen;         // 32 bits
 
-    PKEY                        pkey;             // 16 bits
+    MSN                         msn;              // 16 bits
     RingbufDescCommonHead       commonHeader;     // 16 bits
 } SendQueueReqDescSeg0 deriving(Bits, FShow);
 
@@ -53,7 +54,8 @@ typedef struct {
     Bit#(8)                     sqpnLow8Bits;       // 8  bits
 
 
-    ReservedZero#(3)            reserved0;          // 3  bits
+    ReservedZero#(2)            reserved0;          // 2  bits
+    Bool                        isRetry;            // 1  bits  tell the receiver whether this a retry packet. if it is, then always report to receiver's software since the reorder bitmap can handle this packet.
     Bool                        isLast;             // 1  bits
     Bool                        isFirst;            // 1  bits
     PMTU                        pmtu;               // 3  bits
@@ -100,8 +102,10 @@ typedef struct {
 } CmdQueueReqDescUpdatePGT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)               reserved3;              // 64  bits
-    ReservedZero#(21)               reserved2;              // 16  bits
+    EthMacAddr                      peerMacAddr;            // 48  bits
+    Word                            peerIpAddrLow;          // 16  bits
+    Word                            peerIpAddrHigh;         // 16  bits
+    ReservedZero#(5)                reserved2;              // 5   bits
     PMTU                            pmtu;                   // 3   bits
     ReservedZero#(4)                reserved1;              // 4   bits
     TypeQP                          qpType;                 // 4   bits
@@ -140,13 +144,65 @@ typedef struct {
     RingbufDescCommonHead           commonHeader;           // 16  bits
 } CmdQueueReqDescSetRawPacketReceiveMeta deriving(Bits, FShow);
 
+
 typedef struct {
-    ReservedZero#(64)               reserved3;              // 64  bits
-    ReservedZero#(64)               reserved2;              // 64  bits
-    ReservedZero#(8)                reserved1;              // 8   bits
-    QPN                             qpn;                    // 24  bits
-    ReservedZero#(8)                reserved0;              // 8   bits
-    PSN                             recoverPoint;           // 24  bits
-    RingbufDescCmdQueueCommonHead   cmdQueueCommonHeader;   // 48  bits
-    RingbufDescCommonHead           commonHeader;           // 16  bits
-} CmdQueueReqDescUpdateErrorPsnRecoverPoint deriving(Bits, FShow);
+    ImmDt                       immData;          // 32 bits
+    // the following is RETH related fields
+    RKEY                        rkey;             // 32 bits
+    ADDR                        raddr;            // 64 bits
+    Length                      totalLen;         // 32 bits
+
+    
+    // the following is BTH related fields
+    ReservedZero#(8)            reserved1;        // 8  bits
+    QPN                         dqpn;             // 24 bits
+
+    ReservedZero#(5)            reserved0;        // 5  bits
+    Bool                        ackReq;           // 1  bits
+    Bool                        solicited;        // 1  bits
+    Bool                        ecnMarked;        // 1  bits
+    PSN                         psn;              // 24 bits
+
+    MSN                         msn;              // 16 bits
+    RingbufDescCommonHead       commonHeader;     // 16 bits
+} MetaReportQueuePacketBasicInfoDesc deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(96)           reserved1;        // 96 bits
+    // the following is RETH related fields, mainly used for Read Req.
+    LKEY                        lkey;             // 32 bits
+    ADDR                        laddr;            // 64 bits
+    Length                      totalLen;         // 32 bits
+
+    ReservedZero#(16)           reserved0;        // 16 bits
+    RingbufDescCommonHead       commonHeader;     // 16 bits
+} MetaReportQueueReadReqExtendInfoDesc deriving(Bits, FShow);
+
+
+typedef struct {
+    AckBitmap                   nowBitmap;          // 128bits
+
+    ReservedZero#(16)           reserved4;          // 16 bits
+    MSN                         msn;                // 16 bits only valid when it's received from remote, if it is generated by local, then it's meaning less.
+    ReservedZero#(8)            reserved3;          // 8 Bits
+    PSN                         psnNow;             // 24 bits
+
+    ReservedZero#(8)            reserved2;          // 8 Bits
+    PSN                         psnBeforeSlide;     // 24 bits
+
+    ReservedZero#(8)            reserved1;          // 8 Bits
+    Bool                        isPacketLost;       // 1 Bit 
+    Bool                        isWindowSlided;     // 1 Bit
+    Bool                        isSendByDriver;     // 1 Bit  indicate whether sent by driver, since software doesn't known the newest ACK's PSN on hardware. When ack is send by software, MSN is unused.
+    Bool                        isSendByLocalHw;    // 1 Bit  indicate whether sent by local hardware. if True, means this ack is generated by local Hw, and the same reported content will also be sent to remote peer. if false, it means the reported content is reveiced from remote peer.
+    ReservedZero#(4)            reserved0;          // 4 Bits
+    RingbufDescCommonHead       commonHeader;       // 16 bits
+} MetaReportQueueAckDesc deriving(Bits, FShow);
+
+typedef struct {
+    AckBitmap                   preBitmap;          // 128bits
+    ReservedZero#(64)           reserved2;          // 64 Bits
+    ReservedZero#(32)           reserved1;          // 32 Bits
+    ReservedZero#(16)           reserved0;          // 16 Bits
+    RingbufDescCommonHead       commonHeader;       // 16 bits
+} MetaReportQueueAckExtraDesc deriving(Bits, FShow);

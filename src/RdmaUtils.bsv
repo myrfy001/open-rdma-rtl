@@ -130,6 +130,17 @@ function Bool isFirstRdmaOpCode(RdmaOpCode opcode);
     endcase;
 endfunction
 
+function Bool isLastRdmaOpCode(RdmaOpCode opcode);
+    return case (opcode)
+        SEND_LAST                       ,
+        SEND_LAST_WITH_IMMEDIATE        ,
+        RDMA_WRITE_LAST                 ,
+        RDMA_WRITE_LAST_WITH_IMMEDIATE  ,
+        RDMA_READ_RESPONSE_LAST         : True;
+        default                         : False;
+    endcase;
+endfunction
+
 function Bool isOnlyRdmaOpCode(RdmaOpCode opcode);
     return case (opcode)
         SEND_ONLY                     ,
@@ -156,6 +167,10 @@ function Bool isFirstOrOnlyRdmaOpCode(RdmaOpCode opcode);
     return isFirstRdmaOpCode(opcode) || isOnlyRdmaOpCode(opcode);
 endfunction
 
+function Bool isCnpRdmaOpCode(RdmaOpCode opcode, TransType trans);
+    return pack(opcode) == 0 && trans == TRANS_TYPE_CNP;
+endfunction
+
 function RETH extractPriRETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransType transType);
     let reth = case (transType)
         TRANS_TYPE_XRC: unpack(extendHeaderBuffer[
@@ -170,18 +185,18 @@ function RETH extractPriRETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransTyp
     return reth;
 endfunction
 
-function RETH extractSecRETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransType transType, RdmaOpCode opcode);
+function RRETH extractRRETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransType transType, RdmaOpCode opcode);
     let reth = case (transType)
         TRANS_TYPE_XRC: unpack(extendHeaderBuffer[
-            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(XRCETH_WIDTH) -1 :
-            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH)
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) -1 :
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(RRETH_WIDTH)
         ]);
         default: begin
             case (opcode)
                 RDMA_READ_REQUEST:
                     unpack(extendHeaderBuffer[
                         valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(RETH_WIDTH) -1 :
-                        valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(RETH_WIDTH) - valueOf(RETH_WIDTH)
+                        valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(RETH_WIDTH) - valueOf(RRETH_WIDTH)
                     ]);
                 default: unpack(0);  // error("Opcode does not support secondary RETH");
             endcase
@@ -190,6 +205,29 @@ function RETH extractSecRETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransTyp
     return reth;
 endfunction
 
+function ImmDt extractImmDt(RdmaExtendHeaderBuffer extendHeaderBuffer, TransType transType, RdmaOpCode opcode);
+
+    return case (transType)
+        TRANS_TYPE_XRC: unpack(extendHeaderBuffer[
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) -1 :
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(IMM_DT_WIDTH)
+        ]);
+        default: unpack(extendHeaderBuffer[
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(RETH_WIDTH) -1 :
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(RETH_WIDTH) - valueOf(IMM_DT_WIDTH)
+        ]);
+    endcase;
+
+endfunction
+
+function AETH extractAETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransType transType, RdmaOpCode opcode);
+
+    return unpack(extendHeaderBuffer[
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) -1 :
+            valueOf(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) - valueOf(AETH_WIDTH)
+        ]);
+
+endfunction
 
 function Bool containAccessTypeFlag(
     FlagsType#(MemAccessTypeFlag) flags, MemAccessTypeFlag flag

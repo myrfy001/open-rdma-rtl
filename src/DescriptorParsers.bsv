@@ -52,7 +52,7 @@ module mkWorkQueueDescParser(WorkQueueDescParser);
 
 
         WorkQueueElem req   = unpack(0);
-        req.pkey            = desc0.pkey;
+        req.msn             = desc0.msn;
         req.opcode          = unpack(truncate(desc0.commonHeader.opCode));
         req.flags           = unpack(pack(desc0.flags));
         req.qpType          = desc0.qpType;
@@ -70,6 +70,7 @@ module mkWorkQueueDescParser(WorkQueueDescParser);
         req.sqpn            = {desc1.sqpnHigh16Bits, desc1.sqpnLow8Bits};
         req.isFirst         = desc1.isFirst;
         req.isLast          = desc1.isLast;
+        req.isRetry         = desc1.isRetry;
         
 
         let hasImmDt = workReqHasImmDt(req.opcode);
@@ -146,7 +147,9 @@ module mkCommandQueueDescParserAndDispatcher#(
                     pdHandler:      desc0.pdHandler,
                     qpType:         desc0.qpType,
                     rqAccessFlags:  desc0.rqAccessFlags,
-                    pmtu:           desc0.pmtu
+                    pmtu:           desc0.pmtu,
+                    peerMacAddr:    desc0.peerMacAddr,
+                    peerIpAddr:     unpack({pack(desc0.peerIpAddrHigh), pack(desc0.peerIpAddrLow)})
                 };
 
                 qpcInflightReqQ.enq(rawDesc);
@@ -193,23 +196,6 @@ module mkCommandQueueDescParserAndDispatcher#(
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
             end
-            // CmdQueueOpcodeUpdateErrorPsnRecoverPoint: begin
-            //     CmdQueueReqDescUpdateErrorPsnRecoverPoint reqDesc = unpack(rawDesc);
-
-            //     setRqExpectedPsnReqQ.enq(
-            //         tuple3(getIndexQP(reqDesc.qpn), reqDesc.recoverPoint, RqPsnManagerPsnUpadteActionUpdateErrorRecoveryPoint));
-
-
-            //     CmdQueueReqDescUpdateErrorPsnRecoverPoint respDesc = unpack(pack(reqDesc));
-            //     respDesc.cmdQueueCommonHeader.isSuccess = True;
-            //     respDesc.commonHeader.valid = True;
-            //     respDesc.commonHeader.hasNextFrag = False;
-            //     respRawDescSeg[0] = pack(respDesc);
-            //     descWriteProxy.descFragsPipeIn.enq(tuple2(respRawDescSeg, 0));
-
-            //     $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
-            //     $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
-            // end
         endcase
 
     endrule

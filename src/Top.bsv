@@ -797,10 +797,11 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     interface pgtUpdateDmaMasterPipe = pgtUpdateDmaInterfaceConvertor.dmaSidePipeIfc;
 
-    interface wqePipeInVec              = wqePipeInVecInst;
-    interface otherRawPacketPipeOutVec  = otherRawPacketPipeOutVecInst;
-    interface qpDmaRequestMasterIfcVec = qpDmaRequestMasterIfcVecInst;
-    interface qpEthDataStreamIfcVec = qpEthDataStreamIfcVecInst;
-    interface qpContextUpdateSrv = qpContext.updateSrv;
-    interface mrAndPgtModifyDescSrv = mrAndPgtUpdater.mrAndPgtModifyDescSrv;
+    interface wqePipeInVec                      = wqePipeInVecInst;
+    interface otherRawPacketPipeOutVec          = otherRawPacketPipeOutVecInst;
+    interface qpDmaRequestMasterIfcVec          = qpDmaRequestMasterIfcVecInst;
+    interface qpEthDataStreamIfcVec             = qpEthDataStreamIfcVecInst;
+    interface qpContextUpdateSrv                = qpContext.updateSrv;
+    interface qpContextForAutoAckUpdateSrv      = qpContextForAutoAck.updateSrv;
+    interface mrAndPgtModifyDescSrv             = mrAndPgtUpdater.mrAndPgtModifyDescSrv;
 endmodule

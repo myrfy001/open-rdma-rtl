@@ -1,7 +1,10 @@
+import Vector :: *;
+import BuildVector :: *;
 import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
 import Clocks :: *;
+import MIMO :: *;
 
 
 import ConnectableF :: *;
@@ -22,6 +25,8 @@ import EthernetFrameIO :: *;
 import QPContext :: *;
 import PacketGenAndParse :: *;
 import IoChannels :: *;
+import Descriptors :: *;
+import Ringbuf :: *;
 
 typedef Bit#(TAdd#(1, SizeOf#(Length))) TruncatedAddrForMrBoundCheck;
 
@@ -81,9 +86,9 @@ typedef struct {
     Length packetLen;
 } HandleConRespPipelineEntry deriving(Bits, FShow);
 
-
-
-
+typedef struct {
+    RdmaRecvPacketMeta rdmaPacketMeta;
+} GenMetaReportQueueDescPipelineEntry deriving(Bits, FShow);
 
 interface RQ;
     interface Client#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
@@ -96,6 +101,8 @@ interface RQ;
     interface PipeOut#(PayloadConReq) payloadConReqPipeOut;
     interface PipeOut#(DataStream) payloadConStreamPipeOut;
     interface PipeIn#(Bool) payloadConRespPipeIn;
+
+    interface PipeOut#(RingbufRawDescriptor) metaReportDescPipeOut;
 endinterface
 
 // FIXME: handle illegal packet length. don't trust length or other meta extracted from header. 
@@ -106,6 +113,8 @@ module mkRQ#(
         Clock clkQpcMrPgtSrv, 
         Reset rstQpcMrPgtSrv
     )(RQ);
+
+    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue <- mkFIFOF;
 
     PacketParse packetParser <- mkPacketParse;
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
@@ -124,6 +133,17 @@ module mkRQ#(
     FIFOF#(Bool) filterCmdQ <-  mkSizedFIFOF(4);
     FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF;
 
+    let mimoCfg = MIMOConfiguration {
+        unguarded: False,
+        bram_based: False
+    };
+    MIMO#(
+        NUMERIC_TYPE_TWO,
+        NUMERIC_TYPE_ONE,
+        NUMERIC_TYPE_FOUR,
+        RingbufRawDescriptor
+    ) metaReportMimoQueue <- mkMIMO(mimoCfg);
+
     // Pipeline Queues
     FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkSizedFIFOF(4);
     FIFOF#(CheckMrTableStep2PipelineEntry) checkMrTableStep2PipeQ <- mkSizedFIFOF(2);
@@ -132,6 +152,9 @@ module mkRQ#(
     // For a 4096 PMTU packet followed by all packet that without payload. When consuming a big packet, all small packets has to waiting in the queue
     FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkSizedFIFOF(valueOf(TDiv#(TDiv#(MAX_PMTU, DATA_BUS_BYTE_WIDTH), RDMA_PACKET_HEADER_BETA_CNT)));
 
+    FIFOF#(GenMetaReportQueueDescPipelineEntry) handleGenMetaReportQueueDescPipeQ <- mkFIFOF;
+
+    
     rule printDebugInfo;
         if (!checkQpcAndMrTablePipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkQpcAndMrTablePipeQ");
         if (!checkMrTableStep2PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep2PipeQ");
@@ -492,9 +515,9 @@ module mkRQ#(
         handleConRespPipeQ.deq;
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
         let packetStatus = pipelineEntryIn.packetStatus;
+        let isDiscard = !isRecvPacketStatusNormal(packetStatus);
 
         if (rdmaPacketMeta.hasPayload) begin
-            let isDiscard = !isRecvPacketStatusNormal(packetStatus);
             if (!isDiscard) begin
                 let resp = conRespPipeInQ.first;
                 conRespPipeInQ.deq;
@@ -502,11 +525,186 @@ module mkRQ#(
             end
         end
 
+        if (!isDiscard) begin
+            let pipelineEntryOut = GenMetaReportQueueDescPipelineEntry{
+                rdmaPacketMeta: pipelineEntryIn.rdmaPacketMeta
+            };
+            handleGenMetaReportQueueDescPipeQ.enq(pipelineEntryOut);
+        end
+
         $display(
             "time=%0t:", $time, toGreen(" mkRQ handleConResp")
         );
     endrule
+   
 
+    rule genMetaReportQueueDesc;
+
+        // write them in a function to make sure they are all comb logic.
+        function Tuple2#(Vector#(NUMERIC_TYPE_TWO, Maybe#(RingbufRawDescriptor)), Bool) genDescVector();
+            let pipelineEntryIn = handleGenMetaReportQueueDescPipeQ.first;
+            let rdmaPacketMeta  = pipelineEntryIn.rdmaPacketMeta;
+
+            let bth             = rdmaPacketMeta.header.bth;
+            let opcode          = {pack(bth.trans), pack(bth.opcode)};
+            let reth            = extractPriRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans);
+            let rreth           = extractRRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans, bth.opcode);
+            let aeth            = extractAETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans, bth.opcode);
+            let immDT           = extractImmDt(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans, bth.opcode);
+
+            let commonHeader = RingbufDescCommonHead {
+                valid           : True,
+                hasNextFrag     : False,
+                reserved0       : unpack(0),
+                isExtendOpcode  : False,
+                opCode          : opcode
+            };
+
+            Maybe#(RingbufRawDescriptor) rawDescToEnqueueMaybe0 = tagged Invalid;
+            Maybe#(RingbufRawDescriptor) rawDescToEnqueueMaybe1 = tagged Invalid;
+            Bool decodeSuccess = True;
+            case (opcode)
+                fromInteger(valueOf(RC_SEND_FIRST)),
+                fromInteger(valueOf(RC_SEND_LAST)),
+                fromInteger(valueOf(RC_SEND_ONLY)),
+                fromInteger(valueOf(RC_RDMA_WRITE_FIRST)),
+                fromInteger(valueOf(RC_RDMA_WRITE_LAST)),
+                fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)),
+                fromInteger(valueOf(RC_RDMA_WRITE_ONLY)),
+                fromInteger(valueOf(RC_RDMA_WRITE_ONLY_WITH_IMMEDIATE)),
+                fromInteger(valueOf(RC_RDMA_READ_REQUEST)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_FIRST)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_LAST)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_ONLY)):
+                begin
+                    let desc0 = MetaReportQueuePacketBasicInfoDesc{
+                        immData     :   immDT,
+                        rkey        :   reth.rkey,
+                        raddr       :   reth.va,
+                        totalLen    :   reth.dlen,
+                        reserved1   :   unpack(0),
+                        dqpn        :   bth.dqpn,
+                        reserved0   :   unpack(0),
+                        ackReq      :   bth.ackReq,
+                        solicited   :   bth.solicited,
+                        ecnMarked   :   ?,
+                        psn         :   bth.psn,
+                        msn         :   bth.msn,
+                        commonHeader:   commonHeader
+                    };
+                    
+
+                    if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST))) begin
+                        desc0.commonHeader.hasNextFrag = True;
+                        let desc1 = MetaReportQueueReadReqExtendInfoDesc{
+                            reserved1   :   unpack(0),
+                            lkey        :   rreth.lkey,
+                            laddr       :   rreth.va,
+                            totalLen    :   reth.dlen,
+                            reserved0   :   unpack(0),
+                            commonHeader:   commonHeader
+                        };
+                        rawDescToEnqueueMaybe1 = tagged Valid unpack(pack(desc1));
+                    end
+                    rawDescToEnqueueMaybe0 = tagged Valid unpack(pack(desc0));
+                end
+                fromInteger(valueOf(RC_SEND_MIDDLE)),
+                fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_MIDDLE)):
+                begin
+                    if (bth.isRetry) begin
+                        let desc0 = MetaReportQueuePacketBasicInfoDesc{
+                            immData     :   immDT,
+                            rkey        :   reth.rkey,
+                            raddr       :   reth.va,
+                            totalLen    :   reth.dlen,
+                            reserved1   :   unpack(0),
+                            dqpn        :   bth.dqpn,
+                            reserved0   :   unpack(0),
+                            ackReq      :   bth.ackReq,
+                            solicited   :   bth.solicited,
+                            ecnMarked   :   ?,
+                            psn         :   bth.psn,
+                            msn         :   bth.msn,
+                            commonHeader:   commonHeader
+                        };
+                        rawDescToEnqueueMaybe0 = tagged Valid unpack(pack(desc0));
+                    end
+                end
+                fromInteger(valueOf(RC_ACKNOWLEDGE)):
+                begin
+                    let desc0 = MetaReportQueueAckDesc{
+                        nowBitmap       : aeth.newBitmap,
+                        reserved4       : unpack(0),
+                        msn             : bth.msn,
+                        reserved3       : unpack(0),         
+                        psnNow          : bth.psn,
+                        reserved2       : unpack(0),
+                        psnBeforeSlide  : aeth.preBitmapPsn,
+                        reserved1       : unpack(0),
+                        isPacketLost    : aeth.isPacketLost,
+                        isWindowSlided  : aeth.isWindowSlided,
+                        isSendByDriver  : aeth.isSendByDriver,
+                        isSendByLocalHw : False,
+                        reserved0       : unpack(0),
+                        commonHeader    : commonHeader
+                    };
+
+                    if (aeth.isWindowSlided) begin
+                        desc0.commonHeader.hasNextFrag = True;
+                        let desc1 = MetaReportQueueAckExtraDesc{
+                            preBitmap   :   aeth.preBitmap,
+                            reserved2   :   unpack(0),
+                            reserved1   :   unpack(0),
+                            reserved0   :   unpack(0),
+                            commonHeader:   commonHeader
+                        };
+                        rawDescToEnqueueMaybe1 = tagged Valid unpack(pack(desc1));
+                    end
+                    rawDescToEnqueueMaybe0 = tagged Valid unpack(pack(desc0));
+                end
+
+
+                default: begin
+                    decodeSuccess = False;
+                end
+            endcase
+            return tuple2(vec(rawDescToEnqueueMaybe0, rawDescToEnqueueMaybe1), decodeSuccess);
+        endfunction
+
+        let {vecToEnqMaybe, decodeSuccess} = genDescVector;
+
+        if (!decodeSuccess) begin
+            $display("Warn: Received Not Supported Packet, Will not report to software.");
+        end
+        let vecToEnq = vec(fromMaybe(?, vecToEnqMaybe[0]), fromMaybe(?, vecToEnqMaybe[1]));
+
+        // Becareful of the useless guard of MIMO when processing more than one element.
+        if (isValid(vecToEnqMaybe[0]) && isValid(vecToEnqMaybe[1])) begin
+            if (metaReportMimoQueue.enqReadyN(2)) begin
+                metaReportMimoQueue.enq(2, vecToEnq);
+                handleGenMetaReportQueueDescPipeQ.deq;
+            end
+        end
+        else if (isValid(vecToEnqMaybe[0])) begin
+            if (metaReportMimoQueue.enqReadyN(1)) begin
+                metaReportMimoQueue.enq(1, vecToEnq);
+                handleGenMetaReportQueueDescPipeQ.deq;
+            end
+        end
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc")
+        );
+    endrule
+
+    rule forwardMetaReportDescToOutput;
+        if (metaReportMimoQueue.deqReadyN(1)) begin
+            metaReportMimoQueue.deq(1);
+            let desc = metaReportMimoQueue.first[0];
+            metaReportDescPipeOutQueue.enq(desc);
+        end
+    endrule
 
     rule filterDiscardedPayloadStream;
         let isDiscard = filterCmdQ.first;
@@ -540,5 +738,7 @@ module mkRQ#(
 
     method setLocalNetworkSettings = packetParser.setLocalNetworkSettings; 
 
-    
+    interface metaReportDescPipeOut = toPipeOut(metaReportDescPipeOutQueue);
 endmodule
+
+
