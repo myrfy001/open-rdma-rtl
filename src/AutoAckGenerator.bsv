@@ -142,6 +142,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkFIFOF);
 
+    Reg#(Bool) isSendPollReqReg <- mkReg(True);
+
     rule timerTask;
         curTimeReg <= curTimeReg + 1;
     endrule
@@ -311,19 +313,21 @@ module mkAutoAckGenerator(AutoAckGenerator);
     end
 
 
-    rule pollingTask;
+    rule pollingTask if (isSendPollReqReg);
         psnMergeAndStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         autoAckMetaAtomicUpdateStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         lastReportTimeStorage.putReadReq(pollingQpIdxReg);
         pollingQpIdxReg <= pollingQpIdxReg + 1;
+        isSendPollReqReg <= False;
     endrule
 
-    rule handlePollingResult;
+    rule handlePollingResult if (!isSendPollReqReg);
         let bitmapInfo = psnMergeAndStorage.readOnlyRespPipeOut.first;
         let ackMeta = autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.first;
         let lastPollInfo <- lastReportTimeStorage.getReadResp;
         psnMergeAndStorage.readOnlyRespPipeOut.deq;
         autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.deq;
+        isSendPollReqReg <= True;
 
         if (!ackMeta.hasReported) begin
             if (lastPollInfo - ackMeta.lastEntryReceiveTime > fromInteger(valueOf(AUTO_ACK_POLLING_TIMEOUT_TICKS))) begin
@@ -358,8 +362,6 @@ module mkAutoAckGenerator(AutoAckGenerator);
         else begin
             lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
         end
-
-
     endrule
 
     rule forwardQpResetSignal;

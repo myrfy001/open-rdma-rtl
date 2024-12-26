@@ -59,14 +59,17 @@ class UserspaceDriverServer:
         self.stop_flag = True
 
     def _run(self, listen_addr, listen_port):
+
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind((listen_addr, listen_port))
-
+        server_socket.settimeout(0.5)
         while not self.stop_flag:
-            recv_raw, resp_addr = server_socket.recvfrom(1024)
+            try:
+                recv_raw, resp_addr = server_socket.recvfrom(1024)
+            except:
+                continue
             recv_req = json.loads(recv_raw)
-
             if recv_req["is_write"]:
                 self.csr_write_cb(
                     recv_req["addr"], recv_req["value"])
@@ -74,3 +77,5 @@ class UserspaceDriverServer:
                 value = self.csr_read_cb(recv_req["addr"])
                 server_socket.sendto(json.dumps(
                     {"value": value, "addr": recv_req["addr"], "is_write": False}).encode("utf-8"), resp_addr)
+
+        server_socket.close()

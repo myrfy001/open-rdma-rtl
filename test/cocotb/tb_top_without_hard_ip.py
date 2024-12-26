@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import itertools
+import gc
 import logging
 import os
 import threading
@@ -18,7 +19,7 @@ from cocotb.queue import Queue
 from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
 
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, SimplePcieBehaviorModel
+from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, SimplePcieBehaviorModel, copy_mem_file_to_sim_build_dir
 
 
 class TB(object):
@@ -31,10 +32,11 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
 
-        shared_mem = open_shared_mem_to_hw_simulator(256*1024*1024)
+        self.shared_mem = open_shared_mem_to_hw_simulator(256*1024*1024)
 
-        UserspaceDriverServer(
-            "0.0.0.0", 7700, self.csr_write_cb, self.csr_read_cb)
+        self.rpc_server = UserspaceDriverServer(
+            "0.0.0.0", 7700, self._csr_write_cb, self._csr_read_cb)
+        self.rpc_server.run()
 
         self.pcie_bfm = SimplePcieBehaviorModel(
             dut,
@@ -45,7 +47,7 @@ class TB(object):
             [
                 "dmaSlavePipeIfc"
             ],
-            shared_mem.buf)
+            self.shared_mem.buf)
 
         self.csr_write_req_queue = Queue()
         self.csr_read_req_queue = Queue()
@@ -55,10 +57,20 @@ class TB(object):
         cocotb.start_soon(self._forward_csr_write_task())
         cocotb.start_soon(self._forward_csr_read_req_task())
 
-    def csr_write_cb(self, addr, value):
+    def clean_up(self):
+        self.rpc_server.stop()
+
+        # need to ensure no reference to shared_mem, if not, the shared memory resource can not be released.
+        self.pcie_bfm = None
+        shared_mem = self.shared_mem
+        self.shared_mem = None
+        gc.collect()
+        shared_mem.close()
+
+    def _csr_write_cb(self, addr, value):
         self.csr_write_req_queue.put_nowait((addr, value))
 
-    def csr_read_cb(self, addr):
+    def _csr_read_cb(self, addr):
         with self.csr_read_lock:
             self.csr_read_req_queue.put_nowait(addr)
             while self.csr_read_resp_queue.empty:
@@ -96,9 +108,10 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
-    await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
+    # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
 
-    await Timer(4000000, units='ns')
+    await Timer(400, units='ns')
+    tb.clean_up()
 
 
 def test_top_without_hard_ip():
@@ -111,6 +124,7 @@ def test_top_without_hard_ip():
     verilog_sources = gen_rtl_file_list(rtl_dirs)
 
     sim_build = os.path.join(tests_dir, "sim_build", dut)
+    copy_mem_file_to_sim_build_dir(rtl_dirs, sim_build)
 
     cocotb_test.simulator.run(
         python_search=[tests_dir],

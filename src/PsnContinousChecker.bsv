@@ -641,6 +641,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageThreeToFourPipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset)))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageStageFourToFivePipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset))) stageFourToFivePipelineQueueVec <- replicateM(mkLFIFOF);
 
+    FIFOF#(void) readOnlyRespPipelineQueue <- mkFIFOF;
+
     function Integer getSelfIdx(Integer idx) = idx;
     function Integer getOtherIdx(Integer idx) = 1 - idx;
 
@@ -1177,9 +1179,11 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         readOnlyReqPipeInQueue.deq;
         storage[0][2].putReadReq(addr);
         storage[1][2].putReadReq(addr);
+        readOnlyRespPipelineQueue.enq(unpack(0));
     endrule
 
     rule handleReadOnlyResp;
+        readOnlyRespPipelineQueue.deq;
         let resp0 <- storage[0][2].getReadResp;
         let resp1 <- storage[1][2].getReadResp;
         
@@ -1416,6 +1420,7 @@ module mkAtomicUpdateStorage#(
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageStageOneToTwoPipelineEntry#(tRowAddr, tReq)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageStageTwoToThreePipelineEntry#(tRowAddr, tData, tReq)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(AtomicUpdateStorageStageThreeToFourPipelineEntry#(tRowAddr, tData))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
+    FIFOF#(void) readOnlyRespPipelineQueue <- mkFIFOF;
 
     function Integer getSelfIdx(Integer idx) = idx;
     function Integer getOtherIdx(Integer idx) = 1 - idx;
@@ -1651,14 +1656,17 @@ module mkAtomicUpdateStorage#(
         end
     endrule
 
+    
     rule handleReadOnlyReq;
         let addr = readOnlyReqPipeInQueue.first;
         readOnlyReqPipeInQueue.deq;
         storage[0][2].putReadReq(addr);
         storage[1][2].putReadReq(addr);
+        readOnlyRespPipelineQueue.enq(unpack(0));
     endrule
 
     rule handleReadOnlyResp;
+        readOnlyRespPipelineQueue.deq;
         let resp0 <- storage[0][2].getReadResp;
         let resp1 <- storage[1][2].getReadResp;
         
