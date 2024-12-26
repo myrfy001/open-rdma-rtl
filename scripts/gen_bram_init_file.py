@@ -26,7 +26,7 @@ def gen_init_bram_psn_merge_storage():
                          epoch_part + channel_idx_part + "\n")
 
 
-def gen_init_bram_psn_incr_storage():
+def gen_init_bram_auto_ack_meta_storage():
     for channel_idx in range(2):
         with open(os.path.join(out_path, f"init_bram_auto_ack_meta_storage_ch{channel_idx}.bin"), "w") as fo:
             for i in range(512):
@@ -39,6 +39,14 @@ def gen_init_bram_psn_incr_storage():
                          has_reported + epoch_part + channel_idx_part + "\n")
 
 
+def gen_init_bram_last_report_time():
+    with open(os.path.join(out_path, f"init_bram_auto_ack_last_report_time.bin"), "w") as fo:
+        for i in range(512):
+            last_report_time = "0" * 32
+            fo.write(last_report_time + "\n")
+
+
 if __name__ == "__main__":
     gen_init_bram_psn_merge_storage()
-    gen_init_bram_psn_incr_storage()
+    gen_init_bram_auto_ack_meta_storage()
+    gen_init_bram_last_report_time()

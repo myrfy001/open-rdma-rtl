@@ -420,6 +420,7 @@ typedef struct {
     QPN                             peerQPN;            // 24 bits
     EthMacAddr                      peerMacAddr;        // 48  bits
     IpAddr                          peerIpAddr;         // 32  bits
+    UdpPort                         localUdpPort;       // 16  bits
 } EntryQPC deriving(Bits, Eq, FShow);
 
 

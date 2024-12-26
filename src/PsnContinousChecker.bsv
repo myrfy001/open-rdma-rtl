@@ -581,7 +581,7 @@ interface BitmapWindowStorage#(type tRowAddr, type tData, type tBoundary, numeri
     interface PipeOut#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOut;
 
     interface PipeIn#(tRowAddr) resetReqPipeIn;
-    interface PipeOut#(Bit#(0)) resetRespPipeOut;
+    // interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
 
 module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, szStride)) provisos (
@@ -645,7 +645,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     function Integer getOtherIdx(Integer idx) = 1 - idx;
 
     FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
-    FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
+    // FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
     Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);
@@ -1167,7 +1167,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         else begin
             if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
                 hasPendingResetRequestReg <= False;
-                resetRespPipeOutQ.enq(0);
+                // resetRespPipeOutQ.enq(0);
             end
         end
     endrule
@@ -1201,7 +1201,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     interface readOnlyRespPipeOut   = toPipeOut(readOnlyRespPipeOutQueue);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
-    interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
+    // interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule
 
 
@@ -1209,8 +1209,11 @@ interface PsnPerMergeAndStorage;
     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary)))) respPipeOutVec;
 
+    interface PipeIn#(IndexQP)                                                              readOnlyReqPipeIn;
+    interface PipeOut#(BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary))        readOnlyRespPipeOut;
+
     interface PipeIn#(IndexQP) resetReqPipeIn;
-    interface PipeOut#(Bit#(0)) resetRespPipeOut;
+    // interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
 
 
@@ -1307,8 +1310,11 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
     interface reqPipeInVec = allPacketPsnPermerge.reqPipeInVec;
     interface respPipeOutVec = allPacketPsnBitmapStorage.respPipeOutVec;
 
+    interface readOnlyReqPipeIn = allPacketPsnBitmapStorage.readOnlyReqPipeIn;
+    interface readOnlyRespPipeOut = allPacketPsnBitmapStorage.readOnlyRespPipeOut;
+
     interface resetReqPipeIn = allPacketPsnBitmapStorage.resetReqPipeIn;
-    interface resetRespPipeOut = allPacketPsnBitmapStorage.resetRespPipeOut;
+    // interface resetRespPipeOut = allPacketPsnBitmapStorage.resetRespPipeOut;
 endmodule
 
 
@@ -1367,7 +1373,7 @@ interface AtomicUpdateStorage#(type tRowAddr, type tData, type tReq);
     interface PipeOut#(tData)   readOnlyRespPipeOut;
 
     interface PipeIn#(tRowAddr) resetReqPipeIn;
-    interface PipeOut#(Bit#(0)) resetRespPipeOut;
+    // interface PipeOut#(Bit#(0)) resetRespPipeOut;
 endinterface
 
 module mkAtomicUpdateStorage#(
@@ -1377,10 +1383,6 @@ module mkAtomicUpdateStorage#(
         Bits#(tRowAddr, szRowAddr),
         Bits#(tData, szData),
         Bits#(tReq, szReq),
-        Bitwise#(tData),
-        Literal#(tData),
-        Arith#(tData),
-        Ord#(tData),
         Bounded#(tRowAddr),
         Literal#(tRowAddr),
         Eq#(tRowAddr),
@@ -1419,7 +1421,7 @@ module mkAtomicUpdateStorage#(
     function Integer getOtherIdx(Integer idx) = 1 - idx;
 
     FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
-    FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
+    // FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
     Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);
@@ -1588,7 +1590,7 @@ module mkAtomicUpdateStorage#(
                 // Reset is low priority.
                 if (curResetReqRegVec[selfChannelIdx] matches tagged Valid .resetReqAddr) begin
                     let resetValue = AtomicUpdateStorageEntry{
-                        data: 0,
+                        data: unpack(0),
                         epoch: 0,
                         channelIdx: fromInteger(selfChannelIdx)
                     };
@@ -1644,7 +1646,7 @@ module mkAtomicUpdateStorage#(
         else begin
             if ( (!isValid(curResetReqRegVec[0])) && (!isValid(curResetReqRegVec[1])) ) begin
                 hasPendingResetRequestReg <= False;
-                resetRespPipeOutQ.enq(0);
+                // resetRespPipeOutQ.enq(0);
             end
         end
     endrule
@@ -1678,5 +1680,5 @@ module mkAtomicUpdateStorage#(
     interface readOnlyRespPipeOut   = toPipeOut(readOnlyRespPipeOutQueue);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
-    interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
+    // interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule

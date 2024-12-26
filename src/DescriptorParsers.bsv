@@ -96,7 +96,7 @@ interface CommandQueueDescParserAndDispatcher;
     interface Client#(WriteReqQPC, Bool)                                    qpcModifyClt;
     interface PipeOut#(LocalNetworkSettings)                                setNetworkParamReqPipeOut;
     interface Get#(RawPacketReceiveMeta)                                    setRawPacketReceiveMetaReqOut;
-    // interface Get#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))      setRqExpectedPsnReqOut;
+    interface PipeOut#(IndexQP)                                             qpResetReqPipeOut;
 endinterface
 
 
@@ -118,7 +118,7 @@ module mkCommandQueueDescParserAndDispatcher#(
 
     FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;
     FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkFIFOF;
-    // FIFOF#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))    setRqExpectedPsnReqQ      <- mkFIFOF;
+    FIFOF#(IndexQP)              qpResetReqPipeOutQ                                         <- mkFIFOF;
 
 
     RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;
@@ -149,7 +149,8 @@ module mkCommandQueueDescParserAndDispatcher#(
                     rqAccessFlags:  desc0.rqAccessFlags,
                     pmtu:           desc0.pmtu,
                     peerMacAddr:    desc0.peerMacAddr,
-                    peerIpAddr:     unpack({pack(desc0.peerIpAddrHigh), pack(desc0.peerIpAddrLow)})
+                    peerIpAddr:     desc0.peerIpAddr,
+                    localUdpPort:   desc0.localUdpPort
                 };
 
                 qpcInflightReqQ.enq(rawDesc);
@@ -159,7 +160,7 @@ module mkCommandQueueDescParserAndDispatcher#(
                         ent: desc0.isValid ? tagged Valid ent : tagged Invalid
                     }
                 );
-                // setRqExpectedPsnReqQ.enq(tuple3(getIndexQP(desc0.qpn), 0, RqPsnManagerPsnUpadteActionReset));
+                qpResetReqPipeOutQ.enq(getIndexQP(desc0.qpn));
                 isDispatchingReqReg <= False;
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc0));
             end
@@ -240,5 +241,5 @@ module mkCommandQueueDescParserAndDispatcher#(
 
     interface setNetworkParamReqPipeOut = toPipeOut(setNetworkParamPipeOutQ);
     interface setRawPacketReceiveMetaReqOut = toGet(setRawPacketReceiveMetaReqQ);
-    // interface setRqExpectedPsnReqOut = toGet(setRqExpectedPsnReqQ);
+    interface qpResetReqPipeOut = toPipeOut(qpResetReqPipeOutQ);
 endmodule

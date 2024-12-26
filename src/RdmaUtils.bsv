@@ -229,6 +229,13 @@ function AETH extractAETH(RdmaExtendHeaderBuffer extendHeaderBuffer, TransType t
 
 endfunction
 
+function RdmaExtendHeaderBuffer buildRdmaExtendHeaderBuffer(tHeader header) provisos (
+        Bits#(tHeader, szHeader),
+        Add#(szHeader, a_, SizeOf#(RdmaExtendHeaderBuffer))
+    );
+    return zeroExtendLSB(pack(header));
+endfunction
+
 function Bool containAccessTypeFlag(
     FlagsType#(MemAccessTypeFlag) flags, MemAccessTypeFlag flag
 );

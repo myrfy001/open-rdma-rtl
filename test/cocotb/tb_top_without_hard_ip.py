@@ -2,8 +2,9 @@
 import itertools
 import logging
 import os
-import random
-import queue
+import threading
+
+import time
 
 import cocotb_test.simulator
 import pytest
@@ -12,6 +13,9 @@ import cocotb
 from cocotb.triggers import RisingEdge, FallingEdge, Timer
 from cocotb.regression import TestFactory
 from cocotb.clock import Clock
+from cocotb.queue import Queue
+
+from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
 
 
 from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, SimplePcieBehaviorModel
@@ -27,6 +31,11 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
 
+        shared_mem = open_shared_mem_to_hw_simulator(256*1024*1024)
+
+        UserspaceDriverServer(
+            "0.0.0.0", 7700, self.csr_write_cb, self.csr_read_cb)
+
         self.pcie_bfm = SimplePcieBehaviorModel(
             dut,
             ["dmaMasterPipeIfcVec_0",
@@ -35,9 +44,37 @@ class TB(object):
              "dmaMasterPipeIfcVec_3"],
             [
                 "dmaSlavePipeIfc"
-            ])
+            ],
+            shared_mem.buf)
 
-        self.mem = [0] * (1 << 25)
+        self.csr_write_req_queue = Queue()
+        self.csr_read_req_queue = Queue()
+        self.csr_read_resp_queue = Queue()
+        self.csr_read_lock = threading.Lock()
+
+        cocotb.start_soon(self._forward_csr_write_task())
+        cocotb.start_soon(self._forward_csr_read_req_task())
+
+    def csr_write_cb(self, addr, value):
+        self.csr_write_req_queue.put_nowait((addr, value))
+
+    def csr_read_cb(self, addr):
+        with self.csr_read_lock:
+            self.csr_read_req_queue.put_nowait(addr)
+            while self.csr_read_resp_queue.empty:
+                time.sleep(0)
+            return self.csr_read_req_queue.get_nowait()
+
+    async def _forward_csr_write_task(self):
+        while True:
+            addr, value = await self.csr_write_req_queue.get()
+            await self.pcie_bfm.host_write_blocking(addr, value)
+
+    async def _forward_csr_read_req_task(self):
+        while True:
+            addr = await self.csr_read_req_queue.get()
+            val = await self.pcie_bfm.host_read_blocking(addr)
+            await self.csr_read_resp_queue.put(val)
 
     async def gen_reset(self):
         self.resetn.value = 0

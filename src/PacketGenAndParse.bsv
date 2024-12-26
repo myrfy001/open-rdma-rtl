@@ -200,13 +200,6 @@ function NRETH genNRETH(WorkQueueElem wqe);
     return unpack(0);
 endfunction
 
-function RdmaExtendHeaderBuffer buildRdmaExtendHeaderBuffer(tHeader header) provisos (
-        Bits#(tHeader, szHeader),
-        Add#(szHeader, a_, SizeOf#(RdmaExtendHeaderBuffer))
-    );
-    return zeroExtendLSB(pack(header));
-endfunction
-
 function ActionValue#(Maybe#(BTH)) genRdmaBTH(
         WorkQueueElem wqe, Bool isFirst, Bool isLast, Bool solicited, PSN psn, PAD padCnt,
         Bool ackReq, ADDR remoteAddr, Length dlen
@@ -225,7 +218,7 @@ function ActionValue#(Maybe#(BTH)) genRdmaBTH(
             let bth = BTH {
                 trans    : trans,
                 opcode   : opcode,
-                solicited: isOnlyReqPkt && solicited,
+                solicited: solicited,
                 isRetry  : wqe.isRetry,
                 padCnt   : padCnt,
                 tver     : unpack(0),
@@ -234,7 +227,7 @@ function ActionValue#(Maybe#(BTH)) genRdmaBTH(
                 becn     : unpack(0),
                 resv6    : unpack(0),
                 dqpn     : wqe.dqpn,
-                ackReq   : isOnlyReqPkt && ackReq,
+                ackReq   : ackReq,
                 resv7    : unpack(0),
                 psn      : psn
             };

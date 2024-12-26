@@ -23,6 +23,7 @@ import CsrFramework :: *;
 import Ringbuf :: *;
 import DescriptorParsers :: *;
 import CsrAddress :: *;
+import AutoAckGenerator :: *;
 
 import Settings :: *;
 import Utils4Test :: *;
@@ -280,6 +281,7 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfcVec, topLevelDmaChannelMux.qpDmaRequestSlaveIfcVec);
     mkConnection(ringbufAndDescriptorHandler.qpRingbufDmaMasterPipeIfcVec, topLevelDmaChannelMux.qpRingbufDmaSlavePipeIfcVec);
     mkConnection(ringbufAndDescriptorHandler.cmdQueueRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.cmdQueueRingbufDmaSlavePipeIfc);
+    mkConnection(ringbufAndDescriptorHandler.qpResetReqPipeOut, qpMrPgtQpc.qpResetReqPipeIn);
 
  
 
@@ -298,6 +300,7 @@ interface RingbufAndDescriptorHandler;
     interface Client#(RingbufRawDescriptor, Bool)                           mrAndPgtManagerClt;
     interface Client#(WriteReqQPC, Bool)                                    qpcModifyClt;
     interface PipeOut#(LocalNetworkSettings)                                setNetworkParamReqPipeOut;
+    interface PipeOut#(IndexQP)                                             qpResetReqPipeOut;
 endinterface
 
 (* synthesize *)
@@ -705,7 +708,7 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     interface mrAndPgtManagerClt = cmdQueueDescParserAndDispatcher.mrAndPgtManagerClt;
     interface qpcModifyClt = cmdQueueDescParserAndDispatcher.qpcModifyClt;
     interface setNetworkParamReqPipeOut = cmdQueueDescParserAndDispatcher.setNetworkParamReqPipeOut;
-    
+    interface qpResetReqPipeOut = cmdQueueDescParserAndDispatcher.qpResetReqPipeOut;
 endmodule
 
 
@@ -717,6 +720,8 @@ interface QpMrPgtQpc;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)  qpEthDataStreamIfcVec;
+
+    interface PipeIn#(IndexQP) qpResetReqPipeIn;
         
     interface Server#(WriteReqQPC, Bool) qpContextUpdateSrv;
     interface Server#(RingbufRawDescriptor, Bool) mrAndPgtModifyDescSrv;
@@ -733,13 +738,15 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Clock clkQpcMrPgtSrv <- exposeCurrentClock;
     Reset rstQpcMrPgtSrv <- exposeCurrentReset;
 
+    FIFOF#(WriteReqQPC) qpContextUpdateReqQueue <- mkFIFOF;
+    FIFOF#(Bool) qpContextUpdateRespQueue <- mkFIFOF;
 
     QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
     MemRegionTableEightWayQuery mrTable <- mkMemRegionTableEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
     AddressTranslateEightWayQuery addrTranslator <- mkAddressTranslateEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
     MrAndPgtUpdater mrAndPgtUpdater <- mkMrAndPgtUpdater(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     PgtUpdateDmaInterfaceConvertor pgtUpdateDmaInterfaceConvertor <- mkPgtUpdateDmaInterfaceConvertor;
-
+    AutoAckGenerator    autoAckGenerator <- mkAutoAckGenerator;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
@@ -787,6 +794,18 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         otherRawPacketPipeOutVecInst[idx]   = rqVec[idx].otherRawPacketPipeOut;
     end
     
+    rule forwardQpContextUpdateReq;
+        let req = qpContextUpdateReqQueue.first;
+        qpContextUpdateReqQueue.deq;
+        qpContext.updateSrv.request.put(req);
+        autoAckGenerator.qpcUpdateSrv.request.put(req);
+    endrule
+    
+    rule forwardQpContextUpdateResp;
+        let r1 <- qpContext.updateSrv.response.get;
+        let r2 <-autoAckGenerator.qpcUpdateSrv.response.get;
+        qpContextUpdateRespQueue.enq(r1 && r2);
+    endrule
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
         for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
@@ -801,7 +820,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     interface otherRawPacketPipeOutVec          = otherRawPacketPipeOutVecInst;
     interface qpDmaRequestMasterIfcVec          = qpDmaRequestMasterIfcVecInst;
     interface qpEthDataStreamIfcVec             = qpEthDataStreamIfcVecInst;
-    interface qpContextUpdateSrv                = qpContext.updateSrv;
-    interface qpContextForAutoAckUpdateSrv      = qpContextForAutoAck.updateSrv;
+    interface qpContextUpdateSrv                = toGPServer(qpContextUpdateReqQueue, qpContextUpdateRespQueue);
+    interface qpResetReqPipeIn                  = autoAckGenerator.resetReqPipeIn;
     interface mrAndPgtModifyDescSrv             = mrAndPgtUpdater.mrAndPgtModifyDescSrv;
 endmodule

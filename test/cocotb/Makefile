@@ -28,13 +28,13 @@ GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 # TOP_MODULE ?= mkTestCocotbPacketGenAndParse
 # TB_FILE = tb_packet_gen_and_parse.py
 
-TOP_BSV_SRC_FILE ?= ../test/TestPsnContinousChecker.bsv
-TOP_MODULE ?= mkTestCocotbPsnPerMergeAndStorage
-TB_FILE = tb_psn_per_merge_and_storage.py
+# TOP_BSV_SRC_FILE ?= ../test/TestPsnContinousChecker.bsv
+# TOP_MODULE ?= mkTestCocotbPsnPerMergeAndStorage
+# TB_FILE = tb_psn_per_merge_and_storage.py
 
-# TOP_BSV_SRC_FILE ?= ../src/Top.bsv
-# TOP_MODULE ?= mkBsvTopWithoutHardIpInstance
-# TB_FILE = tb_top_without_hard_ip.py
+TOP_BSV_SRC_FILE ?= ../src/Top.bsv
+TOP_MODULE ?= mkBsvTopWithoutHardIpInstance
+TB_FILE = tb_top_without_hard_ip.py
 
 
 
@@ -62,6 +62,14 @@ run:
 
 	set -o pipefail; \
 	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) python3 $(TB_FILE) 2>&1 | tee $(LOG_FILE)
+
+run_system_test_server:
+	cd $(TB_DIR)
+	mkdir -p log
+
+	set -o pipefail; \
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) INST_ID=1 python3 $(TB_FILE) 2>&1 | tee $(LOG_FILE).1 &; \
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) INST_ID=2 python3 $(TB_FILE) 2>&1 | tee $(LOG_FILE).2 &
 
 cocotb:clean verilog prepare run
 
