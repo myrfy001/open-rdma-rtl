@@ -243,3 +243,81 @@ module mkCommandQueueDescParserAndDispatcher#(
     interface setRawPacketReceiveMetaReqOut = toGet(setRawPacketReceiveMetaReqQ);
     interface qpResetReqPipeOut = toPipeOut(qpResetReqPipeOutQ);
 endmodule
+
+interface DescriptorMux;
+    interface Vector#(NUMERIC_TYPE_THREE, PipeIn#(RingbufRawDescriptor)) descPipeInVec;
+    interface PipeOut#(RingbufRawDescriptor) descPipeOut;
+endinterface
+
+module mkDescriptorMux(DescriptorMux);
+
+    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_THREE, PipeIn#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
+
+    FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkFIFOF;
+
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_THREE); idx = idx + 1) begin
+        descPipeInVecInst[idx] = toPipeIn(descPipeInQueueVec[idx]);
+    end
+
+    Reg#(Bit#(TLog#(NUMERIC_TYPE_THREE))) currentForwardChannelReg <- mkRegU;
+    Reg#(Bool) isForwardingFirstDescReg <- mkReg(True);
+
+
+    rule forwardFirstDescRule if (isForwardingFirstDescReg);
+        let rawDescMaybe = tagged Invalid;
+        
+        if (descPipeInQueueVec[0].notEmpty) begin
+            rawDescMaybe = tagged Valid descPipeInQueueVec[0].first;
+            descPipeInQueueVec[0].deq;
+            currentForwardChannelReg <= 0;
+        end
+        else if (descPipeInQueueVec[1].notEmpty) begin
+            rawDescMaybe = tagged Valid descPipeInQueueVec[1].first;
+            descPipeInQueueVec[1].deq;
+            currentForwardChannelReg <= 1;
+        end
+        else if (descPipeInQueueVec[2].notEmpty) begin
+            rawDescMaybe = tagged Valid descPipeInQueueVec[2].first;
+            descPipeInQueueVec[2].deq;
+            currentForwardChannelReg <= 2;
+        end
+
+        if (rawDescMaybe matches tagged Valid .rawDesc) begin
+            RingbufDescCommonHead descHeader = unpack(truncateLSB(pack(rawDesc)));
+            immAssert(
+                descHeader.valid,
+                "desc should be valid",
+                $format("desc=", fshow(descHeader))
+            );
+            if (descHeader.hasNextFrag) begin
+                isForwardingFirstDescReg <= False;
+            end
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkDescriptorMux forwardFirstDescRule"),
+                toBlue(", rawDesc="), fshow(rawDesc)
+            );
+            descPipeOutQueue.enq(rawDesc);
+        end
+    endrule
+
+    rule forwardOtherDesc if (!isForwardingFirstDescReg);
+        let rawDesc = descPipeInQueueVec[currentForwardChannelReg].first;
+        descPipeInQueueVec[currentForwardChannelReg].deq;
+
+        RingbufDescCommonHead descHeader = unpack(truncateLSB(pack(rawDesc)));
+        immAssert(
+            descHeader.valid,
+            "desc should be valid",
+            $format("desc=", fshow(descHeader))
+        );
+        if (!descHeader.hasNextFrag) begin
+            isForwardingFirstDescReg <= True;
+        end
+        descPipeOutQueue.enq(rawDesc);
+    endrule
+
+    interface descPipeInVec = descPipeInVecInst;
+    interface descPipeOut = toPipeOut(descPipeOutQueue);
+endmodule

@@ -19,6 +19,7 @@ import Descriptors :: *;
 import EthernetTypes :: *;
 import EthernetFrameIO :: *;
 import QPContext :: *;
+import IoChannels :: *;
 
 import ConnectableF :: *;
 
@@ -28,15 +29,6 @@ typedef struct {
     PSN psn;
     QPN qpn;
 } AutoAckGeneratorReq deriving(Bits, FShow);
-
-typedef struct {
-    IndexQP                                                             qpnIdx;
-    Bool                                                                isPacketLost;
-    MSN                                                                 lastAckMsn;
-    MSN                                                                 curAckMsn;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary)  oldBitmapEntry;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary)  newBitmapEntry;
-} AutoAckGeneratorResp deriving(Bits, FShow);
 
 typedef struct {
     IndexQP qpnIdx;
@@ -69,7 +61,7 @@ typedef 10000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
 
 interface AutoAckGenerator;
     interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(AutoAckGeneratorReq)) reqPipeInVec;
-    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(AutoAckGeneratorResp))) respPipeOutVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream))     ackEthPacketPipeOutVec;
 
     interface Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
 
@@ -88,22 +80,21 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(AutoAckGeneratorReq)) reqPipeInVecInst = newVector;
     Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(AutoAckGeneratorReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(AutoAckGeneratorResp))) respPipeOutVecInst = newVector;
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AutoAckGeneratorResp))) respPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream)) ackEthPacketPipeOutVecInst = newVector;
 
     Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
     Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkFIFOF);
-    
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
-        respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]); 
-    end
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_THREE); idx = idx + 1) begin
         metaReportDescPipeOutVecInst[idx] = toPipeOut(metaReportDescPipeOutQueueVec[idx]);
     end
 
     Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
+
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
+        ackEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut; 
+    end
 
     QpContextTwoWayQuery  qpContextForAutoAck <- mkQpContextTwoWayQuery;
 
@@ -372,7 +363,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     endrule
 
     interface reqPipeInVec = reqPipeInVecInst;
-    interface respPipeOutVec = respPipeOutVecInst;
+    interface ackEthPacketPipeOutVec = ackEthPacketPipeOutVecInst;
 
     interface qpcUpdateSrv = qpContextForAutoAck.updateSrv;
 

@@ -455,17 +455,26 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         let req = dmaWriteReqPipeInQ.first;
         dmaWriteReqPipeInQ.deq;
 
-        let meta = IoChannelMemoryAccessMeta {
+        IoChannelMemoryAccessMeta meta = IoChannelMemoryAccessMeta {
             addr: req.addr,
-            totalLen: unpack((zeroExtend(req.zeroBasedDescWriteCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH)))
+            totalLen: unpack((zeroExtend(req.zeroBasedDescWriteCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)))
         };
         dmaWriteMetaPipeOutQueue.enq(meta);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteAddr"),
+        //     toBlue(", qmetaIdx="), fshow(meta)
+        // );
     endrule
 
     rule forwardWriteData;
         let ds = dmaWriteDataPipeInQ.first;
         dmaWriteDataPipeInQ.deq;
         dmaWriteDataPipeOutQueue.enq(ds);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
 
@@ -476,7 +485,7 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
 
         let meta = IoChannelMemoryAccessMeta {
             addr: req.addr,
-            totalLen: unpack((zeroExtend(req.zeroBasedDescReadCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH)))
+            totalLen: unpack((zeroExtend(req.zeroBasedDescReadCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)))
         };
         dmaReadMetaPipeOutQueue.enq(meta);
     endrule

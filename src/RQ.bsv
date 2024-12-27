@@ -27,6 +27,7 @@ import PacketGenAndParse :: *;
 import IoChannels :: *;
 import Descriptors :: *;
 import Ringbuf :: *;
+import AutoAckGenerator :: *;
 
 typedef Bit#(TAdd#(1, SizeOf#(Length))) TruncatedAddrForMrBoundCheck;
 
@@ -102,7 +103,8 @@ interface RQ;
     interface PipeOut#(DataStream) payloadConStreamPipeOut;
     interface PipeIn#(Bool) payloadConRespPipeIn;
 
-    interface PipeOut#(RingbufRawDescriptor) metaReportDescPipeOut;
+    interface PipeOut#(RingbufRawDescriptor)    metaReportDescPipeOut;
+    interface PipeOut#(AutoAckGeneratorReq)     autoAckGenReqPipeOut;
 endinterface
 
 // FIXME: handle illegal packet length. don't trust length or other meta extracted from header. 
@@ -114,8 +116,9 @@ module mkRQ#(
         Reset rstQpcMrPgtSrv
     )(RQ);
 
-    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue <- mkFIFOF;
-
+    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkFIFOF;
+    FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkFIFOF;
+    
     PacketParse packetParser <- mkPacketParse;
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
@@ -517,6 +520,8 @@ module mkRQ#(
         let packetStatus = pipelineEntryIn.packetStatus;
         let isDiscard = !isRecvPacketStatusNormal(packetStatus);
 
+        let bth             = rdmaPacketMeta.header.bth;
+
         if (rdmaPacketMeta.hasPayload) begin
             if (!isDiscard) begin
                 let resp = conRespPipeInQ.first;
@@ -530,6 +535,10 @@ module mkRQ#(
                 rdmaPacketMeta: pipelineEntryIn.rdmaPacketMeta
             };
             handleGenMetaReportQueueDescPipeQ.enq(pipelineEntryOut);
+            autoAckGenReqPipeOutQueue.enq(AutoAckGeneratorReq{
+                psn: bth.psn,
+                qpn: bth.dqpn
+            });
         end
 
         $display(
@@ -739,6 +748,7 @@ module mkRQ#(
     method setLocalNetworkSettings = packetParser.setLocalNetworkSettings; 
 
     interface metaReportDescPipeOut = toPipeOut(metaReportDescPipeOutQueue);
+    interface autoAckGenReqPipeOut = toPipeOut(autoAckGenReqPipeOutQueue);
 endmodule
 
 
