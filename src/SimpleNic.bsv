@@ -41,7 +41,7 @@ interface SimpleNic;
     interface IoChannelMemoryMasterPipe                                         simpleNicPacketDmaMasterPipeIfc;
 endinterface
 
-
+(* synthesize *)
 module mkSimpleNic(SimpleNic);
     Reg#(SimpleNicSlotIdx) curSlotIdxReg <- mkReg(0);
     Reg#(ADDR) rxBufferBaseAddrReg <- mkReg(0);
@@ -78,14 +78,16 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(Tuple2#(SimpleNicSlotIdx, Word)) rxDescMetaPipelineQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
 
     mkConnection(ethStreamArbiter.pipeOutIfc, rxSplitor.dataPipeIn);
+    mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
+    mkConnection(txConcator.dataPipeOut, toPipeIn(rawEthernetPacketPipeOutQueue));
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         rawEthernetPacketPipeInVecInst[idx] = toPipeIn(rawEthernetPacketPipeInQueueVec[idx]);
-        mkConnection(toPipeOut(rawEthernetPacketPipeInQueueVec[idx]), ethStreamArbiter.pipeInIfcVec[idx]);
 
         rule calcPacketLenAndPutToBuffer;
             let ds = rawEthernetPacketPipeInQueueVec[idx].first;
             rawEthernetPacketPipeInQueueVec[idx].deq;
+            ethStreamArbiter.pipeInIfcVec[idx].enq(ds);
 
             let newLength = rawEthernetPacketLengthRegVec[idx] + zeroExtend(ds.byteNum);
 
@@ -163,6 +165,33 @@ module mkSimpleNic(SimpleNic);
         end
         dmaWriteDataPipeOutQueue.enq(ds);
     endrule
+
+
+    rule handleTxReq;
+        SimpleNicTxQueueDesc desc = unpack(pack(simpleNicDescPipeInQueue.first));
+        simpleNicDescPipeInQueue.deq;
+
+        txAddrChunker.requestPipeIn.enq(AddressChunkReq {
+            startAddr: desc.addr,
+            len: desc.len,
+            chunk: fromInteger(valueOf(TLog#(PCIE_NAP_MAX_BYTE_IN_BURST)))
+        });
+    endrule
+
+    rule handleTxAddrChunkResp;
+        let chunkInfo = txAddrChunker.responsePipeOut.first;
+        txAddrChunker.responsePipeOut.deq;
+
+        dmaReadMetaPipeOutQueue.enq(IoChannelMemoryAccessMeta{
+            addr: chunkInfo.startAddr,
+            totalLen: chunkInfo.len
+        });
+        txConcator.isLastStreamFlagPipeIn.enq(chunkInfo.isLast);
+    endrule
+
+
+
+
 
     interface rawEthernetPacketPipeInVec = rawEthernetPacketPipeInVecInst;
     interface rawEthernetPacketPipeOut = toPipeOut(rawEthernetPacketPipeOutQueue);

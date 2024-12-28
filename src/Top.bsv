@@ -854,10 +854,12 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     MrAndPgtUpdater mrAndPgtUpdater <- mkMrAndPgtUpdater(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     PgtUpdateDmaInterfaceConvertor pgtUpdateDmaInterfaceConvertor <- mkPgtUpdateDmaInterfaceConvertor;
     AutoAckGenerator    autoAckGenerator <- mkAutoAckGenerator;
+    SimpleNic simpleNic <- mkSimpleNic;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_TWO)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
@@ -880,10 +882,11 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
 
         // ethernet ifc
+        mkConnection(sqVec[idx].packetPipeOut, ethTxStreamArbiterVec[idx].pipeInIfcVec[0]);
         qpEthDataStreamIfcVecInst[idx] = (
                 interface DtldStreamNoMetaBiDirPipes
                     interface dataPipeIn = rqVec[idx].ethernetFramePipeIn;
-                    interface dataPipeOut = sqVec[idx].packetPipeOut;
+                    interface dataPipeOut = ethTxStreamArbiterVec[idx].pipeOutIfc;
                 endinterface
             );
 
@@ -918,6 +921,13 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[0], descriptorMuxVec[0].descPipeInVec[1]);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[1], descriptorMuxVec[1].descPipeInVec[1]);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);
+
+    // Ethernet Tx channel 0 will handle simple Nic's traffic. Tx channel 1 and 2 will handle auto ack traffic It may lead to unbalance between other channels.
+    mkConnection(simpleNic.rawEthernetPacketPipeOut, ethTxStreamArbiterVec[0].pipeInIfcVec[1]);
+    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[0], ethTxStreamArbiterVec[1].pipeInIfcVec[1]);
+    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1], ethTxStreamArbiterVec[2].pipeInIfcVec[1]);
+
+    
     
     rule forwardQpContextUpdateReq;
         let req = qpContextUpdateReqQueue.first;
