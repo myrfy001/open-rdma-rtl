@@ -222,6 +222,95 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 endmodule
 
 
+
+
+
+
+
+
+
+
+
+
+
+interface DtldStreamNoMetaArbiterSlave#(numeric type channelCnt, type tData);
+    interface Vector#(channelCnt, PipeIn#(DtldStreamData#(tData)))                      pipeInIfcVec;
+    interface PipeOut#(DtldStreamData#(tData))                                          pipeOutIfc;
+    interface PipeOut#(Bit#(TLog#(channelCnt)))                                         sourceChannelIdPipeOut;
+endinterface
+
+
+module mkDtldStreamNoMetaArbiterSlave#(Integer depth)(DtldStreamNoMetaArbiterSlave#(channelCnt, tData)) provisos (
+        Bits#(tData, szData),
+        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx)
+    );
+
+    Vector#(channelCnt, PipeIn#(DtldStreamData#(tData)))                          pipeInIfcVecInst         = newVector;
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           pipeInIfcVecQueueVec     <- replicateM(mkFIFOF);
+    for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+        pipeInIfcVecInst[channelIdx] = toPipeIn(pipeInIfcVecQueueVec[channelIdx]);
+    end
+
+    FIFOF#(DtldStreamData#(tData))                              pipeOutIfcQueue             <-  mkFIFOF;
+    FIFOF#(tChannelIdx)                                         sourceChannelIdPipeOutQueue <- mkFIFOF;
+
+    Arbiter_IFC#(channelCnt) arbiter <- mkArbiter(False);
+
+    Reg#(Bool) isFirstBeatReg <- mkReg(True);
+
+    Reg#(tChannelIdx) curChannelIdxReg <- mkRegU;
+
+    rule sendArbitReq if (isFirstBeatReg);
+        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+            if (pipeInIfcVecQueueVec[channelIdx].notEmpty) begin
+                arbiter.clients[channelIdx].request;
+            end
+        end
+    endrule
+
+    rule recvArbitResp if (isFirstBeatReg);
+        Maybe#(DtldStreamData#(tData)) dsMaybe = tagged Invalid;
+        tChannelIdx curChannelIdx = 0;
+        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+            if (arbiter.clients[channelIdx].grant) begin
+                dsMaybe = tagged Valid pipeInIfcVecQueueVec[channelIdx].first;
+                pipeInIfcVecQueueVec[channelIdx].deq;
+                curChannelIdx = fromInteger(channelIdx);
+            end
+        end
+
+        if (dsMaybe matches tagged Valid .ds) begin
+            pipeOutIfcQueue.enq(ds);
+            isFirstBeatReg <= ds.isLast;
+            curChannelIdxReg <= curChannelIdx;
+            sourceChannelIdPipeOutQueue.enq(curChannelIdx);
+        end
+    endrule
+
+    rule forwardMoreWriteBeat if (!isFirstBeatReg);
+        let ds  = pipeInIfcVecQueueVec[curChannelIdxReg].first;
+        pipeInIfcVecQueueVec[curChannelIdxReg].deq;
+        pipeOutIfcQueue.enq(ds);
+        isFirstBeatReg <= ds.isLast;
+    endrule
+
+    interface pipeInIfcVec = pipeInIfcVecInst;
+    interface pipeOutIfc = toPipeOut(pipeOutIfcQueue);
+    interface sourceChannelIdPipeOut = toPipeOut(sourceChannelIdPipeOutQueue);
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
 // This concator can concat one or more datastream fragments into a single big datastream.
 // The first (or only) fragment's first (or only) beat can have startByteIdx != 0
 // The first (or only) fragment's last (or only) beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)

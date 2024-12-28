@@ -213,3 +213,22 @@ typedef struct {
     ReservedZero#(16)           reserved0;          // 16 Bits
     RingbufDescCommonHead       commonHeader;       // 16 bits
 } MetaReportQueueAckExtraDesc deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(128)          reserved1;          // 128 Bits
+    ADDR                        addr;               // 64 Bits must ensure addr and length not across page boundary.
+    Length                      len;                // 32 Bits
+    ReservedZero#(16)           reserved0;          // 16 Bits
+    RingbufDescCommonHead       commonHeader;       // 16 bits
+} SimpleNicTxQueueDesc deriving(Bits, FShow);
+
+typedef 0 SIMPLE_NIC_RX_QUEUE_DESC_OPCODE_NEW_PACKET;
+
+typedef struct {
+    ReservedZero#(128)          reserved2;          // 128 Bits
+    ReservedZero#(32)           reserved1;          // 32 Bits
+    Dword                       slotIdx;            // 32 Bits
+    Length                      len;                // 32 Bits
+    ReservedZero#(16)           reserved0;          // 16 Bits
+    RingbufDescCommonHead       commonHeader;       // 16 bits
+} SimpleNicRxQueueDesc deriving(Bits, FShow);

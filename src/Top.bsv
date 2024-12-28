@@ -24,6 +24,7 @@ import Ringbuf :: *;
 import DescriptorParsers :: *;
 import CsrAddress :: *;
 import AutoAckGenerator :: *;
+import SimpleNic :: *;
 
 import Settings :: *;
 import Utils4Test :: *;
@@ -223,13 +224,14 @@ interface TopLevelDmaChannelMux;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)   qpDmaRequestSlaveIfcVec;
     interface IoChannelMemorySlavePipe cmdQueueRingbufDmaSlavePipeIfc;
     interface IoChannelMemorySlavePipe pgtUpdateDmaSlavePipe;
+    interface IoChannelMemorySlavePipe simpleNicRingbufDmaSlavePipeIfc;
 
 
 endinterface
 
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelFourChannelDmaMux)     muxVector <- replicateM(mkDtldStreamArbiterSlave(256, True));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelFourChannelDmaMux)    muxVector <- replicateM(mkDtldStreamArbiterSlave(256, True));
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)     dmaMasterPipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)      qpRingbufDmaSlavePipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)      qpDmaRequestSlaveIfcVecInst = newVector;
@@ -238,6 +240,11 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
         dmaMasterPipeIfcVecInst[idx] = muxVector[idx].masterIfc;
         qpRingbufDmaSlavePipeIfcVecInst[idx] = muxVector[idx].slaveIfcVec[0];
         qpDmaRequestSlaveIfcVecInst[idx] = muxVector[idx].slaveIfcVec[1];
+
+        rule discardUselessPipeOutSignal;
+            muxVector[idx].writeSourceChannelIdPipeOut.deq;
+            muxVector[idx].readSourceChannelIdPipeOut.deq;
+        endrule
     end
 
     // upstream port
@@ -248,6 +255,7 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
     interface qpDmaRequestSlaveIfcVec = qpDmaRequestSlaveIfcVecInst;
     interface cmdQueueRingbufDmaSlavePipeIfc = muxVector[0].slaveIfcVec[2]; // use channel 0 for cmd queue.
     interface pgtUpdateDmaSlavePipe = muxVector[1].slaveIfcVec[2]; // use channel 1 for pgt update.
+    interface simpleNicRingbufDmaSlavePipeIfc = muxVector[2].slaveIfcVec[2]; // use channel 2 for simpleNic descriptor.
 endmodule
 
 interface BsvTopWithoutHardIpInstance;
@@ -281,6 +289,7 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfcVec, topLevelDmaChannelMux.qpDmaRequestSlaveIfcVec);
     mkConnection(ringbufAndDescriptorHandler.qpRingbufDmaMasterPipeIfcVec, topLevelDmaChannelMux.qpRingbufDmaSlavePipeIfcVec);
     mkConnection(ringbufAndDescriptorHandler.cmdQueueRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.cmdQueueRingbufDmaSlavePipeIfc);
+    mkConnection(ringbufAndDescriptorHandler.simpleNicRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicRingbufDmaSlavePipeIfc);
     mkConnection(ringbufAndDescriptorHandler.qpResetReqPipeOut, qpMrPgtQpc.qpResetReqPipeIn);
     mkConnection(qpMrPgtQpc.metaReportDescPipeOutVec, ringbufAndDescriptorHandler.metaReportDescPipeInVec);
 
@@ -295,10 +304,15 @@ endmodule
 interface RingbufAndDescriptorHandler;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)   qpRingbufDmaMasterPipeIfcVec;
     interface IoChannelMemoryMasterPipe cmdQueueRingbufDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe simpleNicRingbufDmaMasterPipeIfc;
     interface BlueRdmaCsrUpStreamPort csrUpStreamPort;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem))         wqePipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RingbufRawDescriptor))   metaReportDescPipeInVec;
+
+    interface PipeIn#(RingbufRawDescriptor)                                     simpleNicDescPipeIn;
+    interface PipeOut#(RingbufRawDescriptor)                                    simpleNicDescPipeOut;
+    
     interface Client#(RingbufRawDescriptor, Bool)                               mrAndPgtManagerClt;
     interface Client#(WriteReqQPC, Bool)                                        qpcModifyClt;
     interface PipeOut#(LocalNetworkSettings)                                    setNetworkParamReqPipeOut;
@@ -350,6 +364,20 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     mkConnection(cmdRespQueueRingbuf.dmaWriteReqPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaWriteReqPipeIn);
     mkConnection(cmdRespQueueRingbuf.dmaWriteDataPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaWriteDataPipeIn);
     mkConnection(cmdRespQueueRingbuf.dmaWriteRespPipeIn, cmdQueueRingbufDmaIfcConvertor.dmaWriteRespPipeOut);
+
+
+    RingbufH2cSlot4096 simpleNicTxQueueRingbuf <- mkRingbufH2c(4);
+    RingbufC2hSlot4096 simpleNicRxQueueRingbuf <- mkRingbufC2h(4);
+    RingbufDmaIfcConvertor simpleNicRingbufDmaIfcConvertor <- mkRingbufDmaIfcConvertor;
+
+    mkConnection(simpleNicTxQueueRingbuf.dmaReadReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaReadReqPipeIn);
+    mkConnection(simpleNicTxQueueRingbuf.dmaReadRespPipeIn, simpleNicRingbufDmaIfcConvertor.dmaReadRespPipeOut);
+    mkConnection(simpleNicRxQueueRingbuf.dmaWriteReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaWriteReqPipeIn);
+    mkConnection(simpleNicRxQueueRingbuf.dmaWriteDataPipeOut, simpleNicRingbufDmaIfcConvertor.dmaWriteDataPipeIn);
+    mkConnection(simpleNicRxQueueRingbuf.dmaWriteRespPipeIn, simpleNicRingbufDmaIfcConvertor.dmaWriteRespPipeOut);
+    
+
+
 
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
@@ -560,6 +588,48 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
                         return tagged CsrNodeResultWriteHandled;
                     end
 
+                    // Simple NIC Ringbuf
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        let t =simpleNicTxQueueRingbuf.controlRegs.addr;
+                        t[31:0] = req.value;
+                        simpleNicTxQueueRingbuf.controlRegs.addr <= t;
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        let t = simpleNicTxQueueRingbuf.controlRegs.addr;
+                        t[63:32] = req.value;
+                        simpleNicTxQueueRingbuf.controlRegs.addr <= t;
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        simpleNicTxQueueRingbuf.controlRegs.head <= unpack(truncate(req.value));
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        simpleNicTxQueueRingbuf.controlRegs.tail <= unpack(truncate(req.value));
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        let t = simpleNicRxQueueRingbuf.controlRegs.addr;
+                        t[31:0] = req.value;
+                        simpleNicRxQueueRingbuf.controlRegs.addr <= t;
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        let t = simpleNicRxQueueRingbuf.controlRegs.addr;
+                        t[63:32] = req.value;
+                        simpleNicRxQueueRingbuf.controlRegs.addr <= t;
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        simpleNicRxQueueRingbuf.controlRegs.head <= unpack(truncate(req.value));
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
+                        simpleNicRxQueueRingbuf.controlRegs.tail <= unpack(truncate(req.value));
+                        return tagged CsrNodeResultWriteHandled;
+                    end
+
                     default: begin
                         return tagged CsrNodeResultNotMatched;
                     end
@@ -669,31 +739,56 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
                 end
 
                 //  Cmd Queue ring bufs
-                fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_REQ_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: cmdReqQueueRingbuf.controlRegs.addr[31:0]};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_REQ_Q_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: cmdReqQueueRingbuf.controlRegs.addr[63:32]};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_REQ_Q_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(cmdReqQueueRingbuf.controlRegs.head)))};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_REQ_Q_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(cmdReqQueueRingbuf.controlRegs.tail)))};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_RESP_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: cmdRespQueueRingbuf.controlRegs.addr[31:0]};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_RESP_Q_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: cmdRespQueueRingbuf.controlRegs.addr[63:32]};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_RESP_Q_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(cmdRespQueueRingbuf.controlRegs.head)))};
                 end
-                fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_RESP_Q_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
                     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(cmdRespQueueRingbuf.controlRegs.tail)))};
                 end
                 
+                // Simple NIC Ringbuf
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: simpleNicTxQueueRingbuf.controlRegs.addr[31:0]};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: simpleNicTxQueueRingbuf.controlRegs.addr[63:32]};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(simpleNicTxQueueRingbuf.controlRegs.head)))};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_TX_Q_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(simpleNicTxQueueRingbuf.controlRegs.tail)))};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: simpleNicRxQueueRingbuf.controlRegs.addr[31:0]};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_BASE_ADDR_HIGH) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: simpleNicRxQueueRingbuf.controlRegs.addr[63:32]};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_HEAD) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(simpleNicRxQueueRingbuf.controlRegs.head)))};
+                end
+                fromInteger(valueOf(CSR_ADDR_OFFSET_SIMPLE_NIC_RX_Q_RINGBUF_TAIL) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(simpleNicRxQueueRingbuf.controlRegs.tail)))};
+                end
                 default: begin
                     return tagged CsrNodeResultNotMatched;
                 end
@@ -706,10 +801,15 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
     interface qpRingbufDmaMasterPipeIfcVec = qpRingbufDmaMasterPipeIfcVecInst;
     interface cmdQueueRingbufDmaMasterPipeIfc = cmdQueueRingbufDmaIfcConvertor.dmaMasterPipeIfc;
+    interface simpleNicRingbufDmaMasterPipeIfc = simpleNicRingbufDmaIfcConvertor.dmaMasterPipeIfc;
     interface csrUpStreamPort = csrNode.upStreamPort;
     
     interface wqePipeOutVec = wqePipeOutVecInst;
     interface metaReportDescPipeInVec = metaReportDescPipeInVecInst;
+
+    interface simpleNicDescPipeIn = simpleNicRxQueueRingbuf.descPipeIn;
+    interface simpleNicDescPipeOut = simpleNicTxQueueRingbuf.descPipeOut;
+
     interface mrAndPgtManagerClt = cmdQueueDescParserAndDispatcher.mrAndPgtManagerClt;
     interface qpcModifyClt = cmdQueueDescParserAndDispatcher.qpcModifyClt;
     interface setNetworkParamReqPipeOut = cmdQueueDescParserAndDispatcher.setNetworkParamReqPipeOut;
