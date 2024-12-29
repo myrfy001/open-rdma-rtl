@@ -104,7 +104,7 @@ module mkPayloadGen#(
     )(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
+    // FIFOF#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
 
     FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkFIFOF;

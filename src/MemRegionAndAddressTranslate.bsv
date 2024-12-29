@@ -41,7 +41,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
 );
 
 
-    Vector#(TExp#(splitCntExp), AutoInferBram#(subAddrType, dataType)) subBramVec <- replicateM(mkAutoInferBram);
+    Vector#(TExp#(splitCntExp), AutoInferBram#(subAddrType, dataType)) subBramVec <- replicateM(mkAutoInferBramUG(False, ""));
 
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
 

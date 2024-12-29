@@ -47,7 +47,6 @@ module mkSimpleNic(SimpleNic);
     Reg#(ADDR) rxBufferBaseAddrReg <- mkReg(0);
     
     Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(IoChannelEthDataStream)) rawEthernetPacketPipeInQueueVec <- replicateM(mkLFIFOF);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(IoChannelEthDataStream)) rawEthernetPacketBufferQueueVec <- replicateM(mkSizedFIFOF(valueOf(SIMPLE_NIC_RX_PER_CHANNEL_BUFFER_DEPTH)));
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(Word)) rawEthernetPacketLengthQueueVec <- replicateM(mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, Reg#(Word)) rawEthernetPacketLengthRegVec <- replicateM(mkReg(0));
