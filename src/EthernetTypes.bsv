@@ -247,3 +247,9 @@ typedef struct {
     IpAddr gatewayAddr;
     IpAddr netMask;
 } LocalNetworkSettings deriving(Bits, FShow, Eq);
+
+typedef enum {
+    IpHeaderEcnFlagNotEnabled = 2'b00,
+    IpHeaderEcnFlagEnabled = 2'b01,
+    IpHeaderEcnFlagMarked = 2'b11
+} IpHeaderEcnFlag deriving(Bits, FShow, Eq);

@@ -25,6 +25,7 @@ import DescriptorParsers :: *;
 import CsrAddress :: *;
 import AutoAckGenerator :: *;
 import SimpleNic :: *;
+import CnpPacketGen :: *;
 
 import Settings :: *;
 import Utils4Test :: *;
@@ -855,11 +856,12 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     PgtUpdateDmaInterfaceConvertor pgtUpdateDmaInterfaceConvertor <- mkPgtUpdateDmaInterfaceConvertor;
     AutoAckGenerator    autoAckGenerator <- mkAutoAckGenerator;
     SimpleNic simpleNic <- mkSimpleNic;
+    CnpPacketGenerator cnpPacketGenerator <- mkCnpPacketGenerator;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_TWO)));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
@@ -900,8 +902,10 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
         mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
-        // auto ack and bitmap report
+        // auto ack, bitmap report and CNP
         mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGenerator.reqPipeInVec[idx]);
+        mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGenerator.genReqPipeInVec[idx]);
+        mkConnection(cnpPacketGenerator.cnpEthPacketPipeOutVec[idx], ethTxStreamArbiterVec[idx].pipeInIfcVec[1]);
 
         // meta report descriptors
         mkConnection(rqVec[idx].metaReportDescPipeOut, descriptorMuxVec[idx].descPipeInVec[0]);
@@ -922,10 +926,10 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[1], descriptorMuxVec[1].descPipeInVec[1]);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);
 
-    // Ethernet Tx channel 0 will handle simple Nic's traffic. Tx channel 1 and 2 will handle auto ack traffic It may lead to unbalance between other channels.
-    mkConnection(simpleNic.rawEthernetPacketPipeOut, ethTxStreamArbiterVec[0].pipeInIfcVec[1]);
-    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[0], ethTxStreamArbiterVec[1].pipeInIfcVec[1]);
-    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1], ethTxStreamArbiterVec[2].pipeInIfcVec[1]);
+    // Ethernet Tx channel 0 will handle simple Nic's traffic. Tx channel 1 and 2 will handle auto ack traffic. It may lead to unbalance between other channels.
+    mkConnection(simpleNic.rawEthernetPacketPipeOut         , ethTxStreamArbiterVec[0].pipeInIfcVec[2]);
+    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[0] , ethTxStreamArbiterVec[1].pipeInIfcVec[2]);
+    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1] , ethTxStreamArbiterVec[2].pipeInIfcVec[2]);
 
     
     

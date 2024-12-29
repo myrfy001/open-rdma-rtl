@@ -54,7 +54,8 @@ typedef struct {
     Bit#(8)                     sqpnLow8Bits;       // 8  bits
 
 
-    ReservedZero#(2)            reserved0;          // 2  bits
+    ReservedZero#(1)            reserved0;          // 1  bits
+    Bool                        enableEcn;          // 1  bits
     Bool                        isRetry;            // 1  bits  tell the receiver whether this a retry packet. if it is, then always report to receiver's software since the reorder bitmap can handle this packet.
     Bool                        isLast;             // 1  bits
     Bool                        isFirst;            // 1  bits

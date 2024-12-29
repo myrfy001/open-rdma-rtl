@@ -28,6 +28,7 @@ import IoChannels :: *;
 import Descriptors :: *;
 import Ringbuf :: *;
 import AutoAckGenerator :: *;
+import CnpPacketGen :: *;
 
 typedef Bit#(TAdd#(1, SizeOf#(Length))) TruncatedAddrForMrBoundCheck;
 
@@ -37,6 +38,7 @@ typedef struct {
     Bool isNeedQueryMrTable;
     Bool isZeroPayload;
     Bool isFirstPacket;
+    ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
 } CheckQpcAndMrTablePipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -50,6 +52,7 @@ typedef struct {
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
     TruncatedAddrForMrBoundCheck deltaLen;
+    ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
 } CheckMrTableStep2PipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -63,6 +66,7 @@ typedef struct {
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
     TruncatedAddrForMrBoundCheck deltaLen;
+    ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
 } CheckMrTableStep3PipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -74,6 +78,7 @@ typedef struct {
     EntryQPC qpc;
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
+    ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
 } IssuePayloadConReqOrDiscardPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -85,6 +90,7 @@ typedef struct {
     EntryQPC qpc;
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
+    ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
 } HandleConRespPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -105,6 +111,7 @@ interface RQ;
 
     interface PipeOut#(RingbufRawDescriptor)    metaReportDescPipeOut;
     interface PipeOut#(AutoAckGeneratorReq)     autoAckGenReqPipeOut;
+    interface PipeOut#(CnpPacketGenReq)         genCnpReqPipeOut;
 endinterface
 
 // FIXME: handle illegal packet length. don't trust length or other meta extracted from header. 
@@ -118,13 +125,11 @@ module mkRQ#(
 
     FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkFIFOF;
     FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkFIFOF;
+    FIFOF#(CnpPacketGenReq)         genCnpReqPipeOutQueue       <- mkFIFOF;
     
     PacketParse packetParser <- mkPacketParse;
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
-    rule drainRdmaMacIpUdpMetaPipeOut;
-        packetParser.rdmaMacIpUdpMetaPipeOut.deq;
-    endrule
 
     QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkSyncQueuedClient("qpcQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
     QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
@@ -170,6 +175,10 @@ module mkRQ#(
     rule sendQpcQueryReqAndSomeSimpleParse;
         let rdmaPacketMeta = packetParser.rdmaPacketMetaPipeOut.first;
         packetParser.rdmaPacketMetaPipeOut.deq;
+
+        let peerMacIpUdpMeta = packetParser.rdmaMacIpUdpMetaPipeOut.first;
+        packetParser.rdmaMacIpUdpMetaPipeOut.deq;
+
         let bth = rdmaPacketMeta.header.bth;
         let reth = extractPriRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans);
 
@@ -194,11 +203,12 @@ module mkRQ#(
         end
 
         let pipelineEntryOut = CheckQpcAndMrTablePipelineEntry{
-            rdmaPacketMeta: rdmaPacketMeta,
-            packetStatus: RdmaRecvPacketStatusNormal,
-            isNeedQueryMrTable: isNeedQueryMrTable,
-            isZeroPayload: isZeroPayload,
-            isFirstPacket: isFirstPacket
+            rdmaPacketMeta      : rdmaPacketMeta,
+            packetStatus        : RdmaRecvPacketStatusNormal,
+            isNeedQueryMrTable  : isNeedQueryMrTable,
+            isZeroPayload       : isZeroPayload,
+            isFirstPacket       : isFirstPacket,
+            peerMacIpUdpMeta    : peerMacIpUdpMeta
         };
         checkQpcAndMrTablePipeQ.enq(pipelineEntryOut);
 
@@ -364,7 +374,8 @@ module mkRQ#(
             isMrLowerAddrBoundOk    : isMrLowerAddrBoundOk,
             zerobasedExpectedPayloadBeatNum  : zerobasedExpectedPayloadBeatNum,
             packetLen               : packetLen,
-            deltaLen                : deltaLen
+            deltaLen                : deltaLen,
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
         };
         checkMrTableStep2PipeQ.enq(pipelineEntryOut);
 
@@ -394,7 +405,8 @@ module mkRQ#(
             isMrLowerAddrBoundOk    : pipelineEntryIn.isMrLowerAddrBoundOk,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen,
-            deltaLen                : deltaLen
+            deltaLen                : deltaLen,
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
         };
         checkMrTableStep3PipeQ.enq(pipelineEntryOut);
         $display(
@@ -456,7 +468,8 @@ module mkRQ#(
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
-            packetLen               : pipelineEntryIn.packetLen
+            packetLen               : pipelineEntryIn.packetLen,
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
         };
         issuePayloadConReqOrDiscardPipeQ.enq(pipelineEntryOut);
         $display(
@@ -503,7 +516,8 @@ module mkRQ#(
             mrEntry                 : pipelineEntryIn.mrEntry,
             qpc                     : pipelineEntryIn.qpc,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
-            packetLen               : pipelineEntryIn.packetLen
+            packetLen               : pipelineEntryIn.packetLen,
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
         };
         handleConRespPipeQ.enq(pipelineEntryOut);
         $display(
@@ -539,6 +553,17 @@ module mkRQ#(
                 psn: bth.psn,
                 qpn: bth.dqpn
             });
+
+            // need to check packet type to avoid cpn packet looping
+            if (rdmaPacketMeta.isEcnMarked && bth.trans != TRANS_TYPE_CNP) begin
+                genCnpReqPipeOutQueue.enq(CnpPacketGenReq {
+                    peerAddrInfo    : pipelineEntryIn.peerMacIpUdpMeta,
+                    peerQpn         : pipelineEntryIn.qpc.peerQPN,
+                    peerMsn         : bth.msn,
+                    localUdpPort    : pipelineEntryIn.qpc.localUdpPort
+                });
+            end
+            
         end
 
         $display(
@@ -749,6 +774,7 @@ module mkRQ#(
 
     interface metaReportDescPipeOut = toPipeOut(metaReportDescPipeOutQueue);
     interface autoAckGenReqPipeOut = toPipeOut(autoAckGenReqPipeOutQueue);
+    interface genCnpReqPipeOut = toPipeOut(genCnpReqPipeOutQueue);
 endmodule
 
 

@@ -237,6 +237,7 @@ typedef struct {
 typedef struct {
     RdmaBthAndExtendHeader header;
     Bool hasPayload;
+    Bool isEcnMarked;
 } RdmaRecvPacketMeta deriving(Bits, FShow);
 
 typedef struct {

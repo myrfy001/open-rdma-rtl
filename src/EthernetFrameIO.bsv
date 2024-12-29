@@ -368,13 +368,16 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     Reg#(Bool) payloadStreamOutputIsFirstReg <- mkReg(True);
 
     Reg#(PktFragNum) beatCntReg <- mkReg(1);
-
+    Reg#(Bool) ecnFlagReg <- mkRegU;
     Integer bthEndBitOneBasedPosInSecondBeat = valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - valueOf(SizeOf#(BTH));
 
     rule handleFirstBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
         // first beat is totally ETH and IP header, skip them
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
+
+        IpHeader  partialIpHeader   = unpack(truncateLSB(pack(ds.data) << valueOf(IP_HEADER_OFFSET_IN_FIRST_BEAT) * valueOf(BYTE_WIDTH)));
+        ecnFlagReg <= (pack(partialIpHeader.ipEcn) == pack(IpHeaderEcnFlagMarked));
 
         if (ds.isLast) begin
             // this is defensive code, shoud not enter this branch. but if it does, stay in handle first packet state.
@@ -412,7 +415,8 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
                 bth: bth,
                 rdmaExtendHeaderBuf: rdmaExtendHeaderBuf
             },
-            hasPayload: hasPayload
+            hasPayload: hasPayload,
+            isEcnMarked: ecnFlagReg
         };
 
         partialRdmaMetaReg <= outPacketMeta;

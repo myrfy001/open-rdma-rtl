@@ -131,6 +131,8 @@ typedef enum {
     SEND_ONLY_WITH_INVALIDATE      = 5'h17
 } RdmaOpCode deriving(Bits, Bounded, Eq, FShow);
 
+
+
 typedef SizeOf#(RdmaOpCode) RDMA_OPCODE_WIDTH;
 
 typedef struct {
@@ -145,18 +147,6 @@ typedef enum {
     AETH_CODE_NAK  = 2'b11
 } AethCode deriving(Bits, Bounded, Eq, FShow);
 
-typedef enum {
-    AETH_ACK_VALUE_INVALID_CREDIT_CNT = 5'b11111
-} AethAckValueCreditCnt deriving(Bits, Bounded, Eq);
-
-typedef enum {
-    AETH_NAK_SEQ_ERR = 5'h0, // 5'b00000 PSN Sequence Error
-    AETH_NAK_INV_REQ = 5'h1, // 5'b00001 Invalid Request
-    AETH_NAK_RMT_ACC = 5'h2, // 5'b00010 Remote Access Error
-    AETH_NAK_RMT_OP  = 5'h3, // 5'b00011 Remote Operational Error
-    AETH_NAK_INV_RD  = 5'h4  // 5'b00100 Invalid RD Request
-//  Reserved 5'h5 - 5'h1F
-} AethNakValue deriving(Bits, Bounded, Eq);
 
 // Headers
 

@@ -53,6 +53,7 @@ typedef struct {
     Bool isFirst;                                   // 1  bit
     Bool isLast;                                    // 1  bit
     Bool isRetry;                                   // 1  bit
+    Bool enableEcn;                                 // 1  bit
 } WorkQueueElem deriving(Bits, FShow);
 
 
@@ -691,7 +692,7 @@ module mkPacketGen#(
         let macIpUdpMeta = ThinMacIpUdpMetaDataForSend{
             dstMacAddr: wqe.macAddr,
             ipDscp: 0,
-            ipEcn: 0,
+            ipEcn: wqe.enableEcn ? pack(IpHeaderEcnFlagEnabled) : pack(IpHeaderEcnFlagNotEnabled),
             dstIpAddr: wqe.dqpIP,
             srcPort: truncate(wqe.sqpn),
             dstPort: fromInteger(valueOf(UDP_PORT_RDMA)),
