@@ -68,6 +68,7 @@ class TB(object):
         shared_mem.close()
 
     def _csr_write_cb(self, addr, value):
+        self.log.info(f"write CSR, addr={hex(addr)}, value={hex(value)}\n\n")
         self.csr_write_req_queue.put_nowait((addr, value))
 
     def _csr_read_cb(self, addr):
@@ -110,7 +111,7 @@ async def small_desc_fp_test(dut):
 
     # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
 
-    await Timer(400, units='ns')
+    await Timer(2000, units='ns')
     tb.clean_up()
 
 

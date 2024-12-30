@@ -22,10 +22,8 @@ import ConnectableF :: *;
 import CsrFramework :: *;
 import Ringbuf :: *;
 
-typedef 7 CSR_ADDR_WIDTH;
+typedef 9 CSR_ADDR_WIDTH;
 typedef 32 CSR_DATA_WIDTH;
-
-typedef 5  CSR_BAR_ADDR_TO_INNER_ADDR_ALIGN_OFFSET;
 
 typedef Bit#(CSR_ADDR_WIDTH) CsrAddr;
 typedef Bit#(CSR_DATA_WIDTH) CsrData;

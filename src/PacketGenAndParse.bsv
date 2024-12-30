@@ -432,6 +432,7 @@ interface PacketGen;
     interface PipeIn#(DataStream) genRespPipeIn;
 endinterface
 
+(* synthesize *)
 module mkPacketGen#(
         Clock clkQpcMrPgtSrv, 
         Reset rstQpcMrPgtSrv
@@ -751,7 +752,7 @@ interface PacketParse;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
-
+(* synthesize *)
 module mkPacketParse(PacketParse);
 
     InputPacketClassifier inputPacketClassifier <- mkInputPacketClassifier;
