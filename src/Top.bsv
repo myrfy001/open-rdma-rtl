@@ -99,7 +99,7 @@ endinterface
 
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelFourChannelDmaMux)    muxVector <- replicateM(mkDtldStreamArbiterSlave(256, True));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelThreeChannelDmaMux)    muxVector <- replicateM(mkDtldStreamArbiterSlave(256, True));
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)     dmaMasterPipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)      qpRingbufDmaSlavePipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)      qpDmaRequestSlaveIfcVecInst = newVector;
@@ -121,9 +121,9 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
     // downstream port
     interface qpRingbufDmaSlavePipeIfcVec = qpRingbufDmaSlavePipeIfcVecInst;
     interface qpDmaRequestSlaveIfcVec = qpDmaRequestSlaveIfcVecInst;
-    interface cmdQueueRingbufDmaSlavePipeIfc = muxVector[0].slaveIfcVec[2]; // use channel 0 for cmd queue.
-    interface pgtUpdateDmaSlavePipe = muxVector[1].slaveIfcVec[2]; // use channel 1 for pgt update.
-    interface simpleNicRingbufDmaSlavePipeIfc = muxVector[2].slaveIfcVec[2]; // use channel 2 for simpleNic descriptor.
+    interface cmdQueueRingbufDmaSlavePipeIfc    = muxVector[0].slaveIfcVec[2]; // use channel 0 for cmd queue.
+    interface pgtUpdateDmaSlavePipe             = muxVector[1].slaveIfcVec[2]; // use channel 1 for pgt update.
+    interface simpleNicRingbufDmaSlavePipeIfc   = muxVector[2].slaveIfcVec[2]; // use channel 2 for simpleNic descriptor.
 endmodule
 
 interface BsvTopWithoutHardIpInstance;
@@ -741,7 +741,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_THREE, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
 
@@ -753,7 +753,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(mrAndPgtUpdater.dmaReadRespPipeIn, pgtUpdateDmaInterfaceConvertor.dmaReadRespPipeOut);    
     mkConnection(mrAndPgtUpdater.mrModifyClt, mrTable.modifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
     mkConnection(mrAndPgtUpdater.pgtModifyClt, addrTranslator.modifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-    
+
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // Payload gen and con
         mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);

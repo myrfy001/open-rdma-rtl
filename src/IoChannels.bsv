@@ -35,4 +35,4 @@ typedef DtldStreamBiDirSlavePipes#(DATA, ADDR, Length) IoChannelMemorySlavePipe;
 
 typedef DtldStreamNoMetaBiDirPipes#(DATA)   IoChannelBiDirStreamNoMetaPipe;
 
-typedef DtldStreamArbiterSlave#(NUMERIC_TYPE_FOUR, DATA, ADDR, Length) IoChannelFourChannelDmaMux;
+typedef DtldStreamArbiterSlave#(NUMERIC_TYPE_THREE, DATA, ADDR, Length) IoChannelThreeChannelDmaMux;
