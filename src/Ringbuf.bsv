@@ -483,11 +483,16 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         let req = dmaReadReqPipeInQ.first;
         dmaReadReqPipeInQ.deq;
 
-        let meta = IoChannelMemoryAccessMeta {
+        IoChannelMemoryAccessMeta meta = IoChannelMemoryAccessMeta {
             addr: req.addr,
             totalLen: unpack((zeroExtend(req.zeroBasedDescReadCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)))
         };
         dmaReadMetaPipeOutQueue.enq(meta);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardReadReq"),
+            toBlue(", meta="), fshow(meta)
+        );
     endrule
 
     rule forwardReadResp;
@@ -499,6 +504,11 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         };
 
         dmaReadRespPipeOutQ.enq(resp);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardReadResp"),
+            toBlue(", resp="), fshow(resp)
+        );
     endrule
 
     interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);

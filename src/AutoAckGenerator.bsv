@@ -199,7 +199,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                             dstIpAddr: qpCtxResp.peerIpAddr,
                             srcPort: qpCtxResp.localUdpPort,
                             dstPort: fromInteger(valueOf(UDP_PORT_RDMA)),
-                            udpPayloadLen:fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH)),
+                            udpPayloadLen: fromInteger(valueOf(RDMA_FIXED_HEADER_BYTE_NUM)),
                             ethType: fromInteger(valueOf(ETH_TYPE_IP))
                         };
 

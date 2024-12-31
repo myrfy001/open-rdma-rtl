@@ -151,7 +151,7 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
         endactionvalue
     endfunction
     
-    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO));
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO), "mkBsvTopWithoutHardIpInstance");
     mkConnection(csrRootConnector.csrNodeRootPortIfc, csrNode.upStreamPort);
     mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
 
@@ -668,7 +668,7 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
             end
         endactionvalue
     endfunction
-    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO));
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO), "mkRingbufAndDescriptorHandler");
 
 
     interface qpRingbufDmaMasterPipeIfcVec = qpRingbufDmaMasterPipeIfcVecInst;

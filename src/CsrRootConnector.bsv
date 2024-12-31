@@ -45,6 +45,16 @@ module mkCsrRootConnector(CsrRootConnector);
     FIFOF#(CsrReadWriteReq#(CsrAddr, CsrData))  csrReqQueue <- mkFIFOF;
     FIFOF#(CsrReadWriteResp#(CsrData))          csrRespQueue <- mkFIFOF;
     
+    // rule debug;
+    //     if (!busWriteMetaPipeInQueue.notEmpty) begin
+    //         $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  busWriteMetaPipeInQueue");
+    //     end
+
+    //     if (!csrReqQueue.notFull) begin
+    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  csrReqQueue");
+    //     end
+    // endrule
+
     rule forwardReadOrWriteReq;
         if (busReadMetaPipeInQueue.notEmpty) begin
             let readMeta = busReadMetaPipeInQueue.first;

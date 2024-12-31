@@ -35,7 +35,8 @@ endinterface
 
 module mkCsrNode#(
         function ActionValue#(CsrNodeResult#(tDownStreamPordIdx, tValue)) matchFunc(CsrReadWriteReq#(tAddr, tValue) req),
-        Integer queueDepth
+        Integer queueDepth,
+        String debugName
     )(CsrNode#(tAddr, tValue, nDownStreamPortCnt)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tValue, szValue),
@@ -44,7 +45,8 @@ module mkCsrNode#(
         FShow#(CsrFramework::CsrReadWriteResp#(tValue)),
         Literal#(tValue),
         PrimIndex#(tDownStreamPordIdx, a__),
-        FShow#(tAddr)
+        FShow#(tAddr),
+        FShow#(tDownStreamPordIdx)
     );
 
     Vector#(nDownStreamPortCnt, Wire#(CsrReadWriteReq#(tAddr, tValue))) reqWireVec <- replicateM(mkWire);
@@ -75,7 +77,9 @@ module mkCsrNode#(
                     tagged CsrNodeResultForward .portIdx: begin
                         reqRelayQueueVec[portIdx].enq(req);
                         let isSelfResp = False;
-                        keepOrderQueue.enq(tuple2(isSelfResp, portIdx));
+                        if (!req.isWrite) begin
+                            keepOrderQueue.enq(tuple2(isSelfResp, portIdx));
+                        end
                     end
                     tagged CsrNodeResultNotMatched: begin
                         immFail(
@@ -84,6 +88,12 @@ module mkCsrNode#(
                         );
                     end
                 endcase
+
+                $display(
+                    "time=%0t:", $time, toGreen(" mkCsrNode upStreamPort put request [%s]"), debugName,
+                    toBlue(", req="), fshow(req),
+                    toBlue(", matchResult="), fshow(matchResult)
+                );
             endmethod
         endinterface
 

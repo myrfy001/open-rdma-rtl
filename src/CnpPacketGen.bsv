@@ -59,7 +59,7 @@ module mkCnpPacketGenerator(CnpPacketGenerator);
                 dstIpAddr       : req.peerAddrInfo.srcIpAddr,
                 srcPort         : req.localUdpPort,
                 dstPort         : fromInteger(valueOf(UDP_PORT_RDMA)),
-                udpPayloadLen   :fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                udpPayloadLen   : fromInteger(valueOf(RDMA_FIXED_HEADER_BYTE_NUM)),
                 ethType         : fromInteger(valueOf(ETH_TYPE_IP))
             };
 

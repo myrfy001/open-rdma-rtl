@@ -779,3 +779,4 @@ class SimplePcieBehaviorModel(object):
             await cocotb.triggers.Timer(2, "ns")
         await self.completer_write_meta_pipes[0].enq(write_meta.pack())
         await self.completer_write_data_pipes[0].enq(write_data.pack())
+        await RisingEdge(self.clock)
