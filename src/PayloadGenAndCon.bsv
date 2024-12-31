@@ -228,9 +228,7 @@ module mkPayloadCon#(
 
     DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
 
-    FIFOF#(AddressChunkResp#(ADDR, Length)) chunkedBurstMetaQ <- mkFIFOF;
     FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkFIFOF;
-    FIFOF#(Tuple2#(DataStreamEn, ByteIndexInBeat)) dataStreamEnPreCalcPipelineQ <- mkFIFOF;
     FIFOF#(Length) issueDmaWritePipelineQ <- mkFIFOF;
     FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkFIFOF;
 

@@ -104,6 +104,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
                 toBlue(", ds="), fshow(ds)
             );
         end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier discardPacketWhenNetworkSettingsNotReady"),
+        //     toBlue(", ethHeader="), fshow(ethHeader),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     rule handleFirstBeatStage if (stateReg == InputPacketClassifierStateHandleFirstBeat);

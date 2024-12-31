@@ -19,7 +19,9 @@ from cocotb.queue import Queue
 from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
 
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, SimplePcieBehaviorModel, copy_mem_file_to_sim_build_dir
+from common import gen_rtl_file_list, SimplePcieBehaviorModel, SimpleEthBehaviorModel, copy_mem_file_to_sim_build_dir
+from scapy.layers.inet import IP, UDP
+from scapy.layers.l2 import Ether
 
 
 class TB(object):
@@ -47,7 +49,24 @@ class TB(object):
             [
                 "dmaSlavePipeIfc"
             ],
-            self.shared_mem.buf)
+            self.shared_mem.buf
+        )
+
+        self.eth_bfm = SimpleEthBehaviorModel(
+            dut,
+            [
+                "qpEthDataStreamIfcVec_0_dataPipeOut",
+                "qpEthDataStreamIfcVec_1_dataPipeOut",
+                "qpEthDataStreamIfcVec_2_dataPipeOut",
+                "qpEthDataStreamIfcVec_3_dataPipeOut",
+            ],
+            [
+                "qpEthDataStreamIfcVec_0_dataPipeIn",
+                "qpEthDataStreamIfcVec_1_dataPipeIn",
+                "qpEthDataStreamIfcVec_2_dataPipeIn",
+                "qpEthDataStreamIfcVec_3_dataPipeIn",
+            ],
+        )
 
         self.csr_write_req_queue = Queue()
         self.csr_read_req_queue = Queue()
@@ -70,6 +89,8 @@ class TB(object):
     def _csr_write_cb(self, addr, value):
         self.log.info(f"write CSR, addr={hex(addr)}, value={hex(value)}\n\n")
         self.csr_write_req_queue.put_nowait((addr, value))
+        self.log.info(
+            f"get mem addr @ 0x3e01000={self.shared_mem.buf[0x3e01000]}")
 
     def _csr_read_cb(self, addr):
         with self.csr_read_lock:
@@ -82,12 +103,16 @@ class TB(object):
         while True:
             addr, value = await self.csr_write_req_queue.get()
             await self.pcie_bfm.host_write_blocking(addr, value)
+            self.log.info(f"_forward_csr_write_task: {addr, value}")
 
     async def _forward_csr_read_req_task(self):
         while True:
             addr = await self.csr_read_req_queue.get()
             val = await self.pcie_bfm.host_read_blocking(addr)
             await self.csr_read_resp_queue.put(val)
+
+    async def put_rx_data(self, packet_data):
+        await self.eth_bfm.inject_rx_packet(packet_data)
 
     async def gen_reset(self):
         self.resetn.value = 0
@@ -111,7 +136,15 @@ async def small_desc_fp_test(dut):
 
     # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
 
-    await Timer(2000, units='ns')
+    eth_layer = Ether(dst="AA:BB:CC:DD:EE", src="AA:BB:CC:DD:FF")
+    ip_layer = IP(dst="17.34.51.68")
+    udp_layer = UDP(dport=1111, sport=2222)
+
+    payload_to_send = "0123456789abcdef"
+    bytes_to_send = bytes(eth_layer/ip_layer/udp_layer/payload_to_send)
+    await tb.put_rx_data(bytes_to_send)
+
+    await Timer(500, units='ns')
     tb.clean_up()
 
 

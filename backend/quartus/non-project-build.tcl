@@ -148,6 +148,9 @@ if {$make_assignments} {
 	set_global_assignment -name EDA_IBIS_MUTUAL_COUPLING ON -section_id eda_board_design_signal_integrity -family $family
 	set_global_assignment -name EDA_IBIS_SPECIFICATION_VERSION 5P0 -section_id eda_board_design_signal_integrity -family $family
 
+	# more debug info
+	set_global_assignment -name RTL_ANALYSIS_DEBUG_MODE ON
+
 	# Commit assignments
 	export_assignments
 

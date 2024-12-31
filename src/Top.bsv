@@ -95,8 +95,6 @@ interface TopLevelDmaChannelMux;
     interface IoChannelMemorySlavePipe cmdQueueRingbufDmaSlavePipeIfc;
     interface IoChannelMemorySlavePipe pgtUpdateDmaSlavePipe;
     interface IoChannelMemorySlavePipe simpleNicRingbufDmaSlavePipeIfc;
-
-
 endinterface
 
 (* synthesize *)
@@ -163,7 +161,16 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     mkConnection(ringbufAndDescriptorHandler.simpleNicRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicRingbufDmaSlavePipeIfc);
     mkConnection(ringbufAndDescriptorHandler.qpResetReqPipeOut, qpMrPgtQpc.qpResetReqPipeIn);
     mkConnection(qpMrPgtQpc.metaReportDescPipeOutVec, ringbufAndDescriptorHandler.metaReportDescPipeInVec);
+    mkConnection(ringbufAndDescriptorHandler.mrAndPgtManagerClt, qpMrPgtQpc.mrAndPgtModifyDescSrv);
+    mkConnection(ringbufAndDescriptorHandler.qpcModifyClt, qpMrPgtQpc.qpContextUpdateSrv);
 
+    mkConnection(qpMrPgtQpc.simpleNicRxDescPipeOut, ringbufAndDescriptorHandler.simpleNicRxDescPipeIn);
+    mkConnection(qpMrPgtQpc.simpleNicTxDescPipeIn, ringbufAndDescriptorHandler.simpleNicTxDescPipeOut);
+
+    rule forwardSetNetworkParamReqPipeOut;
+        ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.deq;
+        qpMrPgtQpc.setLocalNetworkSettings(ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.first);
+    endrule
  
 
     interface dmaSlavePipeIfc = csrRootConnector.dmaSidePipeIfc;
@@ -182,8 +189,8 @@ interface RingbufAndDescriptorHandler;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem))         wqePipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RingbufRawDescriptor))   metaReportDescPipeInVec;
 
-    interface PipeIn#(RingbufRawDescriptor)                                     simpleNicDescPipeIn;
-    interface PipeOut#(RingbufRawDescriptor)                                    simpleNicDescPipeOut;
+    interface PipeIn#(RingbufRawDescriptor)                                     simpleNicRxDescPipeIn;
+    interface PipeOut#(RingbufRawDescriptor)                                    simpleNicTxDescPipeOut;
     
     interface Client#(RingbufRawDescriptor, Bool)                               mrAndPgtManagerClt;
     interface Client#(WriteReqQPC, Bool)                                        qpcModifyClt;
@@ -679,8 +686,8 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     interface wqePipeOutVec = wqePipeOutVecInst;
     interface metaReportDescPipeInVec = metaReportDescPipeInVecInst;
 
-    interface simpleNicDescPipeIn = simpleNicRxQueueRingbuf.descPipeIn;
-    interface simpleNicDescPipeOut = simpleNicTxQueueRingbuf.descPipeOut;
+    interface simpleNicRxDescPipeIn = simpleNicRxQueueRingbuf.descPipeIn;
+    interface simpleNicTxDescPipeOut = simpleNicTxQueueRingbuf.descPipeOut;
 
     interface mrAndPgtManagerClt = cmdQueueDescParserAndDispatcher.mrAndPgtManagerClt;
     interface qpcModifyClt = cmdQueueDescParserAndDispatcher.qpcModifyClt;
@@ -696,8 +703,10 @@ interface QpMrPgtQpc;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)  qpEthDataStreamIfcVec;
+
+    interface PipeOut#(RingbufRawDescriptor)                                     simpleNicRxDescPipeOut;
+    interface PipeIn#(RingbufRawDescriptor)                                      simpleNicTxDescPipeIn;
 
     interface PipeIn#(IndexQP) qpResetReqPipeIn;
         
@@ -734,17 +743,17 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream)) otherRawPacketPipeOutVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
 
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)         qpDmaRequestMasterIfcVecInst    = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)    qpEthDataStreamIfcVecInst       = newVector;
 
-
-    
+    mkConnection(mrAndPgtUpdater.dmaReadReqPipeOut, pgtUpdateDmaInterfaceConvertor.dmaReadReqPipeIn);
+    mkConnection(mrAndPgtUpdater.dmaReadRespPipeIn, pgtUpdateDmaInterfaceConvertor.dmaReadRespPipeOut);    
     mkConnection(mrAndPgtUpdater.mrModifyClt, mrTable.modifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
     mkConnection(mrAndPgtUpdater.pgtModifyClt, addrTranslator.modifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // Payload gen and con
         mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);
@@ -773,6 +782,9 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
         mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
 
+        // Simple Nic Packet input
+        mkConnection(rqVec[idx].otherRawPacketPipeOut, simpleNic.rawEthernetPacketPipeInVec[idx]);
+
         // auto ack, bitmap report and CNP
         mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGenerator.reqPipeInVec[idx]);
         mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGenerator.genReqPipeInVec[idx]);
@@ -787,7 +799,6 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     
         // IO interface 
         wqePipeInVecInst[idx]               = sqVec[idx].wqePipeIn;
-        otherRawPacketPipeOutVecInst[idx]   = rqVec[idx].otherRawPacketPipeOut;
     end
 
     // other meta report desc related connection
@@ -824,14 +835,16 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         end
     endmethod
 
-    interface pgtUpdateDmaMasterPipe = pgtUpdateDmaInterfaceConvertor.dmaSidePipeIfc;
-
+    interface pgtUpdateDmaMasterPipe            = pgtUpdateDmaInterfaceConvertor.dmaSidePipeIfc;
     interface wqePipeInVec                      = wqePipeInVecInst;
     interface metaReportDescPipeOutVec          = metaReportDescPipeOutVecInst;
-    interface otherRawPacketPipeOutVec          = otherRawPacketPipeOutVecInst;
     interface qpDmaRequestMasterIfcVec          = qpDmaRequestMasterIfcVecInst;
     interface qpEthDataStreamIfcVec             = qpEthDataStreamIfcVecInst;
     interface qpContextUpdateSrv                = toGPServer(qpContextUpdateReqQueue, qpContextUpdateRespQueue);
+
+    interface simpleNicRxDescPipeOut            = simpleNic.simpleNicRxDescPipeOut;
+    interface simpleNicTxDescPipeIn             = simpleNic.simpleNicTxDescPipeIn;
+
     interface qpResetReqPipeIn                  = autoAckGenerator.resetReqPipeIn;
     interface mrAndPgtModifyDescSrv             = mrAndPgtUpdater.mrAndPgtModifyDescSrv;
 endmodule

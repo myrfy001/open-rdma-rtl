@@ -10,6 +10,7 @@ import asyncio
 import cocotb
 from cocotb.triggers import RisingEdge, ReadWrite
 from cocotb.binary import BinaryValue
+from cocotb.queue import Queue
 
 
 def gen_rtl_file_list(top_paths):
@@ -780,3 +781,81 @@ class SimplePcieBehaviorModel(object):
         await self.completer_write_meta_pipes[0].enq(write_meta.pack())
         await self.completer_write_data_pipes[0].enq(write_data.pack())
         await RisingEdge(self.clock)
+
+
+class SimpleEthBehaviorModel(object):
+    def __init__(self, dut, tx_ifc_base_names, rx_ifc_base_names):
+        self.dut = dut
+
+        self.log = logging.getLogger("cocotb.tb")
+        self.log.setLevel(logging.INFO)
+
+        self.clock = dut.CLK
+        self.resetn = dut.RST_N
+
+        self.txChannels = []
+        self.rxChannels = []
+        for idx in range(len(tx_ifc_base_names)):
+            self.txChannels.append(BluespecPipeOut(
+                dut, tx_ifc_base_names[idx], self.clock))
+            self.rxChannels.append(BluespecPipeIn(
+                dut, rx_ifc_base_names[idx], self.clock))
+
+        self.main_rx_queue = Queue()
+        self.main_tx_queue = Queue()
+
+        for idx in range(len(tx_ifc_base_names)):
+            cocotb.start_soon(self._handle_dut_tx_task(idx))
+            cocotb.start_soon(self._handle_dut_rx_task(idx))
+
+    async def get_tx_packet(self):
+        return await self.main_tx_queue.get()
+
+    async def inject_rx_packet(self, packet):
+        await self.main_rx_queue.put(packet)
+
+    async def _handle_dut_tx_task(self, idx):
+        packet_data = b""
+        while True:
+            if await self.txChannels[idx].not_empty():
+                ds_raw = await self.txChannels[idx].first()
+                await self.txChannels[idx].deq()
+                ds = BlueRdmaDataStream256.unpack(ds_raw)
+                ds_data_as_bytes = ds.data().to_bytes(32, byteorder="little")
+                packet_data += ds_data_as_bytes[:ds.byte_num()]
+
+                if ds.is_last():
+                    await self.main_tx_queue.put(packet_data)
+                    packet_data = ""
+            await RisingEdge(self.clock)
+
+    async def _handle_dut_rx_task(self, idx):
+        while True:
+            packet_to_send = await self.main_rx_queue.get()
+            send_pos = 0
+            while send_pos < len(packet_to_send):
+                if await self.rxChannels[idx].not_full():
+                    data = packet_to_send[send_pos:send_pos+32]
+                    is_first = send_pos == 0
+                    send_pos += 32
+                    is_last = send_pos >= len(packet_to_send)
+
+                    ds = BlueRdmaDataStream256(
+                        data=data,
+                        byte_num=len(data),
+                        start_byte_index=0,
+                        is_first=is_first,
+                        is_last=is_last
+                    )
+                    await self.rxChannels[idx].enq(ds.pack())
+                    self.log.debug(f"inject rx beat to dut, ds={ds}")
+                await RisingEdge(self.clock)
+            await RisingEdge(self.clock)
+
+
+class DeviceRingbufTestHelper:
+    def __init__(self, dut, pcie_bfm, mem, start_addr):
+        self.dut = dut
+        self.pcie_bfm = pcie_bfm
+        self.mem = mem
+        self.start_addr = start_addr

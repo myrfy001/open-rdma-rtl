@@ -20,9 +20,11 @@ class MockHostMem:
         try:
             self.shared_mem_obj = shared_memory.SharedMemory(
                 shared_mem_name, True, shared_mem_size)
+            print("create new shared memory file")
         except FileExistsError:
             self.shared_mem_obj = shared_memory.SharedMemory(
                 shared_mem_name, False, shared_mem_size)
+            print("open exist shared memory file")
 
         self.buf = self.shared_mem_obj.buf
 
