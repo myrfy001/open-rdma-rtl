@@ -10,51 +10,55 @@ def memcpy(dst, start_addr, src):
 
 
 class RingbufDescCommonHead(Structure):
-    _fields_ = [("F_HAS_NEXT_FRAG", c_ushort, 1),
-                ("F_RESERVED_0", c_ushort, 7),
-                ("F_OP_CODE", c_ushort, 7),
-                ("F_VALID", c_ushort, 1),
-                ]
+    _fields_ = [
+        ("F_OP_CODE", c_ushort, 8),
+        ("F_IS_EXTEND_OP_CODE", c_ushort, 1),
+        ("F_RESERVED_0", c_ushort, 5),
+        ("F_HAS_NEXT_FRAG", c_ushort, 1),
+        ("F_VALID", c_ushort, 1),
+    ]
 
 
 class RingbufDescCmdQueueCommonHead(Structure):
     _pack_ = 1
-    _fields_ = [("F_USER_DATA", c_ushort, 16),
+    _fields_ = [("F_USER_DATA", c_ushort, 8),
                 ("F_IS_SUCCESS", c_ushort, 1),
-                ("F_RESERVED_0", c_ushort, 15),
-                ("F_RESERVED_1", c_ushort, 16),
+                ("F_RESERVED_0", c_ushort, 7),
                 ]
 
 
 class CmdQueueRespDescOnlyCommonHeader(Structure):
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
-                ("F_RESERVED_0", c_ulonglong, 64),
+                ("F_RESERVED_0", c_ulonglong, 32),
                 ("F_RESERVED_1", c_ulonglong, 64),
                 ("F_RESERVED_2", c_ulonglong, 64),
+                ("F_RESERVED_3", c_ulonglong, 64),
                 ]
 
 
 class CmdQueueDescUpdateMrTable(Structure):
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
+                ("F_RESERVED_0", c_uint, 7),
                 ("F_MR_TABLE_MR_BASE_VA", c_ulonglong),
                 ("F_MR_TABLE_MR_LENGTH", c_uint, 32),
                 ("F_MR_TABLE_MR_KEY", c_uint, 32),
                 ("F_MR_TABLE_PD_HANDLER", c_uint, 32),
                 ("F_MR_TABLE_ACC_FLAGS", c_uint, 8),
                 ("F_MR_TABLE_PGT_OFFSET", c_uint, 17),
-                ("F_RESERVED_0", c_uint, 7),
+                ("F_RESERVED_1", c_uint, 7),
                 ]
 
 
 class CmdQueueDescUpdatePGT(Structure):
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
+                ("F_RESERVED_0", c_uint, 32),
                 ("F_PGT_DMA_ADDR", c_ulonglong),
                 ("F_PGT_START_INDEX", c_uint, 32),
                 ("F_PGT_ZERO_BASED_ENTRY_CNT", c_uint, 32),
-                ("F_RESERVED_0", c_ulonglong),
+                ("F_RESERVED_1", c_ulonglong, 64),
                 ]
 
 
@@ -139,10 +143,11 @@ class PMTU:
     IBV_MTU_4096 = 5
 
 
-class CmdQueueDescQpManagementSeg0(Structure):
+class CmdQueueDescQpManagement(Structure):
     _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
+                ("F_QP_ADMIN_PEER_IP_ADDR", c_uint, 32),
                 ("F_QP_ADMIN_IS_VALID", c_uint, 1),
                 ("F_QP_ADMIN_IS_ERROR", c_uint, 1),
                 ("F_RESERVED_0", c_uint, 6),
@@ -153,8 +158,10 @@ class CmdQueueDescQpManagementSeg0(Structure):
                 ("F_QP_ADMIN_QP_TYPE", c_uint, 4),
                 ("F_RESERVED_1", c_uint, 4),
                 ("F_QP_ADMIN_PMTU", c_uint, 3),
-                ("F_RESERVED_2", c_uint, 21),
-                ("F_RESERVED_3", c_ulonglong, 64),
+                ("F_RESERVED_2", c_uint, 5),
+                ("F_RESERVED_3", c_ulonglong, 16),
+                ("F_QP_ADMIN_LOCAL_UDP_PORT", c_uint, 16),
+                ("F_QP_ADMIN_PEER_MAC_ADDR", c_ulonglong, 48),
                 ]
 
 
@@ -162,12 +169,13 @@ class CmdQueueDescSetNetworkParam(Structure):
     _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
+                ("F_RESERVED_0", c_uint, 32),
                 ("F_NET_PARAM_GATEWAY", c_uint, 32),
                 ("F_NET_PARAM_NETMASK", c_uint, 32),
                 ("F_NET_PARAM_IPADDR", c_uint, 32),
-                ("F_RESERVED_0", c_uint, 32),
+                ("F_RESERVED_1", c_ulonglong, 32),
                 ("F_NET_PARAM_MACADDR", c_ulonglong, 48),
-                ("F_RESERVED_1", c_ulonglong, 16),
+                ("F_RESERVED_2", c_ulonglong, 16),
                 ]
 
 
@@ -175,22 +183,10 @@ class CmdQueueDescSetRawPacketReceiveMeta(Structure):
     _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
+                ("F_RESERVED_0", c_uint, 32),
                 ("F_RAW_PACKET_META_BASE_ADDR", c_ulonglong),
-                ("F_RESERVED_0", c_ulonglong),
                 ("F_RESERVED_1", c_ulonglong),
-                ]
-
-
-class CmdQueueDescUpdateErrorPsnRecoverPoint(Structure):
-    _pack_ = 1
-    _fields_ = [("common_header", RingbufDescCommonHead),
-                ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
-                ("F_RECOVERY_POINT",  c_uint, 24),
-                ("F_RESERVED_0", c_uint, 8),
-                ("F_QPN", c_uint, 24),
-                ("F_RESERVED_1", c_uint, 8),
                 ("F_RESERVED_2", c_ulonglong),
-                ("F_RESERVED_3", c_ulonglong),
                 ]
 
 
@@ -206,7 +202,7 @@ class CmdQueueDescOperators:
 class SendQueueDescSeg0(Structure):
     _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
-                ("F_PKEY", c_ushort, 16),
+                ("F_MSN", c_ushort, 16),
 
                 ("F_TOTAL_LEN", c_uint, 32),
                 ("F_RKEY", c_uint, 32),
@@ -231,7 +227,9 @@ class SendQueueDescSeg1(Structure):
                 ("F_PMTU", c_ushort, 3),
                 ("F_IS_FIRST", c_ushort, 1),
                 ("F_IS_LAST", c_ushort, 1),
-                ("F_RESERVED_0", c_ushort, 3),
+                ("F_IS_RETRY", c_ushort, 1),
+                ("F_ENABLE_ECN", c_ushort, 1),
+                ("F_RESERVED_0", c_ushort, 1),
                 ("F_SQPN_LOW_8_BITS", c_ushort, 8),
                 ("F_IMM", c_uint, 32),
                 ("F_MAC_ADDR", c_ulonglong, 48),
@@ -301,76 +299,69 @@ def is_power_of_2(x):
     return (x & (x-1)) == 0
 
 
-class MeatReportQueueDescFragBTH(Structure):
+class MetaReportQueuePacketBasicInfoDesc(Structure):
     _pack_ = 1
-    _fields_ = [("F_TRANS", c_uint, 3),
-                ("F_OPCODE", c_uint, 5),
+    _fields_ = [
+        ("common_header", RingbufDescCommonHead),
+        ("F_MSN", c_uint, 16),
+        ("F_PSN", c_uint, 24),
+        ("F_ECN_MARKED", c_uint, 1),
+        ("F_SOLICITED", c_uint, 1),
+        ("F_ACK_REQ", c_uint, 1),
+        ("F_RESERVED_0", c_uint, 5),
+        ("F_DQPN", c_uint, 24),
+        ("F_RESERVED_1", c_uint, 8),
+        ("F_TOTAL_LEN", c_uint, 32),
+        ("F_RADDR", c_ulonglong, 64),
+        ("F_RKEY", c_uint, 32),
+        ("F_IMM_DATA", c_uint, 32),
+    ]
 
-                ("F_DQPN", c_uint, 24),
-                ("F_PSN", c_uint, 24),
 
-                ("F_SOLICITED", c_uint, 1),
-                ("F_ACK_REQ", c_uint, 1),
-                ("F_PAD_CNT", c_uint, 2),
-                ("F_RESERVED_1", c_uint, 4),
-                ]
-
-
-class MeatReportQueueDescFragRETH(Structure):
+class MetaReportQueueReadReqExtendInfoDesc(Structure):
     _pack_ = 1
-    _fields_ = [("F_VA", c_ulonglong, 64),
-                ("F_RKEY", c_uint, 32),
-                ("F_DLEN", c_uint, 32),
-                ]
+    _fields_ = [
+        ("common_header", RingbufDescCommonHead),
+        ("F_RESERVED_0", c_uint, 16),
+        ("F_TOTAL_LEN", c_uint, 32),
+        ("F_LADDR", c_ulonglong, 64),
+        ("F_LKEY", c_uint, 32),
+        ("F_RESERVED_1", c_uint, 32),
+        ("F_RESERVED_2", c_ulonglong, 64),
+    ]
 
 
-class MeatReportQueueDescFragSecondaryRETH(Structure):
+class MetaReportQueueAckDesc(Structure):
     _pack_ = 1
-    _fields_ = [("F_ADDR", c_ulonglong, 64),
-                ("F_RKEY", c_uint, 32),
-                ]
+    _fields_ = [
+        ("common_header", RingbufDescCommonHead),
+        ("F_RESERVED_0", c_uint, 4),
+        ("F_IS_SEND_BY_LOCAL_HW", c_uint, 1),
+        ("F_IS_SEND_BY_DRIVER", c_uint, 1),
+        ("F_IS_WINDOW_SLIDED", c_uint, 1),
+        ("F_IS_PACKET_LOST", c_uint, 1),
+        ("F_RESERVED_1", c_uint, 8),
+        ("F_PSN_BEFORE_SLIDE", c_uint, 24),
+        ("F_RESERVED_2", c_uint, 8),
+        ("F_PSN_NOW", c_uint, 24),
+        ("F_RESERVED_3", c_uint, 8),
+        ("F_MSN", c_uint, 16),
+        ("F_RESERVED_4", c_uint, 16),
+        ("F_NOW_BITMAP_LOW", c_ulonglong, 64),
+        ("F_NOW_BITMAP_HIGH", c_ulonglong, 64),
+    ]
 
 
-class MeatReportQueueDescFragAETH(Structure):
+class MetaReportQueueAckExtraDesc(Structure):
     _pack_ = 1
-    _fields_ = [("F_LAST_RETRY_PSN", c_ulonglong, 24),
-                ("F_MSN", c_ulonglong, 24),
-                ("F_AETH_VALUE", c_ulonglong, 5),
-                ("F_AETH_CODE", c_ulonglong, 2),
-                ("F_RESERVED_1", c_ulonglong, 9),
-                ]
-
-
-class MeatReportQueueDescBthReth(Structure):
-    _pack_ = 1
-    _fields_ = [("F_EXPECTED_PSN", c_uint, 24),
-                ("F_REQ_STATUS", c_uint, 8),
-                ("F_BTH", MeatReportQueueDescFragBTH),
-                ("F_RETH", MeatReportQueueDescFragRETH),
-                ("F_MSN", c_uint, 24),
-                ("F_RESERVED_1", c_uint, 7),
-                ("F_CAN_AUTO_ACK", c_uint, 1),
-                ]
-
-
-class MeatReportQueueDescSecondaryReth(Structure):
-    _pack_ = 1
-    _fields_ = [("F_SEC_RETH", MeatReportQueueDescFragSecondaryRETH),
-                ("F_RESERVED_1", c_uint),
-                ("F_RESERVED_2", c_ulonglong),
-                ("F_RESERVED_3", c_ulonglong),
-                ]
-
-
-class MeatReportQueueDescBthAeth(Structure):
-    _pack_ = 1
-    _fields_ = [("F_RESERVED_1", c_uint, 24),
-                ("F_REQ_STATUS", c_uint, 8),
-                ("F_BTH", MeatReportQueueDescFragBTH),
-                ("F_AETH", MeatReportQueueDescFragAETH),
-                ("F_RESERVED_3", c_uint, 32),
-                ("F_RESERVED_3", c_ulonglong, 64),
-                ]
+    _fields_ = [
+        ("common_header", RingbufDescCommonHead),
+        ("F_RESERVED_0", c_uint, 16),
+        ("F_RESERVED_1", c_uint, 32),
+        ("F_RESERVED_2", c_ulonglong, 64),
+        ("F_PRE_BITMAP_LOW", c_ulonglong, 64),
+        ("F_PRE_BITMAP_HIGH", c_ulonglong, 64),
+    ]
 
 
 class AethCode:
@@ -393,3 +384,28 @@ class RdmaReqStatus:
     RDMA_REQ_ST_UNKNOWN = 6
     RDMA_REQ_ST_INV_HEADER = 7
     RDMA_REQ_ST_MAX_GUARD = 255
+
+
+class SimpleNicTxQueueDesc(Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("common_header", RingbufDescCommonHead),
+        ("F_RESERVED_0", c_uint, 16),
+        ("F_LEN", c_uint, 32),
+        ("F_ADDR", c_ulonglong, 64),
+        ("F_RESERVED_1", c_ulonglong, 64),
+        ("F_RESERVED_2", c_ulonglong, 64),
+    ]
+
+
+class SimpleNicRxQueueDesc(Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("common_header", RingbufDescCommonHead),
+        ("F_RESERVED_0", c_uint, 16),
+        ("F_LEN", c_uint, 32),
+        ("F_SLOT_IDX", c_uint, 32),
+        ("F_RESERVED_1", c_ulonglong, 32),
+        ("F_RESERVED_2", c_ulonglong, 64),
+        ("F_RESERVED_3", c_ulonglong, 64),
+    ]

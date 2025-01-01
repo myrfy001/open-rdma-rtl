@@ -631,6 +631,7 @@ module mkRQ#(
                     if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST))) begin
                         desc0.commonHeader.hasNextFrag = True;
                         let desc1 = MetaReportQueueReadReqExtendInfoDesc{
+                            reserved2   :   unpack(0),
                             reserved1   :   unpack(0),
                             lkey        :   rreth.lkey,
                             laddr       :   rreth.va,

@@ -152,6 +152,7 @@ module mkSimpleNic(SimpleNic);
                 };
 
                 simpleNicDescPipeOutQueue.enq(pack(SimpleNicRxQueueDesc {
+                    reserved3   : unpack(0),
                     reserved2   : unpack(0),
                     reserved1   : unpack(0),
                     slotIdx     : zeroExtend(slotIdx),

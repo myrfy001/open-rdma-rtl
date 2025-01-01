@@ -218,6 +218,7 @@ module mkTestTopTimingNoHardIP(TestTopTimingNoHardIP);
     let randSource4 <- mkSynthesizableRng512('hDDDDDDDD);
     let randSource5 <- mkSynthesizableRng512('hEEEEEEEE);
 
+
     ForceKeepWideSignals#(Bit#(512), Bit#(32)) signalKeeper1 <- mkForceKeepWideSignals; 
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, ForceKeepWideSignals#(Bit#(512), Bit#(32))) signalKeeperVec1 <- replicateM(mkForceKeepWideSignals); 
@@ -303,7 +304,7 @@ module mkTestTopTimingNoHardIP(TestTopTimingNoHardIP);
 
     rule combineOutput;
         Bit#(32) outputVal = signalKeeper1.out;
-        for (Integer idx = 1; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
             outputVal = unpack(pack(outputVal) ^ pack(signalKeeperVec1[idx].out));
             outputVal = unpack(pack(outputVal) ^ pack(signalKeeperVec2[idx].out));
         end

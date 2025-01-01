@@ -17,7 +17,7 @@ typedef enum {
 typedef struct {
     Bool                    valid;          //  1  bits
     Bool                    hasNextFrag;    //  1  bits
-    ReservedZero#(5)        reserved0;      //  7  bits
+    ReservedZero#(5)        reserved0;      //  5  bits
     Bool                    isExtendOpcode; //  1  bits  Reserved for extension. For MetaReport queue, if this is false, opcode is equal to RDMA's opcode, otherwise, the opcode has different meaning.
     Bit#(8)                 opCode;         //  8  bits
 } RingbufDescCommonHead deriving(Bits, FShow);
@@ -176,7 +176,8 @@ typedef struct {
 } MetaReportQueuePacketBasicInfoDesc deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(96)           reserved1;        // 96 bits
+    ReservedZero#(64)           reserved2;        // 64 bits
+    ReservedZero#(32)           reserved1;        // 32 bits
     // the following is RETH related fields, mainly used for Read Req.
     LKEY                        lkey;             // 32 bits
     ADDR                        laddr;            // 64 bits
@@ -216,7 +217,8 @@ typedef struct {
 } MetaReportQueueAckExtraDesc deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(128)          reserved1;          // 128 Bits
+    ReservedZero#(64)           reserved2;          // 64 Bits
+    ReservedZero#(64)           reserved1;          // 64 Bits
     ADDR                        addr;               // 64 Bits must ensure addr and length not across page boundary.
     Length                      len;                // 32 Bits
     ReservedZero#(16)           reserved0;          // 16 Bits
@@ -226,7 +228,8 @@ typedef struct {
 typedef 0 SIMPLE_NIC_RX_QUEUE_DESC_OPCODE_NEW_PACKET;
 
 typedef struct {
-    ReservedZero#(128)          reserved2;          // 128 Bits
+    ReservedZero#(64)           reserved3;          // 64 Bits
+    ReservedZero#(64)           reserved2;          // 64 Bits
     ReservedZero#(32)           reserved1;          // 32 Bits
     Dword                       slotIdx;            // 32 Bits
     Length                      len;                // 32 Bits
