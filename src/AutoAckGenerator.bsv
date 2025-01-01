@@ -101,7 +101,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Reg#(Dword) curTimeReg <- mkReg(0);
     Reg#(IndexQP) pollingQpIdxReg <- mkReg(0);
 
-    AutoInferBram#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramUG(True, "init_bram_auto_ack_last_report_time.bin");
+    AutoInferBram#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramUG(False, "init_bram_auto_ack_last_report_time.bin");
 
     function AutoAckGenAtomicUpdateStorageEntry atomicUpdateFunction(AutoAckGenAtomicUpdateStorageEntry oldVal, Bool reqVal);
         let needSendAckNow = reqVal;
