@@ -118,10 +118,7 @@ endinterface
 //        only trust what you have really received.
 //        And for packet that isn't normal, make sure all related queues are dequeued. otherwise deadlock.
 (* synthesize *)
-module mkRQ#(
-        Clock clkQpcMrPgtSrv, 
-        Reset rstQpcMrPgtSrv
-    )(RQ);
+module mkRQ(RQ);
 
     FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkFIFOF;
     FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkFIFOF;
@@ -131,8 +128,8 @@ module mkRQ#(
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
 
-    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkSyncQueuedClient("qpcQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
-    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst");
+    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
 
     FIFOF#(PayloadConReq) conReqPipeOutQ <- mkSizedFIFOF(4);
     FIFOF#(Bool) conRespPipeInQ <- mkSizedFIFOF(4);

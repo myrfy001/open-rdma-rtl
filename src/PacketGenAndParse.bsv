@@ -433,10 +433,7 @@ interface PacketGen;
 endinterface
 
 (* synthesize *)
-module mkPacketGen#(
-        Clock clkQpcMrPgtSrv, 
-        Reset rstQpcMrPgtSrv
-    )(PacketGen);
+module mkPacketGen(PacketGen);
 
     FIFOF#(WorkQueueElem)       wqePipeInQ      <- mkFIFOF;
     FIFOF#(PayloadGenReq) genReqPipeOutQ  <- mkFIFOF;
@@ -458,7 +455,7 @@ module mkPacketGen#(
 
     Reg#(PSN) psnReg <- mkRegU;
 
-    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkSyncQueuedClient("mrTableQueryCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
 
     // Pipeline Queues
     FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkSizedFIFOF(4);

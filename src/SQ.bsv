@@ -35,12 +35,9 @@ interface SQ;
 endinterface
 
 (* synthesize *)
-module mkSQ#(
-        Clock clkQpcMrPgtSrv, 
-        Reset rstQpcMrPgtSrv
-    )(SQ);
+module mkSQ(SQ);
 
-    let packetGen <- mkPacketGen(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    let packetGen <- mkPacketGen;
     
     interface wqePipeIn = packetGen.wqePipeIn;
     interface packetPipeOut = packetGen.packetPipeOut;

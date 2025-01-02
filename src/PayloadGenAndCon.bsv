@@ -74,13 +74,10 @@ interface PayloadGenAndCon;
 endinterface
 
 (* synthesize *)
-module mkPayloadGenAndCon#(
-        Clock clkQpcMrPgtSrv,
-        Reset rstQpcMrPgtSrv
-    )(PayloadGenAndCon);
+module mkPayloadGenAndCon(PayloadGenAndCon);
 
-    PayloadGen payloadGen <- mkPayloadGen(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
-    PayloadCon payloadCon <- mkPayloadCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    PayloadGen payloadGen <- mkPayloadGen;
+    PayloadCon payloadCon <- mkPayloadCon;
 
     interface genAddrTranslateClt = payloadGen.addrTranslateClt;
     interface genReqPipeIn = payloadGen.genReqPipeIn;
@@ -98,10 +95,7 @@ module mkPayloadGenAndCon#(
 endmodule
 
 (* synthesize *)
-module mkPayloadGen#(
-        Clock clkQpcMrPgtSrv,
-        Reset rstQpcMrPgtSrv
-    )(PayloadGen);
+module mkPayloadGen(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
     // FIFOF#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
@@ -110,7 +104,7 @@ module mkPayloadGen#(
     FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkFIFOF;
 
 
-    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadGen addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadGen addrTranslateCltInst");
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
 
     DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator;
@@ -210,10 +204,7 @@ endmodule
 
 
 (* synthesize *)
-module mkPayloadCon#(
-        Clock clkQpcMrPgtSrv,
-        Reset rstQpcMrPgtSrv
-    )(PayloadCon);
+module mkPayloadCon(PayloadCon);
 
     FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkFIFOF;
@@ -223,7 +214,7 @@ module mkPayloadCon#(
     FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkFIFOF;
 
 
-    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkSyncQueuedClient("mkPayloadCon addrTranslateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadCon addrTranslateCltInst");
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
 
     DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;

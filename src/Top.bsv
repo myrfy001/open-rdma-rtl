@@ -719,28 +719,22 @@ endinterface
 
 (* synthesize *)
 module mkQpMrPgtQpc(QpMrPgtQpc);
-
-    Clock clkEthNap <- exposeCurrentClock;
-    Reset rstEthNap <- exposeCurrentReset;
-    Clock clkQpcMrPgtSrv <- exposeCurrentClock;
-    Reset rstQpcMrPgtSrv <- exposeCurrentReset;
-
     FIFOF#(WriteReqQPC) qpContextUpdateReqQueue <- mkFIFOF;
     FIFOF#(Bool) qpContextUpdateRespQueue <- mkFIFOF;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
 
-    QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-    MemRegionTableEightWayQuery mrTable <- mkMemRegionTableEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-    AddressTranslateEightWayQuery addrTranslator <- mkAddressTranslateEightWayQuery(clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-    MrAndPgtUpdater mrAndPgtUpdater <- mkMrAndPgtUpdater(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery;
+    MemRegionTableEightWayQuery mrTable <- mkMemRegionTableEightWayQuery;
+    AddressTranslateEightWayQuery addrTranslator <- mkAddressTranslateEightWayQuery;
+    MrAndPgtUpdater mrAndPgtUpdater <- mkMrAndPgtUpdater;
     PgtUpdateDmaInterfaceConvertor pgtUpdateDmaInterfaceConvertor <- mkPgtUpdateDmaInterfaceConvertor;
     AutoAckGenerator    autoAckGenerator <- mkAutoAckGenerator;
     SimpleNic simpleNic <- mkSimpleNic;
     CnpPacketGenerator cnpPacketGenerator <- mkCnpPacketGenerator;
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon(clkQpcMrPgtSrv, rstQpcMrPgtSrv, clocked_by clkEthNap, reset_by rstEthNap));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ(clkQpcMrPgtSrv, rstQpcMrPgtSrv));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ);
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_THREE, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
@@ -751,17 +745,17 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     mkConnection(mrAndPgtUpdater.dmaReadReqPipeOut, pgtUpdateDmaInterfaceConvertor.dmaReadReqPipeIn);
     mkConnection(mrAndPgtUpdater.dmaReadRespPipeIn, pgtUpdateDmaInterfaceConvertor.dmaReadRespPipeOut);    
-    mkConnection(mrAndPgtUpdater.mrModifyClt, mrTable.modifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-    mkConnection(mrAndPgtUpdater.pgtModifyClt, addrTranslator.modifySrv, clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+    mkConnection(mrAndPgtUpdater.mrModifyClt, mrTable.modifySrv);
+    mkConnection(mrAndPgtUpdater.pgtModifyClt, addrTranslator.modifySrv);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // Payload gen and con
         mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);
         mkConnection(sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
 
-        mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
-        mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut, clocked_by clkEthNap, reset_by rstEthNap);
-        mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn, clocked_by clkEthNap, reset_by rstEthNap);
+        mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn);
+        mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut);
+        mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn);
 
         // ethernet ifc
         mkConnection(sqVec[idx].packetPipeOut, ethTxStreamArbiterVec[idx].pipeInIfcVec[0]);
@@ -774,13 +768,13 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
 
         // QPContext, MR Table and PGT
-        mkConnection(rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx]);
 
-        mkConnection(sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-        mkConnection(rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2]);
+        mkConnection(rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1]);
 
-        mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
-        mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1], clocked_by clkQpcMrPgtSrv, reset_by rstQpcMrPgtSrv);
+        mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2]);
+        mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1]);
 
         // Simple Nic Packet input
         mkConnection(rqVec[idx].otherRawPacketPipeOut, simpleNic.rawEthernetPacketPipeInVec[idx]);

@@ -450,10 +450,7 @@ typedef Bit#(TLog#(PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST)) ZeroBasedPgtSec
 typedef Bit#(TLog#(TDiv#(PCIE_NAP_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED))) ZeroBasedPgtEntryCntInDmaBeat;
 
 (* synthesize *)
-module mkMrAndPgtUpdater#(
-        Clock clkQpcMrPgtSrv,
-        Reset rstQpcMrPgtSrv
-    )(MrAndPgtUpdater);
+module mkMrAndPgtUpdater(MrAndPgtUpdater);
 
     FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
     FIFOF#(Bool) respQ <- mkFIFOF;
@@ -461,8 +458,8 @@ module mkMrAndPgtUpdater#(
     FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkFIFOF;
     FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkFIFOF;
 
-    QueuedClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkSyncQueuedClient("mrModifyCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
-    QueuedClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkSyncQueuedClient("pgtModifyCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClient("mrModifyCltInst");
+    QueuedClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkQueuedClient("pgtModifyCltInst");
     
 
     Reg#(MrAndPgtManagerFsmState) state <- mkReg(MrAndPgtManagerFsmStateIdle);
