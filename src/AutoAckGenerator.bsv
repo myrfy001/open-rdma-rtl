@@ -57,6 +57,13 @@ typedef struct {
     Bool  hasReported;
 } AutoAckGenAtomicUpdateStorageEntry deriving(Bits, FShow);
 
+typedef enum {
+    AutoAckGenBackgroundPollingStateSendReadReq = 0,
+    AutoAckGenBackgroundPollingStateGetReadResp = 1,
+    AutoAckGenBackgroundPollingStateHandleResp = 2
+}  AutoAckGenBackgroundPollingState deriving(Bits, Eq, FShow);
+
+
 typedef 10000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
 
 interface AutoAckGenerator;
@@ -85,15 +92,18 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
     Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkFIFOF);
 
+    Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
+
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        ackEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut; 
+    end
+
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_THREE); idx = idx + 1) begin
         metaReportDescPipeOutVecInst[idx] = toPipeOut(metaReportDescPipeOutQueueVec[idx]);
     end
 
-    Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+    for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
         reqPipeInVecInst[idx] = toPipeIn(reqPipeInQueueVec[idx]);
-        ackEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut; 
     end
 
     QpContextTwoWayQuery  qpContextForAutoAck <- mkQpContextTwoWayQuery;
@@ -132,8 +142,13 @@ module mkAutoAckGenerator(AutoAckGenerator);
     // Pipeline Queues
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkFIFOF);
+    Reg#(Tuple3#(
+            BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary),
+            AutoAckGenAtomicUpdateStorageEntry,
+            Dword
+        )) pollingQueryRespPipelineReg <- mkRegU;
 
-    Reg#(Bool) isSendPollReqReg <- mkReg(True);
+    Reg#(AutoAckGenBackgroundPollingState) backgroundPollingStateReg <- mkReg(AutoAckGenBackgroundPollingStateSendReadReq);
 
     rule timerTask;
         curTimeReg <= curTimeReg + 1;
@@ -306,23 +321,27 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     end
 
-
-    rule pollingTask if (isSendPollReqReg);
+    rule sendPollingReq if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateSendReadReq);
         psnMergeAndStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         autoAckMetaAtomicUpdateStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         lastReportTimeStorage.putReadReq(pollingQpIdxReg);
         pollingQpIdxReg <= pollingQpIdxReg + 1;
-        isSendPollReqReg <= False;
+        backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateGetReadResp;
     endrule
 
-    rule handlePollingResult if (!isSendPollReqReg);
+    rule getPollingResp if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateGetReadResp);
         let bitmapInfo = psnMergeAndStorage.readOnlyRespPipeOut.first;
         let ackMeta = autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.first;
         let lastPollInfo <- lastReportTimeStorage.getReadResp;
         psnMergeAndStorage.readOnlyRespPipeOut.deq;
         autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.deq;
-        isSendPollReqReg <= True;
+        backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateHandleResp;
 
+        pollingQueryRespPipelineReg <= tuple3(bitmapInfo, ackMeta, lastPollInfo);
+    endrule
+
+    rule handlePollingResult if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);
+        let {bitmapInfo, ackMeta, lastPollInfo} = pollingQueryRespPipelineReg;
         if (!ackMeta.hasReported) begin
             if (lastPollInfo - ackMeta.lastEntryReceiveTime > fromInteger(valueOf(AUTO_ACK_POLLING_TIMEOUT_TICKS))) begin
                 let commonHeader = RingbufDescCommonHead {
@@ -356,6 +375,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
         else begin
             lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
         end
+        backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateSendReadReq;
     endrule
 
     rule forwardQpResetSignal;

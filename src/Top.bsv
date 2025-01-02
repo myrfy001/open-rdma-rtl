@@ -95,6 +95,7 @@ interface TopLevelDmaChannelMux;
     interface IoChannelMemorySlavePipe cmdQueueRingbufDmaSlavePipeIfc;
     interface IoChannelMemorySlavePipe pgtUpdateDmaSlavePipe;
     interface IoChannelMemorySlavePipe simpleNicRingbufDmaSlavePipeIfc;
+    interface IoChannelMemorySlavePipe simpleNicPacketDmaSlavePipeIfc;
 endinterface
 
 (* synthesize *)
@@ -124,6 +125,7 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
     interface cmdQueueRingbufDmaSlavePipeIfc    = muxVector[0].slaveIfcVec[2]; // use channel 0 for cmd queue.
     interface pgtUpdateDmaSlavePipe             = muxVector[1].slaveIfcVec[2]; // use channel 1 for pgt update.
     interface simpleNicRingbufDmaSlavePipeIfc   = muxVector[2].slaveIfcVec[2]; // use channel 2 for simpleNic descriptor.
+    interface simpleNicPacketDmaSlavePipeIfc    = muxVector[3].slaveIfcVec[2]; // use channel 3 for simpleNic payload.
 endmodule
 
 interface BsvTopWithoutHardIpInstance;
@@ -700,6 +702,7 @@ interface QpMrPgtQpc;
     // DMA interfaces
     interface IoChannelMemoryMasterPipe pgtUpdateDmaMasterPipe;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       qpDmaRequestMasterIfcVec;
+    interface IoChannelMemoryMasterPipe                                         simpleNicPacketDmaMasterPipeIfc;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
@@ -841,4 +844,6 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     interface qpResetReqPipeIn                  = autoAckGenerator.resetReqPipeIn;
     interface mrAndPgtModifyDescSrv             = mrAndPgtUpdater.mrAndPgtModifyDescSrv;
+
+    interface simpleNicPacketDmaMasterPipeIfc   = simpleNic.simpleNicPacketDmaMasterPipeIfc;
 endmodule
