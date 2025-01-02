@@ -738,10 +738,10 @@ class SimplePcieBehaviorModel(object):
                 raw_resp = await self.completer_read_data_pipes[channel_idx].first()
                 await self.completer_read_data_pipes[channel_idx].deq()
                 resp = BlueRdmaDataStream256.unpack(raw_resp)
-                assert await resp.is_first() == True
-                assert await resp.is_last() == True
-                assert await resp.byte_num() == 4
-                assert await resp.start_byte_idx() == 0
+                assert resp.is_first() == True
+                assert resp.is_last() == True
+                assert resp.byte_num() == 4
+                assert resp.start_byte_index() == 0
                 beat_data = resp.data() & 0xFFFFFFFF
                 self.completer_inflight_read_resps[channel_idx].append(
                     beat_data)
@@ -757,7 +757,6 @@ class SimplePcieBehaviorModel(object):
         while not (await self.completer_read_meta_pipes[0].not_full()):
             await cocotb.triggers.Timer(2, "ns")
         await self.completer_read_meta_pipes[0].enq(read_meta.pack())
-        await self.completer_read_data_pipes[0].enq(read_data.pack())
         evt = cocotb.triggers.Event()
         self.completer_inflight_read_enevts[0].append(evt)
         await evt.wait()

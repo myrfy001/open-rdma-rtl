@@ -17,7 +17,7 @@ from cocotb.clock import Clock
 from cocotb.queue import Queue
 
 from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
-from hw_init_helper import HardwareInitHelper
+
 
 from common import gen_rtl_file_list, SimplePcieBehaviorModel, SimpleEthBehaviorModel, copy_mem_file_to_sim_build_dir
 from scapy.layers.inet import IP, UDP
@@ -130,13 +130,9 @@ class TB(object):
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
-    init_helper = HardwareInitHelper(tb.pcie_bfm)
-
     await cocotb.start(Clock(tb.clock, 2, "ns").start())
 
     await tb.gen_reset()
-
-    await init_helper.do_init()
 
     # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
 

@@ -199,7 +199,7 @@ class CmdQueueDescOperators:
     F_OPCODE_CMDQ_UPDATE_ERROR_PSN_RECOVER_POINT = 0x05
 
 
-class SendQueueDescSeg0(Structure):
+class SendQueueReqDescSeg0(Structure):
     _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("F_MSN", c_ushort, 16),
@@ -221,7 +221,7 @@ class SendQueueDescSeg0(Structure):
                 ]
 
 
-class SendQueueDescSeg1(Structure):
+class SendQueueReqDescSeg1(Structure):
     _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("F_PMTU", c_ushort, 3),
