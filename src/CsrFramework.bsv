@@ -103,10 +103,21 @@ module mkCsrNode#(
                 keepOrderQueue.deq;
                 if (isSelfResp) begin
                     selfRespQueue.deq;
+                    // $display(
+                    //     "time=%0t:", $time, toGreen(" mkCsrNode upStreamPort get read resp [%s]"), debugName,
+                    //     toBlue(", isSelfResp="), fshow(isSelfResp),
+                    //     toBlue(", result="), fshow(selfRespQueue.first)
+                    // );
                     return selfRespQueue.first;
                 end
                 else begin
                     respRelayQueueVec[portIdx].deq;
+                    // $display(
+                    //     "time=%0t:", $time, toGreen(" mkCsrNode upStreamPort get read resp [%s]"), debugName,
+                    //     toBlue(", isSelfResp="), fshow(isSelfResp),
+                    //     toBlue(", portIdx="), fshow(portIdx),
+                    //     toBlue(", result="), fshow(respRelayQueueVec[portIdx].first)
+                    // );
                     return respRelayQueueVec[portIdx].first;
                 end
             endmethod

@@ -471,6 +471,9 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         let ds = dmaWriteDataPipeInQ.first;
         dmaWriteDataPipeInQ.deq;
         dmaWriteDataPipeOutQueue.enq(ds);
+        if (ds.isLast) begin
+            dmaWriteRespPipeOutQ.enq(True);
+        end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData"),
         //     toBlue(", ds="), fshow(ds)
