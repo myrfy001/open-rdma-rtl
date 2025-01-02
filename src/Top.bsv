@@ -168,7 +168,7 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
 
     mkConnection(qpMrPgtQpc.simpleNicRxDescPipeOut, ringbufAndDescriptorHandler.simpleNicRxDescPipeIn);
     mkConnection(qpMrPgtQpc.simpleNicTxDescPipeIn, ringbufAndDescriptorHandler.simpleNicTxDescPipeOut);
-
+    mkConnection(qpMrPgtQpc.simpleNicPacketDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicPacketDmaSlavePipeIfc);
     rule forwardSetNetworkParamReqPipeOut;
         ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.deq;
         qpMrPgtQpc.setLocalNetworkSettings(ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.first);
