@@ -101,10 +101,7 @@ endinterface
 
 
 (* synthesize *)
-module mkCommandQueueDescParserAndDispatcher#(
-        Clock clkQpcMrPgtSrv,
-        Reset rstQpcMrPgtSrv
-    )(CommandQueueDescParserAndDispatcher ifc);
+module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher ifc);
 
     // If we need to wait for response for some cycle to finish, then we need to set this to False;
     Reg#(Bool) isDispatchingReqReg                                                          <- mkReg(True);
@@ -113,7 +110,7 @@ module mkCommandQueueDescParserAndDispatcher#(
     FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
     FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkFIFOF;
 
-    QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkSyncQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst", clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst");
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
 
     FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;
@@ -246,22 +243,22 @@ module mkCommandQueueDescParserAndDispatcher#(
 endmodule
 
 interface DescriptorMux;
-    interface Vector#(NUMERIC_TYPE_THREE, PipeIn#(RingbufRawDescriptor)) descPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(RingbufRawDescriptor)) descPipeInVec;
     interface PipeOut#(RingbufRawDescriptor) descPipeOut;
 endinterface
 
 module mkDescriptorMux(DescriptorMux);
 
-    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkFIFOF);
-    Vector#(NUMERIC_TYPE_THREE, PipeIn#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
 
     FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkFIFOF;
 
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_THREE); idx = idx + 1) begin
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         descPipeInVecInst[idx] = toPipeIn(descPipeInQueueVec[idx]);
     end
 
-    Reg#(Bit#(TLog#(NUMERIC_TYPE_THREE))) currentForwardChannelReg <- mkRegU;
+    Reg#(Bit#(TLog#(NUMERIC_TYPE_TWO))) currentForwardChannelReg <- mkRegU;
     Reg#(Bool) isForwardingFirstDescReg <- mkReg(True);
 
 
@@ -278,11 +275,11 @@ module mkDescriptorMux(DescriptorMux);
             descPipeInQueueVec[1].deq;
             currentForwardChannelReg <= 1;
         end
-        else if (descPipeInQueueVec[2].notEmpty) begin
-            rawDescMaybe = tagged Valid descPipeInQueueVec[2].first;
-            descPipeInQueueVec[2].deq;
-            currentForwardChannelReg <= 2;
-        end
+        // else if (descPipeInQueueVec[2].notEmpty) begin
+        //     rawDescMaybe = tagged Valid descPipeInQueueVec[2].first;
+        //     descPipeInQueueVec[2].deq;
+        //     currentForwardChannelReg <= 2;
+        // end
 
         if (rawDescMaybe matches tagged Valid .rawDesc) begin
             RingbufDescCommonHead descHeader = unpack(truncateLSB(pack(rawDesc)));

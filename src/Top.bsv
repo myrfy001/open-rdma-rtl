@@ -203,14 +203,10 @@ endinterface
 (* synthesize *)
 module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
-
-    Clock clkQpcMrPgtSrv <- exposeCurrentClock;
-    Reset rstQpcMrPgtSrv <- exposeCurrentReset;
-
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufH2cSlot4096) wqeRingbufVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufC2hSlot4096) rqMetaReportRingbufVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueDescParser) workQueueDescParserVec <- replicateM(mkWorkQueueDescParser);
-    CommandQueueDescParserAndDispatcher cmdQueueDescParserAndDispatcher <- mkCommandQueueDescParserAndDispatcher(clkQpcMrPgtSrv, rstQpcMrPgtSrv);
+    CommandQueueDescParserAndDispatcher cmdQueueDescParserAndDispatcher <- mkCommandQueueDescParserAndDispatcher;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem)) wqePipeOutVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RingbufRawDescriptor))   metaReportDescPipeInVecInst = newVector;
