@@ -3,6 +3,7 @@ import FIFOF :: *;
 import ClientServer :: *;
 import GetPut :: *;
 import Vector :: *;
+import Clocks :: *;
 
 import ConnectableF :: *;
 import RdmaUtils :: *;
@@ -50,14 +51,65 @@ interface BsvTop;
 endinterface
 
 
-module mkBsvTop(BsvTop);
+module mkBsvTop#(
+        Clock ftileClk,
+        Reset ftileRst
+    )(BsvTop);
+
+    BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(ftileClk, ftileRst);
+    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
+
+
+    mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
+    mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec);
+
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        mkConnection(bsvTopOnlyHardIp.ftilemacRxStreamPipeOutVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
+        mkConnection(bsvTopOnlyHardIp.ftilemacTxStreamPipeInVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut);
+    end
+
+
+    interface rtilePcieAdaptorRxRawIfc  = bsvTopOnlyHardIp.rtilePcieAdaptorRxRawIfc;
+    interface rtilePcieAdaptorTxRawIfc  = bsvTopOnlyHardIp.rtilePcieAdaptorTxRawIfc;
+    interface ftileMacAdaptorRxRawIfc   = bsvTopOnlyHardIp.ftileMacAdaptorRxRawIfc;
+    interface ftileMacAdaptorTxRawIfc   = bsvTopOnlyHardIp.ftileMacAdaptorTxRawIfc;
+
+
+endmodule
+
+
+interface BsvTopOnlyHardIp;
+    // to verilog side ===================================================
+    
+    (* always_ready, always_enabled *)
+    interface RTilePcieAdaptorRx rtilePcieAdaptorRxRawIfc;
+    (* always_ready, always_enabled *)
+    interface RTilePcieAdaptorTx rtilePcieAdaptorTxRawIfc;
+
+    (* always_ready, always_enabled *)
+    interface FTileMacAdaptorRx ftileMacAdaptorRxRawIfc;
+    (* always_ready, always_enabled *)
+    interface FTileMacAdaptorTx ftileMacAdaptorTxRawIfc;
+
+    // to bsv side =======================================================
+
+    interface PcieBiDirUserDataStreamMasterPipes                                                rtilepcieStreamMasterIfc;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)     rtilepcieStreamSlaveIfcVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxUserStream))          ftilemacTxStreamPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))         ftilemacRxStreamPipeOutVec;
+    
+endinterface
+
+(* synthesize *)
+module mkBsvTopOnlyHardIp#(
+        Clock ftileClk,
+        Reset ftileRst
+    )(BsvTopOnlyHardIp);
     RTilePcieAdaptor rtilePcieAdaptor   <- mkRTilePcieAdaptor;
     RTilePcie        rtilePcie          <- mkRTilePcie;
 
-    FTileMacAdaptor  ftileMacAdaptor    <- mkFTileMacAdaptor;
+    FTileMacAdaptor  ftileMacAdaptor    <- mkFTileMacAdaptor(clocked_by ftileClk, reset_by ftileRst);
     FTileMac         ftileMac           <- mkFTileMac;
-
-    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
 
     mkConnection(rtilePcieAdaptor.pcieRxPipeOut, rtilePcie.pcieRxPipeIn);
     mkConnection(rtilePcieAdaptor.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
@@ -65,23 +117,24 @@ module mkBsvTop(BsvTop);
     mkConnection(rtilePcieAdaptor.txFlowControlConsumeReqPipeIn, rtilePcie.txFlowControlConsumeReqPipeOut);
     mkConnection(rtilePcieAdaptor.txFlowControlAvaliablePipeOut, rtilePcie.txFlowControlAvaliablePipeIn);
 
-    mkConnection(ftileMacAdaptor.ftilemacRxPipeOut, ftileMac.ftilemacRxPipeIn);
-    mkConnection(ftileMacAdaptor.ftilemacTxPipeIn, ftileMac.ftilemacTxPipeOut);
+    SyncFIFOIfc#(FtileMacRxBeat) ftileRxSyncQueue <- mkSyncFIFOToCC(valueOf(NUMERIC_TYPE_FOUR), ftileClk, ftileRst);
+    SyncFIFOIfc#(FtileMacTxBeat) ftileTxSyncQueue <- mkSyncFIFOFromCC(valueOf(NUMERIC_TYPE_FOUR), ftileClk);
 
+    mkConnection(ftileMacAdaptor.ftilemacRxPipeOut, toPipeInSync(ftileRxSyncQueue));
+    mkConnection(toPipeOutSync(ftileRxSyncQueue), ftileMac.ftilemacRxPipeIn, clocked_by ftileClk, reset_by ftileRst);
 
-    mkConnection(rtilePcie.streamMasterIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
-    mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, rtilePcie.streamSlaveIfcVec);
+    mkConnection(toPipeInSync(ftileTxSyncQueue), ftileMac.ftilemacTxPipeOut);
+    mkConnection(ftileMacAdaptor.ftilemacTxPipeIn, toPipeOutSync(ftileTxSyncQueue), clocked_by ftileClk, reset_by ftileRst);
 
-    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-        mkConnection(ftileMac.ftilemacRxStreamPipeOutVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
-        mkConnection(ftileMac.ftilemacTxStreamPipeInVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut);
-    end
+    interface rtilePcieAdaptorRxRawIfc      = rtilePcieAdaptor.rx;
+    interface rtilePcieAdaptorTxRawIfc      = rtilePcieAdaptor.tx;
+    interface ftileMacAdaptorRxRawIfc       = ftileMacAdaptor.rx;
+    interface ftileMacAdaptorTxRawIfc       = ftileMacAdaptor.tx;
 
-
-    interface rtilePcieAdaptorRxRawIfc = rtilePcieAdaptor.rx;
-    interface rtilePcieAdaptorTxRawIfc = rtilePcieAdaptor.tx;
-    interface ftileMacAdaptorRxRawIfc = ftileMacAdaptor.rx;
-    interface ftileMacAdaptorTxRawIfc = ftileMacAdaptor.tx;
+    interface rtilepcieStreamMasterIfc      = rtilePcie.streamMasterIfc;
+    interface rtilepcieStreamSlaveIfcVec    = rtilePcie.streamSlaveIfcVec;
+    interface ftilemacTxStreamPipeInVec     = ftileMac.ftilemacTxStreamPipeInVec;
+    interface ftilemacRxStreamPipeOutVec    = ftileMac.ftilemacRxStreamPipeOutVec;
 endmodule
 
 
