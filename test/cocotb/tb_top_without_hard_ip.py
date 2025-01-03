@@ -36,10 +36,6 @@ class TB(object):
 
         self.shared_mem = open_shared_mem_to_hw_simulator(256*1024*1024)
 
-        self.rpc_server = UserspaceDriverServer(
-            "0.0.0.0", 7700, self._csr_write_cb, self._csr_read_cb)
-        self.rpc_server.run()
-
         self.pcie_bfm = SimplePcieBehaviorModel(
             dut,
             ["dmaMasterPipeIfcVec_0",
@@ -68,17 +64,9 @@ class TB(object):
             ],
         )
 
-        self.csr_write_req_queue = Queue()
-        self.csr_read_req_queue = Queue()
-        self.csr_read_resp_queue = Queue()
-        self.csr_read_lock = threading.Lock()
-
-        cocotb.start_soon(self._forward_csr_write_task())
-        cocotb.start_soon(self._forward_csr_read_req_task())
+        self.init_helper = HardwareInitHelper(self.pcie_bfm)
 
     def clean_up(self):
-        self.rpc_server.stop()
-
         # need to ensure no reference to shared_mem, if not, the shared memory resource can not be released.
         self.pcie_bfm = None
         shared_mem = self.shared_mem
@@ -86,35 +74,10 @@ class TB(object):
         gc.collect()
         shared_mem.close()
 
-    def _csr_write_cb(self, addr, value):
-        self.log.info(f"write CSR, addr={hex(addr)}, value={hex(value)}\n\n")
-        self.csr_write_req_queue.put_nowait((addr, value))
-        self.log.info(
-            f"get mem addr @ 0x3e01000={self.shared_mem.buf[0x3e01000]}")
-
-    def _csr_read_cb(self, addr):
-        with self.csr_read_lock:
-            self.csr_read_req_queue.put_nowait(addr)
-            while self.csr_read_resp_queue.empty:
-                time.sleep(0)
-            return self.csr_read_req_queue.get_nowait()
-
-    async def _forward_csr_write_task(self):
-        while True:
-            addr, value = await self.csr_write_req_queue.get()
-            await self.pcie_bfm.host_write_blocking(addr, value)
-            self.log.info(f"_forward_csr_write_task: {addr, value}")
-
-    async def _forward_csr_read_req_task(self):
-        while True:
-            addr = await self.csr_read_req_queue.get()
-            val = await self.pcie_bfm.host_read_blocking(addr)
-            await self.csr_read_resp_queue.put(val)
-
     async def put_rx_data(self, packet_data):
         await self.eth_bfm.inject_rx_packet(packet_data)
 
-    async def gen_reset(self):
+    async def gen_reset_and_do_hw_init(self):
         self.resetn.value = 0
         await RisingEdge(self.clock)
         await RisingEdge(self.clock)
@@ -125,22 +88,19 @@ class TB(object):
         await RisingEdge(self.clock)
         self.log.info("Generated DMA RST_N")
 
+        await self.init_helper.do_init()
+
 
 @ cocotb.test(timeout_time=6000000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
-    init_helper = HardwareInitHelper(tb.pcie_bfm)
 
     await cocotb.start(Clock(tb.clock, 2, "ns").start())
 
-    await tb.gen_reset()
+    await tb.gen_reset_and_do_hw_init()
 
-    await init_helper.do_init()
-
-    # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
-
-    eth_layer = Ether(dst="AA:BB:CC:DD:EE", src="AA:BB:CC:DD:FF")
+    eth_layer = Ether(dst="AA:BB:CC:DD:EE:FF", src="AA:BB:CC:DD:EE:00")
     ip_layer = IP(dst="17.34.51.68")
     udp_layer = UDP(dport=1111, sport=2222)
 
