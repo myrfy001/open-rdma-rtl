@@ -24,10 +24,10 @@ class TB(object):
         self.dut = dut
 
         self.pcie_mrrs = 512
-        self.write_test_packet_cnt = 100
+        self.write_test_packet_cnt = 100000
         self.total_write_byte_cnt = 0
 
-        self.read_test_packet_cnt = 8
+        self.read_test_packet_cnt = 100000
         self.total_read_byte_cnt = 0
 
         self.read_reqs_to_check = [[] for _ in range(4)]
@@ -534,7 +534,7 @@ async def small_desc_fp_test(dut):
     # cocotb.start_soon(tb.start_completer_read_write_req_send())
     # cocotb.start_soon(tb.start_completer_read_write_req_handler())
 
-    await Timer(400, units='ns')
+    await Timer(50000, units='ns')
 
 
 def test_dma():

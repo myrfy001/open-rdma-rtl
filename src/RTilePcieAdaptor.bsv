@@ -2608,8 +2608,8 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
             let {isPostTlp, isNonPostedTlp, isCpltTlp, pdCredit, npdCredit, cpldCredit} = getFlowControlCreditFromRxTlp(tlpHeaderBuf);
             case ({pack(isPostTlp), pack(isNonPostedTlp), pack(isCpltTlp)}) 
                 3'b100: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumP, pdCredit);
-                3'b010: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumP, pdCredit);
-                3'b001: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumP, pdCredit);
+                3'b010: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumNP, npdCredit);
+                3'b001: tlpFlowControlCredit = tuple2(RtilePcieFlowControlTlpTypeEnumCPLT, cpldCredit);
                 default: immFail("should not reach here", $format("credit info = ", fshow(getFlowControlCreditFromRxTlp(tlpHeaderBuf))));
             endcase
             tlpFlowControlCreditReg <= tlpFlowControlCredit;
@@ -3107,6 +3107,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             if (enqCnt != 0 && selectedInputChannelMetaMIMO.enqReadyN(enqCnt)) begin
                 flowControlCheckPipelineQueue.deq;
                 selectedInputChannelMetaMIMO.enq(enqCnt, vecToEnq);
+                txFlowControlConsumeReqPipeOutQueue.enq(tuple6(phToConsume, nphToConsume, cplhToConsume, pdToConsume, npdToConsume, cpldToConsume));
                 // $display(
                 //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork checkFlowControlCredit enough credit, pass"),
                 //     toBlue(", enqCnt="), fshow(enqCnt),
@@ -3116,7 +3117,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         end
         else begin
             $display(
-                "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork checkFlowControlCredit No enough credit for tx"),
+                "time=%0t:", $time, toRed(" mkRtilePcieTxPingPongFork checkFlowControlCredit No enough credit for tx"),
                 toBlue(", phToConsume="), fshow(phToConsume),
                 toBlue(", availableCreditPh="), fshow(availableCreditPh),
                 toBlue(", nphToConsume="), fshow(nphToConsume),

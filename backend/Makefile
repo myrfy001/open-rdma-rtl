@@ -105,12 +105,12 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestCsrFramework.bsv
 # BSV_TOP_MODULE ?= mkTestCsrNodeTiming
 
-TARGETFILE ?= ../test/TestTop.bsv
-BSV_TOP_MODULE ?= mkTestTopTimingNoHardIP
+# TARGETFILE ?= ../test/TestTop.bsv
+# BSV_TOP_MODULE ?= mkTestTopTimingNoHardIP
 
-# TARGETFILE ?= ../src/Top.bsv
-# BSV_TOP_MODULE ?= mkBsvTop
-# TOP = bluerdma_top
+TARGETFILE ?= ../src/Top.bsv
+BSV_TOP_MODULE ?= mkBsvTop
+TOP = bluerdma_top
 
 
 
