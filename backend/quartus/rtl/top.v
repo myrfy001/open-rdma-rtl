@@ -14,9 +14,7 @@ module bluerdma_top(
     input  wire     [3:0]       qsfpdd0_rx_p        ,
     input  wire     [3:0]       qsfpdd0_rx_n        ,
     output wire     [3:0]       qsfpdd0_tx_p        ,
-    output wire     [3:0]       qsfpdd0_tx_n        ,
-
-    output wire   [127:0]       signalKeeperOutput
+    output wire     [3:0]       qsfpdd0_tx_n        
 );
 
     wire rtile_pcie_p0_reset_status_n;
@@ -198,8 +196,9 @@ module bluerdma_top(
 
 
 
-
-
+	reset_release reset_release_inst (
+		.ninit_done (rtile_pcie_ninit_done)  //  output,  width = 1, ninit_done.reset
+	);
 
 
     
@@ -416,6 +415,13 @@ module bluerdma_top(
 		.disable_refclk_monitor_3  ()   						//   input,  width = 1,  disable_refclk_monitor_3.disable_refclk_monitor_3
 	);
 
+	ftile_reset ftile_reset_inst (
+		.clk(ftile_eth_reconfig_clk),
+		.i_reset_n(rtile_pcie_pin_perst_n_o),
+		.i_reset_ack_n(ftile_eth_rst_ack_n),
+		.o_reset_n(ftile_eth_rst_n)
+	);
+
 
 
 	ftile_eth_hip ftile_eth_hip_inst (
@@ -440,8 +446,8 @@ module bluerdma_top(
 		.i_clk_tx                        (ftile_eth_clk_pll),                       //   input,     width = 1,              i_tx_clk.clk
 		.i_clk_rx                        (ftile_eth_clk_pll),                       //   input,     width = 1,              i_rx_clk.clk
 		.i_rst_n                         (ftile_eth_rst_n),                         //   input,     width = 1,               i_rst_n.reset_n
-		.i_tx_rst_n                      (ftile_eth_tx_rst_n),                      //   input,     width = 1,            i_tx_rst_n.reset_n
-		.i_rx_rst_n                      (ftile_eth_rx_rst_n),                      //   input,     width = 1,            i_rx_rst_n.reset_n
+		.i_tx_rst_n                      ('h1),                      				//   input,     width = 1,            i_tx_rst_n.reset_n
+		.i_rx_rst_n                      ('h1),                      				//   input,     width = 1,            i_rx_rst_n.reset_n
 		.o_rst_ack_n                     (ftile_eth_rst_ack_n),                     //  output,     width = 1,    reset_status_ports.o_rst_ack_n
 		.o_tx_rst_ack_n                  (ftile_eth_tx_rst_ack_n),                  //  output,     width = 1,                      .o_tx_rst_ack_n
 		.o_rx_rst_ack_n                  (ftile_eth_rx_rst_ack_n),                  //  output,     width = 1,                      .o_rx_rst_ack_n
@@ -473,44 +479,44 @@ module bluerdma_top(
 		.o_rx_mac_fcs_error              (ftile_eth_rx_mac_fcs_error),              //  output,    width = 16,                      .o_rx_mac_fcs_error
 		.o_rx_mac_error                  (ftile_eth_rx_mac_error),                  //  output,    width = 32,                      .o_rx_mac_error
 		.o_rx_mac_status                 (ftile_eth_rx_mac_status),                 //  output,    width = 48,                      .o_rx_mac_status
-		.i_tx_pfc                        ('h0),                        //   input,     width = 8,             pfc_ports.i_tx_pfc
-		.o_rx_pfc                        (),                        //  output,     width = 8,                      .o_rx_pfc
-		.i_tx_pause                      ('h0),                      //   input,     width = 1,             sfc_ports.i_tx_pause
-		.o_rx_pause                      (),                      //  output,     width = 1,                      .o_rx_pause
-		.i_reconfig_xcvr0_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_0.address
-		.i_reconfig_xcvr0_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
-		.o_reconfig_xcvr0_readdata_valid (), //  output,     width = 1,                      .readdatavalid
-		.i_reconfig_xcvr0_read           ('h0),           //   input,     width = 1,                      .read
-		.i_reconfig_xcvr0_write          ('h0),          //   input,     width = 1,                      .write
-		.o_reconfig_xcvr0_readdata       (),       //  output,    width = 32,                      .readdata
-		.i_reconfig_xcvr0_writedata      ('h0),      //   input,    width = 32,                      .writedata
-		.o_reconfig_xcvr0_waitrequest    (),    //  output,     width = 1,                      .waitrequest
-		.i_reconfig_xcvr1_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_1.address
-		.i_reconfig_xcvr1_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
-		.o_reconfig_xcvr1_readdata_valid (), //  output,     width = 1,                      .readdatavalid
-		.i_reconfig_xcvr1_read           ('h0),           //   input,     width = 1,                      .read
-		.i_reconfig_xcvr1_write          ('h0),          //   input,     width = 1,                      .write
-		.o_reconfig_xcvr1_readdata       (),       //  output,    width = 32,                      .readdata
-		.i_reconfig_xcvr1_writedata      ('h0),      //   input,    width = 32,                      .writedata
-		.o_reconfig_xcvr1_waitrequest    (),    //  output,     width = 1,                      .waitrequest
-		.i_reconfig_xcvr2_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_2.address
-		.i_reconfig_xcvr2_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
-		.o_reconfig_xcvr2_readdata_valid (), //  output,     width = 1,                      .readdatavalid
-		.i_reconfig_xcvr2_read           ('h0),           //   input,     width = 1,                      .read
-		.i_reconfig_xcvr2_write          ('h0),          //   input,     width = 1,                      .write
-		.o_reconfig_xcvr2_readdata       (),       //  output,    width = 32,                      .readdata
-		.i_reconfig_xcvr2_writedata      ('h0),      //   input,    width = 32,                      .writedata
-		.o_reconfig_xcvr2_waitrequest    (),    //  output,     width = 1,                      .waitrequest
-		.i_reconfig_xcvr3_addr           ('h0),           //   input,    width = 18, reconfig_xcvr_slave_3.address
-		.i_reconfig_xcvr3_byteenable     ('h0),     //   input,     width = 4,                      .byteenable
-		.o_reconfig_xcvr3_readdata_valid (), //  output,     width = 1,                      .readdatavalid
-		.i_reconfig_xcvr3_read           ('h0),           //   input,     width = 1,                      .read
-		.i_reconfig_xcvr3_write          ('h0),          //   input,     width = 1,                      .write
-		.o_reconfig_xcvr3_readdata       (),       //  output,    width = 32,                      .readdata
-		.i_reconfig_xcvr3_writedata      ('h0),      //   input,    width = 32,                      .writedata
-		.o_reconfig_xcvr3_waitrequest    (),    //  output,     width = 1,                      .waitrequest
+		.i_tx_pfc                        ('h0),                        				//   input,     width = 8,             pfc_ports.i_tx_pfc
+		.o_rx_pfc                        (),                        				//  output,     width = 8,                      .o_rx_pfc
+		.i_tx_pause                      ('h0),                      				//   input,     width = 1,             sfc_ports.i_tx_pause
+		.o_rx_pause                      (),                      					//  output,     width = 1,                      .o_rx_pause
+		.i_reconfig_xcvr0_addr           ('h0),           							//   input,    width = 18, reconfig_xcvr_slave_0.address
+		.i_reconfig_xcvr0_byteenable     ('h0),     								//   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr0_readdata_valid (), 										//  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr0_read           ('h0),           							//   input,     width = 1,                      .read
+		.i_reconfig_xcvr0_write          ('h0),          							//   input,     width = 1,                      .write
+		.o_reconfig_xcvr0_readdata       (),       									//  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr0_writedata      ('h0),      								//   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr0_waitrequest    (),    									//  output,     width = 1,                      .waitrequest
+		.i_reconfig_xcvr1_addr           ('h0),           							//   input,    width = 18, reconfig_xcvr_slave_1.address
+		.i_reconfig_xcvr1_byteenable     ('h0),     								//   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr1_readdata_valid (), 										//  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr1_read           ('h0),           							//   input,     width = 1,                      .read
+		.i_reconfig_xcvr1_write          ('h0),          							//   input,     width = 1,                      .write
+		.o_reconfig_xcvr1_readdata       (),       									//  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr1_writedata      ('h0),      								//   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr1_waitrequest    (),    									//  output,     width = 1,                      .waitrequest
+		.i_reconfig_xcvr2_addr           ('h0),           							//   input,    width = 18, reconfig_xcvr_slave_2.address
+		.i_reconfig_xcvr2_byteenable     ('h0),     								//   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr2_readdata_valid (), 										//  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr2_read           ('h0),           							//   input,     width = 1,                      .read
+		.i_reconfig_xcvr2_write          ('h0),          							//   input,     width = 1,                      .write
+		.o_reconfig_xcvr2_readdata       (),       									//  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr2_writedata      ('h0),      								//   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr2_waitrequest    (),    									//  output,     width = 1,                      .waitrequest
+		.i_reconfig_xcvr3_addr           ('h0),           							//   input,    width = 18, reconfig_xcvr_slave_3.address
+		.i_reconfig_xcvr3_byteenable     ('h0),     								//   input,     width = 4,                      .byteenable
+		.o_reconfig_xcvr3_readdata_valid (), 										//  output,     width = 1,                      .readdatavalid
+		.i_reconfig_xcvr3_read           ('h0),           							//   input,     width = 1,                      .read
+		.i_reconfig_xcvr3_write          ('h0),          							//   input,     width = 1,                      .write
+		.o_reconfig_xcvr3_readdata       (),       									//  output,    width = 32,                      .readdata
+		.i_reconfig_xcvr3_writedata      ('h0),      								//   input,    width = 32,                      .writedata
+		.o_reconfig_xcvr3_waitrequest    (),    									//  output,     width = 1,                      .waitrequest
 		.i_clk_pll                       (ftile_eth_clk_pll),                       //   input,     width = 1,             i_clk_pll.clk
-		.anlt_link                       (ftile_eth_anlt_link)                        //  output,     width = 1,            anlt_ports.anlt_link
+		.anlt_link                       (ftile_eth_anlt_link)                      //  output,     width = 1,            anlt_ports.anlt_link
 	);
 
 
@@ -518,7 +524,8 @@ module bluerdma_top(
     mkBsvTop bsv_top(
         .CLK(rtile_pcie_coreclkout_hip),
 		.RST_N(rtile_pcie_p0_reset_status_n),
-
+		.CLK_ftileClk(ftile_eth_clk_pll),
+		.RST_N_ftileRst(ftile_eth_rst_n),
 		// Rtile
 		.rtilePcieAdaptorRxRawIfc_data({rtile_pcie_p0_rx_st3_data, rtile_pcie_p0_rx_st2_data, rtile_pcie_p0_rx_st1_data, rtile_pcie_p0_rx_st0_data}),
 		.rtilePcieAdaptorRxRawIfc_hdr({rtile_pcie_p0_rx_st3_hdr, rtile_pcie_p0_rx_st2_hdr, rtile_pcie_p0_rx_st1_hdr, rtile_pcie_p0_rx_st0_hdr}),
@@ -568,11 +575,7 @@ module bluerdma_top(
 		.ftileMacAdaptorTxRawIfc_inframe(ftile_eth_tx_mac_inframe),
 		.ftileMacAdaptorTxRawIfc_eop_empty(ftile_eth_tx_mac_eop_empty),
 		.ftileMacAdaptorTxRawIfc_error(ftile_eth_tx_mac_error),
-		.ftileMacAdaptorTxRawIfc_skip_crc(ftile_eth_tx_mac_skip_crc),
-
-		// Debug
-		.signalKeeperOutput(signalKeeperOutput),
-		.RDY_signalKeeperOutput()
+		.ftileMacAdaptorTxRawIfc_skip_crc(ftile_eth_tx_mac_skip_crc)
     );
 
 
