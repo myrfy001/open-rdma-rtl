@@ -71,6 +71,7 @@ class TB(object):
         self.pcie_bfm = None
         shared_mem = self.shared_mem
         self.shared_mem = None
+        self.init_helper = None
         gc.collect()
         shared_mem.close()
 
