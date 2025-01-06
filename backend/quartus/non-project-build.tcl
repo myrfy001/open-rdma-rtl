@@ -47,10 +47,6 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list bram_init_file_d
 
 	set snapshot_file_list {}
 
-	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
-	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
-	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "TEXT_FILE" $bram_init_file_dir_list]
-
 	# Add ips to the project
 	lappend snapshot_file_list [list "IP_FILE" $pcie_ip_file_path]
 	lappend snapshot_file_list [list "IP_FILE" $iopll_ip_file_path]
@@ -58,7 +54,10 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list bram_init_file_d
 	lappend snapshot_file_list [list "IP_FILE" $eth_ip_file_path]
 	lappend snapshot_file_list [list "IP_FILE" $system_clk_and_ftile_ref_clk_ip_file_path]
 
-	
+	# add our own files (especially sdc files) last, so all the signals provided by other IP will be available.
+	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
+	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
+	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "TEXT_FILE" $bram_init_file_dir_list]
 
 	foreach tuple $snapshot_file_list {
 		lassign $tuple filetype filename

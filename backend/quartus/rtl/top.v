@@ -18,6 +18,7 @@ module bluerdma_top(
 );
 
     wire rtile_pcie_p0_reset_status_n;
+	wire rtile_pcie_p0_reset_status_n_buffered;
     wire rtile_pcie_p0_slow_reset_status_n;
     wire rtile_pcie_p0_link_up;
     wire rtile_pcie_p0_dl_up;
@@ -519,11 +520,15 @@ module bluerdma_top(
 		.anlt_link                       (ftile_eth_anlt_link)                      //  output,     width = 1,            anlt_ports.anlt_link
 	);
 
-
+	rtile_reset_output_buffer rtile_reset_output_buffer_inst (
+		.clk(rtile_pcie_coreclkout_hip),
+		.i_reset_n(rtile_pcie_p0_reset_status_n), 
+		.o_reset_n(rtile_pcie_p0_reset_status_n_buffered)
+	);
 
     mkBsvTop bsv_top(
         .CLK(rtile_pcie_coreclkout_hip),
-		.RST_N(rtile_pcie_p0_reset_status_n),
+		.RST_N(rtile_pcie_p0_reset_status_n_buffered),
 		.CLK_ftileClk(ftile_eth_clk_pll),
 		.RST_N_ftileRst(ftile_eth_rst_n),
 		// Rtile
