@@ -646,15 +646,21 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     IpID defaultIpId = 1;
 
 
-    function IoChannelEthDataStream genEthernetPacket(NocData data, EthernetNapMod mod, Bool isFirst, Bool isLast);
+    function IoChannelEthDataStream genEthernetPacket(NocData data, ByteIndexInBeat startByteIdx, EthernetNapMod mod, Bool isFirst, Bool isLast);
         
         let byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         if (isLast) begin
             byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(mod);
         end
+
+        // Note: the ethernet packet is a pure stream, so startByteIdx must always be zero.
+        // when handling the first beat of payload, since the input payload from PCIe is aligned to DWord, the input beat's
+        // startByteIdx may not be 0, but we can force it to 0. so, at the same time, we need to add the bytes skiped by
+        // startByteIdx to byteNum (only the first beat of payload may have startByteIdx != 0)
+
         let outBeat = IoChannelEthDataStream{
             data: data,
-            byteNum: byteNum,
+            byteNum: byteNum + zeroExtend(startByteIdx),
             startByteIdx: 0,
             isFirst: isFirst,
             isLast: isLast
@@ -691,11 +697,11 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         ipHeaderChecksumCalcPipelineQ.enq(outPipelineEntry);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator prepareIpHeader"),
-        //     toBlue(", udpPayloadLen="), fshow(macIpUdpMeta.udpPayloadLen),
-        //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator prepareIpHeader"),
+            toBlue(", udpPayloadLen="), fshow(macIpUdpMeta.udpPayloadLen),
+            toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
+        );
     endrule
 
     rule genFirstBeat if (statusReg == EthernetPacketGeneratorStateGenFirstBeat);
@@ -724,12 +730,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         firstBeatToSecondBeatPipelineReg <= outPipelineEntry;
         statusReg <= EthernetPacketGeneratorStateGenSecondBeat;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genFirstBeat"),
-        //     toBlue(", outBeat="), fshow(outBeat),
-        //     toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
-        //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genFirstBeat"),
+            toBlue(", outBeat="), fshow(outBeat),
+            toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
+            toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
+        );
 
     endrule
 
@@ -755,7 +761,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(DATA_BUS_WIDTH));
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), mod, False, isLast);
+        let outBeat = genEthernetPacket(swapEndianByte(data), 0, mod, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -783,12 +789,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             $format("outBeat=", fshow(outBeat))
         );
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genSecondBeat"),
-        //     toBlue(", outBeat="), fshow(outBeat),
-        //     toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
-        //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genSecondBeat"),
+            toBlue(", outBeat="), fshow(outBeat),
+            toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
+            toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
+        );
     endrule
 
     rule genThirdBeat if (statusReg == EthernetPacketGeneratorStateGenThirdBeat);
@@ -803,7 +809,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS) * valueOf(BYTE_WIDTH));
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), mod, False, isLast);
+        let outBeat = genEthernetPacket(swapEndianByte(data), 0, mod, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -820,12 +826,12 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             $format("outBeat=", fshow(outBeat))
         );
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genThirdBeat"),
-        //     toBlue(", outBeat="), fshow(outBeat),
-        //     toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
-        //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genThirdBeat"),
+            toBlue(", outBeat="), fshow(outBeat),
+            toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
+            toBlue(", rdmaMeta="), fshow(rdmaMeta)
+        );
     endrule
 
     
@@ -841,7 +847,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         NocData data = payload.data;
 
         // Form the forth beat and so on, these beats are payloads, no need to change byte order.
-        let outBeat = genEthernetPacket(data, mod, False, isLast);
+        let outBeat = genEthernetPacket(data, payload.startByteIdx, mod, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -869,10 +875,16 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
                 byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(pack(mod));
             end
 
+            let byteNumPlusPcieDwordAlign = payload.byteNum + zeroExtend(payload.startByteIdx);
             immAssert(
-                payload.byteNum == byteNum,
+                byteNumPlusPcieDwordAlign == byteNum,
                 "last beat of payload length calcaluted by two different ways have different result.",
-                $format("Got payload = ", fshow(payload), "ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
+                $format(
+                    "Got payload = ", fshow(payload),
+                    ", outBeat=", fshow(outBeat),
+                    ", mod=", fshow(mod),
+                    ", ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg)
+                )
             );
 
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
