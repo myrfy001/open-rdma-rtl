@@ -1,6 +1,7 @@
 import time
+import logging
 
-from desccriptors import *
+from descriptors import *
 from hw_consts import *
 
 import cocotb
@@ -13,7 +14,10 @@ class Ringbuf:
         if not is_power_of_2(ringbuf_len):
             raise Exception("ringbuf_len must be power of 2")
 
-        self.backend_mem = backend_mem[buffer_addr:]
+        self.log = logging.getLogger("cocotb.tb")
+        self.log.setLevel(logging.DEBUG)
+
+        self.backend_mem = backend_mem
         self.buffer_addr = buffer_addr
         self.mem_addr_low_csr_addr = mem_addr_low_csr_addr
         self.mem_addr_high_csr_addr = mem_addr_high_csr_addr
@@ -26,15 +30,14 @@ class Ringbuf:
         self.is_h2c = is_h2c
         self.head_csr_addr = head_csr_addr
         self.tail_csr_addr = tail_csr_addr
-        self.is_inited = False
+
+    async def init_addr_csr(self):
+        await self.pcie_bfm.host_write_blocking(
+            self.mem_addr_low_csr_addr, self.buffer_addr & 0xFFFFFFFF)
+        await self.pcie_bfm.host_write_blocking(
+            self.mem_addr_high_csr_addr, self.buffer_addr >> 32)
 
     async def sync_pointers(self):
-        if not self.is_inited:
-            self.is_inited = True
-            await self.pcie_bfm.host_write_blocking(
-                self.mem_addr_low_csr_addr, self.buffer_addr & 0xFFFFFFFF)
-            await self.pcie_bfm.host_write_blocking(
-                self.mem_addr_high_csr_addr, self.buffer_addr >> 32)
 
         if (self.is_h2c):
             await self.pcie_bfm.host_write_blocking(self.head_csr_addr, self.head)
@@ -100,6 +103,36 @@ class Ringbuf:
             await cocotb.triggers.Timer(2, "ns")
         return self.deq()
 
+    def force_peek_element_at_tail(self):
+        tail_idx = self.tail & self.ringbuf_idx_mask
+        read_start_addr = tail_idx * self.desc_size
+        raw_element = self.backend_mem[read_start_addr: read_start_addr +
+                                       self.desc_size]
+        self.log.debug(
+            f"tail_idx = {tail_idx}, read_start_addr={read_start_addr}, buffer_addr={hex(self.buffer_addr)}")
+        return raw_element
+
+    async def try_deq_in_descriptor_valid_bit_polling_mode(self):
+        resp_raw = self.force_peek_element_at_tail()
+        desc = RingbufDescCommonHead.from_buffer(resp_raw)
+        if desc.F_VALID == 0:
+            return None
+
+        tail_idx = self.tail & self.ringbuf_idx_mask
+        write_start_addr = tail_idx * self.desc_size
+        # only clear CmdQueueRespDescOnlyCommonHeader, two bytes to write
+        self.backend_mem[write_start_addr: write_start_addr + 2] = b'\x00\x00'
+        self.tail += 1
+        return resp_raw
+
+    async def deq_blocking_in_descriptor_valid_bit_polling_mode(self):
+        while True:
+            resp_raw = self.try_deq_in_descriptor_valid_bit_polling_mode()
+            if resp_raw is None:
+                await cocotb.triggers.Timer(2, "ns")
+                continue
+            return resp_raw
+
 
 class RingbufCommandReqQueue:
     def __init__(self, backend_mem, addr, pcie_bfm) -> None:
@@ -117,7 +150,10 @@ class RingbufCommandReqQueue:
     async def sync_pointers(self):
         await self.rb.sync_pointers()
 
-    def put_desc_update_mr_table(self, base_va, length, key, pd_handle, pgt_offset, acc_flag, user_data=0):
+    async def init_addr_csr(self):
+        await self.rb.init_addr_csr()
+
+    def put_desc_update_mr_table(self, base_va, length, key, pgt_offset, acc_flag, user_data=0):
         common_header = RingbufDescCommonHead(
             F_OP_CODE=CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_MR_TABLE,
             F_IS_EXTEND_OP_CODE=0,
@@ -135,7 +171,6 @@ class RingbufCommandReqQueue:
             F_MR_TABLE_MR_BASE_VA=base_va,
             F_MR_TABLE_MR_LENGTH=length,
             F_MR_TABLE_MR_KEY=key,
-            F_MR_TABLE_PD_HANDLER=pd_handle,
             F_MR_TABLE_ACC_FLAGS=acc_flag,
             F_MR_TABLE_PGT_OFFSET=pgt_offset,
         )
@@ -161,7 +196,7 @@ class RingbufCommandReqQueue:
         )
         self.rb.enq(obj)
 
-    def put_desc_update_qp(self, peer_mac_addr, peer_ip_addr, peer_udp_port, qpn, peer_qpn, pd_handler, qp_type, acc_flag, pmtu, user_data=0):
+    def put_desc_update_qp(self, peer_mac_addr, peer_ip_addr, local_udp_port, qpn, peer_qpn, qp_type, acc_flag, pmtu, user_data=0):
         common_header = RingbufDescCommonHead(
             F_OP_CODE=CmdQueueDescOperators.F_OPCODE_CMDQ_MANAGE_QP,
             F_IS_EXTEND_OP_CODE=0,
@@ -179,12 +214,11 @@ class RingbufCommandReqQueue:
             F_QP_ADMIN_IS_VALID=True,
             F_QP_ADMIN_IS_ERROR=False,
             F_QP_ADMIN_QPN=qpn,
-            F_QP_ADMIN_PD_HANDLER=pd_handler,
             F_QP_PEER_QPN=peer_qpn,
             F_QP_ADMIN_ACCESS_FLAG=acc_flag,
             F_QP_ADMIN_QP_TYPE=qp_type,
             F_QP_ADMIN_PMTU=pmtu,
-            F_QP_ADMIN_LOCAL_UDP_PORT=peer_udp_port,
+            F_QP_ADMIN_LOCAL_UDP_PORT=local_udp_port,
             F_QP_ADMIN_PEER_MAC_ADDR=peer_mac_addr,
         )
         self.rb.enq(obj)
@@ -245,11 +279,17 @@ class RingbufCommandRespQueue:
     async def sync_pointers(self):
         await self.rb.sync_pointers()
 
+    async def init_addr_csr(self):
+        await self.rb.init_addr_csr()
+
     def deq(self):
         return self.rb.deq()
 
     async def deq_blocking(self):
-        await self.rb.deq_blocking()
+        return await self.rb.deq_blocking()
+
+    async def deq_blocking_in_descriptor_valid_bit_polling_mode(self):
+        return await self.rb.deq_blocking_in_descriptor_valid_bit_polling_mode()
 
 
 class RingbufSendQueue:
@@ -269,7 +309,10 @@ class RingbufSendQueue:
     async def sync_pointers(self):
         await self.rb.sync_pointers()
 
-    def put_work_request(self, opcode, is_first, is_last, is_retry, enable_ecn, total_len, lkey, laddr, data_len, r_va, r_key, r_ip, r_mac, dqpn, psn, msn=0, qp_type=TypeQP.IBV_QPT_RC, pmtu=PMTU.IBV_MTU_256, send_flag=WorkReqSendFlag.IBV_SEND_NO_FLAGS, sqpn=2, imm_data=0):
+    async def init_addr_csr(self):
+        await self.rb.init_addr_csr()
+
+    def put_work_request(self, opcode, is_first, is_last, is_retry, enable_ecn, total_len, lkey, laddr, data_len, r_va, r_key, r_ip, r_mac, dqpn, sqpn, msn, psn, qp_type=TypeQP.IBV_QPT_RC, pmtu=PMTU.IBV_MTU_256, send_flag=WorkReqSendFlag.IBV_SEND_NO_FLAGS, imm_data=0):
 
         common_header = RingbufDescCommonHead(
             F_OP_CODE=opcode,
@@ -332,11 +375,20 @@ class RingbufMetaReportQueue:
     async def sync_pointers(self):
         await self.rb.sync_pointers()
 
+    async def init_addr_csr(self):
+        await self.rb.init_addr_csr()
+
     def deq(self):
         return self.rb.deq()
 
     def deq_blocking(self):
         return self.rb.deq_blocking()
+
+    async def try_deq_in_descriptor_valid_bit_polling_mode(self):
+        return await self.rb.try_deq_in_descriptor_valid_bit_polling_mode()
+
+    async def deq_blocking_in_descriptor_valid_bit_polling_mode(self):
+        return await self.rb.deq_blocking_in_descriptor_valid_bit_polling_mode()
 
 
 class RingbufSimpleNicTxQueue:
@@ -355,6 +407,9 @@ class RingbufSimpleNicTxQueue:
 
     async def sync_pointers(self):
         await self.rb.sync_pointers()
+
+    async def init_addr_csr(self):
+        await self.rb.init_addr_csr()
 
     def put_tx_request(self, len, addr):
 
@@ -390,8 +445,14 @@ class RingbufSimpleNicRxQueue:
     async def sync_pointers(self):
         await self.rb.sync_pointers()
 
+    async def init_addr_csr(self):
+        await self.rb.init_addr_csr()
+
     def deq(self):
         return self.rb.deq()
 
     def deq_blocking(self):
         return self.rb.deq_blocking()
+
+    async def deq_blocking_in_descriptor_valid_bit_polling_mode(self):
+        return await self.rb.deq_blocking_in_descriptor_valid_bit_polling_mode()

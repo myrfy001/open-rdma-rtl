@@ -171,7 +171,6 @@ typedef struct {
     ADDR baseVA;
     Length len;
     FlagsType#(MemAccessTypeFlag) accFlags;
-    HandlerPD pdHandler;
     KeyPartMR keyPart;
 } MemRegionTableEntry deriving(Bits, FShow);
 
@@ -414,7 +413,6 @@ typedef struct {
 
 typedef struct {
     KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH) bits = 24-11 = 13 bits
-    HandlerPD                       pdHandler;          // 24 bits  Should be removed from hardware.
     TypeQP                          qpType;             // 4 bits
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
     PMTU                            pmtu;               // 3 bits

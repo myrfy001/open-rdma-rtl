@@ -3,6 +3,7 @@ import itertools
 import gc
 import logging
 import os
+import random
 import threading
 
 import time
@@ -16,8 +17,11 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
+from descriptors import WorkReqOpCode, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc
 from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
-from hw_init_helper import HardwareInitHelper
+from hw_init_helper import HardwareTestHelper, CARD_A_IP_ADDRESS, CARD_A_MAC_ADDRESS
+
+import test_case_common as tcc
 
 from common import gen_rtl_file_list, SimplePcieBehaviorModel, SimpleEthBehaviorModel, copy_mem_file_to_sim_build_dir
 from scapy.layers.inet import IP, UDP
@@ -34,7 +38,8 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
 
-        self.shared_mem = open_shared_mem_to_hw_simulator(256*1024*1024)
+        self.shared_mem = open_shared_mem_to_hw_simulator(
+            tcc.TOTAL_MEMORY_SIZE)
 
         self.pcie_bfm = SimplePcieBehaviorModel(
             dut,
@@ -64,7 +69,8 @@ class TB(object):
             ],
         )
 
-        self.init_helper = HardwareInitHelper(self.pcie_bfm)
+        self.init_helper: HardwareTestHelper = HardwareTestHelper(
+            self.pcie_bfm)
 
     def clean_up(self):
         # need to ensure no reference to shared_mem, if not, the shared memory resource can not be released.
@@ -89,10 +95,93 @@ class TB(object):
         await RisingEdge(self.clock)
         self.log.info("Generated DMA RST_N")
 
-        await self.init_helper.do_init()
+        await self.init_helper.do_device_init()
+
+    async def start_single_card_loop_back(self):
+        async def _loop_back_task(self):
+            tx_beat = await self.eth_bfm.get_tx_packet()
+            await self.eth_bfm.inject_rx_packet(tx_beat)
+
+        cocotb.start_soon(_loop_back_task(self))
+
+    async def testcase_send_simple_write_loopback_req(self):
+
+        await self.init_helper.start_meta_report_queue_collector()
+
+        src_buf_mem_addr, src_buf_mem = self.init_helper.alloc_physical_memory(
+            1024, 1)
+        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 1024)
+
+        dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
+            1024, 1)
+        dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 1024)
+
+        self_qpn = self.init_helper.alloc_qpn()
+        peer_qpn = self.init_helper.alloc_qpn()
+
+        self.log.info(
+            f"create qp: self qpn = {hex(self_qpn)}, peer qpn = {hex(peer_qpn)}")
+
+        # create qp for send side
+        await self.init_helper.create_qp(
+            peer_mac_addr=CARD_A_MAC_ADDRESS,
+            peer_ip_addr=CARD_A_IP_ADDRESS,
+            local_udp_port=0x100,
+            self_qpn=self_qpn,
+            peer_qpn=peer_qpn,
+        )
+
+        # create qp for recv side
+        await self.init_helper.create_qp(
+            peer_mac_addr=CARD_A_MAC_ADDRESS,
+            peer_ip_addr=CARD_A_IP_ADDRESS,
+            local_udp_port=0x100,
+            self_qpn=peer_qpn,
+            peer_qpn=self_qpn,
+        )
+
+        imm_data = random.randint(0, 0xFFFFFFFF)
+        msn = random.randint(0, 0xFFF)
+        psn = random.randint(0, 0xFFF)
+
+        self.init_helper.send_queues[0].put_work_request(
+            opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE_WITH_IMM,
+            is_first=True,
+            is_last=True,
+            is_retry=False,
+            enable_ecn=False,
+            total_len=1,
+            lkey=src_mr_key,
+            laddr=src_buf_mem_addr,
+            data_len=1,
+            r_va=dst_buf_mem_addr,
+            r_key=dst_mr_key,
+            r_ip=CARD_A_IP_ADDRESS,
+            r_mac=CARD_A_MAC_ADDRESS,
+            dqpn=peer_qpn,
+            sqpn=self_qpn,
+            msn=msn,
+            psn=psn,
+            imm_data=imm_data
+        )
+        await self.init_helper.send_queues[0].sync_pointers()
+
+        resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        resp = MetaReportQueuePacketBasicInfoDesc.from_buffer(resp_raw)
+        assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_ONLY_WITH_IMMEDIATE
+        assert resp.F_MSN == msn
+        assert resp.F_PSN == psn
+        assert resp.F_SOLICITED == 0
+        assert resp.F_ACK_REQ == 0
+        assert resp.F_IS_RETRY == 0
+        assert resp.F_DQPN == peer_qpn
+        assert resp.F_TOTAL_LEN == 1
+        assert resp.F_RADDR == dst_buf_mem_addr
+        assert resp.F_RKEY == dst_mr_key
+        assert resp.F_IMM_DATA == imm_data
 
 
-@ cocotb.test(timeout_time=6000000, timeout_unit="ns")
+@ cocotb.test(timeout_time=1500, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -101,13 +190,9 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset_and_do_hw_init()
 
-    eth_layer = Ether(dst="AA:BB:CC:DD:EE:FF", src="AA:BB:CC:DD:EE:00")
-    ip_layer = IP(dst="17.34.51.68")
-    udp_layer = UDP(dport=1111, sport=2222)
+    await tb.start_single_card_loop_back()
 
-    payload_to_send = "0123456789abcdef"
-    bytes_to_send = bytes(eth_layer/ip_layer/udp_layer/payload_to_send)
-    await tb.put_rx_data(bytes_to_send)
+    await tb.testcase_send_simple_write_loopback_req()
 
     await Timer(500, units='ns')
     tb.clean_up()

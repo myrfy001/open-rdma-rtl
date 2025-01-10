@@ -619,6 +619,7 @@ module mkRQ(RQ);
                         ackReq      :   bth.ackReq,
                         solicited   :   bth.solicited,
                         ecnMarked   :   ?,
+                        isRetry     :   bth.isRetry,
                         psn         :   bth.psn,
                         msn         :   bth.msn,
                         commonHeader:   commonHeader
@@ -656,6 +657,7 @@ module mkRQ(RQ);
                             ackReq      :   bth.ackReq,
                             solicited   :   bth.solicited,
                             ecnMarked   :   ?,
+                            isRetry     :   bth.isRetry,
                             psn         :   bth.psn,
                             msn         :   bth.msn,
                             commonHeader:   commonHeader
@@ -726,7 +728,8 @@ module mkRQ(RQ);
         end
 
         $display(
-            "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc")
+            "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc"),
+            toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
         );
     endrule
 
@@ -735,6 +738,11 @@ module mkRQ(RQ);
             metaReportMimoQueue.deq(1);
             let desc = metaReportMimoQueue.first[0];
             metaReportDescPipeOutQueue.enq(desc);
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkRQ forwardMetaReportDescToOutput"),
+                toBlue(", desc="), fshow(desc)
+            );
         end
     endrule
 

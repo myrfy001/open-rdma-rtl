@@ -142,7 +142,6 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
                 let ent = EntryQPC {
                     peerQPN   :     desc0.peerQPN,
                     qpnKeyPart:     getKeyQP(desc0.qpn), 
-                    pdHandler:      desc0.pdHandler,
                     qpType:         desc0.qpType,
                     rqAccessFlags:  desc0.rqAccessFlags,
                     pmtu:           desc0.pmtu,
@@ -282,7 +281,7 @@ module mkDescriptorMux(DescriptorMux);
         // end
 
         if (rawDescMaybe matches tagged Valid .rawDesc) begin
-            RingbufDescCommonHead descHeader = unpack(truncateLSB(pack(rawDesc)));
+            RingbufDescCommonHead descHeader = unpack(truncate(pack(rawDesc)));
             immAssert(
                 descHeader.valid,
                 "desc should be valid",
@@ -294,6 +293,7 @@ module mkDescriptorMux(DescriptorMux);
 
             $display(
                 "time=%0t:", $time, toGreen(" mkDescriptorMux forwardFirstDescRule"),
+                toBlue(", descHeader="), fshow(descHeader),
                 toBlue(", rawDesc="), fshow(rawDesc)
             );
             descPipeOutQueue.enq(rawDesc);
@@ -304,7 +304,7 @@ module mkDescriptorMux(DescriptorMux);
         let rawDesc = descPipeInQueueVec[currentForwardChannelReg].first;
         descPipeInQueueVec[currentForwardChannelReg].deq;
 
-        RingbufDescCommonHead descHeader = unpack(truncateLSB(pack(rawDesc)));
+        RingbufDescCommonHead descHeader = unpack(truncate(pack(rawDesc)));
         immAssert(
             descHeader.valid,
             "desc should be valid",

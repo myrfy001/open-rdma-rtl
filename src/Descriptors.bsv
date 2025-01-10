@@ -83,10 +83,10 @@ typedef struct {
 } CmdQueueRespDescOnlyCommonHeader deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(7)                reserved1;
+    ReservedZero#(7)                reserved2;
     Bit#(17)                        pgtOffset;
     Bit#(8)                         accFlags;
-    Bit#(32)                        pdHandler;
+    ReservedZero#(32)               reserved1;              // 32  bits
     Bit#(32)                        mrKey;
     Bit#(32)                        mrLength;
     Bit#(64)                        mrBaseVA;
@@ -108,15 +108,15 @@ typedef struct {
 typedef struct {
     EthMacAddr                      peerMacAddr;            // 48  bits
     UdpPort                         localUdpPort;           // 16  bits
-    ReservedZero#(16)               reserved3;              // 16  bits
+    ReservedZero#(16)               reserved4;              // 16  bits
     
-    ReservedZero#(5)                reserved2;              // 5   bits
+    ReservedZero#(5)                reserved3;              // 5   bits
     PMTU                            pmtu;                   // 3   bits
-    ReservedZero#(4)                reserved1;              // 4   bits
+    ReservedZero#(4)                reserved2;              // 4   bits
     TypeQP                          qpType;                 // 4   bits
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;          // 8   bits
     QPN                             peerQPN;                // 24  bits
-    HandlerPD                       pdHandler;              // 32  bits
+    ReservedZero#(32)               reserved1;              // 32  bits
     QPN                             qpn;                    // 24  bits
     ReservedZero#(6)                reserved0;              // 6   bits
     Bool                            isError;                // 1   bit
@@ -165,7 +165,8 @@ typedef struct {
     ReservedZero#(8)            reserved1;        // 8  bits
     QPN                         dqpn;             // 24 bits
 
-    ReservedZero#(5)            reserved0;        // 5  bits
+    ReservedZero#(4)            reserved0;        // 5  bits
+    Bool                        isRetry;          // 1  bits
     Bool                        ackReq;           // 1  bits
     Bool                        solicited;        // 1  bits
     Bool                        ecnMarked;        // 1  bits

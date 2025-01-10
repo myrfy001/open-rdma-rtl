@@ -10,6 +10,7 @@ def memcpy(dst, start_addr, src):
 
 
 class RingbufDescCommonHead(Structure):
+    _pack_ = 1
     _fields_ = [
         ("F_OP_CODE", c_ushort, 8),
         ("F_IS_EXTEND_OP_CODE", c_ushort, 1),
@@ -28,9 +29,10 @@ class RingbufDescCmdQueueCommonHead(Structure):
 
 
 class CmdQueueRespDescOnlyCommonHeader(Structure):
+    _pack_ = 1
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
-                ("F_RESERVED_0", c_ulonglong, 32),
+                ("F_RESERVED_0", c_uint, 32),
                 ("F_RESERVED_1", c_ulonglong, 64),
                 ("F_RESERVED_2", c_ulonglong, 64),
                 ("F_RESERVED_3", c_ulonglong, 64),
@@ -40,14 +42,14 @@ class CmdQueueRespDescOnlyCommonHeader(Structure):
 class CmdQueueDescUpdateMrTable(Structure):
     _fields_ = [("common_header", RingbufDescCommonHead),
                 ("cmd_queue_common_header", RingbufDescCmdQueueCommonHead),
-                ("F_RESERVED_0", c_uint, 7),
+                ("F_RESERVED_0", c_uint, 32),
                 ("F_MR_TABLE_MR_BASE_VA", c_ulonglong),
                 ("F_MR_TABLE_MR_LENGTH", c_uint, 32),
                 ("F_MR_TABLE_MR_KEY", c_uint, 32),
-                ("F_MR_TABLE_PD_HANDLER", c_uint, 32),
+                ("F_RESERVED_1", c_uint, 32),
                 ("F_MR_TABLE_ACC_FLAGS", c_uint, 8),
                 ("F_MR_TABLE_PGT_OFFSET", c_uint, 17),
-                ("F_RESERVED_1", c_uint, 7),
+                ("F_RESERVED_2", c_uint, 7),
                 ]
 
 
@@ -152,14 +154,14 @@ class CmdQueueDescQpManagement(Structure):
                 ("F_QP_ADMIN_IS_ERROR", c_uint, 1),
                 ("F_RESERVED_0", c_uint, 6),
                 ("F_QP_ADMIN_QPN", c_uint, 24),
-                ("F_QP_ADMIN_PD_HANDLER", c_uint, 32),
+                ("F_RESERVED_1", c_uint, 32),
                 ("F_QP_PEER_QPN", c_uint, 24),
                 ("F_QP_ADMIN_ACCESS_FLAG", c_uint, 8),
                 ("F_QP_ADMIN_QP_TYPE", c_uint, 4),
-                ("F_RESERVED_1", c_uint, 4),
+                ("F_RESERVED_2", c_uint, 4),
                 ("F_QP_ADMIN_PMTU", c_uint, 3),
-                ("F_RESERVED_2", c_uint, 5),
-                ("F_RESERVED_3", c_ulonglong, 16),
+                ("F_RESERVED_3", c_uint, 5),
+                ("F_RESERVED_4", c_uint, 16),
                 ("F_QP_ADMIN_LOCAL_UDP_PORT", c_uint, 16),
                 ("F_QP_ADMIN_PEER_MAC_ADDR", c_ulonglong, 48),
                 ]
@@ -303,12 +305,13 @@ class MetaReportQueuePacketBasicInfoDesc(Structure):
     _pack_ = 1
     _fields_ = [
         ("common_header", RingbufDescCommonHead),
-        ("F_MSN", c_uint, 16),
+        ("F_MSN", c_ushort, 16),
         ("F_PSN", c_uint, 24),
         ("F_ECN_MARKED", c_uint, 1),
         ("F_SOLICITED", c_uint, 1),
         ("F_ACK_REQ", c_uint, 1),
-        ("F_RESERVED_0", c_uint, 5),
+        ("F_IS_RETRY", c_uint, 1),
+        ("F_RESERVED_0", c_uint, 4),
         ("F_DQPN", c_uint, 24),
         ("F_RESERVED_1", c_uint, 8),
         ("F_TOTAL_LEN", c_uint, 32),

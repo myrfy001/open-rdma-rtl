@@ -4,7 +4,7 @@ import signal
 import time
 import mock_host
 
-TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
+TOTAL_MEMORY_SIZE = 1024 * 1024 * 256
 PGT_ENTRY_OFFSET = 0x200
 PGT_ENTRY_CNT = 0x20
 PGT_ENTRY_SIZE = 0x08
