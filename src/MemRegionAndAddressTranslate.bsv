@@ -496,7 +496,6 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
                                 baseVA: desc.mrBaseVA,
                                 len: desc.mrLength,
                                 accFlags: unpack(desc.accFlags),
-                                pdHandler: desc.pdHandler,
                                 keyPart: lkey2KeyPartMR(desc.mrKey)
                             }
                 };

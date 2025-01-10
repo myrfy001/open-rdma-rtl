@@ -604,8 +604,7 @@ module mkPacketGen(PacketGen);
             remoteAddr = packetInfo.startAddr;
             dlen = isFirstPacket ? wqe.totalLen : packetInfo.len;
 
-            ByteIndexInBeat paddingByteNumForRemoteAddressAlign = truncate(remoteAddr);
-
+            ByteIdxInDword paddingByteNumForRemoteAddressAlign = truncate(remoteAddr);
             udpPayloadLen = udpPayloadLen + truncate(packetInfo.len) + zeroExtend(paddingByteNumForRemoteAddressAlign);
 
         end

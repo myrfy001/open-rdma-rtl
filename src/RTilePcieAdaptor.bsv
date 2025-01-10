@@ -238,9 +238,9 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
     FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGFIFOF;
 
-    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkFIFOF;
-    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkFIFOF;
-    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkFIFOF;
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkLFIFOF;
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkLFIFOF;
+    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkLFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
     Reg#(Bool) txTlpAcrossTwoBeatReg <- mkReg(False);
@@ -775,7 +775,7 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
     Reg#(RtilePcieRxPayloadStorageAddr) storageWriteAddrReg <- mkReg(0);
 
     // Pipeline FIFOs
-    FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) dispatchTlpInfoPipelineQueue <- mkFIFOF;
+    FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) dispatchTlpInfoPipelineQueue <- mkLFIFOF;
 
     rule calcRxBeatMetaAndForkPayloadStorageAndReleasePcieRxFlowCredit;
         // A trick here. we assume that the whole system is fully-pipelined, there will be no back preasure.
@@ -1290,8 +1290,8 @@ module mkPcieHwCpltBufferAllocator(PcieHwCpltBufferAllocator);
     Reg#(PcieHwCpltBufferDataSlotCnt)   dataUsedReg     <- mkReg(0);
 
     // Pipeline Queues
-    FIFOF#(Tuple3#(PcieHwCpltBufferHeaderSlotCnt, PcieHwCpltBufferDataSlotCnt, Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool))) preCalcAllocReqPipelineQueue <- mkFIFOF;
-    FIFOF#(Tuple2#(PcieHwCpltBufferHeaderSlotCnt, PcieHwCpltBufferDataSlotCnt)) preCalcDeallocReqPipelineQueue <- mkFIFOF;
+    FIFOF#(Tuple3#(PcieHwCpltBufferHeaderSlotCnt, PcieHwCpltBufferDataSlotCnt, Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool))) preCalcAllocReqPipelineQueue <- mkLFIFOF;
+    FIFOF#(Tuple2#(PcieHwCpltBufferHeaderSlotCnt, PcieHwCpltBufferDataSlotCnt)) preCalcDeallocReqPipelineQueue <- mkLFIFOF;
 
 
     // rule debug;
@@ -1536,7 +1536,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     // Pipeline FIFOs
     FIFOF#(RtilePcieRxTlpInfoCplt)                                              handleInputCpltTlpVecStep2PipelineQueue             <- mkSizedFIFOF(6);
-    FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readCpltTlpInfoForOutputPipelineQueue               <- mkFIFOF;
+    FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readCpltTlpInfoForOutputPipelineQueue               <- mkLFIFOF;
     FIFOF#(PcieExtendTagHighPart)                                               slotMetaQueryForOutputPipelineQueue                 <- mkSizedFIFOF(6);
     FIFOF#(PcieCompletionBufferBeatInfoForOutputDataStreamGenerate)             outputDataStreamGenPipelineQueue                    <- mkSizedFIFOF(6);
     FIFOF#(Tuple2#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt))    handleCpltTlpInfoStorageWritePipelineQueue          <- mkLFIFOF;
@@ -2505,7 +2505,7 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkFIFOF);
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA))) bramReadRespPipeOutVecInst = newVector;
-    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA))) bramReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA))) bramReadRespPipeOutQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(PcieTlpHeaderBuffer)) bramTlpHeaderReadRespPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(PcieTlpHeaderBuffer)) bramTlpHeaderReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
@@ -3082,7 +3082,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
             cpldToConsume = cpldToConsume + txFlowControlCreditToConsumeCpld[tlpIdx];
         end
 
-        // txFlowControlAvaliablePipeInQueue is filled by a "always enabled" rule, so we must consume it as soon as possible, no matter wo have tlps or not.
+        // txFlowControlAvaliablePipeInQueue is filled by a "always enabled" rule, so we must consume it as soon as possible, no matter have tlps or not.
         // so, this rule should not be blocked.
         let {availableCreditPh, availableCreditNph, availableCreditCplh, availableCreditPd, availableCreditNpd, availableCreditCpld} = txFlowControlAvaliablePipeInQueue.first;
         txFlowControlAvaliablePipeInQueue.deq;
@@ -3324,8 +3324,8 @@ endinterface
 
 (* synthesize *)
 module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
-    FIFOF#(RtilePcieTxPingPongChannelMetaBundle)  metaPipeInQueue       <- mkFIFOF;
-    FIFOF#(RtilePcieTxPingPongChannelOutputEntry) beatPipeOutQueue      <- mkFIFOF;
+    FIFOF#(RtilePcieTxPingPongChannelMetaBundle)  metaPipeInQueue       <- mkLFIFOF;
+    FIFOF#(RtilePcieTxPingPongChannelOutputEntry) beatPipeOutQueue      <- mkLFIFOF;
 
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(RtilePcieTxBramBufferReadReq))  bramReadReqPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(RtilePcieTxBramBufferReadReq))    bramReadReqPipeOutQueueVec <- replicateM(mkFIFOF);

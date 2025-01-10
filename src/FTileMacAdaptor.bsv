@@ -1132,7 +1132,7 @@ module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGe
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkFIFOF);
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA)) bramReadRespPipeOutVecInst = newVector;
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(DATA)) bramReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(DATA)) bramReadRespPipeOutQueueVec <- replicateM(mkLFIFOF);
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         bramReadReqPipeInVecInst[idx] = toPipeIn(bramReadReqPipeInQueueVec[idx]);
@@ -1839,8 +1839,8 @@ endinterface
 
 (* synthesize *)
 module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
-    FIFOF#(FtileMacTxPingPongChannelMetaBundle)  metaPipeInQueue <- mkFIFOF;
-    FIFOF#(FtileMacTxPingPongChannelOutputEntry) beatPipeOutQueue <- mkFIFOF;
+    FIFOF#(FtileMacTxPingPongChannelMetaBundle)  metaPipeInQueue <- mkLFIFOF;
+    FIFOF#(FtileMacTxPingPongChannelOutputEntry) beatPipeOutQueue <- mkLFIFOF;
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacTxBramBufferReadReq))  bramReadReqPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq))    bramReadReqPipeOutQueueVec <- replicateM(mkFIFOF);
@@ -2051,9 +2051,9 @@ endinterface
 
 (* synthesize *)
 module mkFtileMacTxPingPongJoin(FtileMacTxPingPongJoin);
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkLFIFOF);
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
-    FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue <- mkFIFOF;
+    FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue <- mkLFIFOF;
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         pingpongBeatPipeInVecInst[idx] = toPipeIn(pingpongBeatPipeInQueueVec[idx]);
