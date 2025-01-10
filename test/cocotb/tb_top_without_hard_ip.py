@@ -79,7 +79,7 @@ class TB(object):
         self.shared_mem = None
         self.init_helper = None
         gc.collect()
-        shared_mem.close()
+        # shared_mem.close()
 
     async def put_rx_data(self, packet_data):
         await self.eth_bfm.inject_rx_packet(packet_data)
@@ -167,6 +167,9 @@ class TB(object):
         await self.init_helper.send_queues[0].sync_pointers()
 
         resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        self.log.debug(
+            f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+
         resp = MetaReportQueuePacketBasicInfoDesc.from_buffer(resp_raw)
         assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_ONLY_WITH_IMMEDIATE
         assert resp.F_MSN == msn

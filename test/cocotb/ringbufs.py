@@ -1,3 +1,4 @@
+import copy
 import time
 import logging
 
@@ -108,12 +109,12 @@ class Ringbuf:
         read_start_addr = tail_idx * self.desc_size
         raw_element = self.backend_mem[read_start_addr: read_start_addr +
                                        self.desc_size]
-        self.log.debug(
-            f"tail_idx = {tail_idx}, read_start_addr={read_start_addr}, buffer_addr={hex(self.buffer_addr)}")
+        # self.log.debug(
+        #     f"tail_idx = {tail_idx}, read_start_addr={read_start_addr}, buffer_addr={hex(self.buffer_addr)}")
         return raw_element
 
     async def try_deq_in_descriptor_valid_bit_polling_mode(self):
-        resp_raw = self.force_peek_element_at_tail()
+        resp_raw = memoryview(bytearray(self.force_peek_element_at_tail()))
         desc = RingbufDescCommonHead.from_buffer(resp_raw)
         if desc.F_VALID == 0:
             return None
