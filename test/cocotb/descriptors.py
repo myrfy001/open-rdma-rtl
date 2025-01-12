@@ -325,7 +325,7 @@ class MetaReportQueueReadReqExtendInfoDesc(Structure):
     _pack_ = 1
     _fields_ = [
         ("common_header", RingbufDescCommonHead),
-        ("F_RESERVED_0", c_uint, 16),
+        ("F_RESERVED_0", c_ushort, 16),
         ("F_TOTAL_LEN", c_uint, 32),
         ("F_LADDR", c_ulonglong, 64),
         ("F_LKEY", c_uint, 32),
@@ -359,7 +359,7 @@ class MetaReportQueueAckExtraDesc(Structure):
     _pack_ = 1
     _fields_ = [
         ("common_header", RingbufDescCommonHead),
-        ("F_RESERVED_0", c_uint, 16),
+        ("F_RESERVED_0", c_ushort, 16),
         ("F_RESERVED_1", c_uint, 32),
         ("F_RESERVED_2", c_ulonglong, 64),
         ("F_PRE_BITMAP_LOW", c_ulonglong, 64),
@@ -393,7 +393,7 @@ class SimpleNicTxQueueDesc(Structure):
     _pack_ = 1
     _fields_ = [
         ("common_header", RingbufDescCommonHead),
-        ("F_RESERVED_0", c_uint, 16),
+        ("F_RESERVED_0", c_ushort, 16),
         ("F_LEN", c_uint, 32),
         ("F_ADDR", c_ulonglong, 64),
         ("F_RESERVED_1", c_ulonglong, 64),
@@ -405,7 +405,7 @@ class SimpleNicRxQueueDesc(Structure):
     _pack_ = 1
     _fields_ = [
         ("common_header", RingbufDescCommonHead),
-        ("F_RESERVED_0", c_uint, 16),
+        ("F_RESERVED_0", c_ushort, 16),
         ("F_LEN", c_uint, 32),
         ("F_SLOT_IDX", c_uint, 32),
         ("F_RESERVED_1", c_ulonglong, 32),

@@ -142,7 +142,8 @@ class TB(object):
 
         imm_data = random.randint(0, 0xFFFFFFFF)
         msn = random.randint(0, 0xFFF)
-        psn = random.randint(0, 0xFFF)
+        # psn = random.randint(0, 0xFFF)
+        psn = 256
 
         self.init_helper.send_queues[0].put_work_request(
             opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE_WITH_IMM,
@@ -172,6 +173,7 @@ class TB(object):
 
         resp = MetaReportQueuePacketBasicInfoDesc.from_buffer(resp_raw)
         assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_ONLY_WITH_IMMEDIATE
+        assert resp.common_header.F_HAS_NEXT_FRAG == 0
         assert resp.F_MSN == msn
         assert resp.F_PSN == psn
         assert resp.F_SOLICITED == 0
@@ -182,6 +184,31 @@ class TB(object):
         assert resp.F_RADDR == dst_buf_mem_addr
         assert resp.F_RKEY == dst_mr_key
         assert resp.F_IMM_DATA == imm_data
+
+        resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        self.log.debug(
+            f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        resp = MetaReportQueueAckDesc.from_buffer(resp_raw)
+        assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        assert resp.common_header.F_HAS_NEXT_FRAG == 1
+        assert resp.F_IS_SEND_BY_LOCAL_HW == 1
+        assert resp.F_IS_SEND_BY_DRIVER == 0
+        assert resp.F_IS_WINDOW_SLIDED == 1
+        assert resp.F_IS_PACKET_LOST == 1
+        assert resp.F_PSN_BEFORE_SLIDE == 0xFFFFF0
+        assert resp.F_PSN_NOW == psn
+        assert resp.F_MSN == 0
+        assert resp.F_NOW_BITMAP_LOW == 0
+        assert resp.F_NOW_BITMAP_HIGH == 0x00010000_00000000
+
+        resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        self.log.debug(
+            f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        resp = MetaReportQueueAckExtraDesc.from_buffer(resp_raw)
+        assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        assert resp.common_header.F_HAS_NEXT_FRAG == 0
+        assert resp.F_PRE_BITMAP_LOW == 0xFFFFFFFF_FFFFFFFF
+        assert resp.F_PRE_BITMAP_HIGH == 0xFFFFFFFF_FFFFFFFF
 
 
 @ cocotb.test(timeout_time=1500, timeout_unit="ns")
