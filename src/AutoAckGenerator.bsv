@@ -76,6 +76,8 @@ interface AutoAckGenerator;
 
     interface PipeIn#(IndexQP) resetReqPipeIn;
     // interface PipeOut#(Bit#(0)) resetRespPipeOut;
+
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
 
 
@@ -165,6 +167,12 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 qpn: req.qpn
             };
             psnMergeAndStorage.reqPipeInVec[idx].enq(preMergeReq);
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnPreMerge"),
+            //     toBlue(", channelIdx=%d"), idx,
+            //     toBlue(", preMergeReq="), fshow(preMergeReq)
+            // );
         endrule
     end
 
@@ -184,12 +192,23 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 autoAckMetaAtomicUpdateStorage.reqPipeInVec[idx].enq(tagged Valid autoAckMetaUpdateReq);
                 genAutoAckEthPacketPipelineQueueVec[idx].enq(resp);
                 qpContextForAutoAck.querySrvVec[idx].request.put(ReadReqQPC{
-                    qpn: genQPN(resp.rowAddr, ?)
+                    qpn: genQPN(resp.rowAddr, ?),
+                    needCheckKey: False
                 });
+
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
+                //     toBlue(", channelIdx=%d"), idx,
+                //     toBlue(", respMaybe="), fshow(respMaybe),
+                //     toBlue(", hasPacketLost="), fshow(hasPacketLost),
+                //     toBlue(", needSendAckNow="), fshow(needSendAckNow)
+                // );
             end
             else begin
                 autoAckMetaAtomicUpdateStorage.reqPipeInVec[idx].enq(tagged Invalid);
             end
+
+            
         endrule
 
         rule genAutoAckEthPacket;
@@ -253,8 +272,25 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
                         genAutoAckReportDescriptorPipelineQueueVec[idx].enq(bitmapInfo);
                     end
+                    else begin
+                        immFail(
+                            "qp ctx must be perpared.",
+                            $format("")
+                        );
+                    end
                 end
+
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckEthPacket"),
+                //     toBlue(", channelIdx=%d"), idx,
+                //     toBlue(", qpCtxRespMaybe="), fshow(qpCtxRespMaybe),
+                //     toBlue(", msnInfoMaybe="), fshow(msnInfoMaybe),
+                //     toBlue(", needSendAckNow="), fshow(needSendAckNow),
+                //     toBlue(", isPacketLost="), fshow(isPacketLost)
+                // );
             end
+
+
         endrule
 
 
@@ -307,6 +343,12 @@ module mkAutoAckGenerator(AutoAckGenerator);
             if (metaReportMimoQueueVec[idx].enqReadyN(2)) begin
                 metaReportMimoQueueVec[idx].enq(2, vecToEnq);
                 genAutoAckReportDescriptorPipelineQueueVec[idx].deq;
+
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckReportDescriptor"),
+                //     toBlue(", channelIdx=%d"), idx,
+                //     toBlue(", vecToEnq="), fshow(vecToEnq)
+                // );
             end
            
         endrule
@@ -316,6 +358,11 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 metaReportMimoQueueVec[idx].deq(1);
                 let desc = metaReportMimoQueueVec[idx].first[0];
                 metaReportDescPipeOutQueueVec[idx].enq(desc);
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
+                //     toBlue(", channelIdx=%d"), idx,
+                //     toBlue(", desc="), fshow(desc)
+                // );
             end
         endrule
 
@@ -370,6 +417,11 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 };
                 metaReportDescPipeOutQueueVec[2].enq(pack(desc0));
                 lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
+
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
+                //     toBlue(", desc="), fshow(desc0)
+                // );
             end
         end
         else begin
@@ -394,5 +446,11 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQueue);
     // interface resetRespPipeOut = allPacketPsnBitmapStorage.resetRespPipeOut;
+
+    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
+        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+            ethernetPacketGeneratorVec[idx].setLocalNetworkSettings(networkSettings);
+        end
+    endmethod
 endmodule
 

@@ -79,7 +79,10 @@ endinterface
 module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArbiterSlave#(channelCnt, tData, tAddr, tLen)) provisos (
         Bits#(tData, szData),
         Bits#(DtldStreamMemAccessMeta#(tAddr, tLen), szMeta),
-        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx)
+        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx),
+        FShow#(tAddr),
+        FShow#(tLen),
+        FShow#(tData)
     );
 
     Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
@@ -107,10 +110,25 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkSizedFIFOF(depth);
 
+    // rule debug;
+    //     $display(
+    //         "time=%0t, ", $time, "DEBUG", 
+    //         ", isWriteFirstBeatReg=", fshow(isWriteFirstBeatReg),
+    //         ", masterSideQueueWm.notFull=", fshow(masterSideQueueWm.notFull),
+    //         ", masterSideQueueWd.notFull=", fshow(masterSideQueueWd.notFull),
+    //         ", writeSourceChannelIdPipeOutQueue.notFull=", fshow(writeSourceChannelIdPipeOutQueue.notFull)
+
+    //     );
+    // endrule
+
     rule sendWriteArbitReq if (isWriteFirstBeatReg);
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (slaveSideQueueVecWm[channelIdx].notEmpty && slaveSideQueueVecWd[channelIdx].notEmpty) begin
                 writeArbiter.clients[channelIdx].request;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave sendWriteArbitReq"),
+                //     toBlue(", channelIdx=%d"), channelIdx
+                // );
             end
         end
     endrule
@@ -137,6 +155,11 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
             curWriteChannelIdxReg <= curChannelIdx;
             writeSourceChannelIdPipeOutQueue.enq(curChannelIdx);
         end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave recvWriteArbitResp"),
+        //     toBlue(", wmMaybe="), fshow(wmMaybe),
+        //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+        // );
     endrule
 
     rule forwardMoreWriteBeat if (!isWriteFirstBeatReg);
@@ -144,6 +167,11 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         slaveSideQueueVecWd[curWriteChannelIdxReg].deq;
         masterSideQueueWd.enq(wd);
         isWriteFirstBeatReg <= wd.isLast;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardMoreWriteBeat"),
+        //     toBlue(", wd="), fshow(wd)
+        // );
     endrule
 
     rule sendReadArbitReq;

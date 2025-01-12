@@ -164,8 +164,12 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
         qpDmaRequestSlaveIfcVecInst[idx] = muxVector[idx].slaveIfcVec[1];
 
         rule discardUselessPipeOutSignal;
-            muxVector[idx].writeSourceChannelIdPipeOut.deq;
-            muxVector[idx].readSourceChannelIdPipeOut.deq;
+            if (muxVector[idx].writeSourceChannelIdPipeOut.notEmpty) begin
+                muxVector[idx].writeSourceChannelIdPipeOut.deq;
+            end
+            if (muxVector[idx].readSourceChannelIdPipeOut.notEmpty) begin
+                muxVector[idx].readSourceChannelIdPipeOut.deq;
+            end
         endrule
     end
 
@@ -849,7 +853,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     // other meta report desc related connection
     // since after bitmap merge, four channel becomes two channel, and background loop tooks another channel
-    // to simpily design, we won't dispatch them evenly.
+    // to simpilify design, we won't dispatch them evenly.
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[0], descriptorMuxVec[0].descPipeInVec[1]);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[1], descriptorMuxVec[1].descPipeInVec[1]);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);
@@ -879,6 +883,8 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
             sqVec[idx].setLocalNetworkSettings(networkSettings);
             rqVec[idx].setLocalNetworkSettings(networkSettings);
         end
+        autoAckGenerator.setLocalNetworkSettings(networkSettings);
+        cnpPacketGenerator.setLocalNetworkSettings(networkSettings);
     endmethod
 
     interface pgtUpdateDmaMasterPipe            = pgtUpdateDmaInterfaceConvertor.dmaSidePipeIfc;

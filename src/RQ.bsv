@@ -180,7 +180,8 @@ module mkRQ(RQ);
         let reth = extractPriRETH(rdmaPacketMeta.header.rdmaExtendHeaderBuf, bth.trans);
 
         let qpcQueryResp = ReadReqQPC{
-            qpn: bth.dqpn
+            qpn: bth.dqpn,
+            needCheckKey: True
         };
         qpcQueryCltInst.putReq(qpcQueryResp);
 

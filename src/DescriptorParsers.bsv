@@ -313,6 +313,13 @@ module mkDescriptorMux(DescriptorMux);
         if (!descHeader.hasNextFrag) begin
             isForwardingFirstDescReg <= True;
         end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDescriptorMux forwardOtherDesc"),
+        //     toBlue(", descHeader="), fshow(descHeader),
+        //     toBlue(", rawDesc="), fshow(rawDesc)
+        // );
+
         descPipeOutQueue.enq(rawDesc);
     endrule
 

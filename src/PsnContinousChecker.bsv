@@ -982,7 +982,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                 tBoundary boundaryDeltaAbs = getAbsValue(boundaryDelta);
 
 
-                let isShiftWindow = msb(boundaryDelta) == 0;
+                let isShiftWindow = boundaryDelta > 0;
 
                 tWideShiftOffset shiftOffset = unpack(truncate(pack(boundaryDeltaAbs)));
                 let pipelineEntryOut = BitmapWindowStorageStageThreeToFourPipelineEntry {
@@ -1044,7 +1044,11 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
                 Bit#(TLog#(szData)) bitShiftCnt = zeroExtend(pipelineEntryIn.shiftAbsValue) << valueOf(TLog#(szStride));
                 tData allOneData = unpack(-1);
-                if (pipelineEntryIn.isShiftWindow) begin
+                if (isShiftOutOfBoundary) begin
+                    alreadyExistEntry.data = 0;
+                    windowShiftedOutData = 0;
+                end
+                else if (pipelineEntryIn.isShiftWindow) begin
                     let tmpToShift = {pack(alreadyExistEntry.data), pack(allOneData)};
                     tmpToShift = tmpToShift >> bitShiftCnt;
                     alreadyExistEntry.data = unpack(truncateLSB(tmpToShift));

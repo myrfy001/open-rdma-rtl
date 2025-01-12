@@ -234,7 +234,7 @@ class HardwareTestHelper:
                         desc_raw_maybe)
                     while desc_common_header.F_HAS_NEXT_FRAG == 1:
                         await cocotb.triggers.Timer(2, "ns")
-                        desc_raw_maybe = self.meta_report_queues[channel_idx].try_deq_in_descriptor_valid_bit_polling_mode(
+                        desc_raw_maybe = await self.meta_report_queues[channel_idx].try_deq_in_descriptor_valid_bit_polling_mode(
                         )
                         if desc_raw_maybe is None:
                             continue

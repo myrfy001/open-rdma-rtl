@@ -404,6 +404,7 @@ typedef 8 QPC_QUERY_RESP_MAX_DELAY;
 
 typedef struct {
     QPN  qpn;
+    Bool needCheckKey;
 } ReadReqQPC deriving(Bits, Eq, FShow);
 
 typedef struct {

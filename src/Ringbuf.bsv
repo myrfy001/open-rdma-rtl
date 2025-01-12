@@ -463,7 +463,7 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteAddr"),
-        //     toBlue(", qmetaIdx="), fshow(meta)
+        //     toBlue(", qmeta="), fshow(meta)
         // );
     endrule
 

@@ -27,23 +27,33 @@ module mkQpContext(QpContext);
 
     AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "");
 
-    FIFOF#(Tuple2#(IndexQP, KeyQP)) pipeQ <- mkFIFOF;
+    FIFOF#(Tuple3#(IndexQP, KeyQP, Bool)) pipeQ <- mkFIFOF;
 
     rule handleReadReq;
         let req <- qpcQuerySrvInst.getReq;
         IndexQP idx = getIndexQP(req.qpn);
         KeyQP key   = getKeyQP(req.qpn);
         qpcEntryCommonStorage.putReadReq(idx);
-        pipeQ.enq(tuple2(idx, key));
+        pipeQ.enq(tuple3(idx, key, req.needCheckKey));
     endrule
 
     rule handleReadResp;
-        let {idx, key} = pipeQ.first;
+        let {idx, key, needCheckKey} = pipeQ.first;
         pipeQ.deq;
         let qpcEntryMaybe <- qpcEntryCommonStorage.getReadResp;
 
-        if (qpcEntryMaybe matches tagged Valid .resp &&& resp.qpnKeyPart == key) begin
-            qpcQuerySrvInst.putResp(tagged Valid resp);
+        if (qpcEntryMaybe matches tagged Valid .resp) begin
+            if (needCheckKey) begin
+                if (resp.qpnKeyPart == key) begin
+                    qpcQuerySrvInst.putResp(tagged Valid resp);
+                end
+                else begin
+                    qpcQuerySrvInst.putResp(tagged Invalid);
+                end
+            end
+            else begin
+                qpcQuerySrvInst.putResp(tagged Valid resp);
+            end
         end 
         else begin
             qpcQuerySrvInst.putResp(tagged Invalid);
