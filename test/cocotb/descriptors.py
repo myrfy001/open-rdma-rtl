@@ -338,12 +338,12 @@ class MetaReportQueueAckDesc(Structure):
     _pack_ = 1
     _fields_ = [
         ("common_header", RingbufDescCommonHead),
-        ("F_RESERVED_0", c_uint, 4),
-        ("F_IS_SEND_BY_LOCAL_HW", c_uint, 1),
-        ("F_IS_SEND_BY_DRIVER", c_uint, 1),
-        ("F_IS_WINDOW_SLIDED", c_uint, 1),
-        ("F_IS_PACKET_LOST", c_uint, 1),
-        ("F_RESERVED_1", c_uint, 8),
+        ("F_RESERVED_0", c_ushort, 4),
+        ("F_IS_SEND_BY_LOCAL_HW", c_ushort, 1),
+        ("F_IS_SEND_BY_DRIVER", c_ushort, 1),
+        ("F_IS_WINDOW_SLIDED", c_ushort, 1),
+        ("F_IS_PACKET_LOST", c_ushort, 1),
+        ("F_RESERVED_1", c_ushort, 8),
         ("F_PSN_BEFORE_SLIDE", c_uint, 24),
         ("F_RESERVED_2", c_uint, 8),
         ("F_PSN_NOW", c_uint, 24),
