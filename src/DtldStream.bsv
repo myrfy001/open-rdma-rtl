@@ -270,7 +270,8 @@ endinterface
 
 module mkDtldStreamNoMetaArbiterSlave#(Integer depth)(DtldStreamNoMetaArbiterSlave#(channelCnt, tData)) provisos (
         Bits#(tData, szData),
-        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx)
+        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx),
+        FShow#(tData)
     );
 
     Vector#(channelCnt, PipeIn#(DtldStreamData#(tData)))                          pipeInIfcVecInst         = newVector;
@@ -288,10 +289,24 @@ module mkDtldStreamNoMetaArbiterSlave#(Integer depth)(DtldStreamNoMetaArbiterSla
 
     Reg#(tChannelIdx) curChannelIdxReg <- mkRegU;
 
+    // rule debug;
+    //     $display(
+    //         "time=%0t, ", $time, "DEBUG", 
+    //         ", isFirstBeatReg=", fshow(isFirstBeatReg),
+    //         ", pipeOutIfcQueue.notFull=", fshow(pipeOutIfcQueue.notFull),
+    //         ", sourceChannelIdPipeOutQueue.notFull=", fshow(sourceChannelIdPipeOutQueue.notFull)
+
+    //     );
+    // endrule
+
     rule sendArbitReq if (isFirstBeatReg);
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (pipeInIfcVecQueueVec[channelIdx].notEmpty) begin
                 arbiter.clients[channelIdx].request;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkDtldStreamNoMetaArbiterSlave sendArbitReq"),
+                //     toBlue(", channelIdx=%d"), channelIdx
+                // );
             end
         end
     endrule
@@ -313,13 +328,22 @@ module mkDtldStreamNoMetaArbiterSlave#(Integer depth)(DtldStreamNoMetaArbiterSla
             curChannelIdxReg <= curChannelIdx;
             sourceChannelIdPipeOutQueue.enq(curChannelIdx);
         end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamNoMetaArbiterSlave recvArbitResp"),
+        //     toBlue(", dsMaybe="), fshow(dsMaybe),
+        //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+        // );
     endrule
 
-    rule forwardMoreWriteBeat if (!isFirstBeatReg);
+    rule forwardMoreBeat if (!isFirstBeatReg);
         let ds  = pipeInIfcVecQueueVec[curChannelIdxReg].first;
         pipeInIfcVecQueueVec[curChannelIdxReg].deq;
         pipeOutIfcQueue.enq(ds);
         isFirstBeatReg <= ds.isLast;
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkDtldStreamNoMetaArbiterSlave forwardMoreBeat"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     interface pipeInIfcVec = pipeInIfcVecInst;

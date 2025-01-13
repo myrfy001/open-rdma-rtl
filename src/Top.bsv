@@ -849,6 +849,10 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     
         // IO interface 
         wqePipeInVecInst[idx]               = sqVec[idx].wqePipeIn;
+
+        rule deqNotused;
+            ethTxStreamArbiterVec[idx].sourceChannelIdPipeOut.deq;
+        endrule
     end
 
     // other meta report desc related connection

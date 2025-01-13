@@ -99,8 +99,10 @@ class TB(object):
 
     async def start_single_card_loop_back(self):
         async def _loop_back_task(self):
-            tx_beat = await self.eth_bfm.get_tx_packet()
-            await self.eth_bfm.inject_rx_packet(tx_beat)
+            while True:
+                tx_beat = await self.eth_bfm.get_tx_packet()
+                await self.eth_bfm.inject_rx_packet(tx_beat)
+                # self.log.debug(f"single_card_loop_back forward beat: {tx_beat}")
 
         cocotb.start_soon(_loop_back_task(self))
 

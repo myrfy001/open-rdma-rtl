@@ -817,6 +817,7 @@ class SimpleEthBehaviorModel(object):
         packet_data = b""
         while True:
             if await self.txChannels[idx].not_empty():
+                # self.log.debug(f"eth bfm channel {idx} got beat")
                 ds_raw = await self.txChannels[idx].first()
                 await self.txChannels[idx].deq()
                 ds = BlueRdmaDataStream256.unpack(ds_raw)
@@ -825,6 +826,8 @@ class SimpleEthBehaviorModel(object):
 
                 if ds.is_last():
                     await self.main_tx_queue.put(packet_data)
+                    # self.log.debug(
+                    #     f"eth bfm channel {idx} got full packet, data={packet_data}")
                     packet_data = ""
             await RisingEdge(self.clock)
 
