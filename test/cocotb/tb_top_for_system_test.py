@@ -36,6 +36,11 @@ class TB(object):
 
         self.shared_mem = open_shared_mem_to_hw_simulator(256*1024*1024)
 
+        self.csr_write_req_queue = Queue()
+        self.csr_read_req_queue = Queue()
+        self.csr_read_resp_queue = Queue()
+        self.csr_read_lock = threading.Lock()
+
         self.rpc_server = UserspaceDriverServer(
             "0.0.0.0", 7700, self._csr_write_cb, self._csr_read_cb)
         self.rpc_server.run()
@@ -67,11 +72,6 @@ class TB(object):
                 "qpEthDataStreamIfcVec_3_dataPipeIn",
             ],
         )
-
-        self.csr_write_req_queue = Queue()
-        self.csr_read_req_queue = Queue()
-        self.csr_read_resp_queue = Queue()
-        self.csr_read_lock = threading.Lock()
 
         cocotb.start_soon(self._forward_csr_write_task())
         cocotb.start_soon(self._forward_csr_read_req_task())
