@@ -142,7 +142,10 @@ module mkAutoAckGenerator(AutoAckGenerator);
     )) metaReportMimoQueueVec <- replicateM(mkMIMO(mimoCfg));
 
     // Pipeline Queues
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Tuple2#(
+            BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary),
+            AtomicUpdateStorageUpdateResp#(IndexQP, AutoAckGenAtomicUpdateStorageEntry)
+        ))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkFIFOF);
     Reg#(Tuple3#(
             BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary),
@@ -246,7 +249,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                                     isRetry  : False,
                                     padCnt   : unpack(0),
                                     tver     : unpack(0),
-                                    msn      : msnInfo.newValue.ackMsn,
+                                    msn      : msnInfo.oldValue.ackMsn,  // msn should start from 0, if use newValue's msn, it becomes one
                                     fecn     : unpack(0),
                                     becn     : unpack(0),
                                     resv6    : unpack(0),
@@ -270,7 +273,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                         ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn.enq(thinMacIpUdpMetaDataForSend);
                         ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn.enq(rdmaSendPacketMeta);
 
-                        genAutoAckReportDescriptorPipelineQueueVec[idx].enq(bitmapInfo);
+                        genAutoAckReportDescriptorPipelineQueueVec[idx].enq(tuple2(bitmapInfo, msnInfo));
                     end
                     else begin
                         immFail(
@@ -295,7 +298,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
 
         rule genAutoAckReportDescriptor;
-            let bitmapInfo = genAutoAckReportDescriptorPipelineQueueVec[idx].first;
+            let {bitmapInfo, msnInfo} = genAutoAckReportDescriptorPipelineQueueVec[idx].first;
             
 
             // write them in a function to make sure they are all comb logic.
@@ -313,7 +316,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 let desc0 = MetaReportQueueAckDesc{
                     nowBitmap       : bitmapInfo.newEntry.data,
                     reserved4       : unpack(0),
-                    msn             : 0,
+                    msn             : msnInfo.oldValue.ackMsn,
                     reserved3       : unpack(0),         
                     psnNow          : zeroExtendLSB(bitmapInfo.newEntry.leftBound),
                     reserved2       : unpack(0),
