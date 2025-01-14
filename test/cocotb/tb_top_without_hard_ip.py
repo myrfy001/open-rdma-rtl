@@ -106,6 +106,13 @@ class TB(object):
 
         cocotb.start_soon(_loop_back_task(self))
 
+    '''
+    In this test, will send a write only packet with PSN = 256, which will lead the bitmap window overflow.
+    The NIC is connected in loopback mode, with two QP.
+    The bitmap overflow at recv side will trigger a desc report and an auto ACK packet. When send side recv the ACK packet,
+    it should also tirgger a desc report. 
+    '''
+
     async def testcase_send_simple_write_loopback_req(self):
 
         await self.init_helper.start_meta_report_queue_collector()
@@ -117,6 +124,12 @@ class TB(object):
         dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
             1024, 1)
         dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 1024)
+
+        src_buf_mem[0] = 0x12
+        src_buf_mem[1] = 0x13
+
+        dst_buf_mem[0] = 0xFF
+        dst_buf_mem[1] = 0xFF
 
         self_qpn = self.init_helper.alloc_qpn()
         peer_qpn = self.init_helper.alloc_qpn()
@@ -144,7 +157,6 @@ class TB(object):
 
         imm_data = random.randint(0, 0xFFFFFFFF)
         msn = random.randint(0, 0xFFF)
-        # psn = random.randint(0, 0xFFF)
         psn = 256
 
         self.init_helper.send_queues[0].put_work_request(
@@ -173,6 +185,7 @@ class TB(object):
         self.log.debug(
             f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
 
+        # check meta report desc for write only packet
         resp = MetaReportQueuePacketBasicInfoDesc.from_buffer(resp_raw)
         assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_ONLY_WITH_IMMEDIATE
         assert resp.common_header.F_HAS_NEXT_FRAG == 0
@@ -187,6 +200,16 @@ class TB(object):
         assert resp.F_RKEY == dst_mr_key
         assert resp.F_IMM_DATA == imm_data
 
+        # check memory access is correct
+        # since meta report DMA path is simplier than payload write DMA path, desc may arrive before payload has been written to memory.
+        # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
+        # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
+        # write finish signal. Or delay the desc report on hardware.
+        await Timer(4, units='ns')
+        assert dst_buf_mem[0] == 0x12  # should be modified
+        assert dst_buf_mem[1] == 0xFF  # should not be modified
+
+        # check meta report desc for ACK packet generated at recv side
         resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
         self.log.debug(
             f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
@@ -194,6 +217,33 @@ class TB(object):
         assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
         assert resp.common_header.F_HAS_NEXT_FRAG == 1
         assert resp.F_IS_SEND_BY_LOCAL_HW == 1
+        assert resp.F_IS_SEND_BY_DRIVER == 0
+        assert resp.F_IS_WINDOW_SLIDED == 1
+        assert resp.F_IS_PACKET_LOST == 1
+        assert resp.F_PSN_BEFORE_SLIDE == 0xFFFFF0
+        assert resp.F_PSN_NOW == psn
+        assert resp.F_MSN == 0
+        assert resp.F_NOW_BITMAP_LOW == 0
+        assert resp.F_NOW_BITMAP_HIGH == 0x00010000_00000000
+
+        resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        self.log.debug(
+            f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        resp = MetaReportQueueAckExtraDesc.from_buffer(resp_raw)
+        assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        assert resp.common_header.F_HAS_NEXT_FRAG == 0
+        assert resp.F_PRE_BITMAP_LOW == 0xFFFFFFFF_FFFFFFFF
+        assert resp.F_PRE_BITMAP_HIGH == 0xFFFFFFFF_FFFFFFFF
+
+        # check meta report desc for ACK packet generated at send side
+        resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        self.log.debug(
+            f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        resp = MetaReportQueueAckDesc.from_buffer(resp_raw)
+        assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        assert resp.common_header.F_HAS_NEXT_FRAG == 1
+        # Note: this line is the difference from the recv side
+        assert resp.F_IS_SEND_BY_LOCAL_HW == 0
         assert resp.F_IS_SEND_BY_DRIVER == 0
         assert resp.F_IS_WINDOW_SLIDED == 1
         assert resp.F_IS_PACKET_LOST == 1
