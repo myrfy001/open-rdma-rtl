@@ -212,7 +212,9 @@ module mkRQ(RQ);
 
         $display(
             "time=%0t:", $time, toGreen(" mkRQ sendQpcQueryReqAndSomeSimpleParse"),
-            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
+            toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut),
+            toBlue(", isRespNeedDMAWrite="), fshow(isRespNeedDMAWrite),
+            toBlue(", isReqNeedDMAWrite="), fshow(isReqNeedDMAWrite)
         );
     endrule
 
@@ -347,6 +349,10 @@ module mkRQ(RQ);
                     deltaLen = shortReqStartVa - shortMrStartVa;
                 end
             end
+            else begin
+                isMrKeyCheckPass = True;
+                isMrAccCheckPass = True;
+            end
         end
 
         if (!isQpKeyCheckPass) begin
@@ -446,14 +452,13 @@ module mkRQ(RQ);
             if (isNeedQueryMrTable) begin
                 // if we reach here, then mrEntry must be a valid value, so we can safely use isMrUpperAddrBoundOk.
                 isAccessRangeCheckPass = pipelineEntryIn.isMrLowerAddrBoundOk && isMrUpperAddrBoundOk;
-            end
 
-
-            if (!isAccessRangeCheckPass) begin
-                packetStatus = RdmaRecvPacketStatusMemAccessOutOfBound;
-            end
-            else if (!isPacketBeatCountCheckPass) begin
-                packetStatus = RdmaRecvPacketStatusCorruptPktLength;
+                if (!isAccessRangeCheckPass) begin
+                    packetStatus = RdmaRecvPacketStatusMemAccessOutOfBound;
+                end
+                else if (!isPacketBeatCountCheckPass) begin
+                    packetStatus = RdmaRecvPacketStatusCorruptPktLength;
+                end
             end
         end
 
@@ -547,10 +552,14 @@ module mkRQ(RQ);
                 rdmaPacketMeta: pipelineEntryIn.rdmaPacketMeta
             };
             handleGenMetaReportQueueDescPipeQ.enq(pipelineEntryOut);
-            autoAckGenReqPipeOutQueue.enq(AutoAckGeneratorReq{
-                psn: bth.psn,
-                qpn: bth.dqpn
-            });
+
+            let needUpdatePsnBitmap = rdmaPacketMeta.hasPayload;
+            if (needUpdatePsnBitmap) begin
+                autoAckGenReqPipeOutQueue.enq(AutoAckGeneratorReq{
+                    psn: bth.psn,
+                    qpn: bth.dqpn
+                });
+            end
 
             // need to check packet type to avoid cpn packet looping
             if (rdmaPacketMeta.isEcnMarked && bth.trans != TRANS_TYPE_CNP) begin
