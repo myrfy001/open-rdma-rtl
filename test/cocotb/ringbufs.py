@@ -361,16 +361,16 @@ class RingbufSendQueue:
 
 
 class RingbufMetaReportQueue:
-    def __init__(self, backend_mem, addr, pcie_bfm) -> None:
+    def __init__(self, backend_mem, addr, pcie_bfm, channel_idx) -> None:
         self.rb = Ringbuf(
             backend_mem=backend_mem,
             buffer_addr=addr,
             pcie_bfm=pcie_bfm,
             is_h2c=False,
-            mem_addr_high_csr_addr=CSR_ADDR_META_REPORT_QUEUE_ADDR_HIGH,
-            mem_addr_low_csr_addr=CSR_ADDR_META_REPORT_QUEUE_ADDR_LOW,
-            head_csr_addr=CSR_ADDR_META_REPORT_QUEUE_HEAD,
-            tail_csr_addr=CSR_ADDR_META_REPORT_QUEUE_TAIL)
+            mem_addr_high_csr_addr=CSR_ADDR_META_REPORT_QUEUE_ADDR_HIGH+channel_idx * 64,
+            mem_addr_low_csr_addr=CSR_ADDR_META_REPORT_QUEUE_ADDR_LOW+channel_idx * 64,
+            head_csr_addr=CSR_ADDR_META_REPORT_QUEUE_HEAD+channel_idx * 64,
+            tail_csr_addr=CSR_ADDR_META_REPORT_QUEUE_TAIL+channel_idx * 64)
         self.pcie_bfm = pcie_bfm
 
     async def sync_pointers(self):

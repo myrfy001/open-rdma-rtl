@@ -76,7 +76,8 @@ class HardwareTestHelper:
                 RingbufMetaReportQueue(
                     backmem,
                     backmem_start_addr,
-                    self.pcie_bfm
+                    self.pcie_bfm,
+                    channel_idx
                 )
             )
             self.log.info(
