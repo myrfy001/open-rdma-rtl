@@ -817,10 +817,11 @@ class SimpleEthBehaviorModel(object):
         packet_data = b""
         while True:
             if await self.txChannels[idx].not_empty():
-                # self.log.debug(f"eth bfm channel {idx} got beat")
                 ds_raw = await self.txChannels[idx].first()
                 await self.txChannels[idx].deq()
                 ds = BlueRdmaDataStream256.unpack(ds_raw)
+                self.log.debug(f"eth bfm channel {idx} got beat, ds={ds}")
+
                 ds_data_as_bytes = ds.data().to_bytes(32, byteorder="little")
                 packet_data += ds_data_as_bytes[:ds.byte_num()]
 
@@ -828,7 +829,7 @@ class SimpleEthBehaviorModel(object):
                     await self.main_tx_queue.put(packet_data)
                     # self.log.debug(
                     #     f"eth bfm channel {idx} got full packet, data={packet_data}")
-                    packet_data = ""
+                    packet_data = b""
             await RisingEdge(self.clock)
 
     async def _handle_dut_rx_task(self, idx):
