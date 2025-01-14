@@ -679,9 +679,8 @@ module mkRQ(RQ);
                 begin
                     let desc0 = MetaReportQueueAckDesc{
                         nowBitmap       : aeth.newBitmap,
-                        reserved4       : unpack(0),
                         msn             : bth.msn,
-                        reserved3       : unpack(0),         
+                        qpn             : bth.dqpn,       
                         psnNow          : bth.psn,
                         reserved2       : unpack(0),
                         psnBeforeSlide  : aeth.preBitmapPsn,

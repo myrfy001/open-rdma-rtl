@@ -221,8 +221,9 @@ class TB(object):
         assert resp.F_IS_WINDOW_SLIDED == 1
         assert resp.F_IS_PACKET_LOST == 1
         assert resp.F_PSN_BEFORE_SLIDE == 0xFFFFF0
-        assert resp.F_PSN_NOW == psn
-        assert resp.F_MSN == 0
+        assert resp.get_psn_now() == psn
+        assert resp.get_qpn() == peer_qpn
+        assert resp.get_msn() == 0
         assert resp.F_NOW_BITMAP_LOW == 0
         assert resp.F_NOW_BITMAP_HIGH == 0x00010000_00000000
 
@@ -248,8 +249,9 @@ class TB(object):
         assert resp.F_IS_WINDOW_SLIDED == 1
         assert resp.F_IS_PACKET_LOST == 1
         assert resp.F_PSN_BEFORE_SLIDE == 0xFFFFF0
-        assert resp.F_PSN_NOW == psn
-        assert resp.F_MSN == 0
+        assert resp.get_psn_now() == psn
+        assert resp.get_qpn() == self_qpn
+        assert resp.get_msn() == 0
         assert resp.F_NOW_BITMAP_LOW == 0
         assert resp.F_NOW_BITMAP_HIGH == 0x00010000_00000000
 

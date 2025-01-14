@@ -525,6 +525,7 @@ typedef struct {
     tBoundary                           leftBound;
     AckBitmapStorageEntryEpoch          epoch;
     AckBitmapStorageChannelIdx          channelIdx;
+    KeyQP                               qpnKeyPart;
 } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
 
 typedef struct {
@@ -1118,7 +1119,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                         leftBound: -1,
                         data: -1,
                         epoch: 0,
-                        channelIdx: fromInteger(selfChannelIdx)
+                        channelIdx: fromInteger(selfChannelIdx),
+                        qpnKeyPart: 0
                     };
                     let bramWriteBackReq = BitmapWindowStorageStageFourToFivePipelineEntry {
                         rowAddr: resetReqAddr,
@@ -1252,7 +1254,8 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
                         data: req.bitmap,
                         leftBound: req.maxLeftBoundary,
                         epoch: ?,
-                        channelIdx: 0
+                        channelIdx: 0,
+                        qpnKeyPart: getKeyQP(req.qpn)
                     }
                 });
                
@@ -1268,7 +1271,8 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
                         data: req.bitmap,
                         leftBound: req.maxLeftBoundary,
                         epoch: ?,
-                        channelIdx: 1
+                        channelIdx: 1,
+                        qpnKeyPart: getKeyQP(req.qpn)
                     }
                 });
 
@@ -1285,7 +1289,8 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
                         data: req.bitmap,
                         leftBound: req.maxLeftBoundary,
                         epoch: ?,
-                        channelIdx: 0
+                        channelIdx: 0,
+                        qpnKeyPart: getKeyQP(req.qpn)
                     }
                 });
 
@@ -1301,7 +1306,8 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
                         data: req.bitmap,
                         leftBound: req.maxLeftBoundary,
                         epoch: ?,
-                        channelIdx: 1
+                        channelIdx: 1,
+                        qpnKeyPart: getKeyQP(req.qpn)
                     }
                 });
 

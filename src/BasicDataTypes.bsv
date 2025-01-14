@@ -216,14 +216,14 @@ typedef Client#(PgtAddrTranslateReq, ADDR) PgtQueryClt;
 
 
 // This buffer should be able to contain the largest extend header combinations.
-// For now, the largest one is 38 Byte;
-typedef 304 RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH;
+// the largest one is 42 Byte;
+typedef 336 RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH;
 typedef Bit#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH) RdmaExtendHeaderBuffer;
-typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;        // 36
+typedef TDiv#(RDMA_EXTEND_HEADER_BUFFER_BIT_WIDTH, BYTE_WIDTH) RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH;        // 42
 typedef TAdd#(1, TLog#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH)) RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH;          // 6
 typedef Bit#(RDMA_EXTEND_HEADER_LENGTH_BIT_WIDTH) RdmaExtendHeaderLength;
 
-typedef TAdd#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH, BTH_BYTE_WIDTH) RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH;        // 44
+typedef TAdd#(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH, BTH_BYTE_WIDTH) RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH;        // 54
 typedef TAdd#(1, TLog#(RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH)) RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH;                 // 7    TODO: should reduce to 6?
 typedef Bit#(RDMA_BTH_AND_ETH_MAX_LENGTH_WIDTH) RdmaBthAndEthTotalLength;
 

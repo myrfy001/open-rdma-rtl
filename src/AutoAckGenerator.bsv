@@ -142,15 +142,17 @@ module mkAutoAckGenerator(AutoAckGenerator);
     )) metaReportMimoQueueVec <- replicateM(mkMIMO(mimoCfg));
 
     // Pipeline Queues
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Tuple2#(
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Tuple3#(
             BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary),
-            AtomicUpdateStorageUpdateResp#(IndexQP, AutoAckGenAtomicUpdateStorageEntry)
+            AtomicUpdateStorageUpdateResp#(IndexQP, AutoAckGenAtomicUpdateStorageEntry),
+            KeyQP
         ))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkFIFOF);
-    Reg#(Tuple3#(
+    Reg#(Tuple4#(
             BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary),
             AutoAckGenAtomicUpdateStorageEntry,
-            Dword
+            Dword,
+            IndexQP
         )) pollingQueryRespPipelineReg <- mkRegU;
 
     Reg#(AutoAckGenBackgroundPollingState) backgroundPollingStateReg <- mkReg(AutoAckGenBackgroundPollingStateSendReadReq);
@@ -273,7 +275,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
                         ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn.enq(thinMacIpUdpMetaDataForSend);
                         ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn.enq(rdmaSendPacketMeta);
 
-                        genAutoAckReportDescriptorPipelineQueueVec[idx].enq(tuple2(bitmapInfo, msnInfo));
+                        let qpnKeyPart = qpCtxResp.qpnKeyPart;
+                        genAutoAckReportDescriptorPipelineQueueVec[idx].enq(tuple3(bitmapInfo, msnInfo, qpnKeyPart));
                     end
                     else begin
                         immFail(
@@ -298,7 +301,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
 
         rule genAutoAckReportDescriptor;
-            let {bitmapInfo, msnInfo} = genAutoAckReportDescriptorPipelineQueueVec[idx].first;
+            let {bitmapInfo, msnInfo, qpnKeyPart} = genAutoAckReportDescriptorPipelineQueueVec[idx].first;
             
 
             // write them in a function to make sure they are all comb logic.
@@ -315,9 +318,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
                 let desc0 = MetaReportQueueAckDesc{
                     nowBitmap       : bitmapInfo.newEntry.data,
-                    reserved4       : unpack(0),
                     msn             : msnInfo.oldValue.ackMsn,
-                    reserved3       : unpack(0),         
+                    qpn             : genQPN(msnInfo.rowAddr, qpnKeyPart),
                     psnNow          : zeroExtendLSB(bitmapInfo.newEntry.leftBound),
                     reserved2       : unpack(0),
                     psnBeforeSlide  : zeroExtendLSB(bitmapInfo.oldEntry.leftBound),
@@ -375,7 +377,6 @@ module mkAutoAckGenerator(AutoAckGenerator);
         psnMergeAndStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         autoAckMetaAtomicUpdateStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         lastReportTimeStorage.putReadReq(pollingQpIdxReg);
-        pollingQpIdxReg <= pollingQpIdxReg + 1;
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateGetReadResp;
     endrule
 
@@ -386,12 +387,13 @@ module mkAutoAckGenerator(AutoAckGenerator);
         psnMergeAndStorage.readOnlyRespPipeOut.deq;
         autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.deq;
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateHandleResp;
+        pollingQpIdxReg <= pollingQpIdxReg + 1;
 
-        pollingQueryRespPipelineReg <= tuple3(bitmapInfo, ackMeta, lastPollInfo);
+        pollingQueryRespPipelineReg <= tuple4(bitmapInfo, ackMeta, lastPollInfo, pollingQpIdxReg);
     endrule
 
     rule handlePollingResult if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);
-        let {bitmapInfo, ackMeta, lastPollInfo} = pollingQueryRespPipelineReg;
+        let {bitmapInfo, ackMeta, lastPollInfo, pollingQpIdx} = pollingQueryRespPipelineReg;
         if (!ackMeta.hasReported) begin
             if (lastPollInfo - ackMeta.lastEntryReceiveTime > fromInteger(valueOf(AUTO_ACK_POLLING_TIMEOUT_TICKS))) begin
                 let commonHeader = RingbufDescCommonHead {
@@ -404,9 +406,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
                 let desc0 = MetaReportQueueAckDesc{
                     nowBitmap       : bitmapInfo.data,
-                    reserved4       : unpack(0),
                     msn             : 0,
-                    reserved3       : unpack(0),         
+                    qpn             : genQPN(pollingQpIdx, bitmapInfo.qpnKeyPart),       
                     psnNow          : zeroExtendLSB(bitmapInfo.leftBound),
                     reserved2       : unpack(0),
                     psnBeforeSlide  : unpack(0), // don't care since isWindowSlided = False
