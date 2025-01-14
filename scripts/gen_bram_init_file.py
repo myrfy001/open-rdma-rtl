@@ -13,6 +13,7 @@ def gen_init_bram_psn_merge_storage():
         tBoundary   leftBound;
         OooWindowBitmapStorageEntryEpoch    epoch;
         OooWindowBitmapStorageChannelIdx    channelIdx;
+        KeyQP                               qpnKeyPart;
     } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
     '''
     for channel_idx in range(2):
@@ -21,9 +22,10 @@ def gen_init_bram_psn_merge_storage():
                 data_part = "1" * 128                       # -1
                 left_boundary_part = "1" * 20               # -1
                 epoch_part = "0" * 4                        # 0
+                qpn_key_part = "0" * 14                     # 0
                 channel_idx_part = f"{channel_idx}" * 1
                 fo.write(data_part + left_boundary_part +
-                         epoch_part + channel_idx_part + "\n")
+                         epoch_part + channel_idx_part + qpn_key_part + "\n")
 
 
 def gen_init_bram_auto_ack_meta_storage():
