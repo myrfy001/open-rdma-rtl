@@ -165,7 +165,7 @@ typedef struct {
     ReservedZero#(8)            reserved1;        // 8  bits
     QPN                         dqpn;             // 24 bits
 
-    ReservedZero#(4)            reserved0;        // 5  bits
+    ReservedZero#(4)            reserved0;        // 4  bits
     Bool                        isRetry;          // 1  bits
     Bool                        ackReq;           // 1  bits
     Bool                        solicited;        // 1  bits

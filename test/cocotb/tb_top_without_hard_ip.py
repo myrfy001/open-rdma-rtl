@@ -264,6 +264,10 @@ class TB(object):
         assert resp.F_PRE_BITMAP_LOW == 0xFFFFFFFF_FFFFFFFF
         assert resp.F_PRE_BITMAP_HIGH == 0xFFFFFFFF_FFFFFFFF
 
+        metrics_csr_val = await self.pcie_bfm.host_read_blocking((
+            0x0100+0x0020+0x0002) * 4)
+        self.log.debug(f"read metrics: {metrics_csr_val}")
+
 
 @ cocotb.test(timeout_time=1500, timeout_unit="ns")
 async def small_desc_fp_test(dut):

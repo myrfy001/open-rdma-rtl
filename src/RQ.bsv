@@ -11,6 +11,10 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
+import CsrRootConnector :: *;
+import CsrAddress :: *;
+import CsrFramework :: *;
+
 import DtldStream :: *;
 import StreamDataTypes :: *;
 import BasicDataTypes :: *;
@@ -98,6 +102,8 @@ typedef struct {
 } GenMetaReportQueueDescPipelineEntry deriving(Bits, FShow);
 
 interface RQ;
+    interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
+
     interface Client#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
@@ -160,6 +166,71 @@ module mkRQ(RQ);
     FIFOF#(GenMetaReportQueueDescPipelineEntry) handleGenMetaReportQueueDescPipeQ <- mkFIFOF;
 
     
+
+    // Metrics Regs
+    Reg#(Dword) metricsInvalidQpAccessCntReg        <- mkReg(0);
+    Reg#(Dword) metricsInvalidOpcodeCntReg          <- mkReg(0);
+    Reg#(Dword) metricsInvalidMrKeyCntReg           <- mkReg(0);
+    Reg#(Dword) metricsMemAccessOutOfBoundCntReg    <- mkReg(0);
+    Reg#(Dword) metricsInvalidMrAccessFlagCntReg    <- mkReg(0);
+    Reg#(Dword) metricsInvalidHeaderCntReg          <- mkReg(0);
+    Reg#(Dword) metricsInvalidQpContextCntReg       <- mkReg(0);
+    Reg#(Dword) metricsCorruptPktLengthCntReg       <- mkReg(0);
+    Reg#(Dword) metricsUnknownErrorCntReg           <- mkReg(0);
+
+
+
+    function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
+        actionvalue
+            let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+            let routingMask = fromInteger(valueOf(CSR_ADDR_ROUTING_MASK_FOR_METRICS_OF_SINGLE_RQ));
+            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_RQ_PACKET_VERIFY));
+
+            if ((regIdx & routingMask) == fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_OF_ETHERNET_FRAME_IO))) begin
+                return tagged CsrNodeResultForward 0;
+            end
+            else if (req.isWrite) begin
+                return tagged CsrNodeResultNotMatched;
+            end
+            else begin
+                case (regIdx & leafMask)
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_INV_QP_ACCESS_FLAG_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsInvalidQpAccessCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_INV_OPCODE_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsInvalidOpcodeCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_INV_MR_KEY_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsInvalidMrKeyCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_MEM_OOB_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsMemAccessOutOfBoundCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_INV_MR_ACCESS_FLAG_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsInvalidMrAccessFlagCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_INV_HEADER_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsInvalidHeaderCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_INV_QP_CTX_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsInvalidQpContextCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_PKT_LEN_ERR_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsCorruptPktLengthCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_UNKNOWN_ERR_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsUnknownErrorCntReg};
+                    end
+                    default: begin
+                        return tagged CsrNodeResultNotMatched;
+                    end
+                endcase
+            end
+        endactionvalue
+    endfunction
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_ONE), "mkInputPacketClassifier");
+    mkConnection(packetParser.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
+
     rule printDebugInfo;
         if (!checkQpcAndMrTablePipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkQpcAndMrTablePipeQ");
         if (!checkMrTableStep2PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep2PipeQ");
@@ -523,6 +594,20 @@ module mkRQ(RQ);
             peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
         };
         handleConRespPipeQ.enq(pipelineEntryOut);
+
+
+        case (packetStatus)
+            RdmaRecvPacketStatusInvalidQpAccessFlag : metricsInvalidQpAccessCntReg      <= metricsInvalidQpAccessCntReg     + 1;
+            RdmaRecvPacketStatusInvalidOpcode       : metricsInvalidOpcodeCntReg        <= metricsInvalidOpcodeCntReg       + 1;
+            RdmaRecvPacketStatusInvalidMrKey        : metricsInvalidMrKeyCntReg         <= metricsInvalidMrKeyCntReg        + 1;
+            RdmaRecvPacketStatusMemAccessOutOfBound : metricsMemAccessOutOfBoundCntReg  <= metricsMemAccessOutOfBoundCntReg + 1;
+            RdmaRecvPacketStatusInvalidMrAccessFlag : metricsInvalidMrAccessFlagCntReg  <= metricsInvalidMrAccessFlagCntReg + 1;
+            RdmaRecvPacketStatusInvalidHeader       : metricsInvalidHeaderCntReg        <= metricsInvalidHeaderCntReg       + 1;
+            RdmaRecvPacketStatusInvalidQpContext    : metricsInvalidQpContextCntReg     <= metricsInvalidQpContextCntReg    + 1;
+            RdmaRecvPacketStatusCorruptPktLength    : metricsCorruptPktLengthCntReg     <= metricsCorruptPktLengthCntReg    + 1;
+            RdmaRecvPacketStatusUnknown             : metricsUnknownErrorCntReg         <= metricsUnknownErrorCntReg        + 1;
+        endcase
+
         $display(
             "time=%0t:", $time, toGreen(" mkRQ issuePayloadConReqOrDiscard"),
             discardDebugFlag ? toRed(" Discard!") : " keeped",
@@ -775,21 +860,22 @@ module mkRQ(RQ);
         );
     endrule
 
-    interface qpcQueryClt = qpcQueryCltInst.clt;
-    interface mrTableQueryClt = mrTableQueryCltInst.clt;
+    interface csrUpStreamPort           = csrNode.upStreamPort;
+    interface qpcQueryClt               = qpcQueryCltInst.clt;
+    interface mrTableQueryClt           = mrTableQueryCltInst.clt;
 
-    interface ethernetFramePipeIn = packetParser.ethernetFramePipeIn;
-    interface otherRawPacketPipeOut = packetParser.otherRawPacketPipeOut;
+    interface ethernetFramePipeIn       = packetParser.ethernetFramePipeIn;
+    interface otherRawPacketPipeOut     = packetParser.otherRawPacketPipeOut;
 
     interface payloadConReqPipeOut      = toPipeOut(conReqPipeOutQ);
     interface payloadConStreamPipeOut   = toPipeOut(filteredDataStreamForConsumeQ);
     interface payloadConRespPipeIn      = toPipeIn(conRespPipeInQ);
 
-    method setLocalNetworkSettings = packetParser.setLocalNetworkSettings; 
+    method setLocalNetworkSettings      = packetParser.setLocalNetworkSettings; 
 
-    interface metaReportDescPipeOut = toPipeOut(metaReportDescPipeOutQueue);
-    interface autoAckGenReqPipeOut = toPipeOut(autoAckGenReqPipeOutQueue);
-    interface genCnpReqPipeOut = toPipeOut(genCnpReqPipeOutQueue);
+    interface metaReportDescPipeOut     = toPipeOut(metaReportDescPipeOutQueue);
+    interface autoAckGenReqPipeOut      = toPipeOut(autoAckGenReqPipeOutQueue);
+    interface genCnpReqPipeOut          = toPipeOut(genCnpReqPipeOutQueue);
 endmodule
 
 

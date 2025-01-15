@@ -8,6 +8,10 @@ import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
+import CsrRootConnector :: *;
+import CsrAddress :: *;
+import CsrFramework :: *;
+
 import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import Settings :: *;
@@ -739,12 +743,14 @@ endmodule
 
 
 interface PacketParse;
-    interface PipeIn#(IoChannelEthDataStream) ethernetFramePipeIn;
-    interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
-    interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
-    interface PipeOut#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOut;
-    interface PipeOut#(DataStream) rdmaPayloadPipeOut;
-    interface PipeOut#(DataStream) otherRawPacketPipeOut;
+    interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
+
+    interface PipeIn#(IoChannelEthDataStream)           ethernetFramePipeIn;
+    interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaRecvPacketMeta)              rdmaPacketMetaPipeOut;
+    interface PipeOut#(RdmaRecvPacketTailMeta)          rdmaPacketTailMetaPipeOut;
+    interface PipeOut#(DataStream)                      rdmaPayloadPipeOut;
+    interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
@@ -756,13 +762,14 @@ module mkPacketParse(PacketParse);
 
     mkConnection(inputPacketClassifier.rdmaRawPacketPipeOut, rdmaHeaderExtractor.ethPipeIn);
 
-    interface ethernetFramePipeIn = inputPacketClassifier.ethRawPacketPipeIn;
-    interface rdmaMacIpUdpMetaPipeOut = inputPacketClassifier.rdmaMacIpUdpMetaPipeOut;
-    interface rdmaPacketMetaPipeOut = rdmaHeaderExtractor.rdmaPacketMetaPipeOut;
+    interface csrUpStreamPort           = inputPacketClassifier.csrUpStreamPort;
+    interface ethernetFramePipeIn       = inputPacketClassifier.ethRawPacketPipeIn;
+    interface rdmaMacIpUdpMetaPipeOut   = inputPacketClassifier.rdmaMacIpUdpMetaPipeOut;
+    interface rdmaPacketMetaPipeOut     = rdmaHeaderExtractor.rdmaPacketMetaPipeOut;
     interface rdmaPacketTailMetaPipeOut = rdmaHeaderExtractor.rdmaPacketTailMetaPipeOut;
-    interface rdmaPayloadPipeOut = rdmaHeaderExtractor.rdmaPayloadPipeOut;
-    interface otherRawPacketPipeOut = inputPacketClassifier.otherRawPacketPipeOut;
+    interface rdmaPayloadPipeOut        = rdmaHeaderExtractor.rdmaPayloadPipeOut;
+    interface otherRawPacketPipeOut     = inputPacketClassifier.otherRawPacketPipeOut;
 
-    method setLocalNetworkSettings = inputPacketClassifier.setLocalNetworkSettings; 
+    method setLocalNetworkSettings      = inputPacketClassifier.setLocalNetworkSettings; 
 endmodule
 

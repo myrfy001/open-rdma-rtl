@@ -5,6 +5,8 @@ import os
 
 out_path = sys.argv[1]
 
+MAX_QP_CNT = 1024
+
 
 def gen_init_bram_psn_merge_storage():
     '''
@@ -16,9 +18,10 @@ def gen_init_bram_psn_merge_storage():
         KeyQP                               qpnKeyPart;
     } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
     '''
+
     for channel_idx in range(2):
         with open(os.path.join(out_path, f"init_bram_psn_merge_storage_ch{channel_idx}.bin"), "w") as fo:
-            for i in range(512):
+            for i in range(MAX_QP_CNT):
                 data_part = "1" * 128                       # -1
                 left_boundary_part = "1" * 20               # -1
                 epoch_part = "0" * 4                        # 0
@@ -31,7 +34,7 @@ def gen_init_bram_psn_merge_storage():
 def gen_init_bram_auto_ack_meta_storage():
     for channel_idx in range(2):
         with open(os.path.join(out_path, f"init_bram_auto_ack_meta_storage_ch{channel_idx}.bin"), "w") as fo:
-            for i in range(512):
+            for i in range(MAX_QP_CNT):
                 last_entry_receive_time = "0" * 32
                 ack_msn = "0" * 16
                 has_reported = "0" * 1
@@ -43,7 +46,7 @@ def gen_init_bram_auto_ack_meta_storage():
 
 def gen_init_bram_last_report_time():
     with open(os.path.join(out_path, f"init_bram_auto_ack_last_report_time.bin"), "w") as fo:
-        for i in range(512):
+        for i in range(MAX_QP_CNT):
             last_report_time = "0" * 32
             fo.write(last_report_time + "\n")
 

@@ -57,7 +57,7 @@ module mkCsrNode#(
     FIFOF#(Tuple2#(Bool, tDownStreamPordIdx)) keepOrderQueue <- mkSizedFIFOF(queueDepth);
 
     Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) downStreamPortsVecInst = newVector;
-    for (Integer idx = 0; idx < 3; idx = idx + 1) begin
+    for (Integer idx = 0; idx < valueOf(nDownStreamPortCnt); idx = idx + 1) begin
         downStreamPortsVecInst[idx] = toGPClient(reqRelayQueueVec[idx], respRelayQueueVec[idx]);
     end
 

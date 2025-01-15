@@ -17,15 +17,20 @@ import BasicDataTypes :: *;
 import RdmaUtils :: *;
 import RdmaHeaders :: *;
 
+import CsrRootConnector :: *;
+import CsrAddress :: *;
+import CsrFramework :: *;
+
 import ConnectableF :: *;
 
 import IoChannels :: *;
 
 interface InputPacketClassifier;
-    interface PipeIn#(IoChannelEthDataStream) ethRawPacketPipeIn;
-    interface PipeOut#(DataStream) rdmaRawPacketPipeOut;
-    interface PipeOut#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaPipeOut;
-    interface PipeOut#(DataStream) otherRawPacketPipeOut;
+    interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
+    interface PipeIn#(IoChannelEthDataStream)           ethRawPacketPipeIn;
+    interface PipeOut#(DataStream)                      rdmaRawPacketPipeOut;
+    interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
+    interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
 
@@ -80,6 +85,41 @@ module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(Bool) partialDstIpAddrHigher16BitsMatchReg <- mkRegU;
 
     FIFOF#(Tuple2#(DataStream, Bool)) ethRawPacketForHandleQ <- mkFIFOF;
+
+
+    // Metrics Regs
+    Reg#(Dword) metricsDiscardPacketCntReg      <- mkReg(0);
+    Reg#(Dword) metricsSimpleNicPacketCntReg    <- mkReg(0);
+    Reg#(Dword) metricsRdmaPacketCntReg         <- mkReg(0);
+
+
+    function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
+        actionvalue
+            let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_ETHERNET_FRAME_IO));
+
+            if (req.isWrite) begin
+                return tagged CsrNodeResultNotMatched;
+            end
+            else begin
+                case (regIdx & leafMask)
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_DISCARD_PACKET_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsDiscardPacketCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_SIMPLE_NIC_PACKET_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsSimpleNicPacketCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_RDMA_PACKET_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsRdmaPacketCntReg};
+                    end
+                    default: begin
+                        return tagged CsrNodeResultNotMatched;
+                    end
+                endcase
+            end
+        endactionvalue
+    endfunction
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_ONE), "mkInputPacketClassifier");
 
     rule discardPacketWhenNetworkSettingsNotReady;
         let ds = ethRawPacketInQ.first;
@@ -294,9 +334,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
         if (!ethPktMeta.isError && ethPktMeta.isAddrMatch) begin
             if (ethPktMeta.isRdmaPacket) begin
                 rdmaRawPacketOutQ.enq(ds);
+                metricsRdmaPacketCntReg <= metricsRdmaPacketCntReg + 1;
             end
             else begin
                 otherRawPacketOutQ.enq(ds);
+                metricsSimpleNicPacketCntReg <= metricsSimpleNicPacketCntReg + 1;
             end
         end
         else begin
@@ -306,6 +348,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
                 toBlue(", ethPktMeta.isAddrMatch="), fshow(ethPktMeta.isAddrMatch),
                 toBlue(", ds="), fshow(ds)
             );
+            metricsDiscardPacketCntReg <= metricsDiscardPacketCntReg + 1;
         end
 
         if (ds.isLast) begin
@@ -319,6 +362,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         networkSettingsIsSetReg <= True;
     endmethod
 
+    interface csrUpStreamPort           = csrNode.upStreamPort;
     interface ethRawPacketPipeIn        = toPipeIn(ethRawPacketInQ);
     interface rdmaRawPacketPipeOut      = toPipeOut(rdmaRawPacketOutQ);
     interface rdmaMacIpUdpMetaPipeOut   = toPipeOut(rdmaMacIpUdpMetaOutQ);

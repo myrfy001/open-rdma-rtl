@@ -204,13 +204,22 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     let csrRootConnector <- mkCsrRootConnector;
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
-            return tagged CsrNodeResultForward 0;
+            let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+            let addrBlockMask = ~fromInteger(valueOf(CSR_ADDR_BLOCK_SIZE_FOR_RINGBUFS) - 1);
+            let maskedAddr = addrBlockMask & regIdx;
+            if (fromInteger(valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_RINGBUFS)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 0;
+            end
+            else begin
+                return tagged CsrNodeResultForward 1;
+            end
         endactionvalue
     endfunction
-    
     CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO), "mkBsvTopWithoutHardIpInstance");
+    
     mkConnection(csrRootConnector.csrNodeRootPortIfc, csrNode.upStreamPort);
     mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
+    mkConnection(qpMrPgtQpc.csrUpStreamPort, csrNode.downStreamPortsVec[1]);
 
 
     mkConnection(qpMrPgtQpc.pgtUpdateDmaMasterPipe, topLevelDmaChannelMux.pgtUpdateDmaSlavePipe);
@@ -240,10 +249,10 @@ endmodule
 
 
 interface RingbufAndDescriptorHandler;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)   qpRingbufDmaMasterPipeIfcVec;
-    interface IoChannelMemoryMasterPipe cmdQueueRingbufDmaMasterPipeIfc;
-    interface IoChannelMemoryMasterPipe simpleNicRingbufDmaMasterPipeIfc;
-    interface BlueRdmaCsrUpStreamPort csrUpStreamPort;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       qpRingbufDmaMasterPipeIfcVec;
+    interface IoChannelMemoryMasterPipe                                         cmdQueueRingbufDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe                                         simpleNicRingbufDmaMasterPipeIfc;
+    interface BlueRdmaCsrUpStreamPort                                           csrUpStreamPort;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem))         wqePipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RingbufRawDescriptor))   metaReportDescPipeInVec;
@@ -752,6 +761,8 @@ endmodule
 
 
 interface QpMrPgtQpc;
+    interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
+
     // DMA interfaces
     interface IoChannelMemoryMasterPipe pgtUpdateDmaMasterPipe;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       qpDmaRequestMasterIfcVec;
@@ -868,6 +879,35 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1] , ethTxStreamArbiterVec[2].pipeInIfcVec[2]);
 
     
+
+    function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
+        actionvalue
+            let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+            let addrBlockMask = fromInteger(valueOf(CSR_ADDR_ROUTING_MASK_FOR_METRICS_OF_QPMRPGTQPC));
+            let maskedAddr = addrBlockMask & regIdx;
+            if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_RQ0)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 0;
+            end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_RQ1)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 1;
+            end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_RQ2)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 2;
+            end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_RQ3)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 3;
+            end
+            else begin
+                return tagged CsrNodeResultNotMatched;
+            end
+        endactionvalue
+    endfunction
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_ONE), "mkQpMrPgtQpc");
+    mkConnection(rqVec[0].csrUpStreamPort, csrNode.downStreamPortsVec[0]);
+    mkConnection(rqVec[1].csrUpStreamPort, csrNode.downStreamPortsVec[1]);
+    mkConnection(rqVec[2].csrUpStreamPort, csrNode.downStreamPortsVec[2]);
+    mkConnection(rqVec[3].csrUpStreamPort, csrNode.downStreamPortsVec[3]);
+
     
     rule forwardQpContextUpdateReq;
         let req = qpContextUpdateReqQueue.first;
@@ -891,6 +931,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         cnpPacketGenerator.setLocalNetworkSettings(networkSettings);
     endmethod
 
+    interface csrUpStreamPort                   = csrNode.upStreamPort;
     interface pgtUpdateDmaMasterPipe            = pgtUpdateDmaInterfaceConvertor.dmaSidePipeIfc;
     interface wqePipeInVec                      = wqePipeInVecInst;
     interface metaReportDescPipeOutVec          = metaReportDescPipeOutVecInst;
