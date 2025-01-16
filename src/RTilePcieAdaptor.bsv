@@ -235,8 +235,8 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     PcieCreditCounterSource#(CreditCount, DataCreditUpdateCnt) txCreditNPD <- mkPcieCreditCounterSource;
     PcieCreditCounterSource#(CreditCount, DataCreditUpdateCnt) txCreditCPLD <- mkPcieCreditCounterSource;
 
-    FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
-    FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGFIFOF;
+    FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGLFIFOF;
+    FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGLFIFOF;
 
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkLFIFOF;
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkLFIFOF;

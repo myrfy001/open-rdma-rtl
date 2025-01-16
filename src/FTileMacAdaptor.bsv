@@ -129,8 +129,8 @@ endinterface
 module mkFTileMacAdaptor(FTileMacAdaptor);
 
 
-    FIFOF#(FtileMacRxBeat) ftileMacRxPipeOutQueue <- mkUGFIFOF;
-    FIFOF#(FtileMacTxBeat) ftileMacTxPipeInQueue <- mkUGFIFOF;
+    FIFOF#(FtileMacRxBeat) ftileMacRxPipeOutQueue <- mkUGLFIFOF;
+    FIFOF#(FtileMacTxBeat) ftileMacTxPipeInQueue <- mkUGLFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
 

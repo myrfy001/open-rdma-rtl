@@ -3,12 +3,14 @@ import PAClib :: *;
 import Printf :: *;
 import RegFile :: *;
 import Vector :: *;
+import List :: *;
 import Clocks :: *;
 import ClientServer :: *;
 import GetPut :: *;
 import SpecialFIFOs :: *;
 import Cntrs :: * ;
 
+import Connectable :: *;
 import ConnectableF :: *;
 import BasicDataTypes :: *;
 
@@ -901,6 +903,74 @@ function Action immAssertAddressAndLengthNotCross4kBoundary(tAddr addr, tLen len
         );
     endaction
 endfunction
+
+
+
+module mkRegisteredSizedFIFOFInnerModule#(Integer depth)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+    FIFOF#(tData) inputQ <- mkLFIFOF;
+    FIFOF#(tData) outputQ <- mkLFIFOF;
+    FIFOF#(tData) bufferQ <- mkSizedFIFOF(depth);
+    mkConnection(toPipeOut(inputQ), toPipeIn(bufferQ));
+    mkConnection(toPipeOut(bufferQ), toPipeIn(outputQ));
+    
+    method enq = inputQ.enq;
+    method deq = outputQ.deq;
+    method first = inputQ.first;
+    method notFull = inputQ.notFull;
+    method notEmpty = outputQ.notEmpty;
+    method Action clear;
+        inputQ.clear;
+        outputQ.clear;
+        bufferQ.clear;
+    endmethod
+endmodule
+
+module mkRegisteredSizedFIFOF#(Integer depth)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+    if (depth <= 2) begin
+        let inst <- mkSizedFIFOF(depth);
+        return inst;
+    end
+    else begin
+        let inst <- mkRegisteredSizedFIFOFInnerModule(depth);
+        return inst;
+    end
+endmodule
+
+
+module mkDelayFIFOF#(Integer beat)(FIFOF#(tData)) provisos(Bits#(tData, szData));
+
+    if (beat == 1) begin
+        FIFOF#(tData) inputQ <- mkLFIFOF;
+        return inputQ;
+    end
+    else begin
+
+        List #(FIFOF#(tData)) fifoList;
+
+        for (Integer idx = 0; idx < beat; idx = idx + 1) begin
+            FIFOF#(tData) queue <- mkLFIFOF;
+            fifoList = List :: cons(queue, fifoList);
+        end
+
+        for (Integer idx = 1; idx < beat; idx = idx + 1) begin
+            mkConnection(toPipeIn(fifoList[idx-1]), toPipeOut(fifoList[idx]));
+        end
+
+        method enq = fifoList[0].enq;
+        method first = fifoList[0].first;
+        method notFull = fifoList[0].notFull;
+        method deq = fifoList[beat-1].deq;
+        method notEmpty = fifoList[beat-1].notEmpty;
+
+        method Action clear;
+            for (Integer idx = 0; idx < beat; idx = idx + 1) begin
+                fifoList[idx].deq;
+            end
+        endmethod
+
+    end
+endmodule
+
 
 // function tOut getLogValueOfOneHot(tIn onehotIn) provisos (
 //         Bits#(tOut, szOut),

@@ -87,18 +87,18 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
 
-    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecRd     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkLFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkLFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkLFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecRd     <- replicateM(mkLFIFOF);
 
-    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkFIFOF;
-    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                           masterSideQueueRd   <-  mkFIFOF;
+    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkLFIFOF;
+    FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkLFIFOF;
+    FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkLFIFOF;
+    FIFOF#(DtldStreamData#(tData))                           masterSideQueueRd   <-  mkLFIFOF;
 
-    FIFOF#(tChannelIdx)     writeSourceChannelIdPipeOutQueue <- mkFIFOF;
-    FIFOF#(tChannelIdx)     readSourceChannelIdPipeOutQueue  <- mkFIFOF;
+    FIFOF#(tChannelIdx)     writeSourceChannelIdPipeOutQueue <- mkLFIFOF;
+    FIFOF#(tChannelIdx)     readSourceChannelIdPipeOutQueue  <- mkLFIFOF;
 
 
     Arbiter_IFC#(channelCnt) writeArbiter <- mkArbiter(False);
@@ -108,7 +108,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     Reg#(tChannelIdx) curWriteChannelIdxReg <- mkRegU;
 
-    FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkSizedFIFOF(depth);
+    FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkRegisteredSizedFIFOF(depth);
 
     // rule debug;
     //     $display(
@@ -275,13 +275,13 @@ module mkDtldStreamNoMetaArbiterSlave#(Integer depth)(DtldStreamNoMetaArbiterSla
     );
 
     Vector#(channelCnt, PipeIn#(DtldStreamData#(tData)))                          pipeInIfcVecInst         = newVector;
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           pipeInIfcVecQueueVec     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           pipeInIfcVecQueueVec     <- replicateM(mkLFIFOF);
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
         pipeInIfcVecInst[channelIdx] = toPipeIn(pipeInIfcVecQueueVec[channelIdx]);
     end
 
-    FIFOF#(DtldStreamData#(tData))                              pipeOutIfcQueue             <-  mkFIFOF;
-    FIFOF#(tChannelIdx)                                         sourceChannelIdPipeOutQueue <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))                              pipeOutIfcQueue             <-  mkLFIFOF;
+    FIFOF#(tChannelIdx)                                         sourceChannelIdPipeOutQueue <- mkLFIFOF;
 
     Arbiter_IFC#(channelCnt) arbiter <- mkArbiter(False);
 
@@ -399,9 +399,9 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
         NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
     );
-    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkFIFOF;
-    FIFOF#(Bool)                    isLastStreamFlagPipeInQueue     <- mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkLFIFOF;
+    FIFOF#(Bool)                    isLastStreamFlagPipeInQueue     <- mkLFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkLFIFOF;
 
     Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
 
@@ -676,9 +676,9 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         Arith#(tStreamAlignBlockCount),
         FShow#(tStreamAlignBlockCount)
     );
-    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkFIFOF;
-    FIFOF#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkLFIFOF;
+    FIFOF#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkLFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkLFIFOF;
 
     Reg#(DtldStreamSplitorState)       curStateReg                 <- mkReg(DtldStreamSplitorStateOutput);
 
