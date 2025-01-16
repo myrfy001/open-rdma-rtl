@@ -10,6 +10,9 @@ backend/achronix/syn/*
 backend/quartus/*
 !backend/quartus/sdc
 
+.Xil
+vivado_workdir*
+
 ioring
 stdout.log*
 synlog.tcl

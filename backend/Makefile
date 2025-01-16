@@ -6,14 +6,18 @@ OOC ?= 1
 
 BACKENDDIR ?= $(shell readlink -f ./)
 QUARTUS_BACKEND_DIR ?= $(BACKENDDIR)/quartus
+VIVADO_BACKEND_DIR ?= $(BACKENDDIR)/vivado
 
 QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
+VIVADO_WORKDIR ?= $(BACKENDDIR)/vivado_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
+
 RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 			$(BACKENDDIR)/../src/verilog/*.v \
 			$(BACKENDDIR)/../src/verilog/**/*.v \
 			$(BACKENDDIR)/quartus/rtl/*.v
 
 QUARTUS_SDC_DIRS ?= $(QUARTUS_BACKEND_DIR)/sdc/*.sdc
+VIVADO_SDC_DIRS ?= $(VIVADO_BACKEND_DIR)/sdc/*.sdc
 
 BRAM_INIT_FILE_DIRS ?= $(BACKENDDIR)/$(BUILDDIR)/*.bin
 			
@@ -21,6 +25,8 @@ LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
 DEVICE ?= AGIB027R29B1E2V
 FAMILY ?= Agilex 7
+
+VIVADO_PART ?= xcvu13p-fhgb2104-2-i
 
 
 
@@ -99,8 +105,8 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestDtldStream.bsv
 # BSV_TOP_MODULE ?= mkTestDtldStreamConcatorTimingTest
 
-# TARGETFILE ?= ../test/TestDtldStream.bsv
-# BSV_TOP_MODULE ?= mkTestDtldStreamSpliterTimingTest
+TARGETFILE ?= ../test/TestDtldStream.bsv
+BSV_TOP_MODULE ?= mkTestDtldStreamSpliterTimingTest
 
 # TARGETFILE ?= ../test/TestCsrFramework.bsv
 # BSV_TOP_MODULE ?= mkTestCsrNodeTiming
@@ -108,9 +114,9 @@ FAMILY ?= Agilex 7
 # TARGETFILE ?= ../test/TestTop.bsv
 # BSV_TOP_MODULE ?= mkTestTopTimingNoHardIP
 
-TARGETFILE ?= ../src/Top.bsv
-BSV_TOP_MODULE ?= mkBsvTop
-TOP = bluerdma_top
+# TARGETFILE ?= ../src/Top.bsv
+# BSV_TOP_MODULE ?= mkBsvTop
+# TOP = bluerdma_top
 
 
 
@@ -121,12 +127,16 @@ TOP ?= $(BSV_TOP_MODULE)
 
 export QUARTUS_WORKDIR
 export QUARTUS_BACKEND_DIR
+export QUARTUS_SDC_DIRS
+export VIVADO_WORKDIR
+export VIVADO_BACKEND_DIR
+export VIVADO_SDC_DIRS
+export VIVADO_PART
 export BRAM_INIT_FILE_DIRS
 export PROJ_NAME = $(BSV_TOP_MODULE)
 export REV_NAME = rev1
 export TOP
 export RTL_DIRS
-export QUARTUS_SDC_DIRS
 export DEVICE
 export FAMILY
 export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
@@ -147,9 +157,11 @@ verilog: compile
 	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(BSV_TOP_MODULE) $(BSV_TOP_MODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)
 
 vivado: verilog
+	cd vivado && \
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
 
 vivado_ooc:
+	cd vivado && \
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
 
 quartus:

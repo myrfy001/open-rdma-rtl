@@ -12,10 +12,6 @@ SYSTEM_TEST_TOP_BSV_SRC_FILE = ../src/Top.bsv
 SYSTEM_TEST_TOP_MODULE = mkBsvTopWithoutHardIpInstance
 SYSTEM_TEST_TB_FILE = tb_top_for_system_test.py
 
-# TOP_BSV_SRC_FILE ?= ../src/RTilePcieAdaptor.bsv
-# TOP_MODULE ?= mkRTilePcieWithRawIfc
-# TB_FILE = tb_simple_root_complex.py
-
 # TOP_BSV_SRC_FILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOP_MODULE ?= mkTestRTilePcieByCocotbTest
 # TB_FILE = tb_simple_root_complex.py
