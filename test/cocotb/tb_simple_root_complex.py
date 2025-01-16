@@ -236,6 +236,10 @@ class TB(object):
             yield read_meta
 
     async def start_send_write_req(self):
+        last_write_byte_cnt = 0
+        last_write_time = 0
+        avg_calc_factor = 0.95
+        avg_speed = 0
 
         ds_generators = [self.genRandomWritePacket() for _ in range(4)]
         channel_stop_flags = [False for _ in range(4)]
@@ -245,6 +249,7 @@ class TB(object):
         # cocotb.start_soon(self.calc_current_send_speed())
 
         while not all(channel_stop_flags):
+            cur_time = cocotb.utils.get_sim_time("ns")
             for channel_idx in range(4):
                 if channel_stop_flags[channel_idx] == True:
                     continue
@@ -276,6 +281,16 @@ class TB(object):
 
                     self.total_write_byte_cnt += ds.byte_num()
 
+            time_delta = cur_time - last_write_time
+            if time_delta > 20:
+                byte_delta = self.total_write_byte_cnt - last_write_byte_cnt
+                write_speed = byte_delta * 8.0 / (time_delta)
+                avg_speed = avg_speed * avg_calc_factor + \
+                    write_speed * (1-avg_calc_factor)
+                last_write_time = cur_time
+                last_write_byte_cnt = self.total_write_byte_cnt
+                self.log.info(
+                    f"cur write speed = {write_speed}, avg write speed = {avg_speed} Gbps, byte_delta={byte_delta}, time_delta={time_delta}")
             await RisingEdge(self.clock)
 
     async def start_send_read_req(self):
@@ -525,11 +540,11 @@ async def small_desc_fp_test(dut):
     await pcie_ep_dev.enable_device()
     await pcie_ep_dev.set_master()
 
-    # cocotb.start_soon(tb.start_memory_content_check())
-    # cocotb.start_soon(tb.start_send_write_req())
+    cocotb.start_soon(tb.start_memory_content_check())
+    cocotb.start_soon(tb.start_send_write_req())
 
-    cocotb.start_soon(tb.start_send_read_req())
-    cocotb.start_soon(tb.start_read_resp_check())
+    # cocotb.start_soon(tb.start_send_read_req())
+    # cocotb.start_soon(tb.start_read_resp_check())
 
     # cocotb.start_soon(tb.start_completer_read_write_req_send())
     # cocotb.start_soon(tb.start_completer_read_write_req_handler())
