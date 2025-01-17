@@ -258,7 +258,9 @@ module mkSizedQueuedClient#(
         Reset dstRst
     )(QueuedClient#(t_req, t_resp)) provisos (
         Bits#(t_req, sz_req),
-        Bits#(t_resp, sz_resp)
+        Bits#(t_resp, sz_resp),
+        FShow#(t_req),
+        FShow#(t_resp)
     );
     
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
@@ -303,7 +305,9 @@ endmodule
 
 module mkQueuedClient#(String name)(QueuedClient#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
-    Bits#(t_resp, sz_resp)
+    Bits#(t_resp, sz_resp),
+    FShow#(t_req),
+    FShow#(t_resp)
 );
     let curClk <- exposeCurrentClock;
     let curRst <- exposeCurrentReset;
@@ -317,7 +321,9 @@ module mkSyncQueuedClient#(
         Reset srvRst
     )(QueuedClient#(t_req, t_resp)) provisos (
         Bits#(t_req, sz_req),
-        Bits#(t_resp, sz_resp)
+        Bits#(t_resp, sz_resp),
+        FShow#(t_req),
+        FShow#(t_resp)
     );
     let cltClk <- exposeCurrentClock;
     let cltRst <- exposeCurrentReset;
@@ -347,7 +353,9 @@ module mkSizedQueuedServer#(String name,
         Reset dstRst
     )(QueuedServer#(t_req, t_resp)) provisos (
         Bits#(t_req, sz_req),
-        Bits#(t_resp, sz_resp)
+        Bits#(t_resp, sz_resp),
+        FShow#(t_req),
+        FShow#(t_resp)
     );
 
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
@@ -371,6 +379,7 @@ module mkSizedQueuedServer#(String name,
         endinterface
         interface Put request;
             method Action put(t_req req);
+                // $display("time=%0t: ", $time, "mkQueuedServer put req [", fshow(name) , "] req=", fshow(req));
                 reqQ.enq(req);
             endmethod
         endinterface
@@ -384,6 +393,7 @@ module mkSizedQueuedServer#(String name,
 
     method ActionValue#(t_req) getReq();
         reqQ.deq;
+        // $display("time=%0t: ", $time, "mkQueuedServer get req [", fshow(name) , "] req=", fshow(reqQ.first));
         return reqQ.first;
     endmethod
 
@@ -394,7 +404,9 @@ endmodule
 
 module mkQueuedServer#(String name)(QueuedServer#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
-    Bits#(t_resp, sz_resp)
+    Bits#(t_resp, sz_resp),
+    FShow#(t_req),
+    FShow#(t_resp)
 );
     let curClk <- exposeCurrentClock;
     let curRst <- exposeCurrentReset;
@@ -408,7 +420,9 @@ module mkSyncQueuedServer#(
         Reset cltRst
     )(QueuedServer#(t_req, t_resp)) provisos (
         Bits#(t_req, sz_req),
-        Bits#(t_resp, sz_resp)
+        Bits#(t_resp, sz_resp),
+        FShow#(t_req),
+        FShow#(t_resp)
     );
     let srvClk <- exposeCurrentClock;
     let srvRst <- exposeCurrentReset;
@@ -425,24 +439,27 @@ interface Server2Client#(type tReq, type tResp);
     interface Client#(tReq, tResp) clt;
 endinterface
 
-module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
+module mkServer2ClientTwoBeat(Server2Client#(tReq, tResp)) provisos (
         Bits#(tReq, szReq),
-        Bits#(tResp, szResp)
+        Bits#(tResp, szResp),
+        FShow#(tReq),
+        FShow#(tResp)
     );
 
-    Wire#(tReq) reqWire <- mkWire;
-    Wire#(tResp) respWire <- mkWire;
+    FIFOF#(tReq) reqQ <- mkFIFOF;
+    FIFOF#(tResp) respQ <- mkFIFOF;
 
     interface Server srv;
         interface Put request;
             method Action put(tReq req);
-                reqWire <= req;
+                reqQ.enq(req);
             endmethod
         endinterface
 
         interface Get response;
             method ActionValue#(tResp) get;
-                return respWire;
+                respQ.deq;
+                return respQ.first;
             endmethod
         endinterface
     endinterface
@@ -450,13 +467,14 @@ module mkServer2ClientSignleBeat(Server2Client#(tReq, tResp)) provisos (
     interface Client clt;
         interface Put response;
             method Action put(tResp resp);
-                respWire <= resp;
+                respQ.enq(resp);
             endmethod
         endinterface
 
         interface Get request;
             method ActionValue#(tReq) get;
-                return reqWire;
+                reqQ.deq;
+                return reqQ.first;
             endmethod
         endinterface
     endinterface
