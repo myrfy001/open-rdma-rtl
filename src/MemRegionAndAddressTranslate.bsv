@@ -142,7 +142,7 @@ module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
 
     MemRegionTable memRegionTable <- mkMemRegionTable;
 
-    Vector#(NUMERIC_TYPE_TWO, Server2Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_TWO, Server2Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
     Vector#(NUMERIC_TYPE_TWO, Server#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) querySrvVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) queryCltVecInst = newVector;
 
@@ -181,7 +181,7 @@ module mkMemRegionTableEightWayQuery(MemRegionTableEightWayQuery);
 
     Vector#(NUMERIC_TYPE_FOUR, MemRegionTableTwoWayQuery) twoWayMemRegionTableVec <- replicateM(mkMemRegionTableTwoWayQuery);
 
-    Vector#(NUMERIC_TYPE_EIGHT, Server2Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_EIGHT, Server2Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
     Vector#(NUMERIC_TYPE_EIGHT, Server#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) querySrvVecInst = newVector;
     Vector#(NUMERIC_TYPE_EIGHT, Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) queryCltVecInst = newVector;
 
@@ -327,7 +327,7 @@ module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
 
     AddressTranslate addressTranslate <- mkAddressTranslate;
 
-    Vector#(NUMERIC_TYPE_TWO, Server2Client#(PgtAddrTranslateReq, ADDR)) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_TWO, Server2Client#(PgtAddrTranslateReq, ADDR)) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
     Vector#(NUMERIC_TYPE_TWO, Server#(PgtAddrTranslateReq, ADDR)) querySrvVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, Client#(PgtAddrTranslateReq, ADDR)) queryCltVecInst = newVector;
 
@@ -366,13 +366,13 @@ module mkAddressTranslateEightWayQuery(AddressTranslateEightWayQuery);
 
     Vector#(NUMERIC_TYPE_FOUR, AddressTranslateTwoWayQuery) twoWayAddressTranslateVec <- replicateM(mkAddressTranslateTwoWayQuery);
 
-    Vector#(NUMERIC_TYPE_EIGHT, Server2Client#(PgtAddrTranslateReq, ADDR)) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_EIGHT, Server2Client#(PgtAddrTranslateReq, ADDR)) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
     Vector#(NUMERIC_TYPE_EIGHT, Server#(PgtAddrTranslateReq, ADDR)) querySrvVecInst = newVector;
     Vector#(NUMERIC_TYPE_EIGHT, Client#(PgtAddrTranslateReq, ADDR)) queryCltVecInst = newVector;
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_EIGHT); idx = idx + 1) begin
         querySrvVecInst[idx] = srvToCltConvertVec[idx].srv;
-        mkConnection(srvToCltConvertVec[idx].clt, twoWayAddressTranslateVec[idx / 2].querySrvVec[idx % 2 == 0 ? 0 : 1]);
+        mkConnection(srvToCltConvertVec[idx].clt, twoWayAddressTranslateVec[idx / 2].querySrvVec[((idx % 2) == 0) ? 0 : 1]);
     end
 
     interface querySrvVec = querySrvVecInst;
@@ -452,11 +452,11 @@ typedef Bit#(TLog#(TDiv#(PCIE_NAP_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WID
 (* synthesize *)
 module mkMrAndPgtUpdater(MrAndPgtUpdater);
 
-    FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
-    FIFOF#(Bool) respQ <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) reqQ <- mkLFIFOF;
+    FIFOF#(Bool) respQ <- mkLFIFOF;
 
-    FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkFIFOF;
-    FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkFIFOF;
+    FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkLFIFOF;
+    FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkLFIFOF;
 
     QueuedClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClient("mrModifyCltInst");
     QueuedClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkQueuedClient("pgtModifyCltInst");
@@ -615,13 +615,13 @@ interface PgtUpdateDmaInterfaceConvertor;
 endinterface
 
 module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
-    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkLFIFOF;
 
-    FIFOF#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkFIFOF;
-    FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
+    FIFOF#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkLFIFOF;
+    FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkLFIFOF;
 
     rule forwardReadReq;
         let req = dmaReadReqPipeInQ.first;

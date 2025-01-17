@@ -93,7 +93,7 @@ module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
 
     QpContext qpContext <- mkQpContext;
 
-    Vector#(NUMERIC_TYPE_TWO, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_TWO, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
     Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, Client#(ReadReqQPC, Maybe#(EntryQPC))) queryCltVecInst = newVector;
 
@@ -132,7 +132,7 @@ module mkQpContextFourWayQuery(QpContextFourWayQuery);
 
     Vector#(NUMERIC_TYPE_TWO, QpContextTwoWayQuery) twoWayQpContextVec <- replicateM(mkQpContextTwoWayQuery);
 
-    Vector#(NUMERIC_TYPE_FOUR, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientSignleBeat);
+    Vector#(NUMERIC_TYPE_FOUR, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
     Vector#(NUMERIC_TYPE_FOUR, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
     Vector#(NUMERIC_TYPE_FOUR, Client#(ReadReqQPC, Maybe#(EntryQPC))) queryCltVecInst = newVector;
 

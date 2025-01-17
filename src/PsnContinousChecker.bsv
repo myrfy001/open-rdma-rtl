@@ -56,12 +56,12 @@ typedef TAdd#(1, CPSN_CHECKER_CHANNEL_NUM) GET_MAX_PSN_PIPELINE_STAGE_CNT;
 
 module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkLFIFOF);
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkLFIFOF;
 
 
     // Pipeline Queues 
-    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnInputPipelineQueue <- mkFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnInputPipelineQueue <- mkLFIFOF;
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnOutputPipelineQueue <- mkSizedFIFOF(5);
     FIFOF#(Bit#(3)) channelQpnEqualMapPipelineQueue <- mkFIFOF;
 

@@ -71,8 +71,8 @@ module mkAddressChunker(AddressChunker#(tAddr, tLen, tChunkAlignLog)) provisos (
         PrimShiftIndex#(tChunkAlignLog, c__)
     );
 
-    FIFOF#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) reqQ <- mkFIFOF;
-    FIFOF#(AddressChunkResp#(tAddr, tLen)) respQ <- mkFIFOF;
+    FIFOF#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) reqQ <- mkLFIFOF;
+    FIFOF#(AddressChunkResp#(tAddr, tLen)) respQ <- mkLFIFOF;
 
     FIFOF#(Tuple5#(tLen, tLen, tLen, tAddr, tLen)) preCalcResultQueue <- mkLFIFOF;
 

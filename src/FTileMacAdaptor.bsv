@@ -546,10 +546,10 @@ endinterface
 (* synthesize *)
 module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
 
-    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(mkLFIFOF);
     FtileMacRxPingPongChannelMetaJoinInputIfc metaPipeInVecInst = newVector; 
 
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxPacketChunkMeta))    packetChunkMetaPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxPacketChunkMeta))    packetChunkMetaPipeOutQueueVec <- replicateM(mkLFIFOF);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxPacketChunkMeta))  packetChunkMetaPipeOutVecInst  = newVector; 
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
@@ -1262,10 +1262,10 @@ endinterface
 (* synthesize *)
 module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxBufferRange)) packetMetaPipeInVecInst = newVector;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutVecInst = newVector;
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutQueueVec <- replicateM(mkLFIFOF);
     
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin

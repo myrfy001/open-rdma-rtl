@@ -126,9 +126,9 @@ endinterface
 (* synthesize *)
 module mkRQ(RQ);
 
-    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkFIFOF;
-    FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkFIFOF;
-    FIFOF#(CnpPacketGenReq)         genCnpReqPipeOutQueue       <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkLFIFOF;
+    FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkLFIFOF;
+    FIFOF#(CnpPacketGenReq)         genCnpReqPipeOutQueue       <- mkLFIFOF;
     
     PacketParse packetParser <- mkPacketParse;
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
@@ -577,6 +577,10 @@ module mkRQ(RQ);
                 };
                 conReqPipeOutQ.enq(payloadConReq);
                 discardDebugFlag = False;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkRQ issuePayloadConReqOrDiscard"),
+                //     toBlue(", payloadConReq="), fshow(payloadConReq)
+                // );
             end
         end
         else begin

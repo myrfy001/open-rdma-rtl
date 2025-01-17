@@ -52,17 +52,17 @@ module mkSimpleNic(SimpleNic);
     Vector#(HARDWARE_QP_CHANNEL_CNT, Reg#(Word)) rawEthernetPacketLengthRegVec <- replicateM(mkReg(0));
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(IoChannelEthDataStream)) rawEthernetPacketPipeInVecInst = newVector;
-    FIFOF#(IoChannelEthDataStream) rawEthernetPacketPipeOutQueue <- mkFIFOF;
+    FIFOF#(IoChannelEthDataStream) rawEthernetPacketPipeOutQueue <- mkLFIFOF;
 
 
 
-    FIFOF#(RingbufRawDescriptor) simpleNicDescPipeInQueue <- mkFIFOF;
-    FIFOF#(RingbufRawDescriptor) simpleNicDescPipeOutQueue <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) simpleNicDescPipeInQueue <- mkLFIFOF;
+    FIFOF#(RingbufRawDescriptor) simpleNicDescPipeOutQueue <- mkLFIFOF;
 
-    FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkLFIFOF;
 
     DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA) ethStreamArbiter <- mkDtldStreamNoMetaArbiterSlave(valueOf(HARDWARE_QP_CHANNEL_CNT));
 

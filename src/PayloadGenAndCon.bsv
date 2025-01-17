@@ -142,7 +142,8 @@ module mkPayloadGen(PayloadGen);
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPayloadGen handleInReq"),
-        //     toBlue(", req="), fshow(req)
+        //     toBlue(", req="), fshow(req),
+        //     toBlue(", chunkReq="), fshow(chunkReq)
         // );
     endrule
 
@@ -166,8 +167,7 @@ module mkPayloadGen(PayloadGen);
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq"),
         //     toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry),
-        //     toBlue(", pgtOffset="), fshow(pgtOffset),
-        //     toBlue(", baseVA="), fshow(baseVA)
+        //     toBlue(", addrTranslateReq="), fshow(addrTranslateReq)
         // );
     endrule
 
@@ -236,6 +236,11 @@ module mkPayloadCon(PayloadCon);
         rawReqToBurstChunker.requestPipeIn.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple2(req.pgtOffset, req.baseVA));
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon handleInReq"),
+        //     toBlue(", req="), fshow(req),
+        //     toBlue(", chunkReq="), fshow(chunkReq)
+        // );
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
@@ -257,6 +262,7 @@ module mkPayloadCon(PayloadCon);
         issueDmaWritePipelineQ.enq(burstAddrBoundry.len);
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq"),
+        //     toBlue(", addrTranslateReq="), fshow(addrTranslateReq),
         //     toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
         // );
     endrule
@@ -281,8 +287,7 @@ module mkPayloadCon(PayloadCon);
         //     "time=%0t:", $time, toGreen(" mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite"),
         //     toBlue(", writeReq="), fshow(writeReq),
         //     toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
-        //     toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc),
-        //     toBlue(", alignBlockCntForStreamSplit="), fshow(alignBlockCntForStreamSplit)
+        //     toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc)
         // );
     endrule
 

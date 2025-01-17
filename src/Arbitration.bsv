@@ -87,16 +87,16 @@ module mkClientArbiter#(
     function Bool isReqFinished(reqType request),
     function Bool isRespFinished(respType response)
 )(Client#(reqType, respType)) provisos(
-    // FShow#(reqType), FShow#(respType),
     Bits#(reqType, reqSz),
     Bits#(respType, respSz),
-    Add#(1, anysize, portSz)
+    Add#(1, anysize, portSz),
+    FShow#(reqType)
 );
 
     Arbiter_IFC#(portSz) arbiter <- mkArbiter(False);
     Reg#(Bool) canSubmitArbitReqReg <- mkReg(True);
 
-    Vector#(portSz, FIFOF#(reqType)) clientReqFifoVec <- replicateM(mkFIFOF);
+    Vector#(portSz, FIFOF#(reqType)) clientReqFifoVec <- replicateM(mkLFIFOF);
     // Vector#(portSz, FIFOF#(respType)) clientRespFifoVec <- replicateM(mkFIFOF);
 
     // A trick here. This fifo's size must be small, and it should be smaller than portSz, or it will
@@ -105,8 +105,8 @@ module mkClientArbiter#(
     // This Fifo can be larger since receive response may take some time and there can be many outstanding requests.
     FIFOF#(Bit#(TLog#(portSz))) grantRespKeepOrderQ <- mkSizedFIFOF(keepOrderQueueLen);
 
-    FIFOF#(reqType)   reqQ <- mkFIFOF;
-    FIFOF#(respType) respQ <- mkFIFOF;
+    FIFOF#(reqType)   reqQ <- mkLFIFOF;
+    FIFOF#(respType) respQ <- mkLFIFOF;
 
     // convert input Get interface to a FIFOF since we need full/empty signal
     // THIS QUEUE MUST BE SIZE OF 2, SO WHEN IT FULL IT MEANS THAT WE HAVE TO ELEMENTS IN QUEUE NOW.
@@ -224,7 +224,8 @@ module mkClientArbiter#(
                 $display(
                     "time=%0t: ", $time,
                     fshow(name),
-                    " grant new request, client idx=%0d", idx
+                    ", grant new request, client idx=%0d", idx, 
+                    ", req=", fshow(req)
                 );
             end
         end

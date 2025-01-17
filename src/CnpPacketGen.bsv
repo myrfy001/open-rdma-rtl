@@ -35,7 +35,7 @@ endinterface
 
 (* synthesize *)
 module mkCnpPacketGenerator(CnpPacketGenerator);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(CnpPacketGenReq)) genReqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(CnpPacketGenReq)) genReqPipeInQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(CnpPacketGenReq)) genReqPipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(IoChannelEthDataStream)) cnpEthPacketPipeOutVecInst = newVector;

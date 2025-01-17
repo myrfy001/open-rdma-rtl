@@ -466,12 +466,11 @@ module mkPacketGen(PacketGen);
     FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkSizedFIFOF(4);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkLFIFOF;
     
-    rule debugRule;
-        if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
-        if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
-        if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
-
-    endrule
+    // rule debugRule;
+    //     if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
+    //     if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
+    //     if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
+    // endrule
     
     rule queryMrTable;
         let wqe = wqePipeInQ.first;

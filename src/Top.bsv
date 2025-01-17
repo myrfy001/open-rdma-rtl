@@ -786,8 +786,8 @@ endinterface
 
 (* synthesize *)
 module mkQpMrPgtQpc(QpMrPgtQpc);
-    FIFOF#(WriteReqQPC) qpContextUpdateReqQueue <- mkFIFOF;
-    FIFOF#(Bool) qpContextUpdateRespQueue <- mkFIFOF;
+    FIFOF#(WriteReqQPC) qpContextUpdateReqQueue <- mkLFIFOF;
+    FIFOF#(Bool) qpContextUpdateRespQueue <- mkLFIFOF;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
 
     QpContextFourWayQuery qpContext <- mkQpContextFourWayQuery;

@@ -269,7 +269,7 @@ class TB(object):
             0x0100+0x0020+0x0002) * 4)
         self.log.debug(f"read metrics: {metrics_csr_val}")
 
-    async def testcase_send_simple_write_loopback_req_4095(self):
+    async def testcase_send_simple_write_loopback_req_8191(self):
 
         await self.init_helper.start_meta_report_queue_collector()
 
@@ -343,6 +343,7 @@ class TB(object):
         await self.init_helper.send_queues[0].sync_pointers()
 
         resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+
         self.log.debug(
             f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
 
@@ -369,7 +370,8 @@ class TB(object):
         await Timer(600, units='ns')
 
         for d in range(8191):
-            self.log.debug(f"checking at idx = {d}")
+            self.log.debug(
+                f"checking at idx = {d}, addr={hex(d+dst_buf_mem_addr)}")
             assert dst_buf_mem[d] == d % 256  # should be modified
         assert dst_buf_mem[8191] == 0x66  # should not be modified
 
@@ -433,7 +435,7 @@ class TB(object):
         # self.log.debug(f"read metrics: {metrics_csr_val}")
 
 
-@ cocotb.test(timeout_time=2000, timeout_unit="ns")
+@ cocotb.test(timeout_time=3000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -445,7 +447,7 @@ async def small_desc_fp_test(dut):
     await tb.start_single_card_loop_back()
 
     # await tb.testcase_send_simple_write_loopback_req()
-    await tb.testcase_send_simple_write_loopback_req_4095()
+    await tb.testcase_send_simple_write_loopback_req_8191()
 
     await Timer(100, units='ns')
     tb.clean_up()

@@ -106,16 +106,16 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     // If we need to wait for response for some cycle to finish, then we need to set this to False;
     Reg#(Bool) isDispatchingReqReg                                                          <- mkReg(True);
     
-    FIFOF#(RingbufRawDescriptor) mrAndPgtReqQ                                               <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) mrAndPgtReqQ                                               <- mkLFIFOF;
     FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
-    FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkFIFOF;
+    FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkLFIFOF;
 
     QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst");
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
 
-    FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;
-    FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkFIFOF;
-    FIFOF#(IndexQP)              qpResetReqPipeOutQ                                         <- mkFIFOF;
+    FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkLFIFOF;
+    FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkLFIFOF;
+    FIFOF#(IndexQP)              qpResetReqPipeOutQ                                         <- mkLFIFOF;
 
 
     RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;

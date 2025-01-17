@@ -560,9 +560,9 @@ module mkIpHdrCheckSumStream#(
     function Bit#(TAdd#(width, 1)) add(Bit#(width) a, Bit#(width) b) = zeroExtend(a) + zeroExtend(b);
     function Bit#(TAdd#(width, 1)) pass(Bit#(width) a) = zeroExtend(a);
 
-    FIFOF#(Vector#(firstStageOutNum, Bit#(firstStageOutWidth))) firstStageOutBuf <- mkFIFOF;
-    FIFOF#(Vector#(secondStageOutNum, Bit#(secondStageOutWidth))) secondStageOutBuf <- mkFIFOF;
-    FIFOF#(IpCheckSum) ipCheckSumOutBuf <- mkFIFOF;
+    FIFOF#(Vector#(firstStageOutNum, Bit#(firstStageOutWidth))) firstStageOutBuf <- mkLFIFOF;
+    FIFOF#(Vector#(secondStageOutNum, Bit#(secondStageOutWidth))) secondStageOutBuf <- mkLFIFOF;
+    FIFOF#(IpCheckSum) ipCheckSumOutBuf <- mkLFIFOF;
 
     rule firstStageAdder;
         let ipHeader = ipHeaderStream.first;
@@ -964,7 +964,8 @@ module mkRingbufStorage#(String name, Bool checkOverflow)(RingbufStorage#(t_data
     FShow#(t_idx),
     Bitwise#(t_idx),
     Eq#(t_idx),
-    Arith#(t_idx)
+    Arith#(t_idx),
+    FShow#(t_data)
 );
     QueuedServer#(Tuple2#(t_idx, Bool), t_data) readFragSrvInst <- mkQueuedServer(sprintf("%s readFragSrvInst", name));
 
