@@ -543,8 +543,8 @@ async def small_desc_fp_test(dut):
     cocotb.start_soon(tb.start_memory_content_check())
     cocotb.start_soon(tb.start_send_write_req())
 
-    # cocotb.start_soon(tb.start_send_read_req())
-    # cocotb.start_soon(tb.start_read_resp_check())
+    cocotb.start_soon(tb.start_send_read_req())
+    cocotb.start_soon(tb.start_read_resp_check())
 
     # cocotb.start_soon(tb.start_completer_read_write_req_send())
     # cocotb.start_soon(tb.start_completer_read_write_req_handler())

@@ -909,13 +909,13 @@ endfunction
 module mkRegisteredSizedFIFOFInnerModule#(Integer depth)(FIFOF#(tData)) provisos(Bits#(tData, szData));
     FIFOF#(tData) inputQ <- mkLFIFOF;
     FIFOF#(tData) outputQ <- mkLFIFOF;
-    FIFOF#(tData) bufferQ <- mkSizedFIFOF(depth);
+    FIFOF#(tData) bufferQ <- mkSizedFIFOF(depth-2);
     mkConnection(toPipeOut(inputQ), toPipeIn(bufferQ));
     mkConnection(toPipeOut(bufferQ), toPipeIn(outputQ));
     
     method enq = inputQ.enq;
     method deq = outputQ.deq;
-    method first = inputQ.first;
+    method first = outputQ.first;
     method notFull = inputQ.notFull;
     method notEmpty = outputQ.notEmpty;
     method Action clear;

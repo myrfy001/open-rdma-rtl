@@ -468,12 +468,12 @@ endinterface
 (* synthesize *)
 module mkFtileMacRxBeatFork(FtileMacRxBeatFork);
     
-    FIFOF#(FtileMacRxBeat)                                                  rxBetaPipeInQueue                   <- mkFIFOF;
+    FIFOF#(FtileMacRxBeat)                                                  rxBetaPipeInQueue                   <- mkLFIFOF;
     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
             PipeOut#(FtileMacRxPingPongSingleChannelProcessorInputMeta))    rxPingPongChannelMetaPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
             FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta))      rxPingPongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
-    FIFOF#(FtileMacRxBramBufferWriteReq)                                    rxBramWriteReqPipeOutQueue          <- mkFIFOF;
+    FIFOF#(FtileMacRxBramBufferWriteReq)                                    rxBramWriteReqPipeOutQueue          <- mkLFIFOF;
 
     Reg#(FtileMacRxBramBufferAddr) addrPtrReg <- mkReg(0);
 
@@ -1125,8 +1125,8 @@ endinterface
 
 // (* synthesize *)
 module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGearboxStorageAndMetaExtractor);
-    FIFOF#(FtileMacTxUserStream)    streamPipeInQueue       <- mkFIFOF;
-    FIFOF#(FtileMacTxBufferRange)   packetMetaPipeOutQueue  <- mkFIFOF;
+    FIFOF#(FtileMacTxUserStream)    streamPipeInQueue       <- mkLFIFOF;
+    FIFOF#(FtileMacTxBufferRange)   packetMetaPipeOutQueue  <- mkLFIFOF;
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkFIFOF);
