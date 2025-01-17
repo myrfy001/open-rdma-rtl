@@ -268,6 +268,162 @@ class TB(object):
             0x0100+0x0020+0x0002) * 4)
         self.log.debug(f"read metrics: {metrics_csr_val}")
 
+    async def testcase_send_simple_write_loopback_req_4095(self):
+
+        await self.init_helper.start_meta_report_queue_collector()
+
+        src_buf_mem_addr, src_buf_mem = self.init_helper.alloc_physical_memory(
+            65536, 1)
+        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 1024)
+
+        dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
+            65536, 1)
+        dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 65536)
+
+        for d in range(4096):
+            src_buf_mem[d] = d % 256
+            dst_buf_mem[d] = 0xFF
+        dst_buf_mem[4096] = 0x66
+
+        self_qpn = self.init_helper.alloc_qpn()
+        peer_qpn = self.init_helper.alloc_qpn()
+
+        self.log.info(
+            f"create qp: self qpn = {hex(self_qpn)}, peer qpn = {hex(peer_qpn)}")
+
+        # create qp for send side
+        await self.init_helper.create_qp(
+            peer_mac_addr=CARD_A_MAC_ADDRESS,
+            peer_ip_addr=CARD_A_IP_ADDRESS,
+            local_udp_port=0x100,
+            self_qpn=self_qpn,
+            peer_qpn=peer_qpn,
+        )
+
+        # create qp for recv side
+        await self.init_helper.create_qp(
+            peer_mac_addr=CARD_A_MAC_ADDRESS,
+            peer_ip_addr=CARD_A_IP_ADDRESS,
+            local_udp_port=0x100,
+            self_qpn=peer_qpn,
+            peer_qpn=self_qpn,
+        )
+
+        imm_data = random.randint(0, 0xFFFFFFFF)
+        msn = random.randint(0, 0xFFF)
+        psn = 256
+
+        self.init_helper.send_queues[0].put_work_request(
+            opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE_WITH_IMM,
+            is_first=True,
+            is_last=True,
+            is_retry=False,
+            enable_ecn=False,
+            total_len=4095,
+            lkey=src_mr_key,
+            laddr=src_buf_mem_addr,
+            data_len=4095,
+            r_va=dst_buf_mem_addr,
+            r_key=dst_mr_key,
+            r_ip=CARD_A_IP_ADDRESS,
+            r_mac=CARD_A_MAC_ADDRESS,
+            dqpn=peer_qpn,
+            sqpn=self_qpn,
+            msn=msn,
+            psn=psn,
+            imm_data=imm_data
+        )
+        await self.init_helper.send_queues[0].sync_pointers()
+
+        resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        self.log.debug(
+            f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+
+        # check meta report desc for write only packet
+        resp = MetaReportQueuePacketBasicInfoDesc.from_buffer(resp_raw)
+        assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_FIRST
+        assert resp.common_header.F_HAS_NEXT_FRAG == 0
+        # assert resp.F_MSN == msn
+        # assert resp.F_PSN == psn
+        # assert resp.F_SOLICITED == 0
+        # assert resp.F_ACK_REQ == 0
+        # assert resp.F_IS_RETRY == 0
+        # assert resp.F_DQPN == peer_qpn
+        # assert resp.F_TOTAL_LEN == 1
+        # assert resp.F_RADDR == dst_buf_mem_addr
+        # assert resp.F_RKEY == dst_mr_key
+        # assert resp.F_IMM_DATA == imm_data
+
+        # check memory access is correct
+        # since meta report DMA path is simplier than payload write DMA path, desc may arrive before payload has been written to memory.
+        # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
+        # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
+        # write finish signal. Or delay the desc report on hardware.
+        await Timer(400, units='ns')
+
+        for d in range(4095):
+            assert dst_buf_mem[d] == d % 256  # should be modified
+        assert dst_buf_mem[4096] == 0x66  # should not be modified
+
+        # # check meta report desc for ACK packet generated at recv side
+        # resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        # self.log.debug(
+        #     f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        # resp = MetaReportQueueAckDesc.from_buffer(resp_raw)
+        # assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        # assert resp.common_header.F_HAS_NEXT_FRAG == 1
+        # assert resp.F_IS_SEND_BY_LOCAL_HW == 1
+        # assert resp.F_IS_SEND_BY_DRIVER == 0
+        # assert resp.F_IS_WINDOW_SLIDED == 1
+        # assert resp.F_IS_PACKET_LOST == 1
+        # assert resp.F_PSN_BEFORE_SLIDE == 0xFFFFF0
+        # assert resp.get_psn_now() == psn
+        # assert resp.get_qpn() == peer_qpn
+        # assert resp.get_msn() == 0
+        # assert resp.F_NOW_BITMAP_LOW == 0
+        # assert resp.F_NOW_BITMAP_HIGH == 0x00010000_00000000
+
+        # resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        # self.log.debug(
+        #     f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        # resp = MetaReportQueueAckExtraDesc.from_buffer(resp_raw)
+        # assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        # assert resp.common_header.F_HAS_NEXT_FRAG == 0
+        # assert resp.F_PRE_BITMAP_LOW == 0xFFFFFFFF_FFFFFFFF
+        # assert resp.F_PRE_BITMAP_HIGH == 0xFFFFFFFF_FFFFFFFF
+
+        # # check meta report desc for ACK packet generated at send side
+        # resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        # self.log.debug(
+        #     f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        # resp = MetaReportQueueAckDesc.from_buffer(resp_raw)
+        # assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        # assert resp.common_header.F_HAS_NEXT_FRAG == 1
+        # # Note: this line is the difference from the recv side
+        # assert resp.F_IS_SEND_BY_LOCAL_HW == 0
+        # assert resp.F_IS_SEND_BY_DRIVER == 0
+        # assert resp.F_IS_WINDOW_SLIDED == 1
+        # assert resp.F_IS_PACKET_LOST == 1
+        # assert resp.F_PSN_BEFORE_SLIDE == 0xFFFFF0
+        # assert resp.get_psn_now() == psn
+        # assert resp.get_qpn() == self_qpn
+        # assert resp.get_msn() == 0
+        # assert resp.F_NOW_BITMAP_LOW == 0
+        # assert resp.F_NOW_BITMAP_HIGH == 0x00010000_00000000
+
+        # resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
+        # self.log.debug(
+        #     f"resp_raw={hex(int.from_bytes(resp_raw, byteorder='little'))}")
+        # resp = MetaReportQueueAckExtraDesc.from_buffer(resp_raw)
+        # assert resp.common_header.F_OP_CODE == RdmaOpCode.ACKNOWLEDGE
+        # assert resp.common_header.F_HAS_NEXT_FRAG == 0
+        # assert resp.F_PRE_BITMAP_LOW == 0xFFFFFFFF_FFFFFFFF
+        # assert resp.F_PRE_BITMAP_HIGH == 0xFFFFFFFF_FFFFFFFF
+
+        # metrics_csr_val = await self.pcie_bfm.host_read_blocking((
+        #     0x0100+0x0020+0x0002) * 4)
+        # self.log.debug(f"read metrics: {metrics_csr_val}")
+
 
 @ cocotb.test(timeout_time=1500, timeout_unit="ns")
 async def small_desc_fp_test(dut):
@@ -280,9 +436,10 @@ async def small_desc_fp_test(dut):
 
     await tb.start_single_card_loop_back()
 
-    await tb.testcase_send_simple_write_loopback_req()
+    # await tb.testcase_send_simple_write_loopback_req()
+    await tb.testcase_send_simple_write_loopback_req_4095()
 
-    await Timer(500, units='ns')
+    await Timer(100, units='ns')
     tb.clean_up()
 
 

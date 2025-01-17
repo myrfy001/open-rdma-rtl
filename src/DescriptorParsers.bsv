@@ -248,10 +248,10 @@ endinterface
 
 module mkDescriptorMux(DescriptorMux);
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
 
-    FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkLFIFOF;
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         descPipeInVecInst[idx] = toPipeIn(descPipeInQueueVec[idx]);

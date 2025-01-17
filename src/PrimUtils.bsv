@@ -953,18 +953,21 @@ module mkDelayFIFOF#(Integer beat)(FIFOF#(tData)) provisos(Bits#(tData, szData))
         end
 
         for (Integer idx = 1; idx < beat; idx = idx + 1) begin
-            mkConnection(toPipeIn(fifoList[idx-1]), toPipeOut(fifoList[idx]));
+            rule forward;
+                fifoList[idx-1].deq;
+                fifoList[idx].enq(fifoList[idx-1].first);
+            endrule
         end
 
-        method enq = fifoList[0].enq;
-        method first = fifoList[0].first;
-        method notFull = fifoList[0].notFull;
-        method deq = fifoList[beat-1].deq;
+        method enq      = fifoList[0].enq;
+        method notFull  = fifoList[0].notFull;
+        method first    = fifoList[beat-1].first;
+        method deq      = fifoList[beat-1].deq;
         method notEmpty = fifoList[beat-1].notEmpty;
 
         method Action clear;
             for (Integer idx = 0; idx < beat; idx = idx + 1) begin
-                fifoList[idx].deq;
+                fifoList[idx].clear;
             end
         endmethod
 

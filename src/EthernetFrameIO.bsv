@@ -666,12 +666,12 @@ typedef struct {
 
 (*synthesize*)
 module mkEthernetPacketGenerator(EthernetPacketGenerator);
-    FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkFIFOF;
-    FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkFIFOF;
-    FIFOF#(DataStream) rdmaPayloadPipeInQ <- mkFIFOF;
-    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
+    FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkLFIFOF;
+    FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkLFIFOF;
+    FIFOF#(DataStream) rdmaPayloadPipeInQ <- mkLFIFOF;
+    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkLFIFOF;
 
-    FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
+    FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkLFIFOF;
 
     // Pipeline FIFOs and Regs
     FIFOF#(IpHeaderChecksumCalcPipelineEntry) ipHeaderChecksumCalcPipelineQ <- mkSizedFIFOF(3);

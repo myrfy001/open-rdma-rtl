@@ -92,7 +92,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream)) ackEthPacketPipeOutVecInst = newVector;
 
     Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
-    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
 
@@ -146,8 +146,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
             BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary),
             AtomicUpdateStorageUpdateResp#(IndexQP, AutoAckGenAtomicUpdateStorageEntry),
             KeyQP
-        ))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkFIFOF);
+        ))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkLFIFOF);
     Reg#(Tuple4#(
             BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary),
             AutoAckGenAtomicUpdateStorageEntry,

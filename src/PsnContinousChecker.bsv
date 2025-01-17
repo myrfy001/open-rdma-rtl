@@ -57,7 +57,7 @@ typedef TAdd#(1, CPSN_CHECKER_CHANNEL_NUM) GET_MAX_PSN_PIPELINE_STAGE_CNT;
 module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVecInst = newVector;
     Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
-    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkLFIFOF;
 
 
     // Pipeline Queues 
@@ -66,7 +66,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
     FIFOF#(Bit#(3)) channelQpnEqualMapPipelineQueue <- mkFIFOF;
 
     Vector#(GET_MAX_PSN_PIPELINE_STAGE_CNT, FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)))) maxPsnBroadcastPipelineQueueVec <- replicateM(mkLFIFOF);
-    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState))) reorderedFourChannelReqWithMaxPsnPipelineQueue <- mkFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState))) reorderedFourChannelReqWithMaxPsnPipelineQueue <- mkLFIFOF;
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeOnehotGenInternalState))) onehotGenMetaCalcPipelineQueue <- mkLFIFOF;
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) onehotGenToOnehotMergePipelineQueue <- mkLFIFOF;
 
@@ -611,11 +611,11 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVecInst = newVector;
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkLFIFOF);
 
-    FIFOF#(tRowAddr)                                        readOnlyReqPipeInQueue <- mkFIFOF;
-    FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
+    FIFOF#(tRowAddr)                                        readOnlyReqPipeInQueue <- mkLFIFOF;
+    FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkLFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_THREE, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage = newVector;
     storage[0][0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");

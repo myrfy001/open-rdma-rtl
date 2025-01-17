@@ -142,7 +142,7 @@ module mkRQ(RQ);
 
     // invalid request payload filter related
     FIFOF#(Bool) filterCmdQ <-  mkSizedFIFOF(4);
-    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF;
+    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkLFIFOF;
 
     let mimoCfg = MIMOConfiguration {
         unguarded: False,
@@ -161,9 +161,9 @@ module mkRQ(RQ);
     FIFOF#(CheckMrTableStep3PipelineEntry) checkMrTableStep3PipeQ <- mkSizedFIFOF(2);
     FIFOF#(IssuePayloadConReqOrDiscardPipelineEntry) issuePayloadConReqOrDiscardPipeQ <- mkSizedFIFOF(2);
     // For a 4096 PMTU packet followed by all packet that without payload. When consuming a big packet, all small packets has to waiting in the queue
-    FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkSizedFIFOF(valueOf(TDiv#(TDiv#(MAX_PMTU, DATA_BUS_BYTE_WIDTH), RDMA_PACKET_HEADER_BETA_CNT)));
+    FIFOF#(HandleConRespPipelineEntry) handleConRespPipeQ <- mkRegisteredSizedFIFOF(valueOf(TDiv#(TDiv#(MAX_PMTU, DATA_BUS_BYTE_WIDTH), RDMA_PACKET_HEADER_BETA_CNT)));
 
-    FIFOF#(GenMetaReportQueueDescPipelineEntry) handleGenMetaReportQueueDescPipeQ <- mkFIFOF;
+    FIFOF#(GenMetaReportQueueDescPipelineEntry) handleGenMetaReportQueueDescPipeQ <- mkLFIFOF;
 
     
 

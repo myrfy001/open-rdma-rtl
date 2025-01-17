@@ -754,7 +754,7 @@ endinterface
 
 (* synthesize *)
 module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
-    FIFOF#(PcieRxBeat) pcieRxPipeInQueue <- mkFIFOF;
+    FIFOF#(PcieRxBeat) pcieRxPipeInQueue <- mkLFIFOF;
     FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeOutQueue <- mkFIFOF;
 
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(RtilePcieRxPayloadStorageWriteReq)) tlpRawBeatDataStorageWriteReqPipeOutQueueVec <- replicateM(mkLFIFOF);
@@ -2110,8 +2110,8 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     FIFOF#(PcieTlpHeaderMemoryWrite4Dw) writeTlpQueue               <- mkFIFOF;
     FIFOF#(PcieTlpHeaderCompletion)     cpltTlpQueue                <- mkFIFOF;
 
-    FIFOF#(PcieTlpHeaderBuffer)         arbittedTlpBufferQueue      <- mkFIFOF;
-    FIFOF#(RtilePcieUserStream)         arbittedTlpDataStreamQueue  <- mkFIFOF;
+    FIFOF#(PcieTlpHeaderBuffer)         arbittedTlpBufferQueue      <- mkLFIFOF;
+    FIFOF#(RtilePcieUserStream)         arbittedTlpDataStreamQueue  <- mkLFIFOF;
     Reg#(Bool)                          isOutputingPayloadStreamReg <- mkReg(False);
 
     
@@ -3549,7 +3549,7 @@ endinterface
 module mkRtilePcieTxPingPongJoin(RtilePcieTxPingPongJoin);
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(RtilePcieTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkLFIFOF);
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeIn#(RtilePcieTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
-    FIFOF#(PcieTxBeat) rtilePcieTxPipeOutQueue <- mkFIFOF;
+    FIFOF#(PcieTxBeat) rtilePcieTxPipeOutQueue <- mkLFIFOF;
 
     for (Integer idx = 0; idx < valueOf(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         pingpongBeatPipeInVecInst[idx] = toPipeIn(pingpongBeatPipeInQueueVec[idx]);

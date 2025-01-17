@@ -439,9 +439,9 @@ endinterface
 (* synthesize *)
 module mkPacketGen(PacketGen);
 
-    FIFOF#(WorkQueueElem)       wqePipeInQ      <- mkFIFOF;
-    FIFOF#(PayloadGenReq) genReqPipeOutQ  <- mkFIFOF;
-    FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF;
+    FIFOF#(WorkQueueElem)       wqePipeInQ      <- mkLFIFOF;
+    FIFOF#(PayloadGenReq)       genReqPipeOutQ  <- mkLFIFOF;
+    FIFOF#(DataStream)          genRespPipeInQ  <- mkLFIFOF;
 
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) wqeToPacketChunker <- mkAddressChunker;
 
@@ -452,7 +452,7 @@ module mkPacketGen(PacketGen);
     DtldStreamSplitor#(DATA, AlignBlockCntInPmtu, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) payloadSplitor <- mkDtldStreamSplitor;
     mkConnection(payloadStreamShifter.streamPipeOut, payloadSplitor.dataPipeIn);
 
-    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF;
+    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkLFIFOF;
 
     EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator;
     mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);
