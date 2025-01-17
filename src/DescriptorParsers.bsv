@@ -39,7 +39,7 @@ endinterface
 (* synthesize *)
 module mkWorkQueueDescParser(WorkQueueDescParser);
 
-    FIFOF#(WorkQueueElem) workReqPipeOutQ <- mkFIFOF;
+    FIFOF#(WorkQueueElem) workReqPipeOutQ <- mkLFIFOF;
 
     RingbufDescriptorReadProxy#(SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) sqDescReadProxy <- mkRingbufDescriptorReadProxy;
     

@@ -507,10 +507,10 @@ module mkRQ(RQ);
 
         Bool isAccessRangeCheckPass = False;
         Bool isPacketBeatCountCheckPass = False;
-
+        let packetTailMeta = ?;
         if (isRecvPacketStatusNormal(packetStatus)) begin
             if (rdmaPacketMeta.hasPayload) begin
-                let packetTailMeta = packetParser.rdmaPacketTailMetaPipeOut.first;
+                packetTailMeta = packetParser.rdmaPacketTailMetaPipeOut.first;
                 packetParser.rdmaPacketTailMetaPipeOut.deq;
                 if (packetTailMeta.beatCnt - 1 == zerobasedExpectedPayloadBeatNum) begin
                     isPacketBeatCountCheckPass = True;
@@ -548,6 +548,7 @@ module mkRQ(RQ);
         issuePayloadConReqOrDiscardPipeQ.enq(pipelineEntryOut);
         $display(
             "time=%0t:", $time, toGreen(" mkRQ checkMrTableStep3"),
+            toBlue(", packetTailMeta="), fshow(packetTailMeta),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
     endrule

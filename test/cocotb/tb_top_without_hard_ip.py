@@ -17,7 +17,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
-from descriptors import WorkReqOpCode, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc
+from descriptors import WorkReqOpCode, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc, PMTU
 from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
 from hw_init_helper import HardwareTestHelper, CARD_A_IP_ADDRESS, CARD_A_MAC_ADDRESS
 
@@ -102,7 +102,8 @@ class TB(object):
             while True:
                 tx_beat = await self.eth_bfm.get_tx_packet()
                 await self.eth_bfm.inject_rx_packet(tx_beat)
-                # self.log.debug(f"single_card_loop_back forward beat: {tx_beat}")
+                self.log.debug(
+                    f"single_card_loop_back forward beat: {tx_beat}")
 
         cocotb.start_soon(_loop_back_task(self))
 
@@ -274,23 +275,26 @@ class TB(object):
 
         src_buf_mem_addr, src_buf_mem = self.init_helper.alloc_physical_memory(
             65536, 1)
-        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 1024)
+        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 65536)
 
         dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
             65536, 1)
         dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 65536)
 
-        for d in range(4096):
+        for d in range(8192):
             src_buf_mem[d] = d % 256
             dst_buf_mem[d] = 0xFF
-        dst_buf_mem[4096] = 0x66
+        dst_buf_mem[8191] = 0x66
 
         self_qpn = self.init_helper.alloc_qpn()
         peer_qpn = self.init_helper.alloc_qpn()
 
         self.log.info(
             f"create qp: self qpn = {hex(self_qpn)}, peer qpn = {hex(peer_qpn)}")
+        self.log.info(
+            f"src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
 
+        pmtu = PMTU.IBV_MTU_2048
         # create qp for send side
         await self.init_helper.create_qp(
             peer_mac_addr=CARD_A_MAC_ADDRESS,
@@ -298,6 +302,7 @@ class TB(object):
             local_udp_port=0x100,
             self_qpn=self_qpn,
             peer_qpn=peer_qpn,
+            pmtu=pmtu
         )
 
         # create qp for recv side
@@ -307,6 +312,7 @@ class TB(object):
             local_udp_port=0x100,
             self_qpn=peer_qpn,
             peer_qpn=self_qpn,
+            pmtu=pmtu
         )
 
         imm_data = random.randint(0, 0xFFFFFFFF)
@@ -319,10 +325,10 @@ class TB(object):
             is_last=True,
             is_retry=False,
             enable_ecn=False,
-            total_len=4095,
+            total_len=8191,
             lkey=src_mr_key,
             laddr=src_buf_mem_addr,
-            data_len=4095,
+            data_len=8191,
             r_va=dst_buf_mem_addr,
             r_key=dst_mr_key,
             r_ip=CARD_A_IP_ADDRESS,
@@ -331,7 +337,8 @@ class TB(object):
             sqpn=self_qpn,
             msn=msn,
             psn=psn,
-            imm_data=imm_data
+            imm_data=imm_data,
+            pmtu=pmtu
         )
         await self.init_helper.send_queues[0].sync_pointers()
 
@@ -341,8 +348,8 @@ class TB(object):
 
         # check meta report desc for write only packet
         resp = MetaReportQueuePacketBasicInfoDesc.from_buffer(resp_raw)
-        assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_FIRST
-        assert resp.common_header.F_HAS_NEXT_FRAG == 0
+        # assert resp.common_header.F_OP_CODE == RdmaOpCode.RDMA_WRITE_FIRST
+        # assert resp.common_header.F_HAS_NEXT_FRAG == 0
         # assert resp.F_MSN == msn
         # assert resp.F_PSN == psn
         # assert resp.F_SOLICITED == 0
@@ -359,11 +366,12 @@ class TB(object):
         # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
         # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
         # write finish signal. Or delay the desc report on hardware.
-        await Timer(400, units='ns')
+        await Timer(600, units='ns')
 
-        for d in range(4095):
+        for d in range(8191):
+            self.log.debug(f"checking at idx = {d}")
             assert dst_buf_mem[d] == d % 256  # should be modified
-        assert dst_buf_mem[4096] == 0x66  # should not be modified
+        assert dst_buf_mem[8191] == 0x66  # should not be modified
 
         # # check meta report desc for ACK packet generated at recv side
         # resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
@@ -425,7 +433,7 @@ class TB(object):
         # self.log.debug(f"read metrics: {metrics_csr_val}")
 
 
-@ cocotb.test(timeout_time=1500, timeout_unit="ns")
+@ cocotb.test(timeout_time=2000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)

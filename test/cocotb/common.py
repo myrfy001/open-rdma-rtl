@@ -820,7 +820,7 @@ class SimpleEthBehaviorModel(object):
                 ds_raw = await self.txChannels[idx].first()
                 await self.txChannels[idx].deq()
                 ds = BlueRdmaDataStream256.unpack(ds_raw)
-                self.log.debug(f"eth bfm channel {idx} got beat, ds={ds}")
+                # self.log.debug(f"eth bfm channel {idx} got beat, ds={ds}")
 
                 ds_data_as_bytes = ds.data().to_bytes(32, byteorder="little")
                 packet_data += ds_data_as_bytes[:ds.byte_num()]

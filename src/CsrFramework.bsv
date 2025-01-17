@@ -89,11 +89,11 @@ module mkCsrNode#(
                     end
                 endcase
 
-                $display(
-                    "time=%0t:", $time, toGreen(" mkCsrNode upStreamPort put request [%s]"), debugName,
-                    toBlue(", req="), fshow(req),
-                    toBlue(", matchResult="), fshow(matchResult)
-                );
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkCsrNode upStreamPort put request [%s]"), debugName,
+                //     toBlue(", req="), fshow(req),
+                //     toBlue(", matchResult="), fshow(matchResult)
+                // );
             endmethod
         endinterface
 

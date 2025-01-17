@@ -286,7 +286,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
 
     Count#(Bit#(TAdd#(1, TLog#(NUMERIC_TYPE_EIGHT)))) validCounter <- mkCount(0);
     FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT));
-    FIFOF#(RingbufRawDescriptor)                            inputQ  <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor)                            inputQ  <- mkLFIFOF;
 
     rule forwardInput;
         inputQ.deq;

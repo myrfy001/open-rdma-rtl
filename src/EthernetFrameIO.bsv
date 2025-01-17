@@ -67,10 +67,10 @@ typedef struct {
 module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
-    FIFOF#(IoChannelEthDataStream) ethRawPacketInQ <- mkFIFOF;
-    FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
-    FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkFIFOF;
-    FIFOF#(DataStream) otherRawPacketOutQ <- mkFIFOF;
+    FIFOF#(IoChannelEthDataStream) ethRawPacketInQ <- mkLFIFOF;
+    FIFOF#(DataStream) rdmaRawPacketOutQ <- mkLFIFOF;
+    FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkLFIFOF;
+    FIFOF#(DataStream) otherRawPacketOutQ <- mkLFIFOF;
 
     FIFOF#(DataStream) waitingForRouteQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
     FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkFIFOF;
@@ -84,7 +84,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     // the dst IP filed begins at #30 byte of first beat, so the first beat only has the higher 16 bits
     Reg#(Bool) partialDstIpAddrHigher16BitsMatchReg <- mkRegU;
 
-    FIFOF#(Tuple2#(DataStream, Bool)) ethRawPacketForHandleQ <- mkFIFOF;
+    FIFOF#(Tuple2#(DataStream, Bool)) ethRawPacketForHandleQ <- mkLFIFOF;
 
 
     // Metrics Regs
@@ -408,10 +408,10 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
     Reg#(RdmaMetaAndPayloadExtractorState) stateReg <- mkReg(RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
 
-    FIFOF#(DataStream) ethPipeInQ                   <- mkFIFOF;
-    FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkFIFOF;
-    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkFIFOF;
-    FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkFIFOF;
+    FIFOF#(DataStream) ethPipeInQ                   <- mkLFIFOF;
+    FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkLFIFOF;
+    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkLFIFOF;
+    FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkLFIFOF;
 
     Reg#(RdmaRecvPacketMeta) partialRdmaMetaReg <- mkRegU;
     Reg#(Bool) payloadStreamOutputIsFirstReg <- mkReg(True);

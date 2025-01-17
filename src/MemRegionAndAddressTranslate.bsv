@@ -48,8 +48,8 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     FIFOF#(addrType)   bramReadReqQ <- mkFIFOF;
     FIFOF#(dataType)  bramReadRespQ <- mkFIFOF;
 
-    FIFOF#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkFIFOF;
-    FIFOF#(Bool)                         bramWriteRespQ <- mkFIFOF;
+    FIFOF#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkLFIFOF;
+    FIFOF#(Bool)                         bramWriteRespQ <- mkLFIFOF;
 
 
     rule handleBramReadReq;
