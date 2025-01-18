@@ -6,6 +6,7 @@ import Vector :: *;
 import Clocks :: *;
 
 import ConnectableF :: *;
+import PipeIoAdaptor :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
@@ -95,7 +96,7 @@ interface BsvTopOnlyHardIp;
 
     interface PcieBiDirUserDataStreamMasterPipes                                                rtilepcieStreamMasterIfc;
     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)     rtilepcieStreamSlaveIfcVec;
-    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxUserStream))          ftilemacTxStreamPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxUserStream))        ftilemacTxStreamPipeInVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))         ftilemacRxStreamPipeOutVec;
     
 endinterface
@@ -188,7 +189,7 @@ endmodule
 interface BsvTopWithoutHardIpInstance;
     interface IoChannelMemorySlavePipe dmaSlavePipeIfc;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)   dmaMasterPipeIfcVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)  qpEthDataStreamIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeNrIn)  qpEthDataStreamIfcVec;
 endinterface
 
 
@@ -765,20 +766,20 @@ interface QpMrPgtQpc;
 
     // DMA interfaces
     interface IoChannelMemoryMasterPipe pgtUpdateDmaMasterPipe;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       qpDmaRequestMasterIfcVec;
-    interface IoChannelMemoryMasterPipe                                         simpleNicPacketDmaMasterPipeIfc;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)           qpDmaRequestMasterIfcVec;
+    interface IoChannelMemoryMasterPipe                                             simpleNicPacketDmaMasterPipeIfc;
 
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)  qpEthDataStreamIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem))              wqePipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor))      metaReportDescPipeOutVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeNrIn)  qpEthDataStreamIfcVec;
 
-    interface PipeOut#(RingbufRawDescriptor)                                     simpleNicRxDescPipeOut;
-    interface PipeIn#(RingbufRawDescriptor)                                      simpleNicTxDescPipeIn;
+    interface PipeOut#(RingbufRawDescriptor)                                        simpleNicRxDescPipeOut;
+    interface PipeIn#(RingbufRawDescriptor)                                         simpleNicTxDescPipeIn;
 
-    interface PipeIn#(IndexQP) qpResetReqPipeIn;
+    interface PipeIn#(IndexQP)                                                      qpResetReqPipeIn;
         
-    interface Server#(WriteReqQPC, Bool) qpContextUpdateSrv;
-    interface Server#(RingbufRawDescriptor, Bool) mrAndPgtModifyDescSrv;
+    interface Server#(WriteReqQPC, Bool)                                            qpContextUpdateSrv;
+    interface Server#(RingbufRawDescriptor, Bool)                                   mrAndPgtModifyDescSrv;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
@@ -807,8 +808,8 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
 
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)         qpDmaRequestMasterIfcVecInst    = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)    qpEthDataStreamIfcVecInst       = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)             qpDmaRequestMasterIfcVecInst    = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeNrIn)    qpEthDataStreamIfcVecInst       = newVector;
 
     mkConnection(mrAndPgtUpdater.dmaReadReqPipeOut, pgtUpdateDmaInterfaceConvertor.dmaReadReqPipeIn);
     mkConnection(mrAndPgtUpdater.dmaReadRespPipeIn, pgtUpdateDmaInterfaceConvertor.dmaReadRespPipeOut);    
@@ -827,7 +828,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         // ethernet ifc
         mkConnection(sqVec[idx].packetPipeOut, ethTxStreamArbiterVec[idx].pipeInIfcVec[0]);
         qpEthDataStreamIfcVecInst[idx] = (
-                interface DtldStreamNoMetaBiDirPipes
+                interface IoChannelBiDirStreamNoMetaPipeNrIn
                     interface dataPipeIn = rqVec[idx].ethernetFramePipeIn;
                     interface dataPipeOut = ethTxStreamArbiterVec[idx].pipeOutIfc;
                 endinterface

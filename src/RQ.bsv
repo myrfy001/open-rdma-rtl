@@ -8,6 +8,7 @@ import MIMO :: *;
 
 
 import ConnectableF :: *;
+import PipeIoAdaptor :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
@@ -107,7 +108,7 @@ interface RQ;
     interface Client#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
-    interface PipeIn#(IoChannelEthDataStream) ethernetFramePipeIn;
+    interface PipeInNr#(IoChannelEthDataStream) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 

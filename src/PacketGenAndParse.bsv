@@ -5,6 +5,7 @@ import Clocks :: *;
 
 
 import ConnectableF :: *;
+import PipeIoAdaptor :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
@@ -744,7 +745,7 @@ endmodule
 interface PacketParse;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
 
-    interface PipeIn#(IoChannelEthDataStream)           ethernetFramePipeIn;
+    interface PipeInNr#(IoChannelEthDataStream)       ethernetFramePipeIn;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketMeta)              rdmaPacketMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketTailMeta)          rdmaPacketTailMetaPipeOut;

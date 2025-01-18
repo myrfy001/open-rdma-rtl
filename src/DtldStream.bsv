@@ -57,6 +57,10 @@ interface DtldStreamNoMetaBiDirPipes#(type tData);
     interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
 endinterface
 
+interface DtldStreamNoMetaBiDirPipesNrIn#(type tData);
+    interface PipeInNr#(DtldStreamData#(tData))                 dataPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
+endinterface
 
 instance Connectable#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen), DtldStreamBiDirSlavePipes#(tData, tAddr, tLen));
     module mkConnection#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen) master, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen) slave)(Empty);

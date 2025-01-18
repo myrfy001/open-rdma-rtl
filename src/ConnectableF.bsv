@@ -9,6 +9,10 @@ import Connectable :: *;
 export PipeOut;
 
 export PipeIn(..);
+export PipeInNr(..);
+export PipeInAdapter(..);
+export mkPipeInAdapter;
+export toPipeInNr;
 export GetF(..);
 export PutF(..);
 export ServerF(..);
@@ -33,6 +37,13 @@ export Connectable;
 interface PipeIn#(type tData);
     method Action enq(tData data);
     method Bool notFull;
+endinterface
+
+// Nr means not registered, which directly pass through
+interface PipeInNr#(type tData);
+    method Action firstIn(tData dataIn);
+    method Action notEmptyIn(Bool val);
+    method Bool deqSignalOut;
 endinterface
 
 interface GetF#(type tData);
@@ -175,4 +186,68 @@ endfunction
 
 function PipeIn#(anytype) ugToPipeIn(FIFOF#(anytype) queue);
     return f_UGFIFOF_to_PipeIn(queue);
+endfunction
+
+
+interface PipeInAdapter#(type tData);
+    method tData first;
+    method Action deq;
+    method Bool notEmpty;
+    interface PipeInNr#(tData) pipeInIfc;
+endinterface
+
+
+module mkPipeInAdapter(PipeInAdapter#(tData)) provisos (Bits#(tData, szData));
+
+    Wire#(tData) dataWire <- mkWire;
+    Wire#(Bool)  notEmptyWire <- mkWire;
+    PulseWire deqSignalWire <- mkPulseWire;
+
+    interface PipeInNr pipeInIfc;
+        method Action firstIn(tData dataIn);
+            dataWire <= dataIn;
+        endmethod
+        
+        method Action notEmptyIn(Bool val);
+            notEmptyWire <= val;
+        endmethod
+
+        method Bool deqSignalOut;
+            return deqSignalWire;
+        endmethod
+    endinterface
+
+    method tData first if (notEmptyWire);
+        return dataWire;
+    endmethod
+
+    method Action deq if (notEmptyWire);
+        deqSignalWire.send;
+    endmethod
+
+    method Bool notEmpty;
+        return notEmptyWire;
+    endmethod
+endmodule
+
+instance Connectable#(PipeOut#(t), PipeInNr#(t));
+    module mkConnection#(PipeOut#(t) fo, PipeInNr#(t) fi)(Empty);
+        mkConnection(fo.first, fi.firstIn);
+        mkConnection(fo.notEmpty, fi.notEmptyIn);
+        rule handleDeq;
+            if (fi.deqSignalOut) begin
+                fo.deq;
+            end
+        endrule
+    endmodule
+endinstance
+
+instance Connectable#(PipeInNr#(t), PipeOut#(t));
+    module mkConnection#(PipeInNr#(t) fi, PipeOut#(t) fo)(Empty);
+        mkConnection(fo, fi);
+    endmodule
+endinstance
+
+function PipeInNr#(anytype) toPipeInNr(PipeInAdapter#(anytype) queue);
+    return queue.pipeInIfc;
 endfunction

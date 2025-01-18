@@ -22,12 +22,13 @@ import CsrAddress :: *;
 import CsrFramework :: *;
 
 import ConnectableF :: *;
+import PipeIoAdaptor :: *;
 
 import IoChannels :: *;
 
 interface InputPacketClassifier;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
-    interface PipeIn#(IoChannelEthDataStream)           ethRawPacketPipeIn;
+    interface PipeInNr#(IoChannelEthDataStream)       ethRawPacketPipeIn;
     interface PipeOut#(DataStream)                      rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
@@ -67,7 +68,7 @@ typedef struct {
 module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
-    FIFOF#(IoChannelEthDataStream) ethRawPacketInQ <- mkLFIFOF;
+    PipeInAdapter#(IoChannelEthDataStream) ethRawPacketInQ <- mkPipeInAdapter;
     FIFOF#(DataStream) rdmaRawPacketOutQ <- mkLFIFOF;
     FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkLFIFOF;
     FIFOF#(DataStream) otherRawPacketOutQ <- mkLFIFOF;
@@ -363,7 +364,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endmethod
 
     interface csrUpStreamPort           = csrNode.upStreamPort;
-    interface ethRawPacketPipeIn        = toPipeIn(ethRawPacketInQ);
+    interface ethRawPacketPipeIn        = toPipeInNr(ethRawPacketInQ);
     interface rdmaRawPacketPipeOut      = toPipeOut(rdmaRawPacketOutQ);
     interface rdmaMacIpUdpMetaPipeOut   = toPipeOut(rdmaMacIpUdpMetaOutQ);
     interface otherRawPacketPipeOut     = toPipeOut(otherRawPacketOutQ);

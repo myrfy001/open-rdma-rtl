@@ -14,6 +14,7 @@ import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import PAClib :: *;
 import ConnectableF :: *;
+import PipeIoAdaptor :: *;
 import PrimUtils :: *;
 import PrioritySearchBuffer :: *;
 import AxiBus :: *;
@@ -1116,7 +1117,7 @@ typedef struct {
 
 
 interface FtileMacTxUserInputGearboxStorageAndMetaExtractor;
-    interface PipeIn#(FtileMacTxUserStream)         streamPipeIn;
+    interface PipeInNr#(FtileMacTxUserStream)       streamPipeIn;
     interface PipeOut#(FtileMacTxBufferRange)       packetMetaPipeOut;
 
     interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxBramBufferReadReq))  bramReadReqPipeInVec;
@@ -1125,8 +1126,8 @@ endinterface
 
 // (* synthesize *)
 module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGearboxStorageAndMetaExtractor);
-    FIFOF#(FtileMacTxUserStream)    streamPipeInQueue       <- mkLFIFOF;
-    FIFOF#(FtileMacTxBufferRange)   packetMetaPipeOutQueue  <- mkLFIFOF;
+    PipeInAdapter#(FtileMacTxUserStream)    streamPipeInQueue       <- mkPipeInAdapter;
+    FIFOF#(FtileMacTxBufferRange)           packetMetaPipeOutQueue  <- mkLFIFOF;
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkLFIFOF);
@@ -1229,7 +1230,7 @@ module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGe
         // );
     endrule
 
-    interface streamPipeIn              = toPipeIn(streamPipeInQueue);
+    interface streamPipeIn              = toPipeInNr(streamPipeInQueue);
     interface packetMetaPipeOut         = toPipeOut(packetMetaPipeOutQueue);
     interface bramReadReqPipeInVec      = bramReadReqPipeInVecInst;
     interface bramReadRespPipeOutVec    = bramReadRespPipeOutVecInst;
@@ -2082,7 +2083,7 @@ endmodule
 interface FTileMac;
     interface PipeIn#(FtileMacRxBeat) ftilemacRxPipeIn;
     interface PipeOut#(FtileMacTxBeat) ftilemacTxPipeOut;
-    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxUserStream))   ftilemacTxStreamPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxUserStream)) ftilemacTxStreamPipeInVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVec;
 endinterface
 
@@ -2090,7 +2091,7 @@ endinterface
 (* synthesize *)
 module mkFTileMac(FTileMac);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVecInst = newVector;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(FtileMacTxUserStream))   ftilemacTxStreamPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxUserStream)) ftilemacTxStreamPipeInVecInst = newVector;
 
     let ftileMacRxBeatFork <- mkFtileMacRxBeatFork;
     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FtileMacRxPingPongSingleChannelProcessor) pingPongChannelVec <- replicateM(mkFtileMacRxPingPongSingleChannelProcessor); 

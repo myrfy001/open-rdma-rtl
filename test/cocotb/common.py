@@ -573,6 +573,76 @@ class BluespecPipeIn:
         await self.bsv_enq(data=data)
 
 
+class BluespecPipeInNr:
+    def __init__(self, dut, signal_base_name, clk):
+        self.dut = dut
+        self.clk = clk
+        self.signal_base_name = signal_base_name
+
+        self.bsv_deq_signal_out = BluespecValueMethod(
+            dut, signal_base_name + "_deqSignalOut", clk)
+        self.bsv_first_in = BluespecActionMethod(
+            dut, signal_base_name + "_firstIn", clk)
+        self.bsv_not_empty_in = BluespecActionMethod(
+            dut, signal_base_name + "_notEmptyIn", clk)
+
+    async def deq_signal_out(self):
+        return await self.bsv_deq_signal_out()
+
+    async def first_in(self, data):
+        await self.bsv_first_in(dataIn=data)
+
+    async def not_empty_in(self, data):
+        await self.bsv_not_empty_in(val=data)
+
+
+class BluespecPipeInNrWithQueue:
+    def __init__(self, dut, signal_base_name, clk):
+        self.log = logging.getLogger("cocotb.tb")
+        self.log.setLevel(logging.DEBUG)
+
+        self.dut = dut
+        self.clk = clk
+        self.signal_base_name = signal_base_name
+
+        self._pipe_in_nr = BluespecPipeInNr(dut, signal_base_name, clk)
+        self._queue = deque(maxlen=2)
+        self._deq_event = cocotb.triggers.Event()
+        cocotb.start_soon(self._forward_task())
+
+    async def _forward_task(self):
+        while True:
+
+            deq_signal = await self._pipe_in_nr.deq_signal_out()
+            if deq_signal == 1:
+                self._queue.popleft()
+                self._deq_event.set()
+                self.log.debug(
+                    f"BluespecPipeInNrWithQueue handle deq signal")
+
+            if len(self._queue) > 0:
+                ele = self._queue[0]
+                await self._pipe_in_nr.first_in(ele)
+                await self._pipe_in_nr.not_empty_in(1)
+
+                self.log.debug(
+                    f"BluespecPipeInNrWithQueue forward. ele={ele}")
+
+            else:
+                await self._pipe_in_nr.not_empty_in(0)
+
+            await RisingEdge(self.clk)
+
+    async def not_full(self):
+        return len(self._queue) != self._queue.maxlen
+
+    async def enq(self, data):
+        if len(self._queue) == self._queue.maxlen:
+            self._deq_event.clear()
+            await self._deq_event.wait()
+        self._queue.append(data)
+
+
 class SimplePcieBehaviorModel(object):
     def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None):
         self.dut = dut
@@ -797,7 +867,7 @@ class SimpleEthBehaviorModel(object):
         for idx in range(len(tx_ifc_base_names)):
             self.txChannels.append(BluespecPipeOut(
                 dut, tx_ifc_base_names[idx], self.clock))
-            self.rxChannels.append(BluespecPipeIn(
+            self.rxChannels.append(BluespecPipeInNrWithQueue(
                 dut, rx_ifc_base_names[idx], self.clock))
 
         self.main_rx_queue = Queue()
