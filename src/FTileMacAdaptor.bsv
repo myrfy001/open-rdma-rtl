@@ -9,6 +9,7 @@ import ConfigReg :: *;
 import MIMO :: *;
 import Reserved :: *;
 
+import Settings :: *;
 import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import PAClib :: *;
@@ -19,7 +20,6 @@ import AxiBus :: *;
 import DtldStream :: *;
 
 import StreamShifterG :: *;
-import GearBoxArbiter :: *;
 
 
 typedef 16                                      FTILE_MAC_SEGMENT_CNT;
@@ -59,7 +59,7 @@ typedef Bit#(FTILE_MAC_DATA_SEGMENT_WIDTH)                              FtileMac
 typedef Vector#(FTILE_MAC_SEGMENT_CNT, FtileMacDataSegment)             FtileMacDataBusSegBundle;
 
 
-typedef Bit#(TLog#(GEARBOX_LOGIC_SIDE_CHANNEL_CNT)) DispatchChannelIdx;
+typedef Bit#(TLog#(HARDWARE_QP_CHANNEL_CNT)) DispatchChannelIdx;
 
 typedef struct {
     FtileMacDataBusSegBundle        data;
@@ -573,9 +573,9 @@ module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Count#(PacketBeatSegCnt)) outputChannelBufferUsedSegCounterVec <- replicateM(mkCount(0));
 
     // Pipeline FIFOs and Regs
-    FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) selectedPingPongOutputChannelMetaPipelineQ <- mkFIFOF;
-    FIFOF#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry)) dispatchPacketChunkMetaPipelineQ <- mkFIFOF;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(Bool)) discardOrOutputSignalPipelineQueueVec <- replicateM(mkFIFOF);
+    FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) selectedPingPongOutputChannelMetaPipelineQ <- mkLFIFOF;
+    FIFOF#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, FtileMacRxPacketChunkMetaDispatchPipelineQueueEntry)) dispatchPacketChunkMetaPipelineQ <- mkLFIFOF;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(Bool)) discardOrOutputSignalPipelineQueueVec <- replicateM(mkFIFOF);   // change to LFIFO will block
 
     Reg#(Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, Tuple2#(FtileMacUserLogicChannelIdx, PacketBeatSegCnt)))  bitonicSortPipelineReg <- mkRegU;
 
@@ -1129,7 +1129,7 @@ module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGe
     FIFOF#(FtileMacTxBufferRange)   packetMetaPipeOutQueue  <- mkLFIFOF;
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeIn#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA)) bramReadRespPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(DATA)) bramReadRespPipeOutQueueVec <- replicateM(mkLFIFOF);
@@ -1843,7 +1843,7 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
     FIFOF#(FtileMacTxPingPongChannelOutputEntry) beatPipeOutQueue <- mkLFIFOF;
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacTxBramBufferReadReq))  bramReadReqPipeOutVecInst = newVector;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq))    bramReadReqPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq))    bramReadReqPipeOutQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeIn#(DATA))   bramReadRespPipeInVecInst = newVector;
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(DATA))    bramReadRespPipeInQueueVec <- replicateM(mkLFIFOF);

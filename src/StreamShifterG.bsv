@@ -108,7 +108,7 @@ module mkBiDirectionStreamShifterG(StreamShifterG#(tData)) provisos (
         FShow#(tData),
         FShow#(tBiDirectionStreamShifterPipelineEntry)
     );
-    FIFOF#(tByteNum) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tByteNum) offsetPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeOutQ <- mkLFIFOF;
 
@@ -575,7 +575,7 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
         FShow#(tUniDirectionStreamShifterPipelineEntry),
         FShow#(Tuple2#(tData, tData))
     );
-    FIFOF#(tByteIdx) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tByteIdx) offsetPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) leftShiftPipeQ <- mkLFIFOF;
 
 
@@ -750,7 +750,7 @@ module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
         FShow#(tShiftIntermediateData),
         FShow#(Tuple2#(tData, tData))
     );
-    FIFOF#(tByteIdx) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tByteIdx) offsetPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) rightShiftPipeQ <- mkLFIFOF;
 
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ <- mkLFIFOF;
@@ -999,7 +999,7 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
         FShow#(tBiDirectionStreamShifterPipelineEntry),
         FShow#(Tuple2#(tData, tData))
     );
-    FIFOF#(tByteNum) offsetPipeInQ <- mkFIFOF;
+    FIFOF#(tByteNum) offsetPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeOutQ <- mkLFIFOF;
 

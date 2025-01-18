@@ -84,10 +84,10 @@ endinterface
 (* synthesize *)
 module mkAutoAckGenerator(AutoAckGenerator);
 
-    FIFOF#(IndexQP) resetReqPipeInQueue <- mkFIFOF;
+    FIFOF#(IndexQP) resetReqPipeInQueue <- mkLFIFOF;
 
     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(AutoAckGeneratorReq)) reqPipeInVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(AutoAckGeneratorReq)) reqPipeInQueueVec <- replicateM(mkFIFOF);
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, FIFOF#(AutoAckGeneratorReq)) reqPipeInQueueVec <- replicateM(mkLFIFOF);
 
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream)) ackEthPacketPipeOutVecInst = newVector;
 

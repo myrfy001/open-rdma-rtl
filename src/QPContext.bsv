@@ -27,7 +27,7 @@ module mkQpContext(QpContext);
 
     AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "");
 
-    FIFOF#(Tuple3#(IndexQP, KeyQP, Bool)) pipeQ <- mkFIFOF;
+    FIFOF#(Tuple3#(IndexQP, KeyQP, Bool)) pipeQ <- mkLFIFOF;
 
     rule handleReadReq;
         let req <- qpcQuerySrvInst.getReq;

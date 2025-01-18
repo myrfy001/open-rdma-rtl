@@ -63,7 +63,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
     // Pipeline Queues 
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnInputPipelineQueue <- mkLFIFOF;
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnOutputPipelineQueue <- mkSizedFIFOF(5);
-    FIFOF#(Bit#(3)) channelQpnEqualMapPipelineQueue <- mkFIFOF;
+    FIFOF#(Bit#(3)) channelQpnEqualMapPipelineQueue <- mkLFIFOF;
 
     Vector#(GET_MAX_PSN_PIPELINE_STAGE_CNT, FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)))) maxPsnBroadcastPipelineQueueVec <- replicateM(mkLFIFOF);
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState))) reorderedFourChannelReqWithMaxPsnPipelineQueue <- mkLFIFOF;
@@ -642,13 +642,12 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageStageThreeToFourPipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset)))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageStageFourToFivePipelineEntry#(tRowAddr, tData, tBoundary, tWideShiftOffset))) stageFourToFivePipelineQueueVec <- replicateM(mkLFIFOF);
 
-    FIFOF#(void) readOnlyRespPipelineQueue <- mkFIFOF;
+    FIFOF#(void) readOnlyRespPipelineQueue <- mkLFIFOF;
 
     function Integer getSelfIdx(Integer idx) = idx;
     function Integer getOtherIdx(Integer idx) = 1 - idx;
 
-    FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
-    // FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
+    FIFOF#(tRowAddr) resetReqPipeInQ <- mkLFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
     Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);
@@ -1406,11 +1405,11 @@ module mkAtomicUpdateStorage#(
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVecInst = newVector;
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInQueueVec <- replicateM(mkFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkLFIFOF);
 
-    FIFOF#(tRowAddr) readOnlyReqPipeInQueue    <- mkFIFOF;
-    FIFOF#(tData)    readOnlyRespPipeOutQueue  <- mkFIFOF;
+    FIFOF#(tRowAddr) readOnlyReqPipeInQueue    <- mkLFIFOF;
+    FIFOF#(tData)    readOnlyRespPipeOutQueue  <- mkLFIFOF;
 
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_THREE, AutoInferBram#(tRowAddr, AtomicUpdateStorageEntry#(tData)))) storage = newVector;
@@ -1430,13 +1429,12 @@ module mkAtomicUpdateStorage#(
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageStageOneToTwoPipelineEntry#(tRowAddr, tReq)))) stageOneToTwoPipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageStageTwoToThreePipelineEntry#(tRowAddr, tData, tReq)))) stageTwoToThreePipelineQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(AtomicUpdateStorageStageThreeToFourPipelineEntry#(tRowAddr, tData))) stageThreeToFourPipelineQueueVec <- replicateM(mkLFIFOF);
-    FIFOF#(void) readOnlyRespPipelineQueue <- mkFIFOF;
+    FIFOF#(void) readOnlyRespPipelineQueue <- mkLFIFOF;
 
     function Integer getSelfIdx(Integer idx) = idx;
     function Integer getOtherIdx(Integer idx) = 1 - idx;
 
-    FIFOF#(tRowAddr) resetReqPipeInQ <- mkFIFOF;
-    // FIFOF#(Bit#(0)) resetRespPipeOutQ <- mkFIFOF;
+    FIFOF#(tRowAddr) resetReqPipeInQ <- mkLFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, Reg#(Maybe#(tRowAddr))) curResetReqRegVec <- replicateM(mkConfigReg(tagged Invalid));
     Reg#(Bool) hasPendingResetRequestReg <- mkReg(False);

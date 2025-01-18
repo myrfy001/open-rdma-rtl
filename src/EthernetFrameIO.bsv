@@ -73,7 +73,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     FIFOF#(DataStream) otherRawPacketOutQ <- mkLFIFOF;
 
     FIFOF#(DataStream) waitingForRouteQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
-    FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkFIFOF;
+    FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkLFIFOF;
 
     Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntryReg <- mkRegU;
 
@@ -974,7 +974,7 @@ module mkRingbufStorage#(String name, Bool checkOverflow)(RingbufStorage#(t_data
     Reg#(t_idx) idxGeneratorReg <- mkReg(unpack(0));
     Reg#(t_idx) lastConsumeIdxReg <- mkReg(unpack(0));
 
-    FIFOF#(t_idx) allocedIdxQ <- mkFIFOF;
+    FIFOF#(t_idx) allocedIdxQ <- mkLFIFOF;
 
 
     rule handleAllocIdx;

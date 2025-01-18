@@ -301,7 +301,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     FIFOF#(RingbufDmaWriteReq)      dmaWriteAddrQ   <- mkLFIFOF;
     FIFOF#(DataStream)              dmaWriteDataQ   <- mkLFIFOF;
     FIFOF#(Bool)                    dmaWriteRespQ   <- mkLFIFOF;
-    FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkFIFOF;
+    FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkLFIFOF;
 
     Reg#(Bit#(NUMERIC_TYPE_TWO))       batchDelayCounterReg        <- mkReg(0);
     Reg#(Bool)                         isSendingDescBodyReg        <- mkReg(False);

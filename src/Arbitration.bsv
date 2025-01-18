@@ -30,7 +30,7 @@ module mkTwoWayFixedPriorityStreamMux#(
     Reg#(Bool) isForwardingCh0Reg <- mkReg(False);
 
 
-    FIFOF#(Tuple2#(Bool, reqType))   reqQ <- mkFIFOF;
+    FIFOF#(Tuple2#(Bool, reqType))   reqQ <- mkLFIFOF;
 
     rule handleIdle if (isIdleReg);
         let hasReq = inVec[0].notEmpty || inVec[1].notEmpty;
@@ -97,11 +97,10 @@ module mkClientArbiter#(
     Reg#(Bool) canSubmitArbitReqReg <- mkReg(True);
 
     Vector#(portSz, FIFOF#(reqType)) clientReqFifoVec <- replicateM(mkLFIFOF);
-    // Vector#(portSz, FIFOF#(respType)) clientRespFifoVec <- replicateM(mkFIFOF);
 
     // A trick here. This fifo's size must be small, and it should be smaller than portSz, or it will
     // queue too many granted requests ahead of time (mkArbiter will do arbit every clock cycle)
-    FIFOF#(Bit#(TLog#(portSz))) grantReqKeepOrderQ <- mkFIFOF;
+    FIFOF#(Bit#(TLog#(portSz))) grantReqKeepOrderQ <- mkLFIFOF;
     // This Fifo can be larger since receive response may take some time and there can be many outstanding requests.
     FIFOF#(Bit#(TLog#(portSz))) grantRespKeepOrderQ <- mkSizedFIFOF(keepOrderQueueLen);
 

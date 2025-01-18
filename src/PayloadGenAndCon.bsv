@@ -97,8 +97,7 @@ endmodule
 (* synthesize *)
 module mkPayloadGen(PayloadGen);
 
-    FIFOF#(PayloadGenReq) genReqPipeInQ <- mkFIFOF;
-    // FIFOF#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOutQ <- mkFIFOF;
+    FIFOF#(PayloadGenReq) genReqPipeInQ <- mkLFIFOF;
 
     FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkLFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkLFIFOF;
@@ -123,8 +122,8 @@ module mkPayloadGen(PayloadGen);
 
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkFIFOF;
-    FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkLFIFOF;
+    FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkLFIFOF;
 
     rule handleInReq;
         let req = genReqPipeInQ.first;
@@ -206,9 +205,9 @@ endmodule
 (* synthesize *)
 module mkPayloadCon(PayloadCon);
 
-    FIFOF#(PayloadConReq) conReqPipeInQ <- mkFIFOF;
+    FIFOF#(PayloadConReq) conReqPipeInQ <- mkLFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkLFIFOF;
-    FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;
+    FIFOF#(Bool) conRespPipeOutQ <- mkLFIFOF;
 
     FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkLFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkLFIFOF;
@@ -219,9 +218,9 @@ module mkPayloadCon(PayloadCon);
 
     DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
 
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkFIFOF;
-    FIFOF#(Length) issueDmaWritePipelineQ <- mkFIFOF;
-    FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkLFIFOF;
+    FIFOF#(Length) issueDmaWritePipelineQ <- mkLFIFOF;
+    FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkLFIFOF;
 
     rule handleInReq;
         let req = conReqPipeInQ.first;

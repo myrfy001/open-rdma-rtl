@@ -45,8 +45,8 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
 
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
 
-    FIFOF#(addrType)   bramReadReqQ <- mkFIFOF;
-    FIFOF#(dataType)  bramReadRespQ <- mkFIFOF;
+    FIFOF#(addrType)   bramReadReqQ <- mkLFIFOF;
+    FIFOF#(dataType)  bramReadRespQ <- mkLFIFOF;
 
     FIFOF#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkLFIFOF;
     FIFOF#(Bool)                         bramWriteRespQ <- mkLFIFOF;
