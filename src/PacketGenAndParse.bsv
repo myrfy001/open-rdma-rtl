@@ -760,7 +760,7 @@ module mkPacketParse(PacketParse);
     InputPacketClassifier inputPacketClassifier <- mkInputPacketClassifier;
     RdmaMetaAndPayloadExtractor rdmaHeaderExtractor <- mkRdmaMetaAndPayloadExtractor;
 
-    mkConnection(inputPacketClassifier.rdmaRawPacketPipeOut, rdmaHeaderExtractor.ethPipeIn);
+    mkConnection(inputPacketClassifier.rdmaRawPacketPipeOut, rdmaHeaderExtractor.ethPipeIn);  // already Nr
 
     interface csrUpStreamPort           = inputPacketClassifier.csrUpStreamPort;
     interface ethernetFramePipeIn       = inputPacketClassifier.ethRawPacketPipeIn;

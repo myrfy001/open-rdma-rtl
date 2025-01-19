@@ -69,7 +69,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
     PipeInAdapter#(IoChannelEthDataStream) ethRawPacketInQ <- mkPipeInAdapter;
-    FIFOF#(DataStream) rdmaRawPacketOutQ <- mkLFIFOF;
+    FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
     FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkLFIFOF;
     FIFOF#(DataStream) otherRawPacketOutQ <- mkLFIFOF;
 
@@ -391,7 +391,7 @@ typedef Bit#(TMul#(BYTE_WIDTH, RDMA_FIXED_HEADER_BYTE_NUM)) RdmaFixedHeaderBuffe
 typedef Bit#(TSub#(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT, SizeOf#(BTH))) RdmaExtendHeaderFragmentInSecondBeat;
 
 interface RdmaMetaAndPayloadExtractor;
-    interface PipeIn#(DataStream) ethPipeIn;
+    interface PipeInNr#(DataStream) ethPipeIn;
     interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOut;
     interface PipeOut#(DataStream) rdmaPayloadPipeOut;
@@ -409,10 +409,10 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
     Reg#(RdmaMetaAndPayloadExtractorState) stateReg <- mkReg(RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
 
-    FIFOF#(DataStream) ethPipeInQ                   <- mkLFIFOF;
-    FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkLFIFOF;
-    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkLFIFOF;
-    FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkLFIFOF;
+    PipeInAdapter#(DataStream) ethPipeInQ                   <- mkPipeInAdapter;
+    FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkFIFOF;
+    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkFIFOF;
+    FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkFIFOF;
 
     Reg#(RdmaRecvPacketMeta) partialRdmaMetaReg <- mkRegU;
     Reg#(Bool) payloadStreamOutputIsFirstReg <- mkReg(True);
@@ -539,7 +539,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         // );
     endrule
 
-    interface ethPipeIn                     = toPipeIn(ethPipeInQ);
+    interface ethPipeIn                     = toPipeInNr(ethPipeInQ);
     interface rdmaPacketMetaPipeOut         = toPipeOut(rdmaPacketMetaPipeOutQ);
     interface rdmaPacketTailMetaPipeOut     = toPipeOut(rdmaPacketTailMetaPipeOutQ);
     interface rdmaPayloadPipeOut            = toPipeOut(rdmaPayloadPipeOutQ);
