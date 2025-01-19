@@ -130,7 +130,7 @@ endinterface
 module mkFTileMacAdaptor(FTileMacAdaptor);
 
 
-    FIFOF#(FtileMacRxBeat) ftileMacRxPipeOutQueue <- mkUGLFIFOF;
+    FIFOF#(FtileMacRxBeat) ftileMacRxPipeOutQueue <- mkUGFIFOF;
     FIFOF#(FtileMacTxBeat) ftileMacTxPipeInQueue <- mkUGLFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
@@ -474,7 +474,7 @@ module mkFtileMacRxBeatFork(FtileMacRxBeatFork);
             PipeOut#(FtileMacRxPingPongSingleChannelProcessorInputMeta))    rxPingPongChannelMetaPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
             FIFOF#(FtileMacRxPingPongSingleChannelProcessorInputMeta))      rxPingPongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
-    FIFOF#(FtileMacRxBramBufferWriteReq)                                    rxBramWriteReqPipeOutQueue          <- mkLFIFOF;
+    FIFOF#(FtileMacRxBramBufferWriteReq)                                    rxBramWriteReqPipeOutQueue          <- mkFIFOF;
 
     Reg#(FtileMacRxBramBufferAddr) addrPtrReg <- mkReg(0);
 
@@ -2054,7 +2054,7 @@ endinterface
 module mkFtileMacTxPingPongJoin(FtileMacTxPingPongJoin);
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInAdapter#(FtileMacTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkPipeInAdapter);
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(FtileMacTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
-    FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue <- mkLFIFOF;
+    FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
         pingpongBeatPipeInVecInst[idx] = toPipeInNr(pingpongBeatPipeInQueueVec[idx]);

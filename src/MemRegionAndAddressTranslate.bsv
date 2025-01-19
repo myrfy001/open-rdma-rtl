@@ -455,7 +455,7 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
     FIFOF#(RingbufRawDescriptor) reqQ <- mkLFIFOF;
     FIFOF#(Bool) respQ <- mkLFIFOF;
 
-    FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkLFIFOF;
+    FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkFIFOF;
     FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkLFIFOF;
 
     QueuedClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClient("mrModifyCltInst");
@@ -615,13 +615,13 @@ interface PgtUpdateDmaInterfaceConvertor;
 endinterface
 
 module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
-    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkFIFOF;
 
     FIFOF#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkLFIFOF;
-    FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkLFIFOF;
+    FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
 
     rule forwardReadReq;
         let req = dmaReadReqPipeInQ.first;

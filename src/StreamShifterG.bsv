@@ -110,7 +110,7 @@ module mkBiDirectionStreamShifterG(StreamShifterG#(tData)) provisos (
     );
     FIFOF#(tByteNum) offsetPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeInQ <- mkLFIFOF;
-    FIFOF#(tDataStream) streamPipeOutQ <- mkLFIFOF;
+    FIFOF#(tDataStream) streamPipeOutQ <- mkFIFOF;
 
 
     FIFOF#(tBiDirectionStreamShifterPipelineEntry) leftShiftPipeQ <- mkLFIFOF;
@@ -1001,7 +1001,7 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
     );
     FIFOF#(tByteNum) offsetPipeInQ <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeInQ <- mkLFIFOF;
-    FIFOF#(tDataStream) streamPipeOutQ <- mkLFIFOF;
+    FIFOF#(tDataStream) streamPipeOutQ <- mkFIFOF;
 
     FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);
 

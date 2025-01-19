@@ -99,8 +99,8 @@ module mkPayloadGen(PayloadGen);
 
     FIFOF#(PayloadGenReq) genReqPipeInQ <- mkLFIFOF;
 
-    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
 
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadGen addrTranslateCltInst");
@@ -207,10 +207,10 @@ module mkPayloadCon(PayloadCon);
 
     FIFOF#(PayloadConReq) conReqPipeInQ <- mkLFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkLFIFOF;
-    FIFOF#(Bool) conRespPipeOutQ <- mkLFIFOF;
+    FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;
 
-    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkFIFOF;
 
 
     QueuedClient#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClient("mkPayloadCon addrTranslateCltInst");
