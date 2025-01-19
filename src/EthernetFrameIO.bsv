@@ -70,8 +70,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
     PipeInAdapter#(IoChannelEthDataStream) ethRawPacketInQ <- mkPipeInAdapter;
     FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
-    FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkLFIFOF;
-    FIFOF#(DataStream) otherRawPacketOutQ <- mkLFIFOF;
+    FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkFIFOF;
+    FIFOF#(DataStream) otherRawPacketOutQ <- mkFIFOF;
 
     FIFOF#(DataStream) waitingForRouteQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
     FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkLFIFOF;
@@ -563,7 +563,7 @@ module mkIpHdrCheckSumStream#(
 
     FIFOF#(Vector#(firstStageOutNum, Bit#(firstStageOutWidth))) firstStageOutBuf <- mkLFIFOF;
     FIFOF#(Vector#(secondStageOutNum, Bit#(secondStageOutWidth))) secondStageOutBuf <- mkLFIFOF;
-    FIFOF#(IpCheckSum) ipCheckSumOutBuf <- mkLFIFOF;
+    FIFOF#(IpCheckSum) ipCheckSumOutBuf <- mkFIFOF;
 
     rule firstStageAdder;
         let ipHeader = ipHeaderStream.first;
@@ -670,9 +670,9 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkLFIFOF;
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkLFIFOF;
     PipeInAdapter#(DataStream) rdmaPayloadPipeInQ <- mkPipeInAdapter;
-    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkLFIFOF;
+    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
 
-    FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkLFIFOF;
+    FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
 
     // Pipeline FIFOs and Regs
     FIFOF#(IpHeaderChecksumCalcPipelineEntry) ipHeaderChecksumCalcPipelineQ <- mkSizedFIFOF(3);

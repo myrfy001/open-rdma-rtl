@@ -39,7 +39,7 @@ endinterface
 (* synthesize *)
 module mkWorkQueueDescParser(WorkQueueDescParser);
 
-    FIFOF#(WorkQueueElem) workReqPipeOutQ <- mkLFIFOF;
+    FIFOF#(WorkQueueElem) workReqPipeOutQ <- mkFIFOF;
 
     RingbufDescriptorReadProxy#(SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) sqDescReadProxy <- mkRingbufDescriptorReadProxy;
     
@@ -113,9 +113,9 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst");
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
 
-    FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkLFIFOF;
+    FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;
     FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkLFIFOF;
-    FIFOF#(IndexQP)              qpResetReqPipeOutQ                                         <- mkLFIFOF;
+    FIFOF#(IndexQP)              qpResetReqPipeOutQ                                         <- mkFIFOF;
 
 
     RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;
@@ -251,7 +251,7 @@ module mkDescriptorMux(DescriptorMux);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkLFIFOF);
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
 
-    FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkLFIFOF;
+    FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         descPipeInVecInst[idx] = toPipeIn(descPipeInQueueVec[idx]);

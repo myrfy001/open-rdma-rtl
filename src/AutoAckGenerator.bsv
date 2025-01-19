@@ -92,7 +92,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream)) ackEthPacketPipeOutVecInst = newVector;
 
     Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
-    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkFIFOF);
 
     Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
 
