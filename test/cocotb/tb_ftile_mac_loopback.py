@@ -17,7 +17,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256
+from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BluespecPipeInNrWithQueue
 
 
 class TB(object):
@@ -33,7 +33,7 @@ class TB(object):
         self.txChannels = []
         self.rxChannels = []
         for idx in range(4):
-            self.txChannels.append(BluespecPipeIn(
+            self.txChannels.append(BluespecPipeInNrWithQueue(
                 dut, f"ftilemacTxStreamPipeInVec_{idx}", self.clock))
             self.rxChannels.append(BluespecPipeOut(
                 dut, f"ftilemacRxStreamPipeOutVec_{idx}", self.clock))

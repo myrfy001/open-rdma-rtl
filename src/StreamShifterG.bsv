@@ -121,7 +121,7 @@ module mkBiDirectionStreamShifterG(StreamShifterG#(tData)) provisos (
     FIFOF#(tDataStream) leftShiftResultQ <- mkLFIFOF;
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ <- mkLFIFOF;
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ2 <- mkLFIFOF;
-    FIFOF#(tDataStream) rightShiftResultQ <- mkLFIFOF;
+    FIFOF#(tDataStream) rightShiftResultQ <- mkFIFOF;
 
     FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);
 
@@ -581,7 +581,7 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
 
     FIFOF#(tShiftIntermediateData) doLeftShiftPipeQ <- mkLFIFOF;
     FIFOF#(tShiftIntermediateData) doLeftShiftPipeQ2 <- mkLFIFOF;
-    FIFOF#(tDataStream) leftShiftResultQ <- mkLFIFOF;
+    FIFOF#(tDataStream) leftShiftResultQ <- mkFIFOF;
 
 
     Reg#(tUniDirectionStreamShifterPipelineEntry) leftShiftPrevDataReg <- mkRegU;
@@ -755,7 +755,7 @@ module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
 
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ <- mkLFIFOF;
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ2 <- mkLFIFOF;
-    FIFOF#(tDataStream) rightShiftResultQ <- mkLFIFOF;
+    FIFOF#(tDataStream) rightShiftResultQ <- mkFIFOF;
 
 
     Reg#(tUniDirectionStreamShifterPipelineEntry) rightShiftPrevDataReg <- mkRegU;

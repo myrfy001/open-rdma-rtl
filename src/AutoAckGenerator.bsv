@@ -96,6 +96,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
 
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) psnMergeAndStorage_reqPipeInVec = newVector;
+
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         ackEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut; 
     end
@@ -161,8 +163,9 @@ module mkAutoAckGenerator(AutoAckGenerator);
         curTimeReg <= curTimeReg + 1;
     endrule
 
-    // TODO: maybe we can remove this rule
+
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
+        psnMergeAndStorage_reqPipeInVec[idx] <- mkPipeInNrToPipeIn(psnMergeAndStorage.reqPipeInVec[idx], 2);
         rule forwardInputReqToPsnPreMerge;
             let req = reqPipeInQueueVec[idx].first;
             reqPipeInQueueVec[idx].deq;
@@ -171,7 +174,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 psn: req.psn,
                 qpn: req.qpn
             };
-            psnMergeAndStorage.reqPipeInVec[idx].enq(preMergeReq);
+            psnMergeAndStorage_reqPipeInVec[idx].enq(preMergeReq);
 
             // $display(
             //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnPreMerge"),

@@ -456,7 +456,7 @@ module mkPacketGen(PacketGen);
     FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkLFIFOF;
 
     EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator;
-    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);
+    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);   // already Nr
 
     Reg#(PSN) psnReg <- mkRegU;
 

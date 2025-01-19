@@ -602,7 +602,7 @@ endmodule
 interface EthernetPacketGenerator;
     interface PipeIn#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
     interface PipeIn#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
-    interface PipeIn#(DataStream) rdmaPayloadPipeIn;
+    interface PipeInNr#(DataStream) rdmaPayloadPipeIn;
     interface PipeOut#(IoChannelEthDataStream) ethernetPacketPipeOut;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
@@ -669,7 +669,7 @@ typedef struct {
 module mkEthernetPacketGenerator(EthernetPacketGenerator);
     FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkLFIFOF;
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkLFIFOF;
-    FIFOF#(DataStream) rdmaPayloadPipeInQ <- mkLFIFOF;
+    PipeInAdapter#(DataStream) rdmaPayloadPipeInQ <- mkPipeInAdapter;
     FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkLFIFOF;
 
     FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkLFIFOF;
@@ -944,7 +944,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
     interface macIpUdpMetaPipeIn    = toPipeIn(macIpUdpMetaPipeInQ);
     interface rdmaPacketMetaPipeIn  = toPipeIn(rdmaPacketMetaPipeInQ);
-    interface rdmaPayloadPipeIn     = toPipeIn(rdmaPayloadPipeInQ);
+    interface rdmaPayloadPipeIn     = toPipeInNr(rdmaPayloadPipeInQ);
     interface ethernetPacketPipeOut = toPipeOut(ethernetPacketPipeOutQ);
 endmodule
 

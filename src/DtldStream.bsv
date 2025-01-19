@@ -27,30 +27,61 @@ interface DtldStreamMasterWritePipes#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamData#(tData))                  writeDataPipeOut;
 endinterface
 
+
+
 interface DtldStreamMasterReadPipes#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
     interface PipeIn#(DtldStreamData#(tData))                   readDataPipeIn;
 endinterface
+interface DtldStreamMasterReadPipesNrIn#(type tData, type tAddr, type tLen);
+    interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
+    interface PipeInNr#(DtldStreamData#(tData))                 readDataPipeIn;
+endinterface
+
+
 
 interface DtldStreamBiDirMasterPipes#(type tData, type tAddr, type tLen);
     interface DtldStreamMasterWritePipes#(tData, tAddr, tLen)  writePipeIfc;
     interface DtldStreamMasterReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
+interface DtldStreamBiDirMasterPipesNrIn#(type tData, type tAddr, type tLen);
+    interface DtldStreamMasterWritePipes#(tData, tAddr, tLen)  writePipeIfc;
+    interface DtldStreamMasterReadPipesNrIn#(tData, tAddr, tLen)   readPipeIfc;
+endinterface
+
 
 interface DtldStreamSlaveWritePipes#(type tData, type tAddr, type tLen);
     interface PipeIn#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
     interface PipeIn#(DtldStreamData#(tData))                   writeDataPipeIn;
+endinterface
+interface DtldStreamSlaveWritePipesNrIn#(type tData, type tAddr, type tLen);
+    interface PipeInNr#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
+    interface PipeInNr#(DtldStreamData#(tData))                   writeDataPipeIn;
 endinterface
 
 interface DtldStreamSlaveReadPipes#(type tData, type tAddr, type tLen);
     interface PipeIn#(DtldStreamMemAccessMeta#(tAddr, tLen))     readMetaPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                   readDataPipeOut;
 endinterface
+interface DtldStreamSlaveReadPipesNrIn#(type tData, type tAddr, type tLen);
+    interface PipeInNr#(DtldStreamMemAccessMeta#(tAddr, tLen))      readMetaPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                      readDataPipeOut;
+endinterface
 
 interface DtldStreamBiDirSlavePipes#(type tData, type tAddr, type tLen);
     interface DtldStreamSlaveWritePipes#(tData, tAddr, tLen)  writePipeIfc;
     interface DtldStreamSlaveReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
+interface DtldStreamBiDirSlavePipesNrIn#(type tData, type tAddr, type tLen);
+    interface DtldStreamSlaveWritePipesNrIn#(tData, tAddr, tLen)  writePipeIfc;
+    interface DtldStreamSlaveReadPipesNrIn#(tData, tAddr, tLen)   readPipeIfc;
+endinterface
+
+
+
+
+
+
 
 interface DtldStreamNoMetaBiDirPipes#(type tData);
     interface PipeIn#(DtldStreamData#(tData))                   dataPipeIn;
