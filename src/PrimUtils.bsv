@@ -586,7 +586,7 @@ module mkCountCF#(anytype resetVal)(CountCF#(anytype)) provisos(
 endmodule
 
 module mkFixPriorityTwoInputArbiterPipeOut#(PipeOut#(tData) highPriChannel, PipeOut#(tData) lowPriChannel)(PipeOut#(tData)) provisos (Bits#(tData, szData));
-    FIFOF#(tData) outQ <- mkLFIFOF;
+    FIFOF#(tData) outQ <- mkFIFOF;
 
     rule doArbit;
         if (highPriChannel.notEmpty) begin

@@ -57,7 +57,7 @@ typedef TAdd#(1, CPSN_CHECKER_CHANNEL_NUM) GET_MAX_PSN_PIPELINE_STAGE_CNT;
 module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInNr#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVecInst = newVector;
     Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInAdapter#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkPipeInAdapter);
-    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkLFIFOF;
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkFIFOF;
 
 
     // Pipeline Queues 
@@ -612,10 +612,10 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVecInst = newVector;
 
     Vector#(NUMERIC_TYPE_TWO, PipeInAdapter#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkPipeInAdapter);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
     FIFOF#(tRowAddr)                                        readOnlyReqPipeInQueue <- mkLFIFOF;
-    FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkLFIFOF;
+    FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_THREE, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)))) storage = newVector;
     storage[0][0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
@@ -1210,7 +1210,6 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     interface readOnlyRespPipeOut   = toPipeOut(readOnlyRespPipeOutQueue);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
-    // interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule
 
 
@@ -1408,10 +1407,10 @@ module mkAtomicUpdateStorage#(
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutVecInst = newVector;
 
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateReq#(tRowAddr, tReq)))) reqPipeInQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(AtomicUpdateStorageUpdateResp#(tRowAddr, tData)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
     FIFOF#(tRowAddr) readOnlyReqPipeInQueue    <- mkLFIFOF;
-    FIFOF#(tData)    readOnlyRespPipeOutQueue  <- mkLFIFOF;
+    FIFOF#(tData)    readOnlyRespPipeOutQueue  <- mkFIFOF;
 
 
     Vector#(NUMERIC_TYPE_TWO, Vector#(NUMERIC_TYPE_THREE, AutoInferBram#(tRowAddr, AtomicUpdateStorageEntry#(tData)))) storage = newVector;
@@ -1698,5 +1697,4 @@ module mkAtomicUpdateStorage#(
     interface readOnlyRespPipeOut   = toPipeOut(readOnlyRespPipeOutQueue);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQ);
-    // interface resetRespPipeOut = toPipeOut(resetRespPipeOutQ);
 endmodule

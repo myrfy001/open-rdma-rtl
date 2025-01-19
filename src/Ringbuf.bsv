@@ -146,7 +146,7 @@ module mkRingbufH2c(RingbufNumber qIdx, RingbufH2c#(szPtrIdx) ifc) provisos(
     );
 
     FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT));
-    FIFOF#(RingbufRawDescriptor) outputQ <- mkLFIFOF;
+    FIFOF#(RingbufRawDescriptor) outputQ <- mkFIFOF;
 
     mkConnection(toGet(bufQ), toPut(outputQ));
     
@@ -154,7 +154,7 @@ module mkRingbufH2c(RingbufNumber qIdx, RingbufH2c#(szPtrIdx) ifc) provisos(
     Reg#(tPtrWithGuard) headReg[2] <- mkCReg(2, unpack(0));
     Reg#(tPtrWithGuard) tailReg[2] <- mkCReg(2, unpack(0));
     Reg#(tPtrWithGuard) tailShadowReg <- mkConfigReg(unpack(0));
-    FIFOF#(RingbufDmaReadReq) dmaReqQ <- mkLFIFOF;
+    FIFOF#(RingbufDmaReadReq) dmaReqQ <- mkFIFOF;
     FIFOF#(RingbufDmaReadResp) dmaRespQ <- mkLFIFOF;
 
     Reg#(Bool) isWaitingDmaRespReg <- mkReg(False);
@@ -298,8 +298,8 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     Reg#(tPtrWithGuard)    headReg[2]      <- mkCReg(2, unpack(0));
     Reg#(tPtrWithGuard)    tailReg[2]      <- mkCReg(2, unpack(0));
     Reg#(tPtrWithGuard)    headShadowReg   <- mkConfigReg(unpack(0));
-    FIFOF#(RingbufDmaWriteReq)      dmaWriteAddrQ   <- mkLFIFOF;
-    FIFOF#(DataStream)              dmaWriteDataQ   <- mkLFIFOF;
+    FIFOF#(RingbufDmaWriteReq)      dmaWriteAddrQ   <- mkFIFOF;
+    FIFOF#(DataStream)              dmaWriteDataQ   <- mkFIFOF;
     FIFOF#(Bool)                    dmaWriteRespQ   <- mkLFIFOF;
     FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkLFIFOF;
 
@@ -441,15 +441,15 @@ endinterface
 (* synthesize *)
 module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
     FIFOF#(RingbufDmaReadReq)   dmaReadReqPipeInQ       <- mkLFIFOF;
-    FIFOF#(RingbufDmaReadResp)  dmaReadRespPipeOutQ     <- mkLFIFOF;
+    FIFOF#(RingbufDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
     FIFOF#(RingbufDmaWriteReq)  dmaWriteReqPipeInQ      <- mkLFIFOF;
     FIFOF#(DataStream)          dmaWriteDataPipeInQ     <- mkLFIFOF;
-    FIFOF#(Bool)                dmaWriteRespPipeOutQ    <- mkLFIFOF;
+    FIFOF#(Bool)                dmaWriteRespPipeOutQ    <- mkFIFOF;
 
-    FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
 
     rule forwardWriteAddr;
         let req = dmaWriteReqPipeInQ.first;
@@ -547,7 +547,7 @@ endinterface
 
 module mkRingbufDescriptorReadProxy(RingbufDescriptorReadProxy#(n_desc));
     FIFOF#(RingbufRawDescriptor) ringbufQ <- mkLFIFOF;
-    FIFOF#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragQ <- mkLFIFOF;
+    FIFOF#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragQ <- mkFIFOF;
 
     Vector#(n_desc, Reg#(RingbufRawDescriptor)) segBuf <- replicateM(mkRegU);
     Reg#(DescriptorSegmentIndex) curSegCntReg <- mkReg(0);
@@ -585,7 +585,7 @@ endmodule
 
 
 module mkRingbufDescriptorWriteProxy(RingbufDescriptorWriteProxy#(n_desc));
-    FIFOF#(RingbufRawDescriptor) ringbufQ <- mkLFIFOF;
+    FIFOF#(RingbufRawDescriptor) ringbufQ <- mkFIFOF;
     FIFOF#(Tuple2#(Vector#(n_desc, RingbufRawDescriptor), DescriptorSegmentIndex)) descFragQ <- mkLFIFOF;
 
     Vector#(n_desc, Reg#(RingbufRawDescriptor)) segBuf <- replicateM(mkRegU);

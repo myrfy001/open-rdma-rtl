@@ -127,9 +127,9 @@ endinterface
 (* synthesize *)
 module mkRQ(RQ);
 
-    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkLFIFOF;
-    FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkLFIFOF;
-    FIFOF#(CnpPacketGenReq)         genCnpReqPipeOutQueue       <- mkLFIFOF;
+    FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkFIFOF;
+    FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkFIFOF;
+    FIFOF#(CnpPacketGenReq)         genCnpReqPipeOutQueue       <- mkFIFOF;
     
     PacketParse packetParser <- mkPacketParse;
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
@@ -143,7 +143,7 @@ module mkRQ(RQ);
 
     // invalid request payload filter related
     FIFOF#(Bool) filterCmdQ <-  mkSizedFIFOF(4);
-    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkLFIFOF;
+    FIFOF#(DataStream) filteredDataStreamForConsumeQ <- mkFIFOF;
 
     let mimoCfg = MIMOConfiguration {
         unguarded: False,
