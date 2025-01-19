@@ -42,7 +42,7 @@ typedef Bit#(PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST_WIDTH)         AlignBlo
 
 interface PayloadGen;
     interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
-    interface PipeIn#(PayloadGenReq) genReqPipeIn;
+    interface PipeInNr#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
     interface IoChannelMemoryReadMasterPipe dmaReadMasterPipe;
@@ -62,7 +62,7 @@ endinterface
 
 interface PayloadGenAndCon;
     interface Client#(PgtAddrTranslateReq, ADDR) genAddrTranslateClt;
-    interface PipeIn#(PayloadGenReq) genReqPipeIn;
+    interface PipeInNr#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
     interface Client#(PgtAddrTranslateReq, ADDR) conAddrTranslateClt;
@@ -97,7 +97,7 @@ endmodule
 (* synthesize *)
 module mkPayloadGen(PayloadGen);
 
-    FIFOF#(PayloadGenReq) genReqPipeInQ <- mkLFIFOF;
+    PipeInAdapter#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapter;
 
     FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
@@ -191,7 +191,7 @@ module mkPayloadGen(PayloadGen);
     endrule
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
-    interface genReqPipeIn = toPipeIn(genReqPipeInQ);
+    interface genReqPipeIn = toPipeInNr(genReqPipeInQ);
     interface payloadGenStreamPipeOut = dsConcator.dataPipeOut;
 
     interface IoChannelMemoryReadMasterPipe dmaReadMasterPipe;

@@ -818,7 +818,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // Payload gen and con
-        mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);
+        mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);    // already Nr
         mkConnection(sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
 
         mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn);
@@ -848,12 +848,12 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(rqVec[idx].otherRawPacketPipeOut, simpleNic.rawEthernetPacketPipeInVec[idx]);
 
         // auto ack, bitmap report and CNP
-        mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGenerator.reqPipeInVec[idx]);
-        mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGenerator.genReqPipeInVec[idx]);
+        mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGenerator.reqPipeInVec[idx]);  // already Nr
+        mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGenerator.genReqPipeInVec[idx]);  // already Nr
         mkConnection(cnpPacketGenerator.cnpEthPacketPipeOutVec[idx], ethTxStreamArbiterVec[idx].pipeInIfcVec[1]);
 
         // meta report descriptors
-        mkConnection(rqVec[idx].metaReportDescPipeOut, descriptorMuxVec[idx].descPipeInVec[0]);
+        mkConnection(rqVec[idx].metaReportDescPipeOut, descriptorMuxVec[idx].descPipeInVec[0]);  // already Nr
         metaReportDescPipeOutVecInst[idx] = descriptorMuxVec[idx].descPipeOut;
 
         // RDMA payload DMA Ifc
@@ -870,9 +870,9 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     // other meta report desc related connection
     // since after bitmap merge, four channel becomes two channel, and background loop tooks another channel
     // to simpilify design, we won't dispatch them evenly.
-    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[0], descriptorMuxVec[0].descPipeInVec[1]);
-    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[1], descriptorMuxVec[1].descPipeInVec[1]);
-    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);
+    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[0], descriptorMuxVec[0].descPipeInVec[1]);  // already Nr
+    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[1], descriptorMuxVec[1].descPipeInVec[1]);  // already Nr
+    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);  // already Nr
 
     // Ethernet Tx channel 0 will handle simple Nic's traffic. Tx channel 1 and 2 will handle auto ack traffic. It may lead to unbalance between other channels.
     mkConnection(simpleNic.rawEthernetPacketPipeOut         , ethTxStreamArbiterVec[0].pipeInIfcVec[2]);

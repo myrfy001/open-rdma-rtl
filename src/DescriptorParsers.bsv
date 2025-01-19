@@ -242,19 +242,19 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
 endmodule
 
 interface DescriptorMux;
-    interface Vector#(NUMERIC_TYPE_TWO, PipeIn#(RingbufRawDescriptor)) descPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeInNr#(RingbufRawDescriptor)) descPipeInVec;
     interface PipeOut#(RingbufRawDescriptor) descPipeOut;
 endinterface
 
 module mkDescriptorMux(DescriptorMux);
 
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, PipeIn#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeInAdapter#(RingbufRawDescriptor)) descPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(NUMERIC_TYPE_TWO, PipeInNr#(RingbufRawDescriptor)) descPipeInVecInst = newVector;
 
     FIFOF#(RingbufRawDescriptor) descPipeOutQueue <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        descPipeInVecInst[idx] = toPipeIn(descPipeInQueueVec[idx]);
+        descPipeInVecInst[idx] = toPipeInNr(descPipeInQueueVec[idx]);
     end
 
     Reg#(Bit#(TLog#(NUMERIC_TYPE_TWO))) currentForwardChannelReg <- mkRegU;
