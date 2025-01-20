@@ -426,7 +426,7 @@ typedef TAdd#(1, TLog#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET))     PACK
 typedef Bit#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET_WIDTH)         AlignBlockCntInPmtu;
 
 interface PacketGen;
-    interface PipeIn#(WorkQueueElem) wqePipeIn;
+    interface PipeInNr#(WorkQueueElem) wqePipeIn;
     interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
@@ -440,9 +440,9 @@ endinterface
 (* synthesize *)
 module mkPacketGen(PacketGen);
 
-    FIFOF#(WorkQueueElem)       wqePipeInQ      <- mkLFIFOF;
-    FIFOF#(PayloadGenReq)       genReqPipeOutQ  <- mkFIFOF;
-    FIFOF#(DataStream)          genRespPipeInQ  <- mkFIFOF;
+    PipeInAdapter#(WorkQueueElem)   wqePipeInQ      <- mkPipeInAdapter;
+    FIFOF#(PayloadGenReq)           genReqPipeOutQ  <- mkFIFOF;
+    FIFOF#(DataStream)              genRespPipeInQ  <- mkFIFOF;
 
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) wqeToPacketChunker <- mkAddressChunker;
 
@@ -734,7 +734,7 @@ module mkPacketGen(PacketGen);
 
     method setLocalNetworkSettings = ethernetPacketGen.setLocalNetworkSettings; 
 
-    interface wqePipeIn = toPipeIn(wqePipeInQ);
+    interface wqePipeIn = toPipeInNr(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
     interface mrTableQueryClt = mrTableQueryCltInst.clt;
     interface genReqPipeOut = toPipeOut(genReqPipeOutQ);

@@ -428,10 +428,10 @@ endmodule
 
 interface RingbufDmaIfcConvertor;
     // ringbuf side interface
-    interface PipeIn#(RingbufDmaReadReq) dmaReadReqPipeIn;
+    interface PipeInNr#(RingbufDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(RingbufDmaReadResp) dmaReadRespPipeOut;
-    interface PipeIn#(RingbufDmaWriteReq) dmaWriteReqPipeIn;
-    interface PipeIn#(DataStream) dmaWriteDataPipeIn;
+    interface PipeInNr#(RingbufDmaWriteReq) dmaWriteReqPipeIn;
+    interface PipeInNr#(DataStream) dmaWriteDataPipeIn;
     interface PipeOut#(Bool) dmaWriteRespPipeOut;
 
     // dma side interface
@@ -440,10 +440,10 @@ endinterface
 
 (* synthesize *)
 module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
-    FIFOF#(RingbufDmaReadReq)   dmaReadReqPipeInQ       <- mkLFIFOF;
+    PipeInAdapter#(RingbufDmaReadReq)   dmaReadReqPipeInQ       <- mkPipeInAdapter;
     FIFOF#(RingbufDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
-    FIFOF#(RingbufDmaWriteReq)  dmaWriteReqPipeInQ      <- mkLFIFOF;
-    FIFOF#(DataStream)          dmaWriteDataPipeInQ     <- mkLFIFOF;
+    PipeInAdapter#(RingbufDmaWriteReq)  dmaWriteReqPipeInQ      <- mkPipeInAdapter;
+    PipeInAdapter#(DataStream)          dmaWriteDataPipeInQ     <- mkPipeInAdapter;
     FIFOF#(Bool)                dmaWriteRespPipeOutQ    <- mkFIFOF;
 
     FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
@@ -514,10 +514,10 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         );
     endrule
 
-    interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);
+    interface dmaReadReqPipeIn = toPipeInNr(dmaReadReqPipeInQ);
     interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);
-    interface dmaWriteReqPipeIn = toPipeIn(dmaWriteReqPipeInQ);
-    interface dmaWriteDataPipeIn = toPipeIn(dmaWriteDataPipeInQ);
+    interface dmaWriteReqPipeIn = toPipeInNr(dmaWriteReqPipeInQ);
+    interface dmaWriteDataPipeIn = toPipeInNr(dmaWriteDataPipeInQ);
     interface dmaWriteRespPipeOut = toPipeOut(dmaWriteRespPipeOutQ);
 
     interface IoChannelMemoryMasterPipe dmaMasterPipeIfc;

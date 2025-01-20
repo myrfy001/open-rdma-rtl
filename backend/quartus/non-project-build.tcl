@@ -113,7 +113,7 @@ if {$make_assignments} {
 	set_global_assignment -name PWRMGT_VOLTAGE_OUTPUT_FORMAT "LINEAR FORMAT"
 	set_global_assignment -name PWRMGT_LINEAR_FORMAT_N "-12"
 	set_global_assignment -name POWER_APPLY_THERMAL_MARGIN ADDITIONAL
-	set_global_assignment -name OPTIMIZATION_MODE "SUPERIOR PERFORMANCE WITH MAXIMUM PLACEMENT EFFORT"
+	set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT WITH MAXIMUM PLACEMENT EFFORT"
 
 	# Including default assignments
 	set_global_assignment -name FLOW_ENABLE_DESIGN_ASSISTANT ON -family $family

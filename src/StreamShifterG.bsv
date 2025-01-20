@@ -999,8 +999,8 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
         FShow#(tBiDirectionStreamShifterPipelineEntry),
         FShow#(Tuple2#(tData, tData))
     );
-    FIFOF#(tByteNum) offsetPipeInQ <- mkLFIFOF;
-    FIFOF#(tDataStream) streamPipeInQ <- mkLFIFOF;
+    FIFOF#(tByteNum)    offsetPipeInQ  <- mkLFIFOF;
+    FIFOF#(tDataStream) streamPipeInQ  <- mkLFIFOF;
     FIFOF#(tDataStream) streamPipeOutQ <- mkFIFOF;
 
     FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);

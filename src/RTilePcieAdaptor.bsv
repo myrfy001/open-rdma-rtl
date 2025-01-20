@@ -209,8 +209,8 @@ interface RTilePcieAdaptor;
     interface PipeOut#(PcieRxBeat) pcieRxPipeOut;
     interface PipeIn#(PcieTxBeat) pcieTxPipeIn;
 
-    interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeIn;
-    interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeIn;
+    interface PipeInNr#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeIn;
+    interface PipeInNr#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeIn;
     interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))   txFlowControlAvaliablePipeOut;
     
 endinterface
@@ -237,8 +237,8 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
     FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGLFIFOF;
 
-    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkLFIFOF;
-    FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkLFIFOF;
+    PipeInAdapter#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkPipeInAdapter;
+    PipeInAdapter#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkPipeInAdapter;
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
@@ -434,8 +434,8 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
 
     interface pcieRxPipeOut = ugToPipeOut(pcieRxPipeOutQueue);
     interface pcieTxPipeIn = ugToPipeIn(pcieTxPipeInQueue);
-    interface rxFlowControlReleaseReqPipeIn = toPipeIn(rxFlowControlReleaseReqPipeInQueue);
-    interface txFlowControlConsumeReqPipeIn = toPipeIn(txFlowControlConsumeReqPipeInQueue);
+    interface rxFlowControlReleaseReqPipeIn = toPipeInNr(rxFlowControlReleaseReqPipeInQueue);
+    interface txFlowControlConsumeReqPipeIn = toPipeInNr(txFlowControlConsumeReqPipeInQueue);
     interface txFlowControlAvaliablePipeOut = toPipeOut(txFlowControlAvaliablePipeOutQueue);
 endmodule
 

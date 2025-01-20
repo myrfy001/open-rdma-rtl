@@ -114,8 +114,8 @@ module mkBsvTopOnlyHardIp#(
 
     mkConnection(rtilePcieAdaptor.pcieRxPipeOut, rtilePcie.pcieRxPipeIn);
     mkConnection(rtilePcieAdaptor.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
-    mkConnection(rtilePcieAdaptor.rxFlowControlReleaseReqPipeIn, rtilePcie.rxFlowControlReleaseReqPipeOut);
-    mkConnection(rtilePcieAdaptor.txFlowControlConsumeReqPipeIn, rtilePcie.txFlowControlConsumeReqPipeOut);
+    mkConnection(rtilePcieAdaptor.rxFlowControlReleaseReqPipeIn, rtilePcie.rxFlowControlReleaseReqPipeOut);   // already Nr
+    mkConnection(rtilePcieAdaptor.txFlowControlConsumeReqPipeIn, rtilePcie.txFlowControlConsumeReqPipeOut);   // already Nr
     mkConnection(rtilePcieAdaptor.txFlowControlAvaliablePipeOut, rtilePcie.txFlowControlAvaliablePipeIn);
 
     SyncFIFOIfc#(FtileMacRxBeat) ftileRxSyncQueue <- mkSyncFIFOToCC(valueOf(NUMERIC_TYPE_FOUR), ftileClk, ftileRst);
@@ -197,7 +197,7 @@ endinterface
 module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     let qpMrPgtQpc <- mkQpMrPgtQpc;
     let ringbufAndDescriptorHandler <- mkRingbufAndDescriptorHandler;
-    mkConnection(ringbufAndDescriptorHandler.wqePipeOutVec, qpMrPgtQpc.wqePipeInVec);
+    mkConnection(ringbufAndDescriptorHandler.wqePipeOutVec, qpMrPgtQpc.wqePipeInVec);  // already Nr
 
     TopLevelDmaChannelMux topLevelDmaChannelMux <- mkTopLevelDmaChannelMux;
     
@@ -288,10 +288,10 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
         wqePipeOutVecInst[idx] = workQueueDescParserVec[idx].workReqPipeOut;
         metaReportDescPipeInVecInst[idx] = rqMetaReportRingbufVec[idx].descPipeIn;
 
-        mkConnection(wqeRingbufVec[idx].dmaReadReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaReadReqPipeIn);
+        mkConnection(wqeRingbufVec[idx].dmaReadReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaReadReqPipeIn);               // already Nr
         mkConnection(wqeRingbufVec[idx].dmaReadRespPipeIn, qpRingbufDmaIfcConvertorVec[idx].dmaReadRespPipeOut);
-        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaWriteReqPipeIn);
-        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteDataPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaWriteDataPipeIn);
+        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaWriteReqPipeIn);    // already Nr
+        mkConnection(rqMetaReportRingbufVec[idx].dmaWriteDataPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaWriteDataPipeIn);  // already Nr
         mkConnection(rqMetaReportRingbufVec[idx].dmaWriteRespPipeIn, qpRingbufDmaIfcConvertorVec[idx].dmaWriteRespPipeOut);
         qpRingbufDmaMasterPipeIfcVecInst[idx] = qpRingbufDmaIfcConvertorVec[idx].dmaMasterPipeIfc;
     end
@@ -303,10 +303,10 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     mkConnection(cmdReqQueueRingbuf.descPipeOut, cmdQueueDescParserAndDispatcher.reqRawDescPipeIn);
     mkConnection(cmdRespQueueRingbuf.descPipeIn, cmdQueueDescParserAndDispatcher.respRawDescPipeOut);
 
-    mkConnection(cmdReqQueueRingbuf.dmaReadReqPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaReadReqPipeIn);
+    mkConnection(cmdReqQueueRingbuf.dmaReadReqPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaReadReqPipeIn);        // already Nr
     mkConnection(cmdReqQueueRingbuf.dmaReadRespPipeIn, cmdQueueRingbufDmaIfcConvertor.dmaReadRespPipeOut);
-    mkConnection(cmdRespQueueRingbuf.dmaWriteReqPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaWriteReqPipeIn);
-    mkConnection(cmdRespQueueRingbuf.dmaWriteDataPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaWriteDataPipeIn);
+    mkConnection(cmdRespQueueRingbuf.dmaWriteReqPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaWriteReqPipeIn);     // already Nr
+    mkConnection(cmdRespQueueRingbuf.dmaWriteDataPipeOut, cmdQueueRingbufDmaIfcConvertor.dmaWriteDataPipeIn);   // already Nr
     mkConnection(cmdRespQueueRingbuf.dmaWriteRespPipeIn, cmdQueueRingbufDmaIfcConvertor.dmaWriteRespPipeOut);
 
 
@@ -314,10 +314,10 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     RingbufC2hSlot4096 simpleNicRxQueueRingbuf <- mkRingbufC2h(4);
     RingbufDmaIfcConvertor simpleNicRingbufDmaIfcConvertor <- mkRingbufDmaIfcConvertor;
 
-    mkConnection(simpleNicTxQueueRingbuf.dmaReadReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaReadReqPipeIn);
-    mkConnection(simpleNicTxQueueRingbuf.dmaReadRespPipeIn, simpleNicRingbufDmaIfcConvertor.dmaReadRespPipeOut);
-    mkConnection(simpleNicRxQueueRingbuf.dmaWriteReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaWriteReqPipeIn);
-    mkConnection(simpleNicRxQueueRingbuf.dmaWriteDataPipeOut, simpleNicRingbufDmaIfcConvertor.dmaWriteDataPipeIn);
+    mkConnection(simpleNicTxQueueRingbuf.dmaReadReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaReadReqPipeIn);      // already Nr
+    mkConnection(simpleNicTxQueueRingbuf.dmaReadRespPipeIn, simpleNicRingbufDmaIfcConvertor.dmaReadRespPipeOut);    
+    mkConnection(simpleNicRxQueueRingbuf.dmaWriteReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaWriteReqPipeIn);    // already Nr
+    mkConnection(simpleNicRxQueueRingbuf.dmaWriteDataPipeOut, simpleNicRingbufDmaIfcConvertor.dmaWriteDataPipeIn);  // already Nr
     mkConnection(simpleNicRxQueueRingbuf.dmaWriteRespPipeIn, simpleNicRingbufDmaIfcConvertor.dmaWriteRespPipeOut);
     
 
@@ -769,7 +769,7 @@ interface QpMrPgtQpc;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)           qpDmaRequestMasterIfcVec;
     interface IoChannelMemoryMasterPipe                                             simpleNicPacketDmaMasterPipeIfc;
 
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem))              wqePipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInNr#(WorkQueueElem))            wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor))      metaReportDescPipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeNrIn)  qpEthDataStreamIfcVec;
 
@@ -804,7 +804,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ);
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_THREE, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(WorkQueueElem)) wqePipeInVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInNr#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
 
 
