@@ -16,7 +16,7 @@ from cocotb.clock import Clock
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.intel.rtile import RTilePcieDevice, RTileRxBus, RTileTxBus
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta
+from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, BluespecPipeInNrWithQueue
 
 
 class TB(object):
@@ -51,11 +51,11 @@ class TB(object):
         self.requester_read_data_pipes = []
 
         for idx in range(4):
-            self.requester_write_meta_pipes.append(BluespecPipeIn(
+            self.requester_write_meta_pipes.append(BluespecPipeInNrWithQueue(
                 dut, f"streamSlaveIfcVec_{idx}_writePipeIfc_writeMetaPipeIn", self.clock))
-            self.requester_write_data_pipes.append(BluespecPipeIn(
+            self.requester_write_data_pipes.append(BluespecPipeInNrWithQueue(
                 dut, f"streamSlaveIfcVec_{idx}_writePipeIfc_writeDataPipeIn", self.clock))
-            self.requester_read_meta_pipes.append(BluespecPipeIn(
+            self.requester_read_meta_pipes.append(BluespecPipeInNrWithQueue(
                 dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readMetaPipeIn", self.clock))
             self.requester_read_data_pipes.append(BluespecPipeOut(
                 dut, f"streamSlaveIfcVec_{idx}_readPipeIfc_readDataPipeOut", self.clock))

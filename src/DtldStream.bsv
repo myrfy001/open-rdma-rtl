@@ -418,9 +418,9 @@ endmodule
 // The last (or only) fragment's last beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)
 // All the other fragments's beats must be full, i.e., startByteIdx == 0 && startByteIdx == byte_nume_per_beat
 interface DtldStreamConcator#(type tData, numeric type nLogOfAlign);
-    interface PipeIn#(DtldStreamData#(tData))                    dataPipeIn;
-    interface PipeIn#(Bool)                                      isLastStreamFlagPipeIn;
-    interface PipeOut#(DtldStreamData#(tData))                   dataPipeOut;
+    interface PipeInNr#(DtldStreamData#(tData))                    dataPipeIn;
+    interface PipeInNr#(Bool)                                      isLastStreamFlagPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                     dataPipeOut;
 endinterface
 
 typedef enum {
@@ -448,8 +448,8 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
         NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
     );
-    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkLFIFOF;
-    FIFOF#(Bool)                    isLastStreamFlagPipeInQueue     <- mkLFIFOF;
+    PipeInAdapter#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkPipeInAdapter;
+    PipeInAdapter#(Bool)                    isLastStreamFlagPipeInQueue     <- mkPipeInAdapter;
     FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOF;
 
     Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
@@ -675,8 +675,8 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         // );
     endrule
 
-    interface dataPipeIn                = toPipeIn(dataPipeInQueue);
-    interface isLastStreamFlagPipeIn    = toPipeIn(isLastStreamFlagPipeInQueue);
+    interface dataPipeIn                = toPipeInNr(dataPipeInQueue);
+    interface isLastStreamFlagPipeIn    = toPipeInNr(isLastStreamFlagPipeInQueue);
     interface dataPipeOut               = toPipeOut(dataPipeOutQueue);
 endmodule
 
@@ -684,9 +684,9 @@ endmodule
 
 
 interface DtldStreamSplitor#(type tData, type tStreamAlignBlockCount, numeric type nLogOfAlign);
-    interface PipeIn#(DtldStreamData#(tData))                    dataPipeIn;
-    interface PipeIn#(tStreamAlignBlockCount)                    streamAlignBlockCountPipeIn;
-    interface PipeOut#(DtldStreamData#(tData))                   dataPipeOut;
+    interface PipeInNr#(DtldStreamData#(tData))                    dataPipeIn;
+    interface PipeInNr#(tStreamAlignBlockCount)                    streamAlignBlockCountPipeIn;
+    interface PipeOut#(DtldStreamData#(tData))                     dataPipeOut;
 endinterface
 
 
@@ -725,8 +725,8 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         Arith#(tStreamAlignBlockCount),
         FShow#(tStreamAlignBlockCount)
     );
-    FIFOF#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkLFIFOF;
-    FIFOF#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkLFIFOF;
+    PipeInAdapter#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkPipeInAdapter;
+    PipeInAdapter#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkPipeInAdapter;
     FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkFIFOF;
 
     Reg#(DtldStreamSplitorState)       curStateReg                 <- mkReg(DtldStreamSplitorStateOutput);
@@ -963,7 +963,7 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         // );
     endrule
 
-    interface dataPipeIn                    = toPipeIn(dataPipeInQueue);
-    interface streamAlignBlockCountPipeIn   = toPipeIn(streamAlignBlockCountPipeInQueue);
+    interface dataPipeIn                    = toPipeInNr(dataPipeInQueue);
+    interface streamAlignBlockCountPipeIn   = toPipeInNr(streamAlignBlockCountPipeInQueue);
     interface dataPipeOut                   = toPipeOut(dataPipeOutQueue);
 endmodule

@@ -371,7 +371,7 @@ class TB(object):
 
         for d in range(8191):
             self.log.debug(
-                f"checking at idx = {d}, addr={hex(d+dst_buf_mem_addr)}")
+                f"checking at idx = {d}, addr={hex(d+dst_buf_mem_addr)}, data={hex(dst_buf_mem[d])}")
             assert dst_buf_mem[d] == d % 256  # should be modified
         assert dst_buf_mem[8191] == 0x66  # should not be modified
 

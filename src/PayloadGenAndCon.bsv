@@ -125,6 +125,9 @@ module mkPayloadGen(PayloadGen);
     FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkLFIFOF;
     FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkLFIFOF;
 
+
+    let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInNrToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
+
     rule handleInReq;
         let req = genReqPipeInQ.first;
         genReqPipeInQ.deq;
@@ -180,7 +183,7 @@ module mkPayloadGen(PayloadGen);
             totalLen: len
         };
         dmaReadReqPipeOutQ.enq(readReq);
-        dsConcator.isLastStreamFlagPipeIn.enq(isLast);
+        dsConcatorIsLastStreamFlagPipeInConverter.enq(isLast);
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPayloadGen issueDmaRead"),
@@ -223,6 +226,9 @@ module mkPayloadCon(PayloadCon);
     FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkLFIFOF;
     FIFOF#(Length) issueDmaWritePipelineQ <- mkLFIFOF;
     FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkLFIFOF;
+
+    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInNrToPipeIn(dsSpliter.streamAlignBlockCountPipeIn, 1);
+    let dsSpliterDataPipeInConverter <- mkPipeInNrToPipeIn(dsSpliter.dataPipeIn, 1);
 
     rule handleInReq;
         let req = conReqPipeInQ.first;
@@ -301,13 +307,13 @@ module mkPayloadCon(PayloadCon);
             (truncatedStartAddr >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE))
         ) + 1;
 
-        dsSpliter.streamAlignBlockCountPipeIn.enq(alignBlockCntForStreamSplit);
+        dsSpliterStreamAlignBlockCountPipeInConverter.enq(alignBlockCntForStreamSplit);
     endrule
 
     rule forwardConsumedFinishedSignal;
         let ds = payloadConStreamPipeInQ.first;
         payloadConStreamPipeInQ.deq;
-        dsSpliter.dataPipeIn.enq(ds);
+        dsSpliterDataPipeInConverter.enq(ds);
        
         if (ds.isLast) begin
             conRespPipeOutQ.enq(True);

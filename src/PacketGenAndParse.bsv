@@ -467,6 +467,10 @@ module mkPacketGen(PacketGen);
     FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkSizedFIFOF(4);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkLFIFOF;
     
+
+    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInNrToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 1);
+    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInNrToPipeIn(payloadStreamShifter.offsetPipeIn, 1);
+
     // rule debugRule;
     //     if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
     //     if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
@@ -538,7 +542,7 @@ module mkPacketGen(PacketGen);
             ByteIdxInDword localAddrOffset = truncate(wqe.laddr);
             ByteIdxInDword remoteAddrOffset = truncate(wqe.raddr);
             DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(localAddrOffset) - zeroExtend(remoteAddrOffset);
-            payloadStreamShifter.offsetPipeIn.enq(localToRemoteAlignShiftOffset);
+            payloadStreamShifterOffsetPipeInConverter.enq(localToRemoteAlignShiftOffset);
         end
 
 
@@ -687,7 +691,7 @@ module mkPacketGen(PacketGen);
                     (truncatedStreamSplitEndAddrForAlignCalc >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE)) - 
                     (truncatedStreamSplitStartAddr >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE))
                 ) + 1;
-            payloadSplitor.streamAlignBlockCountPipeIn.enq(alignBlockCntForStreamSplit);
+            payloadSplitorStreamAlignBlockCountPipeInConverter.enq(alignBlockCntForStreamSplit);
         end
 
         let macIpUdpMeta = ThinMacIpUdpMetaDataForSend{

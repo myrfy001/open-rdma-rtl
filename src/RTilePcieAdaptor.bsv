@@ -1557,6 +1557,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     Reg#(DwordIdxInUserLogicBeat)   finalDataStreamConcatShiftDwordOffsetReg <- mkRegU;
     Reg#(RtilePcieUserStream)   previousDs <- mkRegU;
 
+
+    let outputCpltStreamConcatorDataPipeInConverter <- mkPipeInNrToPipeIn(outputCpltStreamConcator.dataPipeIn, 1);
+    let outputCpltStreamConcatorIsLastStreamFlagPipeInConverter <- mkPipeInNrToPipeIn(outputCpltStreamConcator.isLastStreamFlagPipeIn, 1);
+
     // rule debug;
     //     if (!cpltTlpVecPipeInQueue.notFull) begin
     //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  cpltTlpVecPipeInQueue");
@@ -2033,9 +2037,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
         isCurCpltOutputFirstBeatReg <= beatMeta.isLast;
 
-        outputCpltStreamConcator.dataPipeIn.enq(ds);
+        outputCpltStreamConcatorDataPipeInConverter.enq(ds);
         if (isFirst) begin
-            outputCpltStreamConcator.isLastStreamFlagPipeIn.enq(beatMeta.isLastCplt);
+            outputCpltStreamConcatorIsLastStreamFlagPipeInConverter.enq(beatMeta.isLastCplt);
         end
 
         // $display(

@@ -903,6 +903,8 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
     // Pipeline Queue
     FIFOF#(FtileMacRxGearBoxMeta)           packetChunkMetaPipelineQ  <- mkSizedFIFOF(4); 
 
+    let outputShifterStreamPipeInConverter <- mkPipeInNrToPipeIn(outputShifter.streamPipeIn, 1);
+    let outputShifterOffsetPipeInConverter <- mkPipeInNrToPipeIn(outputShifter.offsetPipeIn, 1);
 
     // rule debug;
     //     $display(
@@ -1008,10 +1010,10 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
             readBackDataVecReg <= readBackDataVec;
             curReadBramBlockIdxReg <= meta.startBramBlockIdx + 1;
 
-            outputShifter.streamPipeIn.enq(ds);
+            outputShifterStreamPipeInConverter.enq(ds);
 
             if (isFirst) begin
-                outputShifter.offsetPipeIn.enq(startByteIdx);
+                outputShifterOffsetPipeInConverter.enq(startByteIdx);
             end
 
             if (!isLastBlock) begin
@@ -1045,7 +1047,7 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
                 isFirst     : False,
                 isLast      : isLast
             };
-            outputShifter.streamPipeIn.enq(ds);
+            outputShifterStreamPipeInConverter.enq(ds);
 
             curReadBramBlockIdxReg <= curReadBramBlockIdxReg + 1;
 

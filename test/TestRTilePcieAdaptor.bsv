@@ -495,7 +495,7 @@ interface TestRTilePcieByCocotbTest;
     (* always_ready, always_enabled *)
     interface RTilePcieAdaptorTx txRawIfc;
 
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)     streamSlaveIfcVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesNrIn)     streamSlaveIfcVec;
     interface PcieBiDirUserDataStreamMasterPipes                                                streamMasterIfc;
 endinterface
 

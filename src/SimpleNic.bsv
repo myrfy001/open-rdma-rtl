@@ -80,6 +80,9 @@ module mkSimpleNic(SimpleNic);
     mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
     mkConnection(txConcator.dataPipeOut, toPipeIn(rawEthernetPacketPipeOutQueue));
 
+    let rxSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInNrToPipeIn(rxSplitor.streamAlignBlockCountPipeIn, 1);
+    let txConcatorIsLastStreamFlagPipeInConverter <- mkPipeInNrToPipeIn(txConcator.isLastStreamFlagPipeIn, 1);
+    
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         rawEthernetPacketPipeInVecInst[idx] = toPipeIn(rawEthernetPacketPipeInQueueVec[idx]);
 
@@ -121,7 +124,7 @@ module mkSimpleNic(SimpleNic);
         let chunkInfo = rxAddrChunker.responsePipeOut.first;
         rxAddrChunker.responsePipeOut.deq;
         let alignBlockCntForDmaBurst = (chunkInfo.len + fromInteger(valueOf(TExp#(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE)) - 1)) >> valueOf(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE);
-        rxSplitor.streamAlignBlockCountPipeIn.enq(truncate(alignBlockCntForDmaBurst));
+        rxSplitorStreamAlignBlockCountPipeInConverter.enq(truncate(alignBlockCntForDmaBurst));
         forwardRxChunkedDataStreamToDmaPipelineQ.enq(chunkInfo);
     endrule
 
@@ -186,7 +189,7 @@ module mkSimpleNic(SimpleNic);
             addr: chunkInfo.startAddr,
             totalLen: chunkInfo.len
         });
-        txConcator.isLastStreamFlagPipeIn.enq(chunkInfo.isLast);
+        txConcatorIsLastStreamFlagPipeInConverter.enq(chunkInfo.isLast);
     endrule
 
 

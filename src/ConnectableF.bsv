@@ -255,7 +255,8 @@ function PipeInNr#(anytype) toPipeInNr(PipeInAdapter#(anytype) queue);
 endfunction
 
 module mkPipeInNrToPipeIn#(PipeInNr#(tData) pipeInNr, Integer bufferDepth)(PipeIn#(tData)) provisos(Bits#(tData, szData));
-    FIFOF#(tData) innerQ <- mkSizedFIFOF(bufferDepth);
+
+    FIFOF#(tData) innerQ <- (bufferDepth == 1 ? mkLFIFOF : mkSizedFIFOF(bufferDepth));
     mkConnection(toPipeOut(innerQ), pipeInNr);
     return toPipeIn(innerQ);
 endmodule
