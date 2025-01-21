@@ -14,6 +14,7 @@ export PipeInAdapter(..);
 export mkPipeInAdapter;
 export toPipeInNr;
 export mkPipeInNrToPipeIn;
+export mkFifofToPipeInNr;
 export GetF(..);
 export PutF(..);
 export ServerF(..);
@@ -257,4 +258,13 @@ module mkPipeInNrToPipeIn#(PipeInNr#(tData) pipeInNr, Integer bufferDepth)(PipeI
     FIFOF#(tData) innerQ <- mkSizedFIFOF(bufferDepth);
     mkConnection(toPipeOut(innerQ), pipeInNr);
     return toPipeIn(innerQ);
+endmodule
+
+module mkFifofToPipeInNr#(FIFOF#(tData) fifo)(PipeInNr#(tData)) provisos (Bits#(tData, szData));
+    let nrAdapter <- mkPipeInAdapter;
+    rule forward;
+        nrAdapter.deq;
+        fifo.enq(nrAdapter.first);
+    endrule
+    return nrAdapter.pipeInIfc;
 endmodule

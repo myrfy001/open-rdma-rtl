@@ -625,8 +625,9 @@ class BluespecPipeInNrWithQueue:
                 await self._pipe_in_nr.first_in(ele)
                 await self._pipe_in_nr.not_empty_in(1)
 
+                debug_ds = BlueRdmaDataStream256.unpack(ele)
                 self.log.debug(
-                    f"BluespecPipeInNrWithQueue forward. ele={ele}")
+                    f"BluespecPipeInNrWithQueue forward. ele={debug_ds}")
 
             else:
                 await self._pipe_in_nr.not_empty_in(0)
@@ -665,7 +666,7 @@ class SimplePcieBehaviorModel(object):
                 dut, f"{base_name}_writePipeIfc_writeDataPipeOut", self.clock))
             self.requester_read_meta_pipes.append(BluespecPipeOut(
                 dut, f"{base_name}_readPipeIfc_readMetaPipeOut", self.clock))
-            self.requester_read_data_pipes.append(BluespecPipeIn(
+            self.requester_read_data_pipes.append(BluespecPipeInNrWithQueue(
                 dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
 
         self.requester_channel_cnt = len(requester_ifc_base_names)

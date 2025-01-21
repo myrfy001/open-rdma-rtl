@@ -30,8 +30,15 @@ typedef DtldStreamMasterWritePipes#(DATA, ADDR, Length) IoChannelMemoryWriteMast
 typedef DtldStreamSlaveReadPipes#(DATA, ADDR, Length) IoChannelMemoryReadSlavePipe;
 typedef DtldStreamSlaveWritePipes#(DATA, ADDR, Length) IoChannelMemoryWriteSlavePipe;
 
+typedef DtldStreamMasterReadPipesNrIn#(DATA, ADDR, Length) IoChannelMemoryReadMasterPipeNrIn;
+typedef DtldStreamSlaveReadPipesNrIn#(DATA, ADDR, Length) IoChannelMemoryReadSlavePipeNrIn;
+typedef DtldStreamSlaveWritePipesNrIn#(DATA, ADDR, Length) IoChannelMemoryWriteSlavePipeNrIn;
+
 typedef DtldStreamBiDirMasterPipes#(DATA, ADDR, Length) IoChannelMemoryMasterPipe;
 typedef DtldStreamBiDirSlavePipes#(DATA, ADDR, Length) IoChannelMemorySlavePipe;
+
+typedef DtldStreamBiDirMasterPipesNrIn#(DATA, ADDR, Length) IoChannelMemoryMasterPipeNrIn;
+typedef DtldStreamBiDirSlavePipesNrIn#(DATA, ADDR, Length) IoChannelMemorySlavePipeNrIn;
 
 typedef DtldStreamNoMetaBiDirPipes#(DATA)       IoChannelBiDirStreamNoMetaPipe;
 typedef DtldStreamNoMetaBiDirPipesNrIn#(DATA)   IoChannelBiDirStreamNoMetaPipeNrIn;

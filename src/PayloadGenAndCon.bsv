@@ -45,7 +45,7 @@ interface PayloadGen;
     interface PipeInNr#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
-    interface IoChannelMemoryReadMasterPipe dmaReadMasterPipe;
+    interface IoChannelMemoryReadMasterPipeNrIn dmaReadMasterPipe;
 endinterface
 
 interface PayloadCon;
@@ -70,7 +70,7 @@ interface PayloadGenAndCon;
     interface PipeOut#(Bool) conRespPipeOut;
     interface PipeIn#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
-    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeNrIn ioChannelMemoryMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -88,7 +88,7 @@ module mkPayloadGenAndCon(PayloadGenAndCon);
     interface conRespPipeOut = payloadCon.conRespPipeOut;
     interface payloadConStreamPipeIn = payloadCon.payloadConStreamPipeIn;
 
-    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeNrIn ioChannelMemoryMasterPipeIfc;
         interface writePipeIfc  = payloadCon.dmaWriteMasterPipe;
         interface readPipeIfc   = payloadGen.dmaReadMasterPipe;
     endinterface
@@ -190,13 +190,15 @@ module mkPayloadGen(PayloadGen);
         // );
     endrule
 
+    let fifoToPipeInNrBridge <- mkFifofToPipeInNr(dmaReadRespPipeInQ);
+
     interface addrTranslateClt = addrTranslateCltInst.clt;
     interface genReqPipeIn = toPipeInNr(genReqPipeInQ);
     interface payloadGenStreamPipeOut = dsConcator.dataPipeOut;
 
-    interface IoChannelMemoryReadMasterPipe dmaReadMasterPipe;
+    interface IoChannelMemoryReadMasterPipeNrIn dmaReadMasterPipe;
         interface readMetaPipeOut = toPipeOut(dmaReadReqPipeOutQ);
-        interface readDataPipeIn = toPipeIn(dmaReadRespPipeInQ);
+        interface readDataPipeIn = fifoToPipeInNrBridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
     endinterface
 
 endmodule

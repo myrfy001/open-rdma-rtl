@@ -102,12 +102,21 @@ instance Connectable#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen), DtldStrea
     endmodule
 endinstance
 
+instance Connectable#(DtldStreamBiDirMasterPipesNrIn#(tData, tAddr, tLen), DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen));
+    module mkConnection#(DtldStreamBiDirMasterPipesNrIn#(tData, tAddr, tLen) master, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen) slave)(Empty);
+        mkConnection(master.writePipeIfc.writeMetaPipeOut, slave.writePipeIfc.writeMetaPipeIn);
+        mkConnection(master.writePipeIfc.writeDataPipeOut, slave.writePipeIfc.writeDataPipeIn);
+        mkConnection(master.readPipeIfc.readMetaPipeOut, slave.readPipeIfc.readMetaPipeIn);
+        mkConnection(master.readPipeIfc.readDataPipeIn, slave.readPipeIfc.readDataPipeOut);
+    endmodule
+endinstance
+
 
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);
-    interface Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))       slaveIfcVec;
-    interface DtldStreamBiDirMasterPipes#(tData, tAddr, tLen)                           masterIfc;
-    interface PipeOut#(Bit#(TLog#(channelCnt)))                                         writeSourceChannelIdPipeOut;
-    interface PipeOut#(Bit#(TLog#(channelCnt)))                                         readSourceChannelIdPipeOut;
+    interface Vector#(channelCnt, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen))       slaveIfcVec;
+    interface DtldStreamBiDirMasterPipesNrIn#(tData, tAddr, tLen)                           masterIfc;
+    interface PipeOut#(Bit#(TLog#(channelCnt)))                                             writeSourceChannelIdPipeOut;
+    interface PipeOut#(Bit#(TLog#(channelCnt)))                                             readSourceChannelIdPipeOut;
 endinterface
 
 
@@ -120,17 +129,17 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         FShow#(tData)
     );
 
-    Vector#(channelCnt, DtldStreamBiDirSlavePipes#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
+    Vector#(channelCnt, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
 
-    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkLFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkLFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkLFIFOF);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                           slaveSideQueueVecRd     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, PipeInAdapter#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkPipeInAdapter);
+    Vector#(channelCnt, PipeInAdapter#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkPipeInAdapter);
+    Vector#(channelCnt, PipeInAdapter#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkPipeInAdapter);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                                   slaveSideQueueVecRd     <- replicateM(mkFIFOF);
 
     FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkFIFOF;
     FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkFIFOF;
     FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                           masterSideQueueRd   <-  mkLFIFOF;
+    PipeInAdapter#(DtldStreamData#(tData))                   masterSideQueueRd   <-  mkPipeInAdapter;
 
     FIFOF#(tChannelIdx)     writeSourceChannelIdPipeOutQueue <- mkFIFOF;
     FIFOF#(tChannelIdx)     readSourceChannelIdPipeOutQueue  <- mkFIFOF;
@@ -143,7 +152,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     Reg#(tChannelIdx) curWriteChannelIdxReg <- mkRegU;
 
-    FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkRegisteredSizedFIFOF(depth);
+    FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkSizedFIFOF(depth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
 
     // rule debug;
     //     $display(
@@ -248,35 +257,40 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
             if (rd.isLast) begin
                 readKeepOrderQueue.deq;
             end
+            $display(
+                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardReadResp"),
+                toBlue(", channelIdx="), fshow(channelIdx),
+                toBlue(", rd="), fshow(rd)
+            );
         endrule
     end
 
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
         slaveIfcVecInst[channelIdx] = (
-            interface DtldStreamBiDirSlavePipes 
-                interface DtldStreamSlaveWritePipes writePipeIfc;
-                    interface  writeMetaPipeIn  = toPipeIn(slaveSideQueueVecWm[channelIdx]);
-                    interface  writeDataPipeIn  = toPipeIn(slaveSideQueueVecWd[channelIdx]);
+            interface DtldStreamBiDirSlavePipesNrIn 
+                interface DtldStreamSlaveWritePipesNrIn writePipeIfc;
+                    interface  writeMetaPipeIn  = toPipeInNr(slaveSideQueueVecWm[channelIdx]);
+                    interface  writeDataPipeIn  = toPipeInNr(slaveSideQueueVecWd[channelIdx]);
                 endinterface
 
-                interface DtldStreamSlaveReadPipes readPipeIfc;
-                    interface  readMetaPipeIn  = toPipeIn(slaveSideQueueVecRm[channelIdx]);
+                interface DtldStreamSlaveReadPipesNrIn readPipeIfc;
+                    interface  readMetaPipeIn  = toPipeInNr(slaveSideQueueVecRm[channelIdx]);
                     interface  readDataPipeOut = toPipeOut(slaveSideQueueVecRd[channelIdx]);
                 endinterface
             endinterface);
     end
 
     interface slaveIfcVec = slaveIfcVecInst;
-    interface DtldStreamBiDirMasterPipes masterIfc;
+    interface DtldStreamBiDirMasterPipesNrIn masterIfc;
         interface DtldStreamMasterWritePipes writePipeIfc;
             interface  writeMetaPipeOut  = toPipeOut(masterSideQueueWm);
             interface  writeDataPipeOut  = toPipeOut(masterSideQueueWd);
         endinterface
 
-        interface DtldStreamMasterReadPipes readPipeIfc;
+        interface DtldStreamMasterReadPipesNrIn readPipeIfc;
             interface  readMetaPipeOut  = toPipeOut(masterSideQueueRm);
-            interface  readDataPipeIn   = toPipeIn(masterSideQueueRd);
+            interface  readDataPipeIn   = toPipeInNr(masterSideQueueRd);
         endinterface
     endinterface
 

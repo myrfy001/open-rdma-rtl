@@ -43,6 +43,8 @@ class HardwareTestHelper:
             backmem_start_addr,
             self.pcie_bfm
         )
+        self.log.info(
+            f"create cmd_req_queue, phy addr = {hex(backmem_start_addr)}")
 
         backmem_start_addr, backmem = self.alloc_physical_memory(
             self.ringbuf_buffer_size, self.ringbuf_buffer_size)
@@ -51,6 +53,8 @@ class HardwareTestHelper:
             backmem_start_addr,
             self.pcie_bfm
         )
+        self.log.info(
+            f"create cmd_resp_queue, phy addr = {hex(backmem_start_addr)}")
 
         self.send_queues = []
         self.meta_report_queues = []
