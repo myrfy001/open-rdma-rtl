@@ -14,7 +14,6 @@ import BasicDataTypes :: *;
 import RdmaHeaders :: *;
 import PAClib :: *;
 import ConnectableF :: *;
-import PipeIoAdaptor :: *;
 import PrimUtils :: *;
 import PrioritySearchBuffer :: *;
 import AxiBus :: *;
@@ -263,13 +262,13 @@ typedef struct {
 
 
 interface FtileMacRxPingPongSingleChannelProcessor;
-    interface PipeInNr#(FtileMacRxPingPongSingleChannelProcessorInputMeta)                      beatMetaPipeIn;
+    interface PipeInB0#(FtileMacRxPingPongSingleChannelProcessorInputMeta)                      beatMetaPipeIn;
     interface PipeOut#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)                      packetsChunkMetaPipeOut;
 endinterface
 
 (* synthesize *)
 module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChannelProcessor);
-    PipeInAdapter#(FtileMacRxPingPongSingleChannelProcessorInputMeta)  beatMetaPipeInQueue          <- mkPipeInAdapter;
+    PipeInAdapterB0#(FtileMacRxPingPongSingleChannelProcessorInputMeta)  beatMetaPipeInQueue          <- mkPipeInAdapterB0;
     FIFOF#(FtileMacRxPingPongSingleChannelProcessorOutputMeta) packetsChunkMetaPipeOutQueue <- mkFIFOF;
 
     Reg#(Vector#(FTILE_MAC_RX_MAX_PACKET_CNT_PER_BEAT, Maybe#(FtileMacRxPacketChunkMeta))) outputMetaTmpBufferVecReg<- mkReg(replicate(tagged Invalid));
@@ -444,7 +443,7 @@ module mkFtileMacRxPingPongSingleChannelProcessor(FtileMacRxPingPongSingleChanne
 
 
 
-    interface beatMetaPipeIn = toPipeInNr(beatMetaPipeInQueue);
+    interface beatMetaPipeIn = toPipeInB0(beatMetaPipeInQueue);
     interface packetsChunkMetaPipeOut = toPipeOut(packetsChunkMetaPipeOutQueue);
 endmodule
 
@@ -523,7 +522,7 @@ endmodule
 
 typedef Vector#(
     FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, 
-    PipeInNr#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) FtileMacRxPingPongChannelMetaJoinInputIfc;
+    PipeInB0#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) FtileMacRxPingPongChannelMetaJoinInputIfc;
 
 
 // each beat(packet chunk) is 128B, for 4kB packet, it uses about 32 chunk meta. To buffer about 4 4kB packet, use a 128 depth.
@@ -547,14 +546,14 @@ endinterface
 (* synthesize *)
 module mkFtileMacRxPingPongChannelMetaJoin(FtileMacRxPingPongChannelMetaJoin);
 
-    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, PipeInAdapter#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, PipeInAdapterB0#(FtileMacRxPingPongSingleChannelProcessorOutputMeta)) metaPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
     FtileMacRxPingPongChannelMetaJoinInputIfc metaPipeInVecInst = newVector; 
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacRxPacketChunkMeta))    packetChunkMetaPipeOutQueueVec <- replicateM(mkFIFOF);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxPacketChunkMeta))  packetChunkMetaPipeOutVecInst  = newVector; 
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
-        metaPipeInVecInst[idx] = toPipeInNr(metaPipeInQueueVec[idx]);
+        metaPipeInVecInst[idx] = toPipeInB0(metaPipeInQueueVec[idx]);
     end
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
@@ -882,13 +881,13 @@ typedef struct {
 
 interface FtileMacRxPayloadStorageAndGearBox;
     interface PipeIn#(FtileMacRxBramBufferWriteReq)     rxBramWriteReqPipeIn;
-    interface PipeInNr#(FtileMacRxPacketChunkMeta)        packetChunkMetaPipeIn;
+    interface PipeInB0#(FtileMacRxPacketChunkMeta)        packetChunkMetaPipeIn;
     interface PipeOut#(FtileMacRxUserStream)            streamPipeOut;
 endinterface
 
 module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
     FIFOF#(FtileMacRxBramBufferWriteReq)    rxBramWriteReqPipeInQ   <- mkLFIFOF;
-    PipeInAdapter#(FtileMacRxPacketChunkMeta)       packetChunkMetaPipeInQ  <- mkPipeInAdapter;
+    PipeInAdapterB0#(FtileMacRxPacketChunkMeta)       packetChunkMetaPipeInQ  <- mkPipeInAdapterB0;
 
     Vector#(RTILE_RX_BRAM_BLOCK_CNT, AutoInferBramQueuedOutput#(FtileMacRxBramBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
 
@@ -903,8 +902,8 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
     // Pipeline Queue
     FIFOF#(FtileMacRxGearBoxMeta)           packetChunkMetaPipelineQ  <- mkSizedFIFOF(4); 
 
-    let outputShifterStreamPipeInConverter <- mkPipeInNrToPipeIn(outputShifter.streamPipeIn, 1);
-    let outputShifterOffsetPipeInConverter <- mkPipeInNrToPipeIn(outputShifter.offsetPipeIn, 1);
+    let outputShifterStreamPipeInConverter <- mkPipeInB0ToPipeIn(outputShifter.streamPipeIn, 1);
+    let outputShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(outputShifter.offsetPipeIn, 1);
 
     // rule debug;
     //     $display(
@@ -1065,7 +1064,7 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
 
 
     interface rxBramWriteReqPipeIn = toPipeIn(rxBramWriteReqPipeInQ);
-    interface packetChunkMetaPipeIn = toPipeInNr(packetChunkMetaPipeInQ);
+    interface packetChunkMetaPipeIn = toPipeInB0(packetChunkMetaPipeInQ);
     interface streamPipeOut = outputShifter.streamPipeOut;
 endmodule
 
@@ -1119,26 +1118,26 @@ typedef struct {
 
 
 interface FtileMacTxUserInputGearboxStorageAndMetaExtractor;
-    interface PipeInNr#(FtileMacTxUserStream)       streamPipeIn;
+    interface PipeInB0#(FtileMacTxUserStream)       streamPipeIn;
     interface PipeOut#(FtileMacTxBufferRange)       packetMetaPipeOut;
 
-    interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(FtileMacTxBramBufferReadReq))  bramReadReqPipeInVec;
+    interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(FtileMacTxBramBufferReadReq))  bramReadReqPipeInVec;
     interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA))  bramReadRespPipeOutVec;
 endinterface
 
 // (* synthesize *)
 module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGearboxStorageAndMetaExtractor);
-    PipeInAdapter#(FtileMacTxUserStream)    streamPipeInQueue       <- mkPipeInAdapter;
+    PipeInAdapterB0#(FtileMacTxUserStream)    streamPipeInQueue       <- mkPipeInAdapterB0;
     FIFOF#(FtileMacTxBufferRange)           packetMetaPipeOutQueue  <- mkFIFOF;
 
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInAdapter#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInAdapterB0#(FtileMacTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(DATA)) bramReadRespPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(DATA)) bramReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
-        bramReadReqPipeInVecInst[idx] = toPipeInNr(bramReadReqPipeInQueueVec[idx]);
+        bramReadReqPipeInVecInst[idx] = toPipeInB0(bramReadReqPipeInQueueVec[idx]);
         bramReadRespPipeOutVecInst[idx] = toPipeOut(bramReadRespPipeOutQueueVec[idx]);
     end
 
@@ -1232,7 +1231,7 @@ module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGe
         // );
     endrule
 
-    interface streamPipeIn              = toPipeInNr(streamPipeInQueue);
+    interface streamPipeIn              = toPipeInB0(streamPipeInQueue);
     interface packetMetaPipeOut         = toPipeOut(packetMetaPipeOutQueue);
     interface bramReadReqPipeInVec      = bramReadReqPipeInVecInst;
     interface bramReadRespPipeOutVec    = bramReadRespPipeOutVecInst;
@@ -1258,21 +1257,21 @@ typedef Bit#(FTILE_MAC_TX_SMALL_BRAM_ROW_COUNT_SUM_RESULT_WIDTH) FtileMacTxSmall
 typedef Vector#(FTILE_MAC_TX_MAX_PACKET_PER_BEAT, Maybe#(FtileMacTxPingPongChannelMetaEntry)) FtileMacTxPingPongChannelMetaBundle;
 
 interface FtileMacTxPingPongFork;
-    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxBufferRange)) packetMetaPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInB0#(FtileMacTxBufferRange)) packetMetaPipeInVec;
     interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(FtileMacTxPingPongChannelMetaBundle))  pingpongChannelMetaPipeOutVec;
 endinterface
 
 (* synthesize *)
 module mkFtileMacTxPingPongFork(FtileMacTxPingPongFork);
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxBufferRange)) packetMetaPipeInVecInst = newVector;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(FtileMacTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInB0#(FtileMacTxBufferRange)) packetMetaPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(FtileMacTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeOut#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, FIFOF#(FtileMacTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
     
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
-        packetMetaPipeInVecInst[idx] = toPipeInNr(packetMetaPipeInQueueVec[idx]);
+        packetMetaPipeInVecInst[idx] = toPipeInB0(packetMetaPipeInQueueVec[idx]);
     end
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
@@ -1834,26 +1833,26 @@ typedef struct {
 } FtileMacTxPingPongChannelOutputEntry deriving (FShow, Bits);
 
 interface FtileMacTxPingPongSingleChannel;
-    interface PipeInNr#(FtileMacTxPingPongChannelMetaBundle)      metaPipeIn;
+    interface PipeInB0#(FtileMacTxPingPongChannelMetaBundle)      metaPipeIn;
     interface PipeOut#(FtileMacTxPingPongChannelOutputEntry)    beatPipeOut;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacTxBramBufferReadReq))  bramReadReqPipeOutVec;
-    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(DATA))  bramReadRespPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInB0#(DATA))  bramReadRespPipeInVec;
 endinterface
 
 (* synthesize *)
 module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
-    PipeInAdapter#(FtileMacTxPingPongChannelMetaBundle)  metaPipeInQueue <- mkPipeInAdapter;
+    PipeInAdapterB0#(FtileMacTxPingPongChannelMetaBundle)  metaPipeInQueue <- mkPipeInAdapterB0;
     FIFOF#(FtileMacTxPingPongChannelOutputEntry) beatPipeOutQueue <- mkFIFOF;
 
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacTxBramBufferReadReq))  bramReadReqPipeOutVecInst = newVector;
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, FIFOF#(FtileMacTxBramBufferReadReq))    bramReadReqPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(DATA))   bramReadRespPipeInVecInst = newVector;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(DATA))    bramReadRespPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInB0#(DATA))   bramReadRespPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(DATA))    bramReadRespPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     for (Integer idx=0; idx < valueOf(FTILE_MAC_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         bramReadReqPipeOutVecInst[idx] = toPipeOut(bramReadReqPipeOutQueueVec[idx]);
-        bramReadRespPipeInVecInst[idx] = toPipeInNr(bramReadRespPipeInQueueVec[idx]);
+        bramReadRespPipeInVecInst[idx] = toPipeInB0(bramReadRespPipeInQueueVec[idx]);
     end
 
     
@@ -2041,25 +2040,25 @@ module mkFtileMacTxPingPongSingleChannel(FtileMacTxPingPongSingleChannel);
 
    
 
-    interface metaPipeIn            = toPipeInNr(metaPipeInQueue);
+    interface metaPipeIn            = toPipeInB0(metaPipeInQueue);
     interface beatPipeOut           = toPipeOut(beatPipeOutQueue);
     interface bramReadReqPipeOutVec = bramReadReqPipeOutVecInst;
     interface bramReadRespPipeInVec = bramReadRespPipeInVecInst;
 endmodule
 
 interface FtileMacTxPingPongJoin;
-    interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(FtileMacTxPingPongChannelOutputEntry))    pingpongBeatPipeInVec;
+    interface Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(FtileMacTxPingPongChannelOutputEntry))    pingpongBeatPipeInVec;
     interface PipeOut#(FtileMacTxBeat)                                                                      ftilemacTxPipeOut;
 endinterface
 
 (* synthesize *)
 module mkFtileMacTxPingPongJoin(FtileMacTxPingPongJoin);
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInAdapter#(FtileMacTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkPipeInAdapter);
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(FtileMacTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInAdapterB0#(FtileMacTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(FtileMacTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
     FIFOF#(FtileMacTxBeat) ftilemacTxPipeOutQueue <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
-        pingpongBeatPipeInVecInst[idx] = toPipeInNr(pingpongBeatPipeInQueueVec[idx]);
+        pingpongBeatPipeInVecInst[idx] = toPipeInB0(pingpongBeatPipeInQueueVec[idx]);
     end
 
     Reg#(FtileMacTxPingPongChannelIdx) curChannelIdxReg <- mkReg(0);
@@ -2085,7 +2084,7 @@ endmodule
 interface FTileMac;
     interface PipeIn#(FtileMacRxBeat) ftilemacRxPipeIn;
     interface PipeOut#(FtileMacTxBeat) ftilemacTxPipeOut;
-    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxUserStream)) ftilemacTxStreamPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInB0#(FtileMacTxUserStream)) ftilemacTxStreamPipeInVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVec;
 endinterface
 
@@ -2093,7 +2092,7 @@ endinterface
 (* synthesize *)
 module mkFTileMac(FTileMac);
     Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeOut#(FtileMacRxUserStream))  ftilemacRxStreamPipeOutVecInst = newVector;
-    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInNr#(FtileMacTxUserStream)) ftilemacTxStreamPipeInVecInst = newVector;
+    Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT, PipeInB0#(FtileMacTxUserStream)) ftilemacTxStreamPipeInVecInst = newVector;
 
     let ftileMacRxBeatFork <- mkFtileMacRxBeatFork;
     Vector#(FTILE_MAC_RX_PING_PONG_CHANNEL_CNT, FtileMacRxPingPongSingleChannelProcessor) pingPongChannelVec <- replicateM(mkFtileMacRxPingPongSingleChannelProcessor); 

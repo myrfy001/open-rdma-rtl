@@ -28,22 +28,22 @@ typedef struct {
 } CnpPacketGenReq deriving(Bits, FShow);
 
 interface CnpPacketGenerator;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInNr#(CnpPacketGenReq)) genReqPipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(CnpPacketGenReq)) genReqPipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(IoChannelEthDataStream)) cnpEthPacketPipeOutVec;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
 
 (* synthesize *)
 module mkCnpPacketGenerator(CnpPacketGenerator);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInAdapter#(CnpPacketGenReq)) genReqPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInAdapterB0#(CnpPacketGenReq)) genReqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInNr#(CnpPacketGenReq)) genReqPipeInVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(CnpPacketGenReq)) genReqPipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(IoChannelEthDataStream)) cnpEthPacketPipeOutVecInst = newVector;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-        genReqPipeInVecInst[idx] = toPipeInNr(genReqPipeInQueueVec[idx]);
+        genReqPipeInVecInst[idx] = toPipeInB0(genReqPipeInQueueVec[idx]);
         cnpEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut;
     end
 

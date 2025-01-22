@@ -22,13 +22,12 @@ import CsrAddress :: *;
 import CsrFramework :: *;
 
 import ConnectableF :: *;
-import PipeIoAdaptor :: *;
 
 import IoChannels :: *;
 
 interface InputPacketClassifier;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
-    interface PipeInNr#(IoChannelEthDataStream)       ethRawPacketPipeIn;
+    interface PipeInB0#(IoChannelEthDataStream)       ethRawPacketPipeIn;
     interface PipeOut#(DataStream)                      rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
@@ -68,7 +67,7 @@ typedef struct {
 module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(InputPacketClassifierState) stateReg <- mkReg(InputPacketClassifierStateHandleFirstBeat);
 
-    PipeInAdapter#(IoChannelEthDataStream) ethRawPacketInQ <- mkPipeInAdapter;
+    PipeInAdapterB0#(IoChannelEthDataStream) ethRawPacketInQ <- mkPipeInAdapterB0;
     FIFOF#(DataStream) rdmaRawPacketOutQ <- mkFIFOF;
     FIFOF#(ThinMacIpUdpMetaDataForRecv) rdmaMacIpUdpMetaOutQ <- mkFIFOF;
     FIFOF#(DataStream) otherRawPacketOutQ <- mkFIFOF;
@@ -364,7 +363,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endmethod
 
     interface csrUpStreamPort           = csrNode.upStreamPort;
-    interface ethRawPacketPipeIn        = toPipeInNr(ethRawPacketInQ);
+    interface ethRawPacketPipeIn        = toPipeInB0(ethRawPacketInQ);
     interface rdmaRawPacketPipeOut      = toPipeOut(rdmaRawPacketOutQ);
     interface rdmaMacIpUdpMetaPipeOut   = toPipeOut(rdmaMacIpUdpMetaOutQ);
     interface otherRawPacketPipeOut     = toPipeOut(otherRawPacketOutQ);
@@ -391,7 +390,7 @@ typedef Bit#(TMul#(BYTE_WIDTH, RDMA_FIXED_HEADER_BYTE_NUM)) RdmaFixedHeaderBuffe
 typedef Bit#(TSub#(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT, SizeOf#(BTH))) RdmaExtendHeaderFragmentInSecondBeat;
 
 interface RdmaMetaAndPayloadExtractor;
-    interface PipeInNr#(DataStream) ethPipeIn;
+    interface PipeInB0#(DataStream) ethPipeIn;
     interface PipeOut#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOut;
     interface PipeOut#(DataStream) rdmaPayloadPipeOut;
@@ -409,7 +408,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
     Reg#(RdmaMetaAndPayloadExtractorState) stateReg <- mkReg(RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
 
-    PipeInAdapter#(DataStream) ethPipeInQ                   <- mkPipeInAdapter;
+    PipeInAdapterB0#(DataStream) ethPipeInQ                   <- mkPipeInAdapterB0;
     FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkFIFOF;
     FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkFIFOF;
     FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkFIFOF;
@@ -539,7 +538,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         // );
     endrule
 
-    interface ethPipeIn                     = toPipeInNr(ethPipeInQ);
+    interface ethPipeIn                     = toPipeInB0(ethPipeInQ);
     interface rdmaPacketMetaPipeOut         = toPipeOut(rdmaPacketMetaPipeOutQ);
     interface rdmaPacketTailMetaPipeOut     = toPipeOut(rdmaPacketTailMetaPipeOutQ);
     interface rdmaPayloadPipeOut            = toPipeOut(rdmaPayloadPipeOutQ);
@@ -602,7 +601,7 @@ endmodule
 interface EthernetPacketGenerator;
     interface PipeIn#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
     interface PipeIn#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
-    interface PipeInNr#(DataStream) rdmaPayloadPipeIn;
+    interface PipeInB0#(DataStream) rdmaPayloadPipeIn;
     interface PipeOut#(IoChannelEthDataStream) ethernetPacketPipeOut;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
@@ -669,7 +668,7 @@ typedef struct {
 module mkEthernetPacketGenerator(EthernetPacketGenerator);
     FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkLFIFOF;
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkLFIFOF;
-    PipeInAdapter#(DataStream) rdmaPayloadPipeInQ <- mkPipeInAdapter;
+    PipeInAdapterB0#(DataStream) rdmaPayloadPipeInQ <- mkPipeInAdapterB0;
     FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
 
     FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
@@ -944,7 +943,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
     interface macIpUdpMetaPipeIn    = toPipeIn(macIpUdpMetaPipeInQ);
     interface rdmaPacketMetaPipeIn  = toPipeIn(rdmaPacketMetaPipeInQ);
-    interface rdmaPayloadPipeIn     = toPipeInNr(rdmaPayloadPipeInQ);
+    interface rdmaPayloadPipeIn     = toPipeInB0(rdmaPayloadPipeInQ);
     interface ethernetPacketPipeOut = toPipeOut(ethernetPacketPipeOutQ);
 endmodule
 

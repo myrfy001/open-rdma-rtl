@@ -48,15 +48,15 @@ typedef struct {
 } FourChannelPsnBitmapPreMergeOnehotGenInternalState deriving(Bits, FShow);
 
 interface FourChannelPsnBitmapPreMerge;
-    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInNr#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
+    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
     interface PipeOut#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOut;
 endinterface
 
 typedef TAdd#(1, CPSN_CHECKER_CHANNEL_NUM) GET_MAX_PSN_PIPELINE_STAGE_CNT;
 
 module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInNr#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInAdapter#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVecInst = newVector;
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInAdapterB0#(FourChannelPsnBitmapPreMergeReq)) reqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeResp))) respPipeOutQueue <- mkFIFOF;
 
 
@@ -508,7 +508,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
 
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-        reqPipeInVecInst[idx] = toPipeInNr(reqPipeInQueueVec[idx]);
+        reqPipeInVecInst[idx] = toPipeInB0(reqPipeInQueueVec[idx]);
     end
     interface reqPipeInVec = reqPipeInVecInst;
     interface respPipeOut = toPipeOut(respPipeOutQueue);
@@ -575,7 +575,7 @@ typedef struct {
 } BitmapWindowStorageInternalForwardEntry#(type tRowAddr, type tData, type tBoundary) deriving(Bits, FShow);
 
 interface BitmapWindowStorage#(type tRowAddr, type tData, type tBoundary, numeric type szStride);
-    interface Vector#(NUMERIC_TYPE_TWO, PipeInNr#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVec;
+    interface Vector#(NUMERIC_TYPE_TWO, PipeInB0#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVec;
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVec;
     
     interface PipeIn#(tRowAddr)                                         readOnlyReqPipeIn;
@@ -608,10 +608,10 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Add#(d__, szWideShiftOffset, TLog#(szData)),
         FShow#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary))
     );
-    Vector#(NUMERIC_TYPE_TWO, PipeInNr#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeInB0#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInVecInst = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutVecInst = newVector;
 
-    Vector#(NUMERIC_TYPE_TWO, PipeInAdapter#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(NUMERIC_TYPE_TWO, PipeInAdapterB0#(Maybe#(BitmapWindowStorageUpdateReq#(tRowAddr, tData, tBoundary)))) reqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
     Vector#(NUMERIC_TYPE_TWO, FIFOF#(Maybe#(BitmapWindowStorageUpdateResp#(tRowAddr, tData, tBoundary)))) respPipeOutQueueVec <- replicateM(mkFIFOF);
 
     FIFOF#(tRowAddr)                                        readOnlyReqPipeInQueue <- mkLFIFOF;
@@ -1199,7 +1199,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     endrule
 
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        reqPipeInVecInst[idx] = toPipeInNr(reqPipeInQueueVec[idx]);
+        reqPipeInVecInst[idx] = toPipeInB0(reqPipeInQueueVec[idx]);
         respPipeOutVecInst[idx] = toPipeOut(respPipeOutQueueVec[idx]);
     end
 
@@ -1214,7 +1214,7 @@ endmodule
 
 
 interface PsnPerMergeAndStorage;
-    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInNr#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
+    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(FourChannelPsnBitmapPreMergeReq)) reqPipeInVec;
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(Maybe#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary)))) respPipeOutVec;
 
     interface PipeIn#(IndexQP)                                                              readOnlyReqPipeIn;
@@ -1233,8 +1233,8 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
 
     Reg#(Bool) forwardToStorageEvenOddReg <- mkReg(True);
 
-        let allPacketPsnBitmapStorage_reqPipeInVec_0 <- mkPipeInNrToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[0], 2);
-        let allPacketPsnBitmapStorage_reqPipeInVec_1 <- mkPipeInNrToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[1], 2);
+        let allPacketPsnBitmapStorage_reqPipeInVec_0 <- mkPipeInB0ToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[0], 2);
+        let allPacketPsnBitmapStorage_reqPipeInVec_1 <- mkPipeInB0ToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[1], 2);
 
     rule forwardPremergeToStorage;
         forwardToStorageEvenOddReg <= !forwardToStorageEvenOddReg;

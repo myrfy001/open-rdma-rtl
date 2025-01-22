@@ -23,7 +23,7 @@ import PacketGenAndParse :: *;
 import IoChannels :: *;
 
 interface SQ;
-    interface PipeInNr#(WorkQueueElem) wqePipeIn;
+    interface PipeInB0#(WorkQueueElem) wqePipeIn;
     interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;

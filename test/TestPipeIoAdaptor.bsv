@@ -18,6 +18,11 @@ module mkTestA(TestA);
         if (delayReg) begin
             q.enq(dReg);
             dReg <= dReg + 1;
+            $display("time=%0t, enq d=%d", $time, dReg);
+        end
+
+        if (dReg > 10) begin
+            $finish;
         end
     endrule
 
@@ -25,11 +30,11 @@ module mkTestA(TestA);
 endmodule
 
 interface TestB;
-    interface PipeInNr#(Int#(32)) pi;
+    interface PipeInB0#(Int#(32)) pi;
 endinterface
 
 module mkTestB(TestB);
-    PipeInAdapter#(Int#(32)) ad <- mkPipeInAdapter;
+    PipeInAdapterB0#(Int#(32)) ad <- mkPipeInB0Debug("aaaa");
     Reg#(Bool) delayReg <- mkRegU;
     rule handle;
         delayReg <= !delayReg;

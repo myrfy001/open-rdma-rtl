@@ -209,8 +209,8 @@ interface RTilePcieAdaptor;
     interface PipeOut#(PcieRxBeat) pcieRxPipeOut;
     interface PipeIn#(PcieTxBeat) pcieTxPipeIn;
 
-    interface PipeInNr#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeIn;
-    interface PipeInNr#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeIn;
+    interface PipeInB0#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeIn;
+    interface PipeInB0#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeIn;
     interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))   txFlowControlAvaliablePipeOut;
     
 endinterface
@@ -237,8 +237,8 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
     FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGLFIFOF;
 
-    PipeInAdapter#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkPipeInAdapter;
-    PipeInAdapter#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkPipeInAdapter;
+    PipeInAdapterB0#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkPipeInAdapterB0;
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkFIFOF;
 
     Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
@@ -434,8 +434,8 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
 
     interface pcieRxPipeOut = ugToPipeOut(pcieRxPipeOutQueue);
     interface pcieTxPipeIn = ugToPipeIn(pcieTxPipeInQueue);
-    interface rxFlowControlReleaseReqPipeIn = toPipeInNr(rxFlowControlReleaseReqPipeInQueue);
-    interface txFlowControlConsumeReqPipeIn = toPipeInNr(txFlowControlConsumeReqPipeInQueue);
+    interface rxFlowControlReleaseReqPipeIn = toPipeInB0(rxFlowControlReleaseReqPipeInQueue);
+    interface txFlowControlConsumeReqPipeIn = toPipeInB0(txFlowControlConsumeReqPipeInQueue);
     interface txFlowControlAvaliablePipeOut = toPipeOut(txFlowControlAvaliablePipeOutQueue);
 endmodule
 
@@ -1263,26 +1263,26 @@ typedef struct {
 } PcieSharedCompletionBufferSlotDeAllocReq deriving(Bits, FShow);
 
 interface PcieHwCpltBufferAllocator;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(PcieSharedCompletionBufferSlotAllocReq)) slotAllocReqPipeInVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(PcieSharedCompletionBufferSlotAllocReq)) slotAllocReqPipeInVec;
     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(void)) slotAllocRespPipeOutVec;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(PcieSharedCompletionBufferSlotDeAllocReq)) slotDeAllocPipeInVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(PcieSharedCompletionBufferSlotDeAllocReq)) slotDeAllocPipeInVec;
 endinterface
 
 (* synthesize *)
 module mkPcieHwCpltBufferAllocator(PcieHwCpltBufferAllocator);
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(PcieSharedCompletionBufferSlotAllocReq))     slotAllocReqPipeInVecInst    = newVector;
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(PcieSharedCompletionBufferSlotAllocReq))     slotAllocReqPipeInVecInst    = newVector;
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(void))                                      slotAllocRespPipeOutVecInst  = newVector;
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(PcieSharedCompletionBufferSlotDeAllocReq))   slotDeAllocPipeInVecInst     = newVector;
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(PcieSharedCompletionBufferSlotDeAllocReq))   slotDeAllocPipeInVecInst     = newVector;
 
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(PcieSharedCompletionBufferSlotAllocReq))     tagAllocReqPipeInQueueVec    <- replicateM(mkPipeInAdapter);
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(PcieSharedCompletionBufferSlotAllocReq))     tagAllocReqPipeInQueueVec    <- replicateM(mkPipeInAdapterB0);
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(void))                                       tagAllocRespPipeOutQueueVec  <- replicateM(mkSizedFIFOF(10));
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(PcieSharedCompletionBufferSlotDeAllocReq))   tagDeAllocPipeInQueueVec     <- replicateM(mkPipeInAdapter);
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(PcieSharedCompletionBufferSlotDeAllocReq))   tagDeAllocPipeInQueueVec     <- replicateM(mkPipeInAdapterB0);
 
 
     for (Integer idx = 0; idx <  valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
-        slotAllocReqPipeInVecInst[idx]   = toPipeInNr(tagAllocReqPipeInQueueVec[idx]);
+        slotAllocReqPipeInVecInst[idx]   = toPipeInB0(tagAllocReqPipeInQueueVec[idx]);
         slotAllocRespPipeOutVecInst[idx] = toPipeOut(tagAllocRespPipeOutQueueVec[idx]);
-        slotDeAllocPipeInVecInst[idx]    = toPipeInNr(tagDeAllocPipeInQueueVec[idx]);
+        slotDeAllocPipeInVecInst[idx]    = toPipeInB0(tagDeAllocPipeInQueueVec[idx]);
     end
     
     Reg#(PcieHwCpltBufferHeaderSlotCnt) headerUsedReg   <- mkReg(0);
@@ -1490,10 +1490,10 @@ typedef enum {
 } PcieCompletionBufferOutputState deriving(Bits, Eq, FShow);
 
 interface PcieCompletionBuffer;
-    interface PipeInNr#(PcieChannelPrivateCompletionBufferSlotAllocReq) tagAllocReqPipeIn;
+    interface PipeInB0#(PcieChannelPrivateCompletionBufferSlotAllocReq) tagAllocReqPipeIn;
     interface PipeOut#(PcieHeaderFieldExtendedTag) tagAllocRespPipeOut;
-    interface PipeInNr#(RtilePcieRxPayloadStorageWriteReq) tlpRawBeatDataStorageWriteReqPipeIn;
-    interface PipeInNr#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt))) cpltTlpVecPipeIn;
+    interface PipeInB0#(RtilePcieRxPayloadStorageWriteReq) tlpRawBeatDataStorageWriteReqPipeIn;
+    interface PipeInB0#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt))) cpltTlpVecPipeIn;
     interface PipeOut#(PcieSharedCompletionBufferSlotDeAllocReq) sharedHwCpltBufferSlotDeAllocReqPipeOut;
     interface PipeOut#(RtilePcieUserStream) dataStreamPipeOut;
     (* always_enabled, always_ready *)
@@ -1503,10 +1503,10 @@ endinterface
 (* synthesize *)
 module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
-    PipeInAdapter#(PcieChannelPrivateCompletionBufferSlotAllocReq)              tagAllocReqPipeInQueue                          <- mkPipeInAdapter;
+    PipeInAdapterB0#(PcieChannelPrivateCompletionBufferSlotAllocReq)              tagAllocReqPipeInQueue                          <- mkPipeInAdapterB0;
     FIFOF#(PcieHeaderFieldExtendedTag)                                  tagAllocRespPipeOutQueue                        <- mkFIFOF;
-    PipeInAdapter#(RtilePcieRxPayloadStorageWriteReq)                   tlpRawBeatDataStorageWriteReqPipeInQueue        <- mkPipeInAdapter;
-    PipeInAdapter#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))   cpltTlpVecPipeInQueue                           <- mkPipeInAdapter;
+    PipeInAdapterB0#(RtilePcieRxPayloadStorageWriteReq)                   tlpRawBeatDataStorageWriteReqPipeInQueue        <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))   cpltTlpVecPipeInQueue                           <- mkPipeInAdapterB0;
     FIFOF#(PcieSharedCompletionBufferSlotDeAllocReq)                    sharedHwCpltBufferSlotDeAllocReqPipeOutQueue    <- mkFIFOF;
 
     Wire#(RtilePcieUserChannelIdx) channelIdxWire <- mkBypassWire;
@@ -1558,8 +1558,8 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     Reg#(RtilePcieUserStream)   previousDs <- mkRegU;
 
 
-    let outputCpltStreamConcatorDataPipeInConverter <- mkPipeInNrToPipeIn(outputCpltStreamConcator.dataPipeIn, 1);
-    let outputCpltStreamConcatorIsLastStreamFlagPipeInConverter <- mkPipeInNrToPipeIn(outputCpltStreamConcator.isLastStreamFlagPipeIn, 1);
+    let outputCpltStreamConcatorDataPipeInConverter <- mkPipeInB0ToPipeIn(outputCpltStreamConcator.dataPipeIn, 1);
+    let outputCpltStreamConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(outputCpltStreamConcator.isLastStreamFlagPipeIn, 1);
 
     // rule debug;
     //     if (!cpltTlpVecPipeInQueue.notFull) begin
@@ -2051,10 +2051,10 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     endrule
 
 
-    interface tagAllocReqPipeIn                                 = toPipeInNr(tagAllocReqPipeInQueue);
+    interface tagAllocReqPipeIn                                 = toPipeInB0(tagAllocReqPipeInQueue);
     interface tagAllocRespPipeOut                               = toPipeOut(tagAllocRespPipeOutQueue);
-    interface tlpRawBeatDataStorageWriteReqPipeIn               = toPipeInNr(tlpRawBeatDataStorageWriteReqPipeInQueue);
-    interface cpltTlpVecPipeIn                                  = toPipeInNr(cpltTlpVecPipeInQueue);
+    interface tlpRawBeatDataStorageWriteReqPipeIn               = toPipeInB0(tlpRawBeatDataStorageWriteReqPipeInQueue);
+    interface cpltTlpVecPipeIn                                  = toPipeInB0(cpltTlpVecPipeInQueue);
     interface sharedHwCpltBufferSlotDeAllocReqPipeOut           = toPipeOut(sharedHwCpltBufferSlotDeAllocReqPipeOutQueue);
     interface dataStreamPipeOut                                 = outputCpltStreamConcator.dataPipeOut;
     
@@ -2081,14 +2081,14 @@ typedef DtldStreamBiDirMasterPipesNrIn#(DATA, ADDR, Length) PcieBiDirUserDataStr
 
 interface PcieRequestTlpHeaderGen;
     interface PcieBiDirUserDataStreamSlavePipesNrIn                             dtldStreamSlavePipes;
-    interface PipeInNr#(PcieTlpHeaderCompletion)                                cpltTlpHeaderPipeIn;
-    interface PipeInNr#(RtilePcieUserStream)                                    cpltTlpDataStreamPipeIn;
+    interface PipeInB0#(PcieTlpHeaderCompletion)                                cpltTlpHeaderPipeIn;
+    interface PipeInB0#(RtilePcieUserStream)                                    cpltTlpDataStreamPipeIn;
     
     interface PipeOut#(PcieChannelPrivateCompletionBufferSlotAllocReq)          tagAllocReqPipeOut;
-    interface PipeInNr#(PcieHeaderFieldExtendedTag)                               tagAllocRespPipeIn;
+    interface PipeInB0#(PcieHeaderFieldExtendedTag)                               tagAllocRespPipeIn;
 
     interface PipeOut#(PcieSharedCompletionBufferSlotAllocReq)                  slotAllocReqPipeOut;
-    interface PipeInNr#(void)                                                     slotAllocRespPipeIn;
+    interface PipeInB0#(void)                                                     slotAllocRespPipeIn;
 
     interface PipeOut#(PcieTlpHeaderBuffer)                                     tlpHeaderBufferPipeOut;
     interface PipeOut#(RtilePcieUserStream)                                     tlpDataStreamPipeOut;
@@ -2098,22 +2098,22 @@ endinterface
 module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
 
-    PipeInAdapter#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueWm                <- mkPipeInAdapter;
-    PipeInAdapter#(RtilePcieUserStream)                     slaveSideQueueWd                <- mkPipeInAdapter;
-    PipeInAdapter#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueRm                <- mkPipeInAdapter;
+    PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueWm                <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(RtilePcieUserStream)                     slaveSideQueueWd                <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueRm                <- mkPipeInAdapterB0;
     FIFOF#(RtilePcieUserStream)                             slaveSideQueueRd                <- mkFIFOF;
 
-    PipeInAdapter#(RtilePcieUserStream)                     cpltTlpDataStreamPipeInQueue    <- mkPipeInAdapter;
+    PipeInAdapterB0#(RtilePcieUserStream)                     cpltTlpDataStreamPipeInQueue    <- mkPipeInAdapterB0;
 
-    PipeInAdapter#(PcieHeaderFieldExtendedTag)                      tagAllocRespPipeInQueue  <- mkPipeInAdapter;
+    PipeInAdapterB0#(PcieHeaderFieldExtendedTag)                      tagAllocRespPipeInQueue  <- mkPipeInAdapterB0;
     FIFOF#(PcieChannelPrivateCompletionBufferSlotAllocReq)          tagAllocReqPipeOutQueue <- mkFIFOF;
 
-    PipeInAdapter#(void)                                            slotAllocRespPipeInQueue <- mkPipeInAdapter;
+    PipeInAdapterB0#(void)                                            slotAllocRespPipeInQueue <- mkPipeInAdapterB0;
     FIFOF#(PcieSharedCompletionBufferSlotAllocReq)                  slotAllocReqPipeOutQueue <- mkFIFOF;
 
     FIFOF#(PcieTlpHeaderMemoryRead4Dw)  readTlpQueue                <- mkLFIFOF;
     FIFOF#(PcieTlpHeaderMemoryWrite4Dw) writeTlpQueue               <- mkLFIFOF;
-    PipeInAdapter#(PcieTlpHeaderCompletion)     cpltTlpQueue        <- mkPipeInAdapter;
+    PipeInAdapterB0#(PcieTlpHeaderCompletion)     cpltTlpQueue        <- mkPipeInAdapterB0;
 
     FIFOF#(PcieTlpHeaderBuffer)         arbittedTlpBufferQueue      <- mkFIFOF;
     FIFOF#(RtilePcieUserStream)         arbittedTlpDataStreamQueue  <- mkFIFOF;
@@ -2393,25 +2393,25 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
     interface DtldStreamBiDirSlavePipesNrIn dtldStreamSlavePipes;
         interface DtldStreamSlaveWritePipesNrIn writePipeIfc;
-            interface  writeMetaPipeIn  = toPipeInNr(slaveSideQueueWm);
-            interface  writeDataPipeIn  = toPipeInNr(slaveSideQueueWd);
+            interface  writeMetaPipeIn  = toPipeInB0(slaveSideQueueWm);
+            interface  writeDataPipeIn  = toPipeInB0(slaveSideQueueWd);
         endinterface
 
         interface DtldStreamSlaveReadPipesNrIn readPipeIfc;
-            interface  readMetaPipeIn  = toPipeInNr(slaveSideQueueRm);
+            interface  readMetaPipeIn  = toPipeInB0(slaveSideQueueRm);
             interface  readDataPipeOut = toPipeOut(slaveSideQueueRd);
         endinterface
     endinterface
 
-    interface cpltTlpDataStreamPipeIn       = toPipeInNr(cpltTlpDataStreamPipeInQueue);
+    interface cpltTlpDataStreamPipeIn       = toPipeInB0(cpltTlpDataStreamPipeInQueue);
 
     interface tagAllocReqPipeOut            = toPipeOut(tagAllocReqPipeOutQueue);
-    interface tagAllocRespPipeIn            = toPipeInNr(tagAllocRespPipeInQueue);
+    interface tagAllocRespPipeIn            = toPipeInB0(tagAllocRespPipeInQueue);
 
     interface slotAllocReqPipeOut           = toPipeOut(slotAllocReqPipeOutQueue);
-    interface slotAllocRespPipeIn           = toPipeInNr(slotAllocRespPipeInQueue);
+    interface slotAllocRespPipeIn           = toPipeInB0(slotAllocRespPipeInQueue);
     
-    interface cpltTlpHeaderPipeIn           = toPipeInNr(cpltTlpQueue);
+    interface cpltTlpHeaderPipeIn           = toPipeInB0(cpltTlpQueue);
     interface tlpHeaderBufferPipeOut        = toPipeOut(arbittedTlpBufferQueue);
     interface tlpDataStreamPipeOut          = toPipeOut(arbittedTlpDataStreamQueue);
 endmodule
@@ -2491,23 +2491,23 @@ typedef struct {
 
 
 interface RtilePcieTxUserInputGearboxStorageAndMetaExtractor;
-    interface PipeInNr#(RtilePcieUserStream)                          streamPipeIn;
-    interface PipeInNr#(PcieTlpHeaderBuffer)                          txTlpHeaderBufferPipeIn;
+    interface PipeInB0#(RtilePcieUserStream)                          streamPipeIn;
+    interface PipeInB0#(PcieTlpHeaderBuffer)                          txTlpHeaderBufferPipeIn;
     interface PipeOut#(RtilePcieTxBufferRange)                      packetMetaPipeOut;
 
-    interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(RtilePcieTxBramBufferReadReq))  bramReadReqPipeInVec;
+    interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(RtilePcieTxBramBufferReadReq))  bramReadReqPipeInVec;
     interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA)))  bramReadRespPipeOutVec;
     interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(PcieTlpHeaderBuffer))  bramTlpHeaderReadRespPipeOutVec;
 endinterface
 
 (* synthesize *)
 module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInputGearboxStorageAndMetaExtractor);
-    PipeInAdapter#(RtilePcieUserStream)             streamPipeInQueue               <- mkPipeInAdapter;
-    PipeInAdapter#(PcieTlpHeaderBuffer)             txTlpHeaderBufferPipeInQueue    <- mkPipeInAdapter;
+    PipeInAdapterB0#(RtilePcieUserStream)             streamPipeInQueue               <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(PcieTlpHeaderBuffer)             txTlpHeaderBufferPipeInQueue    <- mkPipeInAdapterB0;
     FIFOF#(RtilePcieTxBufferRange)                  packetMetaPipeOutQueue          <- mkFIFOF;
 
-    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
-    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInAdapter#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
+    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInAdapterB0#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA))) bramReadRespPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA))) bramReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
@@ -2516,7 +2516,7 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(PcieTlpHeaderBuffer)) bramTlpHeaderReadRespPipeOutQueueVec <- replicateM(mkFIFOF);
     
     for (Integer idx=0; idx < valueOf(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG); idx = idx + 1) begin
-        bramReadReqPipeInVecInst[idx]               = toPipeInNr(bramReadReqPipeInQueueVec[idx]);
+        bramReadReqPipeInVecInst[idx]               = toPipeInB0(bramReadReqPipeInQueueVec[idx]);
         bramReadRespPipeOutVecInst[idx]             = toPipeOut(bramReadRespPipeOutQueueVec[idx]);
         bramTlpHeaderReadRespPipeOutVecInst[idx]    = toPipeOut(bramTlpHeaderReadRespPipeOutQueueVec[idx]);
     end
@@ -2656,8 +2656,8 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
         // );
     endrule
 
-    interface streamPipeIn                      = toPipeInNr(streamPipeInQueue);
-    interface txTlpHeaderBufferPipeIn           = toPipeInNr(txTlpHeaderBufferPipeInQueue);
+    interface streamPipeIn                      = toPipeInB0(streamPipeInQueue);
+    interface txTlpHeaderBufferPipeIn           = toPipeInB0(txTlpHeaderBufferPipeInQueue);
     interface packetMetaPipeOut                 = toPipeOut(packetMetaPipeOutQueue);
     interface bramReadReqPipeInVec              = bramReadReqPipeInVecInst;
     interface bramTlpHeaderReadRespPipeOutVec   = bramTlpHeaderReadRespPipeOutVecInst;
@@ -2680,7 +2680,7 @@ typedef Bit#(RTILE_PCIE_TX_SMALL_BRAM_ROW_COUNT_SUM_RESULT_WIDTH) RtilePcieTxSma
 typedef Vector#(RTILE_PCIE_TX_MAX_PACKET_PER_BEAT, Maybe#(RtilePcieTxPingPongChannelMetaEntry)) RtilePcieTxPingPongChannelMetaBundle;
 
 interface RtilePcieTxPingPongFork;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(RtilePcieTxBufferRange)) packetMetaPipeInVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(RtilePcieTxBufferRange)) packetMetaPipeInVec;
     interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(RtilePcieTxPingPongChannelMetaBundle))  pingpongChannelMetaPipeOutVec;
     interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))   txFlowControlConsumeReqPipeOut;
     interface PipeIn#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeIn;
@@ -2688,8 +2688,8 @@ endinterface
 
 (* synthesize *)
 module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(RtilePcieTxBufferRange)) packetMetaPipeInVecInst = newVector;
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(RtilePcieTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(RtilePcieTxBufferRange)) packetMetaPipeInVecInst = newVector;
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(RtilePcieTxBufferRange)) packetMetaPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeOut#(RtilePcieTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, FIFOF#(RtilePcieTxPingPongChannelMetaBundle)) pingpongChannelMetaPipeOutQueueVec <- replicateM(mkFIFOF);
@@ -2698,7 +2698,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeInQueue <- mkLFIFOF;
 
     for (Integer idx=0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
-        packetMetaPipeInVecInst[idx] = toPipeInNr(packetMetaPipeInQueueVec[idx]);
+        packetMetaPipeInVecInst[idx] = toPipeInB0(packetMetaPipeInQueueVec[idx]);
     end
 
     for (Integer idx=0; idx < valueOf(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
@@ -3320,31 +3320,31 @@ typedef struct {
 } RtilePcieTxPingPongChannelOutputEntry deriving (FShow, Bits);
 
 interface RtilePcieTxPingPongSingleChannel;
-    interface PipeInNr#(RtilePcieTxPingPongChannelMetaBundle)      metaPipeIn;
+    interface PipeInB0#(RtilePcieTxPingPongChannelMetaBundle)      metaPipeIn;
     interface PipeOut#(RtilePcieTxPingPongChannelOutputEntry)    beatPipeOut;
     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(RtilePcieTxBramBufferReadReq))  bramReadReqPipeOutVec;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(PcieTlpHeaderBuffer))    bramTlpHeaderReadRespPipeInVec;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA)))    bramReadRespPipeInVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(PcieTlpHeaderBuffer))    bramTlpHeaderReadRespPipeInVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA)))    bramReadRespPipeInVec;
 endinterface
 
 (* synthesize *)
 module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
-    PipeInAdapter#(RtilePcieTxPingPongChannelMetaBundle)  metaPipeInQueue       <- mkPipeInAdapter;
+    PipeInAdapterB0#(RtilePcieTxPingPongChannelMetaBundle)  metaPipeInQueue       <- mkPipeInAdapterB0;
     FIFOF#(RtilePcieTxPingPongChannelOutputEntry) beatPipeOutQueue      <- mkFIFOF;
 
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(RtilePcieTxBramBufferReadReq))  bramReadReqPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(RtilePcieTxBramBufferReadReq))    bramReadReqPipeOutQueueVec <- replicateM(mkFIFOF);
 
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA)))   bramReadRespPipeInVecInst = newVector;
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA)))    bramReadRespPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA)))   bramReadRespPipeInVecInst = newVector;
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA)))    bramReadRespPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInNr#(PcieTlpHeaderBuffer))   bramTlpHeaderReadRespPipeInVecInst = newVector;
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapter#(PcieTlpHeaderBuffer))    bramTlpHeaderReadRespPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInB0#(PcieTlpHeaderBuffer))   bramTlpHeaderReadRespPipeInVecInst = newVector;
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeInAdapterB0#(PcieTlpHeaderBuffer))    bramTlpHeaderReadRespPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     for (Integer idx=0; idx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); idx = idx + 1) begin
         bramReadReqPipeOutVecInst[idx]          = toPipeOut(bramReadReqPipeOutQueueVec[idx]);
-        bramReadRespPipeInVecInst[idx]          = toPipeInNr(bramReadRespPipeInQueueVec[idx]);
-        bramTlpHeaderReadRespPipeInVecInst[idx] = toPipeInNr(bramTlpHeaderReadRespPipeInQueueVec[idx]);
+        bramReadRespPipeInVecInst[idx]          = toPipeInB0(bramReadRespPipeInQueueVec[idx]);
+        bramTlpHeaderReadRespPipeInVecInst[idx] = toPipeInB0(bramTlpHeaderReadRespPipeInQueueVec[idx]);
     end
 
     
@@ -3538,7 +3538,7 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
 
    
 
-    interface metaPipeIn                        = toPipeInNr(metaPipeInQueue);
+    interface metaPipeIn                        = toPipeInB0(metaPipeInQueue);
     interface bramTlpHeaderReadRespPipeInVec    = bramTlpHeaderReadRespPipeInVecInst;
     interface beatPipeOut                       = toPipeOut(beatPipeOutQueue);
     interface bramReadReqPipeOutVec             = bramReadReqPipeOutVecInst;
@@ -3546,18 +3546,18 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
 endmodule
 
 interface RtilePcieTxPingPongJoin;
-    interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(RtilePcieTxPingPongChannelOutputEntry))    pingpongBeatPipeInVec;
+    interface Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(RtilePcieTxPingPongChannelOutputEntry))    pingpongBeatPipeInVec;
     interface PipeOut#(PcieTxBeat)                                                                            rtilePcieTxPipeOut;
 endinterface
 
 (* synthesize *)
 module mkRtilePcieTxPingPongJoin(RtilePcieTxPingPongJoin);
-    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInAdapter#(RtilePcieTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkPipeInAdapter);
-    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInNr#(RtilePcieTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
+    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInAdapterB0#(RtilePcieTxPingPongChannelOutputEntry))     pingpongBeatPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
+    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(RtilePcieTxPingPongChannelOutputEntry))    pingpongBeatPipeInVecInst  = newVector;
     FIFOF#(PcieTxBeat) rtilePcieTxPipeOutQueue <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT); idx = idx + 1) begin
-        pingpongBeatPipeInVecInst[idx] = toPipeInNr(pingpongBeatPipeInQueueVec[idx]);
+        pingpongBeatPipeInVecInst[idx] = toPipeInB0(pingpongBeatPipeInQueueVec[idx]);
     end
 
     Reg#(RtilePcieTxPingPongChannelIdx) curChannelIdxReg <- mkReg(0);
@@ -3586,8 +3586,8 @@ typedef 4 RTILE_PCIE_COMPLETER_MAX_READ_WRITE_BYTE_CNT;
 interface RtilePcieCompleter;
     interface PcieBiDirUserDataStreamMasterPipes                                dtldStreamMasterPipes;
 
-    interface PipeInNr#(RtilePcieRxPayloadStorageWriteReq)                        tlpRawBeatDataStorageWriteReqPipeIn;
-    interface PipeInNr#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo))            memReadWriteReqTlpVecPipeIn;
+    interface PipeInB0#(RtilePcieRxPayloadStorageWriteReq)                        tlpRawBeatDataStorageWriteReqPipeIn;
+    interface PipeInB0#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo))            memReadWriteReqTlpVecPipeIn;
 
     interface PipeOut#(PcieTlpHeaderCompletion)                                  cpltTlpHeaderPipeOut;
     interface PipeOut#(RtilePcieUserStream)                                      cpltTlpDataStreamPipeOut;
@@ -3600,8 +3600,8 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
     FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  masterSideQueueRm         <- mkFIFOF;
     FIFOF#(RtilePcieUserStream)                     masterSideQueueRd         <- mkLFIFOF;
 
-    PipeInAdapter#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeInQueue <- mkPipeInAdapter;
-    PipeInAdapter#(RtilePcieRxPayloadStorageWriteReq)             tlpRawBeatDataStorageWriteReqPipeInQueue        <- mkPipeInAdapter;
+    PipeInAdapterB0#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeInQueue <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(RtilePcieRxPayloadStorageWriteReq)             tlpRawBeatDataStorageWriteReqPipeInQueue        <- mkPipeInAdapterB0;
 
     FIFOF#(PcieTlpHeaderCompletion)                 cpltTlpHeaderPipeOutQueue       <- mkFIFOF;
     FIFOF#(RtilePcieUserStream)                     cpltTlpDataStreamPipeOutQueue   <- mkFIFOF;
@@ -3791,8 +3791,8 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
         endinterface
     endinterface
 
-    interface tlpRawBeatDataStorageWriteReqPipeIn = toPipeInNr(tlpRawBeatDataStorageWriteReqPipeInQueue);
-    interface memReadWriteReqTlpVecPipeIn = toPipeInNr(memReadWriteReqTlpVecPipeInQueue);
+    interface tlpRawBeatDataStorageWriteReqPipeIn = toPipeInB0(tlpRawBeatDataStorageWriteReqPipeInQueue);
+    interface memReadWriteReqTlpVecPipeIn = toPipeInB0(memReadWriteReqTlpVecPipeInQueue);
 
     interface cpltTlpHeaderPipeOut      = toPipeOut(cpltTlpHeaderPipeOutQueue);
     interface cpltTlpDataStreamPipeOut  = toPipeOut(cpltTlpDataStreamPipeOutQueue);

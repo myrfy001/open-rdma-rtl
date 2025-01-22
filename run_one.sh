@@ -92,7 +92,7 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestTop
 # TESTCASE=mkTestTopNoMockHost
 
-FILE=`ls ../src/PipeIoAdaptor.bsv`
+FILE=`ls TestPipeIoAdaptor.bsv`
 TESTCASE=mkTop
 
 

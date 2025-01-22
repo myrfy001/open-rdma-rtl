@@ -35,7 +35,7 @@ interface DtldStreamMasterReadPipes#(type tData, type tAddr, type tLen);
 endinterface
 interface DtldStreamMasterReadPipesNrIn#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
-    interface PipeInNr#(DtldStreamData#(tData))                 readDataPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData))                 readDataPipeIn;
 endinterface
 
 
@@ -55,8 +55,8 @@ interface DtldStreamSlaveWritePipes#(type tData, type tAddr, type tLen);
     interface PipeIn#(DtldStreamData#(tData))                   writeDataPipeIn;
 endinterface
 interface DtldStreamSlaveWritePipesNrIn#(type tData, type tAddr, type tLen);
-    interface PipeInNr#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
-    interface PipeInNr#(DtldStreamData#(tData))                   writeDataPipeIn;
+    interface PipeInB0#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData))                   writeDataPipeIn;
 endinterface
 
 interface DtldStreamSlaveReadPipes#(type tData, type tAddr, type tLen);
@@ -64,7 +64,7 @@ interface DtldStreamSlaveReadPipes#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamData#(tData))                   readDataPipeOut;
 endinterface
 interface DtldStreamSlaveReadPipesNrIn#(type tData, type tAddr, type tLen);
-    interface PipeInNr#(DtldStreamMemAccessMeta#(tAddr, tLen))      readMetaPipeIn;
+    interface PipeInB0#(DtldStreamMemAccessMeta#(tAddr, tLen))      readMetaPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                      readDataPipeOut;
 endinterface
 
@@ -89,7 +89,7 @@ interface DtldStreamNoMetaBiDirPipes#(type tData);
 endinterface
 
 interface DtldStreamNoMetaBiDirPipesNrIn#(type tData);
-    interface PipeInNr#(DtldStreamData#(tData))                 dataPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData))                 dataPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
 endinterface
 
@@ -131,15 +131,15 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     Vector#(channelCnt, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
 
-    Vector#(channelCnt, PipeInAdapter#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkPipeInAdapter);
-    Vector#(channelCnt, PipeInAdapter#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkPipeInAdapter);
-    Vector#(channelCnt, PipeInAdapter#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkPipeInAdapter);
+    Vector#(channelCnt, PipeInAdapterB0#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, PipeInAdapterB0#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, PipeInAdapterB0#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkPipeInAdapterB0);
     Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                                   slaveSideQueueVecRd     <- replicateM(mkFIFOF);
 
     FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkFIFOF;
     FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkFIFOF;
     FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkFIFOF;
-    PipeInAdapter#(DtldStreamData#(tData))                   masterSideQueueRd   <-  mkPipeInAdapter;
+    PipeInAdapterB0#(DtldStreamData#(tData))                   masterSideQueueRd   <-  mkPipeInAdapterB0;
 
     FIFOF#(tChannelIdx)     writeSourceChannelIdPipeOutQueue <- mkFIFOF;
     FIFOF#(tChannelIdx)     readSourceChannelIdPipeOutQueue  <- mkFIFOF;
@@ -270,12 +270,12 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         slaveIfcVecInst[channelIdx] = (
             interface DtldStreamBiDirSlavePipesNrIn 
                 interface DtldStreamSlaveWritePipesNrIn writePipeIfc;
-                    interface  writeMetaPipeIn  = toPipeInNr(slaveSideQueueVecWm[channelIdx]);
-                    interface  writeDataPipeIn  = toPipeInNr(slaveSideQueueVecWd[channelIdx]);
+                    interface  writeMetaPipeIn  = toPipeInB0(slaveSideQueueVecWm[channelIdx]);
+                    interface  writeDataPipeIn  = toPipeInB0(slaveSideQueueVecWd[channelIdx]);
                 endinterface
 
                 interface DtldStreamSlaveReadPipesNrIn readPipeIfc;
-                    interface  readMetaPipeIn  = toPipeInNr(slaveSideQueueVecRm[channelIdx]);
+                    interface  readMetaPipeIn  = toPipeInB0(slaveSideQueueVecRm[channelIdx]);
                     interface  readDataPipeOut = toPipeOut(slaveSideQueueVecRd[channelIdx]);
                 endinterface
             endinterface);
@@ -290,7 +290,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
         interface DtldStreamMasterReadPipesNrIn readPipeIfc;
             interface  readMetaPipeOut  = toPipeOut(masterSideQueueRm);
-            interface  readDataPipeIn   = toPipeInNr(masterSideQueueRd);
+            interface  readDataPipeIn   = toPipeInB0(masterSideQueueRd);
         endinterface
     endinterface
 
@@ -418,8 +418,8 @@ endmodule
 // The last (or only) fragment's last beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)
 // All the other fragments's beats must be full, i.e., startByteIdx == 0 && startByteIdx == byte_nume_per_beat
 interface DtldStreamConcator#(type tData, numeric type nLogOfAlign);
-    interface PipeInNr#(DtldStreamData#(tData))                    dataPipeIn;
-    interface PipeInNr#(Bool)                                      isLastStreamFlagPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData))                    dataPipeIn;
+    interface PipeInB0#(Bool)                                      isLastStreamFlagPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                     dataPipeOut;
 endinterface
 
@@ -448,8 +448,8 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         NumAlias#(TSub#(TLog#(szDataInByte), nLogOfByteAlign), szAlignBlockIdx),
         NumAlias#(TAdd#(szAlignBlockIdx, 1), szAlignBlockCnt)
     );
-    PipeInAdapter#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkPipeInAdapter;
-    PipeInAdapter#(Bool)                    isLastStreamFlagPipeInQueue     <- mkPipeInAdapter;
+    PipeInAdapterB0#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(Bool)                    isLastStreamFlagPipeInQueue     <- mkPipeInAdapterB0;
     FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOF;
 
     Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
@@ -675,8 +675,8 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
         // );
     endrule
 
-    interface dataPipeIn                = toPipeInNr(dataPipeInQueue);
-    interface isLastStreamFlagPipeIn    = toPipeInNr(isLastStreamFlagPipeInQueue);
+    interface dataPipeIn                = toPipeInB0(dataPipeInQueue);
+    interface isLastStreamFlagPipeIn    = toPipeInB0(isLastStreamFlagPipeInQueue);
     interface dataPipeOut               = toPipeOut(dataPipeOutQueue);
 endmodule
 
@@ -684,8 +684,8 @@ endmodule
 
 
 interface DtldStreamSplitor#(type tData, type tStreamAlignBlockCount, numeric type nLogOfAlign);
-    interface PipeInNr#(DtldStreamData#(tData))                    dataPipeIn;
-    interface PipeInNr#(tStreamAlignBlockCount)                    streamAlignBlockCountPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData))                    dataPipeIn;
+    interface PipeInB0#(tStreamAlignBlockCount)                    streamAlignBlockCountPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                     dataPipeOut;
 endinterface
 
@@ -725,8 +725,8 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         Arith#(tStreamAlignBlockCount),
         FShow#(tStreamAlignBlockCount)
     );
-    PipeInAdapter#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkPipeInAdapter;
-    PipeInAdapter#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkPipeInAdapter;
+    PipeInAdapterB0#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkPipeInAdapterB0;
     FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkFIFOF;
 
     Reg#(DtldStreamSplitorState)       curStateReg                 <- mkReg(DtldStreamSplitorStateOutput);
@@ -963,7 +963,7 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
         // );
     endrule
 
-    interface dataPipeIn                    = toPipeInNr(dataPipeInQueue);
-    interface streamAlignBlockCountPipeIn   = toPipeInNr(streamAlignBlockCountPipeInQueue);
+    interface dataPipeIn                    = toPipeInB0(dataPipeInQueue);
+    interface streamAlignBlockCountPipeIn   = toPipeInB0(streamAlignBlockCountPipeInQueue);
     interface dataPipeOut                   = toPipeOut(dataPipeOutQueue);
 endmodule

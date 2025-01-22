@@ -5,7 +5,6 @@ import Clocks :: *;
 
 
 import ConnectableF :: *;
-import PipeIoAdaptor :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
@@ -426,7 +425,7 @@ typedef TAdd#(1, TLog#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET))     PACK
 typedef Bit#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET_WIDTH)         AlignBlockCntInPmtu;
 
 interface PacketGen;
-    interface PipeInNr#(WorkQueueElem) wqePipeIn;
+    interface PipeInB0#(WorkQueueElem) wqePipeIn;
     interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
 
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
@@ -440,7 +439,7 @@ endinterface
 (* synthesize *)
 module mkPacketGen(PacketGen);
 
-    PipeInAdapter#(WorkQueueElem)   wqePipeInQ      <- mkPipeInAdapter;
+    PipeInAdapterB0#(WorkQueueElem)   wqePipeInQ      <- mkPipeInAdapterB0;
     FIFOF#(PayloadGenReq)           genReqPipeOutQ  <- mkFIFOF;
     FIFOF#(DataStream)              genRespPipeInQ  <- mkFIFOF;
 
@@ -468,8 +467,8 @@ module mkPacketGen(PacketGen);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkLFIFOF;
     
 
-    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInNrToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 1);
-    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInNrToPipeIn(payloadStreamShifter.offsetPipeIn, 1);
+    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 1);
+    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 1);
 
     // rule debugRule;
     //     if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
@@ -738,7 +737,7 @@ module mkPacketGen(PacketGen);
 
     method setLocalNetworkSettings = ethernetPacketGen.setLocalNetworkSettings; 
 
-    interface wqePipeIn = toPipeInNr(wqePipeInQ);
+    interface wqePipeIn = toPipeInB0(wqePipeInQ);
     interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
     interface mrTableQueryClt = mrTableQueryCltInst.clt;
     interface genReqPipeOut = toPipeOut(genReqPipeOutQ);
@@ -749,7 +748,7 @@ endmodule
 interface PacketParse;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
 
-    interface PipeInNr#(IoChannelEthDataStream)       ethernetFramePipeIn;
+    interface PipeInB0#(IoChannelEthDataStream)       ethernetFramePipeIn;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketMeta)              rdmaPacketMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketTailMeta)          rdmaPacketTailMetaPipeOut;

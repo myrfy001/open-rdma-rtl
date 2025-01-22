@@ -46,7 +46,7 @@ typedef struct {
 } AddressChunkResp#(type tAddr, type tLen) deriving(Bits, FShow);
 
 interface AddressChunker#(type tAddr, type tLen, type tChunkAlignLog);
-    interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) requestPipeIn;  // no need PipeInNr
+    interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) requestPipeIn;  // no need PipeInB0
     interface PipeOut#(AddressChunkResp#(tAddr, tLen)) responsePipeOut;
 endinterface
 

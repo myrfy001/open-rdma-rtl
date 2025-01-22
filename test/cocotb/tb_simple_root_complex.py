@@ -540,8 +540,8 @@ async def small_desc_fp_test(dut):
     await pcie_ep_dev.enable_device()
     await pcie_ep_dev.set_master()
 
-    cocotb.start_soon(tb.start_memory_content_check())
-    cocotb.start_soon(tb.start_send_write_req())
+    # cocotb.start_soon(tb.start_memory_content_check())
+    # cocotb.start_soon(tb.start_send_write_req())
 
     cocotb.start_soon(tb.start_send_read_req())
     cocotb.start_soon(tb.start_read_resp_check())

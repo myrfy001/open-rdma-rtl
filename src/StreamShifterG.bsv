@@ -53,8 +53,8 @@ Below is stream that LSB is at left, THIS KIND OF STREAM IS SUPPORTED BY THIS SH
 
 
 interface StreamShifterG#(type tData);
-    interface PipeInNr#(Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) offsetPipeIn;
-    interface PipeInNr#(DtldStreamData#(tData))                                   streamPipeIn;
+    interface PipeInB0#(Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))) offsetPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData))                                   streamPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                                  streamPipeOut;
 endinterface
 
@@ -550,8 +550,8 @@ typedef struct {
 
 
 interface UniDirStreamShifter#(type tData);
-    interface PipeInNr#(Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))) offsetPipeIn;
-    interface PipeInNr#(DtldStreamData#(tData)) streamPipeIn;
+    interface PipeInB0#(Bit#(TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH)))) offsetPipeIn;
+    interface PipeInB0#(DtldStreamData#(tData)) streamPipeIn;
     interface PipeOut#(DtldStreamData#(tData)) streamPipeOut;
 endinterface
 
@@ -575,8 +575,8 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
         FShow#(tUniDirectionStreamShifterPipelineEntry),
         FShow#(Tuple2#(tData, tData))
     );
-    PipeInAdapter#(tByteIdx) offsetPipeInQ <- mkPipeInAdapter;
-    PipeInAdapter#(tDataStream) leftShiftPipeQ <- mkPipeInAdapter;
+    PipeInAdapterB0#(tByteIdx) offsetPipeInQ <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(tDataStream) leftShiftPipeQ <- mkPipeInAdapterB0;
 
 
     FIFOF#(tShiftIntermediateData) doLeftShiftPipeQ <- mkLFIFOF;
@@ -727,8 +727,8 @@ module mkLsbRightStreamLeftShifterG(UniDirStreamShifter#(tData)) provisos (
         // );
     endrule
 
-    interface offsetPipeIn  = toPipeInNr(offsetPipeInQ);
-    interface streamPipeIn  = toPipeInNr(leftShiftPipeQ);
+    interface offsetPipeIn  = toPipeInB0(offsetPipeInQ);
+    interface streamPipeIn  = toPipeInB0(leftShiftPipeQ);
     interface streamPipeOut = toPipeOut(leftShiftResultQ);
 endmodule
 
@@ -750,8 +750,8 @@ module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
         FShow#(tShiftIntermediateData),
         FShow#(Tuple2#(tData, tData))
     );
-    PipeInAdapter#(tByteIdx) offsetPipeInQ <- mkPipeInAdapter;
-    PipeInAdapter#(tDataStream) rightShiftPipeQ <- mkPipeInAdapter;
+    PipeInAdapterB0#(tByteIdx) offsetPipeInQ <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(tDataStream) rightShiftPipeQ <- mkPipeInAdapterB0;
 
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ <- mkLFIFOF;
     FIFOF#(tShiftIntermediateData) doRightShiftPipeQ2 <- mkLFIFOF;
@@ -972,8 +972,8 @@ module mkLsbRightStreamRightShifterG(UniDirStreamShifter#(tData)) provisos (
         // );
     endrule
 
-    interface offsetPipeIn  = toPipeInNr(offsetPipeInQ);
-    interface streamPipeIn  = toPipeInNr(rightShiftPipeQ);
+    interface offsetPipeIn  = toPipeInB0(offsetPipeInQ);
+    interface streamPipeIn  = toPipeInB0(rightShiftPipeQ);
     interface streamPipeOut = toPipeOut(rightShiftResultQ);
 endmodule
 
@@ -999,8 +999,8 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
         FShow#(tBiDirectionStreamShifterPipelineEntry),
         FShow#(Tuple2#(tData, tData))
     );
-    PipeInAdapter#(tByteNum)    offsetPipeInQ  <- mkPipeInAdapter;
-    PipeInAdapter#(tDataStream) streamPipeInQ  <- mkPipeInAdapter;
+    PipeInAdapterB0#(tByteNum)    offsetPipeInQ  <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(tDataStream) streamPipeInQ  <- mkPipeInAdapterB0;
     FIFOF#(tDataStream) streamPipeOutQ <- mkFIFOF;
 
     FIFOF#(Bool) keepOrderQ <- mkSizedFIFOF(4);
@@ -1009,10 +1009,10 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
     UniDirStreamShifter#(tData) rightShifter    <- mkLsbRightStreamRightShifterG;
     UniDirStreamShifter#(tData) leftShifter     <- mkLsbRightStreamLeftShifterG;
 
-    let rightShifterOffsetPipeInConverter <- mkPipeInNrToPipeIn(rightShifter.offsetPipeIn, 1);
-    let leftShifterOffsetPipeInConverter <- mkPipeInNrToPipeIn(leftShifter.offsetPipeIn, 1);
-    let rightShifterStreamPipeInConverter <- mkPipeInNrToPipeIn(rightShifter.streamPipeIn, 1);
-    let leftShifterStreamPipeInConverter <- mkPipeInNrToPipeIn(leftShifter.streamPipeIn, 1);
+    let rightShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(rightShifter.offsetPipeIn, 1);
+    let leftShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(leftShifter.offsetPipeIn, 1);
+    let rightShifterStreamPipeInConverter <- mkPipeInB0ToPipeIn(rightShifter.streamPipeIn, 1);
+    let leftShifterStreamPipeInConverter <- mkPipeInB0ToPipeIn(leftShifter.streamPipeIn, 1);
 
     rule doFinalOutput;
         let isShiftRight = keepOrderQ.first;
@@ -1074,7 +1074,7 @@ module mkBiDirectionStreamShifterLsbRightG(StreamShifterG#(tData)) provisos (
 
     
 
-    interface offsetPipeIn  = toPipeInNr(offsetPipeInQ);
-    interface streamPipeIn  = toPipeInNr(streamPipeInQ);
+    interface offsetPipeIn  = toPipeInB0(offsetPipeInQ);
+    interface streamPipeIn  = toPipeInB0(streamPipeInQ);
     interface streamPipeOut = toPipeOut(streamPipeOutQ);
 endmodule

@@ -9,12 +9,13 @@ import Connectable :: *;
 export PipeOut;
 
 export PipeIn(..);
-export PipeInNr(..);
-export PipeInAdapter(..);
-export mkPipeInAdapter;
-export toPipeInNr;
-export mkPipeInNrToPipeIn;
-export mkFifofToPipeInNr;
+export PipeInB0(..);
+export PipeInAdapterB0(..);
+export mkPipeInAdapterB0;
+export mkPipeInB0Debug;
+export toPipeInB0;
+export mkPipeInB0ToPipeIn;
+export mkFifofToPipeInB0;
 export GetF(..);
 export PutF(..);
 export ServerF(..);
@@ -41,8 +42,8 @@ interface PipeIn#(type tData);
     method Bool notFull;
 endinterface
 
-// Nr means not registered, which directly pass through
-interface PipeInNr#(type tData);
+// B0 means Buffer 0, which directly pass through
+interface PipeInB0#(type tData);
     method Action firstIn(tData dataIn);
     method Action notEmptyIn(Bool val);
     method Bool deqSignalOut;
@@ -191,21 +192,21 @@ function PipeIn#(anytype) ugToPipeIn(FIFOF#(anytype) queue);
 endfunction
 
 
-interface PipeInAdapter#(type tData);
+interface PipeInAdapterB0#(type tData);
     method tData first;
     method Action deq;
     method Bool notEmpty;
-    interface PipeInNr#(tData) pipeInIfc;
+    interface PipeInB0#(tData) pipeInIfc;
 endinterface
 
 
-module mkPipeInAdapter(PipeInAdapter#(tData)) provisos (Bits#(tData, szData));
+module mkPipeInAdapterB0(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
 
     Wire#(tData) dataWire <- mkWire;
     Wire#(Bool)  notEmptyWire <- mkWire;
     PulseWire deqSignalWire <- mkPulseWire;
 
-    interface PipeInNr pipeInIfc;
+    interface PipeInB0 pipeInIfc;
         method Action firstIn(tData dataIn);
             dataWire <= dataIn;
         endmethod
@@ -232,8 +233,49 @@ module mkPipeInAdapter(PipeInAdapter#(tData)) provisos (Bits#(tData, szData));
     endmethod
 endmodule
 
-instance Connectable#(PipeOut#(t), PipeInNr#(t));
-    module mkConnection#(PipeOut#(t) fo, PipeInNr#(t) fi)(Empty);
+
+
+module mkPipeInB0Debug#(String name)(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
+
+    Wire#(tData) dataWire <- mkWire;
+    Wire#(Bool)  notEmptyWire <- mkWire;
+    PulseWire deqSignalWire <- mkPulseWire;
+
+    interface PipeInB0 pipeInIfc;
+        method Action firstIn(tData dataIn);
+            dataWire <= dataIn;
+        endmethod
+        
+        method Action notEmptyIn(Bool val);
+            notEmptyWire <= val;
+        endmethod
+
+        method Bool deqSignalOut;
+            return deqSignalWire;
+        endmethod
+    endinterface
+
+    method tData first if (notEmptyWire);
+        return dataWire;
+    endmethod
+
+    method Action deq if (notEmptyWire);
+        deqSignalWire.send;
+        $display(
+            "time=%0t:", $time, " mkPipeInB0Debug deq is called",
+            ", name=", fshow(name)
+        );
+    endmethod
+
+    method Bool notEmpty;
+        return notEmptyWire;
+    endmethod
+endmodule
+
+
+
+instance Connectable#(PipeOut#(t), PipeInB0#(t));
+    module mkConnection#(PipeOut#(t) fo, PipeInB0#(t) fi)(Empty);
         mkConnection(fo.first, fi.firstIn);
         mkConnection(fo.notEmpty, fi.notEmptyIn);
         rule handleDeq;
@@ -244,28 +286,67 @@ instance Connectable#(PipeOut#(t), PipeInNr#(t));
     endmodule
 endinstance
 
-instance Connectable#(PipeInNr#(t), PipeOut#(t));
-    module mkConnection#(PipeInNr#(t) fi, PipeOut#(t) fo)(Empty);
+instance Connectable#(PipeInB0#(t), PipeOut#(t));
+    module mkConnection#(PipeInB0#(t) fi, PipeOut#(t) fo)(Empty);
         mkConnection(fo, fi);
     endmodule
 endinstance
 
-function PipeInNr#(anytype) toPipeInNr(PipeInAdapter#(anytype) queue);
+function PipeInB0#(anytype) toPipeInB0(PipeInAdapterB0#(anytype) queue);
     return queue.pipeInIfc;
 endfunction
 
-module mkPipeInNrToPipeIn#(PipeInNr#(tData) pipeInNr, Integer bufferDepth)(PipeIn#(tData)) provisos(Bits#(tData, szData));
+module mkPipeInB0ToPipeIn#(PipeInB0#(tData) pipeInNr, Integer bufferDepth)(PipeIn#(tData)) provisos(Bits#(tData, szData));
 
     FIFOF#(tData) innerQ <- (bufferDepth == 1 ? mkLFIFOF : mkSizedFIFOF(bufferDepth));
     mkConnection(toPipeOut(innerQ), pipeInNr);
     return toPipeIn(innerQ);
 endmodule
 
-module mkFifofToPipeInNr#(FIFOF#(tData) fifo)(PipeInNr#(tData)) provisos (Bits#(tData, szData));
-    let nrAdapter <- mkPipeInAdapter;
+module mkFifofToPipeInB0#(FIFOF#(tData) fifo)(PipeInB0#(tData)) provisos (Bits#(tData, szData));
+    let b0Adapter <- mkPipeInAdapterB0;
     rule forward;
-        nrAdapter.deq;
-        fifo.enq(nrAdapter.first);
+        b0Adapter.deq;
+        fifo.enq(b0Adapter.first);
     endrule
-    return nrAdapter.pipeInIfc;
+    return b0Adapter.pipeInIfc;
+endmodule
+
+
+
+// B1 means Buffer 1,
+interface PipeInB1#(type tData);
+    method Action firstIn(tData dataIn);
+    method Action notEmptyIn(Bool val);
+    method Bool deqSignalOut;
+endinterface
+
+interface PipeInAdapterB1#(type tData);
+    method tData first;
+    method Action deq;
+    method Bool notEmpty;
+    interface PipeInB1#(tData) pipeInIfc;
+endinterface
+
+module mkPipeInAdapterB1(PipeInAdapterB1#(tData)) provisos (Bits#(tData, szData));
+
+    FIFOF#(tData) innerFifo <- mkLFIFOF;
+
+    interface PipeInB0 pipeInIfc;
+        method Action firstIn(tData dataIn);
+            dataWire <= dataIn;
+        endmethod
+        
+        method Action notEmptyIn(Bool val);
+            notEmptyWire <= val;
+        endmethod
+
+        method Bool deqSignalOut;
+            return deqSignalWire;
+        endmethod
+    endinterface
+
+    method first = innerFifo.first;
+    method deq = innerFifo.deq;
+    method notEmpty = innerFifo.notEmpty;
 endmodule

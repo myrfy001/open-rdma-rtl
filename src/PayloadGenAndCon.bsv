@@ -42,7 +42,7 @@ typedef Bit#(PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST_WIDTH)         AlignBlo
 
 interface PayloadGen;
     interface Client#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
-    interface PipeInNr#(PayloadGenReq) genReqPipeIn;
+    interface PipeInB0#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
     interface IoChannelMemoryReadMasterPipeNrIn dmaReadMasterPipe;
@@ -62,7 +62,7 @@ endinterface
 
 interface PayloadGenAndCon;
     interface Client#(PgtAddrTranslateReq, ADDR) genAddrTranslateClt;
-    interface PipeInNr#(PayloadGenReq) genReqPipeIn;
+    interface PipeInB0#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
     interface Client#(PgtAddrTranslateReq, ADDR) conAddrTranslateClt;
@@ -97,7 +97,7 @@ endmodule
 (* synthesize *)
 module mkPayloadGen(PayloadGen);
 
-    PipeInAdapter#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapter;
+    PipeInAdapterB0#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapterB0;
 
     FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
@@ -126,7 +126,7 @@ module mkPayloadGen(PayloadGen);
     FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkLFIFOF;
 
 
-    let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInNrToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
+    let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
 
     rule handleInReq;
         let req = genReqPipeInQ.first;
@@ -193,10 +193,10 @@ module mkPayloadGen(PayloadGen);
         // );
     endrule
 
-    let fifoToPipeInNrBridge <- mkFifofToPipeInNr(dmaReadRespPipeInQ);
+    let fifoToPipeInNrBridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
-    interface genReqPipeIn = toPipeInNr(genReqPipeInQ);
+    interface genReqPipeIn = toPipeInB0(genReqPipeInQ);
     interface payloadGenStreamPipeOut = dsConcator.dataPipeOut;
 
     interface IoChannelMemoryReadMasterPipeNrIn dmaReadMasterPipe;
@@ -227,8 +227,8 @@ module mkPayloadCon(PayloadCon);
     FIFOF#(Length) issueDmaWritePipelineQ <- mkLFIFOF;
     FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkLFIFOF;
 
-    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInNrToPipeIn(dsSpliter.streamAlignBlockCountPipeIn, 1);
-    let dsSpliterDataPipeInConverter <- mkPipeInNrToPipeIn(dsSpliter.dataPipeIn, 1);
+    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(dsSpliter.streamAlignBlockCountPipeIn, 1);
+    let dsSpliterDataPipeInConverter <- mkPipeInB0ToPipeIn(dsSpliter.dataPipeIn, 1);
 
     rule handleInReq;
         let req = conReqPipeInQ.first;

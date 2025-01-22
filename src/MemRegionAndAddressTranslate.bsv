@@ -610,17 +610,17 @@ typedef struct {
 interface PgtUpdateDmaInterfaceConvertor;
     interface IoChannelMemoryMasterPipeNrIn dmaSidePipeIfc;
 
-    interface PipeInNr#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
+    interface PipeInB0#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(PgtUpdateDmaReadResp) dmaReadRespPipeOut;
 endinterface
 
 module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
     FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkFIFOF;
-    PipeInAdapter#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkPipeInAdapter;
+    PipeInAdapterB0#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkPipeInAdapterB0;
     FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkFIFOF;
 
-    PipeInAdapter#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkPipeInAdapter;
+    PipeInAdapterB0#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkPipeInAdapterB0;
     FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
 
     rule forwardReadReq;
@@ -654,11 +654,11 @@ module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
         endinterface
         interface DtldStreamMasterReadPipesNrIn readPipeIfc;
             interface readMetaPipeOut = toPipeOut(busReadMetaPipeOutQueue);
-            interface readDataPipeIn  = toPipeInNr(busReadDataPipeInQueue);
+            interface readDataPipeIn  = toPipeInB0(busReadDataPipeInQueue);
         endinterface
     endinterface
 
-    interface dmaReadReqPipeIn = toPipeInNr(dmaReadReqPipeInQ);
+    interface dmaReadReqPipeIn = toPipeInB0(dmaReadReqPipeInQ);
     interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);
 endmodule
 

@@ -67,7 +67,7 @@ typedef enum {
 typedef 10000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
 
 interface AutoAckGenerator;
-    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInNr#(AutoAckGeneratorReq)) reqPipeInVec;
+    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(AutoAckGeneratorReq)) reqPipeInVec;
     interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream))     ackEthPacketPipeOutVec;
 
     interface Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
@@ -86,8 +86,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     FIFOF#(IndexQP) resetReqPipeInQueue <- mkLFIFOF;
 
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInNr#(AutoAckGeneratorReq)) reqPipeInVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInAdapter#(AutoAckGeneratorReq)) reqPipeInQueueVec <- replicateM(mkPipeInAdapter);
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(AutoAckGeneratorReq)) reqPipeInVecInst = newVector;
+    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInAdapterB0#(AutoAckGeneratorReq)) reqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
     Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream)) ackEthPacketPipeOutVecInst = newVector;
 
@@ -107,7 +107,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     end
 
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-        reqPipeInVecInst[idx] = toPipeInNr(reqPipeInQueueVec[idx]);
+        reqPipeInVecInst[idx] = toPipeInB0(reqPipeInQueueVec[idx]);
     end
 
     QpContextTwoWayQuery  qpContextForAutoAck <- mkQpContextTwoWayQuery;
@@ -165,7 +165,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
 
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-        psnMergeAndStorage_reqPipeInVec[idx] <- mkPipeInNrToPipeIn(psnMergeAndStorage.reqPipeInVec[idx], 2);
+        psnMergeAndStorage_reqPipeInVec[idx] <- mkPipeInB0ToPipeIn(psnMergeAndStorage.reqPipeInVec[idx], 2);
         rule forwardInputReqToPsnPreMerge;
             let req = reqPipeInQueueVec[idx].first;
             reqPipeInQueueVec[idx].deq;

@@ -80,8 +80,8 @@ module mkSimpleNic(SimpleNic);
     mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
     mkConnection(txConcator.dataPipeOut, toPipeIn(rawEthernetPacketPipeOutQueue));
 
-    let rxSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInNrToPipeIn(rxSplitor.streamAlignBlockCountPipeIn, 1);
-    let txConcatorIsLastStreamFlagPipeInConverter <- mkPipeInNrToPipeIn(txConcator.isLastStreamFlagPipeIn, 1);
+    let rxSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(rxSplitor.streamAlignBlockCountPipeIn, 1);
+    let txConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(txConcator.isLastStreamFlagPipeIn, 1);
     
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         rawEthernetPacketPipeInVecInst[idx] = toPipeIn(rawEthernetPacketPipeInQueueVec[idx]);
@@ -193,7 +193,7 @@ module mkSimpleNic(SimpleNic);
     endrule
 
 
-    let fifoToPipeInNrBridge <- mkFifofToPipeInNr(dmaReadDataPipeInQueue);
+    let fifoToPipeInNrBridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
 
 
     interface rawEthernetPacketPipeInVec = rawEthernetPacketPipeInVecInst;

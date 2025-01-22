@@ -8,9 +8,10 @@ import math
 import asyncio
 
 import cocotb
-from cocotb.triggers import RisingEdge, ReadWrite
+from cocotb.triggers import RisingEdge, FallingEdge, ReadWrite, ReadOnly, Edge, NextTimeStep
 from cocotb.binary import BinaryValue
 from cocotb.queue import Queue
+import cocotb.triggers
 
 
 def gen_rtl_file_list(top_paths):
@@ -50,12 +51,13 @@ class BluespecValueMethod:
     async def __call__(self, **kwargs):
         await ReadWrite()
         while not self.ready_signal.value:
-            await RisingEdge(self.ready_signal)
+            await RisingEdge(self.clk)
 
         for (arg_name, arg_val) in kwargs.items():
             getattr(self.dut, self.signal_base_name +
                     f"_{arg_name}").value = arg_val
 
+        assert self.ready_signal.value
         return self.return_value_signal.value
 
 
@@ -73,7 +75,26 @@ class BluespecActionValueMethod:
         self.enable_signal = getattr(dut, enable_signal_name)
         self.return_value_signal = getattr(dut, return_value_signal_name, None)
 
+        self.ready_signal_new = self.ready_signal.value
+        self.enable_signal_new = self.enable_signal.value
+        self.return_value_signal_new = None if self.return_value_signal is None else self.return_value_signal.value
+
         self.enable_signal.setimmediatevalue(0)
+        self._call_finished_evt = cocotb.triggers.Event()
+        self.has_pending_task = False
+        # cocotb.start_soon(self._handshake_task())
+
+    # async def _handshake_task(self):
+    #     while True:
+    #         await RisingEdge(self.clk)
+
+    #         self.ready_signal.value = self.ready_signal_new
+    #         self.enable_signal.value = self.enable_signal_new
+    #         self.return_value_signal.value = self.return_value_signal_new
+
+    #         if self.has_pending_task:
+    #             self.enable_signal_new = 1
+    #             if self.ready_signal.value == 1:  # handshake success
 
     async def __call__(self, **kwargs):
         async def _deassert_en_signal():
@@ -82,11 +103,13 @@ class BluespecActionValueMethod:
 
         await ReadWrite()
         while not self.ready_signal.value:
-            await RisingEdge(self.ready_signal)
+            await RisingEdge(self.clk)
+
         self.enable_signal.value = 1
         for (arg_name, arg_val) in kwargs.items():
             getattr(self.dut, self.signal_base_name +
                     f"_{arg_name}").value = arg_val
+
         await cocotb.start(_deassert_en_signal())
         if self.return_value_signal is not None:
             return self.return_value_signal.value
@@ -611,14 +634,16 @@ class BluespecPipeInNrWithQueue:
         cocotb.start_soon(self._forward_task())
 
     async def _forward_task(self):
+        await RisingEdge(self.clk)
         while True:
-
+            # await NextTimeStep()
             deq_signal = await self._pipe_in_nr.deq_signal_out()
             if deq_signal == 1:
+                assert len(self._queue) > 0
                 self._queue.popleft()
                 self._deq_event.set()
                 self.log.debug(
-                    f"BluespecPipeInNrWithQueue handle deq signal")
+                    f"BluespecPipeInNrWithQueue handle deq signal. signal_name={self.signal_base_name}")
 
             if len(self._queue) > 0:
                 ele = self._queue[0]
@@ -627,7 +652,7 @@ class BluespecPipeInNrWithQueue:
 
                 debug_ds = BlueRdmaDataStream256.unpack(ele)
                 self.log.debug(
-                    f"BluespecPipeInNrWithQueue forward. ele={debug_ds}")
+                    f"BluespecPipeInNrWithQueue forward. signal_name={self.signal_base_name}, ele={debug_ds}")
 
             else:
                 await self._pipe_in_nr.not_empty_in(0)
@@ -642,6 +667,8 @@ class BluespecPipeInNrWithQueue:
             self._deq_event.clear()
             await self._deq_event.wait()
         self._queue.append(data)
+        # self.log.debug(
+        #     f"BluespecPipeInNrWithQueue enq. signal_name={self.signal_base_name}, data={data}")
 
 
 class SimplePcieBehaviorModel(object):

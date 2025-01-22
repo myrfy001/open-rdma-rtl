@@ -6,7 +6,6 @@ import Vector :: *;
 import Clocks :: *;
 
 import ConnectableF :: *;
-import PipeIoAdaptor :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 
@@ -96,7 +95,7 @@ interface BsvTopOnlyHardIp;
 
     interface PcieBiDirUserDataStreamMasterPipes                                                    rtilepcieStreamMasterIfc;
     interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesNrIn)     rtilepcieStreamSlaveIfcVec;
-    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeInNr#(FtileMacTxUserStream))           ftilemacTxStreamPipeInVec;
+    interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeInB0#(FtileMacTxUserStream))           ftilemacTxStreamPipeInVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeOut#(FtileMacRxUserStream))            ftilemacRxStreamPipeOutVec;
     
 endinterface
@@ -769,7 +768,7 @@ interface QpMrPgtQpc;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeNrIn)       qpDmaRequestMasterIfcVec;
     interface IoChannelMemoryMasterPipeNrIn                                         simpleNicPacketDmaMasterPipeIfc;
 
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInNr#(WorkQueueElem))            wqePipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem))            wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor))      metaReportDescPipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeNrIn)  qpEthDataStreamIfcVec;
 
@@ -804,7 +803,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ);
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_THREE, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInNr#(WorkQueueElem)) wqePipeInVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
 
 
