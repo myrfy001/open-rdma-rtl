@@ -38,6 +38,10 @@ def copy_mem_file_to_sim_build_dir(src_dirs, target_dir):
 
 class BluespecValueMethod:
     def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_"):
+
+        self.log = logging.getLogger("cocotb.tb")
+        self.log.setLevel(logging.INFO)
+
         self.dut = dut
         self.clk = clk
         self.signal_base_name = signal_base_name
@@ -49,13 +53,37 @@ class BluespecValueMethod:
         self.return_value_signal = getattr(dut, return_value_signal_name)
 
     async def __call__(self, **kwargs):
+        self.log.debug(
+            f"11111111111111={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
+
         await ReadWrite()
+        self.log.debug(
+            f"2222222222={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
         while not self.ready_signal.value:
+            self.log.debug(
+                f"wait 11111={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
             await RisingEdge(self.clk)
+            self.log.debug(
+                f"wait 2222={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
+            await ReadWrite()
+        self.log.debug(
+            f"333333333={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
 
         for (arg_name, arg_val) in kwargs.items():
             getattr(self.dut, self.signal_base_name +
                     f"_{arg_name}").value = arg_val
+
+        self.log.debug(
+            f"444444={kwargs}  retval={self.return_value_signal.value} signal={self.signal_base_name}")
+        # await ReadWrite()
+        self.log.debug(
+            f"555555={kwargs}  retval={self.return_value_signal.value} signal={self.signal_base_name}")
+
+        async def _tttt():
+            await NextTimeStep()
+            self.log.debug(
+                f"6666666={kwargs}  retval={self.return_value_signal.value} signal={self.signal_base_name}")
+        await cocotb.start(_tttt())
 
         assert self.ready_signal.value
         return self.return_value_signal.value
@@ -63,6 +91,10 @@ class BluespecValueMethod:
 
 class BluespecActionValueMethod:
     def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_", enable_prefix="EN_"):
+
+        self.log = logging.getLogger("cocotb.tb")
+        self.log.setLevel(logging.INFO)
+
         self.dut = dut
         self.clk = clk
         self.signal_base_name = signal_base_name
@@ -75,13 +107,16 @@ class BluespecActionValueMethod:
         self.enable_signal = getattr(dut, enable_signal_name)
         self.return_value_signal = getattr(dut, return_value_signal_name, None)
 
-        self.ready_signal_new = self.ready_signal.value
-        self.enable_signal_new = self.enable_signal.value
-        self.return_value_signal_new = None if self.return_value_signal is None else self.return_value_signal.value
-
         self.enable_signal.setimmediatevalue(0)
-        self._call_finished_evt = cocotb.triggers.Event()
-        self.has_pending_task = False
+
+        self.next_beat_values = {}
+
+        # self.ready_signal_new = self.ready_signal.value
+        # self.enable_signal_new = self.enable_signal.value
+        # self.return_value_signal_new = None if self.return_value_signal is None else self.return_value_signal.value
+
+        # self._call_finished_evt = cocotb.triggers.Event()
+        # self.has_pending_task = False
         # cocotb.start_soon(self._handshake_task())
 
     # async def _handshake_task(self):
@@ -98,20 +133,41 @@ class BluespecActionValueMethod:
 
     async def __call__(self, **kwargs):
         async def _deassert_en_signal():
+            self.log.debug(
+                f"aaaaaaaa={kwargs}  signal={self.signal_base_name}")
             await RisingEdge(self.clk)
+            self.log.debug(
+                f"bbbbbbbb={kwargs}  signal={self.signal_base_name}")
             self.enable_signal.value = 0
 
+            self.next_beat_values.clear()
+
+        self.log.debug(
+            f"11111111111111={kwargs}  signal={self.signal_base_name}")
         await ReadWrite()
+        self.log.debug(f"2222222222={kwargs}  signal={self.signal_base_name}")
         while not self.ready_signal.value:
             await RisingEdge(self.clk)
+            await ReadWrite()
+        self.log.debug(f"333333333={kwargs}  signal={self.signal_base_name}")
 
         self.enable_signal.value = 1
+        assert len(self.next_beat_values) == 0
         for (arg_name, arg_val) in kwargs.items():
             getattr(self.dut, self.signal_base_name +
                     f"_{arg_name}").value = arg_val
 
         await cocotb.start(_deassert_en_signal())
+        # cocotb.start_soon(_deassert_en_signal())
+
+        self.log.debug(
+            f"444444={kwargs}  retval={self.return_value_signal.value if self.return_value_signal is not None else '<NA>'} signal={self.signal_base_name}")
+        await ReadWrite()
+        self.log.debug(
+            f"555555={kwargs}  retval={self.return_value_signal.value if self.return_value_signal is not None else '<NA>'} signal={self.signal_base_name}")
+
         if self.return_value_signal is not None:
+            # but return value should be returned current beat
             return self.return_value_signal.value
 
 
@@ -622,7 +678,7 @@ class BluespecPipeInNr:
 class BluespecPipeInNrWithQueue:
     def __init__(self, dut, signal_base_name, clk):
         self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
 
         self.dut = dut
         self.clk = clk
@@ -636,7 +692,6 @@ class BluespecPipeInNrWithQueue:
     async def _forward_task(self):
         await RisingEdge(self.clk)
         while True:
-            # await NextTimeStep()
             deq_signal = await self._pipe_in_nr.deq_signal_out()
             if deq_signal == 1:
                 assert len(self._queue) > 0

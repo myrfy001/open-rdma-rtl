@@ -16,7 +16,7 @@ class Ringbuf:
             raise Exception("ringbuf_len must be power of 2")
 
         self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
 
         self.backend_mem = backend_mem
         self.buffer_addr = buffer_addr

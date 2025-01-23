@@ -28,7 +28,7 @@ def gen_qpn_from_idx_and_key(idx, key):
 class HardwareTestHelper:
     def __init__(self, pcie_bfm):
         self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
 
         self.pcie_bfm = pcie_bfm
         self.ringbuf_buffer_size = 0x20000

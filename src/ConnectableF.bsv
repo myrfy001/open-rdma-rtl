@@ -314,39 +314,24 @@ endmodule
 
 
 
-// B1 means Buffer 1,
-interface PipeInB1#(type tData);
-    method Action firstIn(tData dataIn);
-    method Action notEmptyIn(Bool val);
-    method Bool deqSignalOut;
-endinterface
+// // B1 means Buffer 1,
+// typedef PipeIn#(tData) PipeInB1#(tData);
 
-interface PipeInAdapterB1#(type tData);
-    method tData first;
-    method Action deq;
-    method Bool notEmpty;
-    interface PipeInB1#(tData) pipeInIfc;
-endinterface
 
-module mkPipeInAdapterB1(PipeInAdapterB1#(tData)) provisos (Bits#(tData, szData));
+// interface PipeInAdapterB1#(type tData);
+//     method tData first;
+//     method Action deq;
+//     method Bool notEmpty;
+//     interface PipeInB1#(tData) pipeInIfc;
+// endinterface
 
-    FIFOF#(tData) innerFifo <- mkLFIFOF;
+// module mkPipeInAdapterB1(PipeInAdapterB1#(tData)) provisos (Bits#(tData, szData));
 
-    interface PipeInB0 pipeInIfc;
-        method Action firstIn(tData dataIn);
-            dataWire <= dataIn;
-        endmethod
-        
-        method Action notEmptyIn(Bool val);
-            notEmptyWire <= val;
-        endmethod
+//     FIFOF#(tData) innerFifo <- mkLFIFOF;
 
-        method Bool deqSignalOut;
-            return deqSignalWire;
-        endmethod
-    endinterface
+//     method first = innerFifo.first;
+//     method deq = innerFifo.deq;
+//     method notEmpty = innerFifo.notEmpty;
 
-    method first = innerFifo.first;
-    method deq = innerFifo.deq;
-    method notEmpty = innerFifo.notEmpty;
-endmodule
+//     interface pipeInIfc = toPipeIn(innerFifo);
+// endmodule

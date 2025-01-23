@@ -349,7 +349,7 @@ class TB(object):
                     continue
 
                 if len(self.read_reqs_to_check[channel_idx]) == 0:
-                    continue
+                    raise SystemError("should not empty")
                 cur_meta = self.read_reqs_to_check[channel_idx][0]
                 cur_resp_ds_raw = await self.requester_read_data_pipes[channel_idx].first()
                 cur_resp_ds = BlueRdmaDataStream256.unpack(cur_resp_ds_raw)
@@ -357,7 +357,7 @@ class TB(object):
 
                 if cur_resp_ds.is_first():
                     print(
-                        f"channel {channel_idx} recv new packet, raw meta = {cur_meta}")
+                        f"channel {channel_idx} recv new packet, raw meta = {cur_meta}, cur_resp_ds={cur_resp_ds}")
 
                 first_beat_invalid_byte_cnt = cur_meta.addr() % 4
                 cur_start_addr_aligned_to_4_byte = cur_meta.addr() - first_beat_invalid_byte_cnt
@@ -540,8 +540,8 @@ async def small_desc_fp_test(dut):
     await pcie_ep_dev.enable_device()
     await pcie_ep_dev.set_master()
 
-    # cocotb.start_soon(tb.start_memory_content_check())
-    # cocotb.start_soon(tb.start_send_write_req())
+    cocotb.start_soon(tb.start_memory_content_check())
+    cocotb.start_soon(tb.start_send_write_req())
 
     cocotb.start_soon(tb.start_send_read_req())
     cocotb.start_soon(tb.start_read_resp_check())
@@ -549,7 +549,7 @@ async def small_desc_fp_test(dut):
     # cocotb.start_soon(tb.start_completer_read_write_req_send())
     # cocotb.start_soon(tb.start_completer_read_write_req_handler())
 
-    await Timer(50000, units='ns')
+    await Timer(5000, units='ns')
 
 
 def test_dma():
