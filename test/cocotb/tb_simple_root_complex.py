@@ -24,7 +24,7 @@ class TB(object):
         self.dut = dut
 
         self.pcie_mrrs = 512
-        self.write_test_packet_cnt = 100000
+        self.write_test_packet_cnt = 1000
         self.total_write_byte_cnt = 0
 
         self.read_test_packet_cnt = 100000
@@ -274,10 +274,10 @@ class TB(object):
                             total_len=target_packet_size
                         )
                         await self.requester_write_meta_pipes[channel_idx].enq(write_meta.pack())
-                        self.log.debug(f"send new write meta={write_meta}")
+                        self.log.info(f"send new write meta={write_meta}")
 
                     await self.requester_write_data_pipes[channel_idx].enq(ds.pack())
-                    self.log.debug(f"new write beat={ds}")
+                    self.log.info(f"new write beat={ds}")
 
                     self.total_write_byte_cnt += ds.byte_num()
 
@@ -549,7 +549,7 @@ async def small_desc_fp_test(dut):
     # cocotb.start_soon(tb.start_completer_read_write_req_send())
     # cocotb.start_soon(tb.start_completer_read_write_req_handler())
 
-    await Timer(5000, units='ns')
+    await Timer(50000, units='ns')
 
 
 def test_dma():

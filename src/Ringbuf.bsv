@@ -435,7 +435,7 @@ interface RingbufDmaIfcConvertor;
     interface PipeOut#(Bool) dmaWriteRespPipeOut;
 
     // dma side interface
-    interface IoChannelMemoryMasterPipeNrIn dmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeB0In dmaMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -520,12 +520,12 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
     interface dmaWriteDataPipeIn = toPipeInB0(dmaWriteDataPipeInQ);
     interface dmaWriteRespPipeOut = toPipeOut(dmaWriteRespPipeOutQ);
 
-    interface IoChannelMemoryMasterPipeNrIn dmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeB0In dmaMasterPipeIfc;
         interface DtldStreamMasterWritePipes  writePipeIfc ;
             interface writeMetaPipeOut = toPipeOut(dmaWriteMetaPipeOutQueue);
             interface writeDataPipeOut = toPipeOut(dmaWriteDataPipeOutQueue);
         endinterface
-        interface DtldStreamMasterReadPipesNrIn  readPipeIfc;
+        interface DtldStreamMasterReadPipesB0In  readPipeIfc;
             interface readMetaPipeOut = toPipeOut(dmaReadMetaPipeOutQueue);
             interface readDataPipeIn = toPipeInB0(dmaReadDataPipeInQueue);
         endinterface

@@ -608,7 +608,7 @@ typedef struct {
 
 
 interface PgtUpdateDmaInterfaceConvertor;
-    interface IoChannelMemoryMasterPipeNrIn dmaSidePipeIfc;
+    interface IoChannelMemoryMasterPipeB0In dmaSidePipeIfc;
 
     interface PipeInB0#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(PgtUpdateDmaReadResp) dmaReadRespPipeOut;
@@ -647,12 +647,12 @@ module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
         dmaReadRespPipeOutQ.enq(ds);
     endrule
 
-    interface IoChannelMemoryMasterPipeNrIn dmaSidePipeIfc;
+    interface IoChannelMemoryMasterPipeB0In dmaSidePipeIfc;
         interface DtldStreamMasterWritePipes writePipeIfc;
             interface writeMetaPipeOut = toPipeOut(busWriteMetaPipeOutQueue);
             interface writeDataPipeOut = toPipeOut(busWriteDataPipeOutQueue);
         endinterface
-        interface DtldStreamMasterReadPipesNrIn readPipeIfc;
+        interface DtldStreamMasterReadPipesB0In readPipeIfc;
             interface readMetaPipeOut = toPipeOut(busReadMetaPipeOutQueue);
             interface readDataPipeIn  = toPipeInB0(busReadDataPipeInQueue);
         endinterface

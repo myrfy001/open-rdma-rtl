@@ -38,7 +38,7 @@ interface SimpleNic;
     
     interface PipeIn#(RingbufRawDescriptor)                                     simpleNicTxDescPipeIn;
     interface PipeOut#(RingbufRawDescriptor)                                    simpleNicRxDescPipeOut;
-    interface IoChannelMemoryMasterPipeNrIn                                     simpleNicPacketDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeB0In                                     simpleNicPacketDmaMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -193,7 +193,7 @@ module mkSimpleNic(SimpleNic);
     endrule
 
 
-    let fifoToPipeInNrBridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
+    let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
 
 
     interface rawEthernetPacketPipeInVec = rawEthernetPacketPipeInVecInst;
@@ -201,14 +201,14 @@ module mkSimpleNic(SimpleNic);
     interface simpleNicTxDescPipeIn = toPipeIn(simpleNicDescPipeInQueue);
     interface simpleNicRxDescPipeOut = toPipeOut(simpleNicDescPipeOutQueue);
 
-    interface IoChannelMemoryMasterPipeNrIn simpleNicPacketDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeB0In simpleNicPacketDmaMasterPipeIfc;
         interface DtldStreamMasterWritePipes  writePipeIfc;
             interface writeMetaPipeOut  = toPipeOut(dmaWriteMetaPipeOutQueue);
             interface writeDataPipeOut  = toPipeOut(dmaWriteDataPipeOutQueue);
         endinterface
-        interface DtldStreamMasterReadPipesNrIn  readPipeIfc;
+        interface DtldStreamMasterReadPipesB0In  readPipeIfc;
             interface readMetaPipeOut   = toPipeOut(dmaReadMetaPipeOutQueue);
-            interface readDataPipeIn    = fifoToPipeInNrBridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
+            interface readDataPipeIn    = fifoToPipeInB0Bridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
         endinterface
     endinterface
 endmodule

@@ -10,8 +10,14 @@ export PipeOut;
 
 export PipeIn(..);
 export PipeInB0(..);
+// export PipeInB1(..);
+// export PipeInB2(..);
 export PipeInAdapterB0(..);
+// export PipeInAdapterB1(..);
+// export PipeInAdapterB2(..);
 export mkPipeInAdapterB0;
+export mkPipeInAdapterB1;
+export mkPipeInAdapterB2;
 export mkPipeInB0Debug;
 export toPipeInB0;
 export mkPipeInB0ToPipeIn;
@@ -315,8 +321,10 @@ endmodule
 
 
 // // B1 means Buffer 1,
-// typedef PipeIn#(tData) PipeInB1#(tData);
-
+// interface PipeInB1#(type tData);
+//     method Action enq(tData data);
+//     method Bool notFull;
+// endinterface
 
 // interface PipeInAdapterB1#(type tData);
 //     method tData first;
@@ -325,13 +333,117 @@ endmodule
 //     interface PipeInB1#(tData) pipeInIfc;
 // endinterface
 
-// module mkPipeInAdapterB1(PipeInAdapterB1#(tData)) provisos (Bits#(tData, szData));
 
-//     FIFOF#(tData) innerFifo <- mkLFIFOF;
+module mkPipeInAdapterB1(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
 
-//     method first = innerFifo.first;
-//     method deq = innerFifo.deq;
-//     method notEmpty = innerFifo.notEmpty;
+    FIFOF#(tData) innerFifo <- mkLFIFOF;
 
-//     interface pipeInIfc = toPipeIn(innerFifo);
-// endmodule
+    Wire#(tData) dataWire <- mkWire;
+    Wire#(Bool)  notEmptyWire <- mkWire;
+    PulseWire deqSignalWire <- mkPulseWire;
+
+    rule doEnq;
+        if (notEmptyWire) begin
+            innerFifo.enq(dataWire);
+            deqSignalWire.send;
+        end
+    endrule
+
+    method first = innerFifo.first;
+    method deq = innerFifo.deq;
+    method notEmpty = innerFifo.notEmpty;
+
+    interface PipeInB0 pipeInIfc;
+        method Action firstIn(tData dataIn);
+            dataWire <= dataIn;
+        endmethod
+        
+        method Action notEmptyIn(Bool val);
+            notEmptyWire <= val;
+        endmethod
+
+        method Bool deqSignalOut;
+            return deqSignalWire;
+        endmethod
+    endinterface
+endmodule
+
+// instance Connectable#(PipeOut#(t), PipeInB1#(t));
+//     module mkConnection#(PipeOut#(t) fo, PipeInB1#(t) fi)(Empty);
+//         rule handleForward;
+//             fi.enq(fo.first);
+//             fo.deq;
+//         endrule
+//     endmodule
+// endinstance
+
+// instance Connectable#(PipeInB1#(t), PipeOut#(t));
+//     module mkConnection#(PipeInB1#(t) fi, PipeOut#(t) fo)(Empty);
+//         mkConnection(fo, fi);
+//     endmodule
+// endinstance
+
+
+
+
+// B2 means Buffer21,
+// interface PipeInB2#(type tData);
+//     method Action enq(tData data);
+//     method Bool notFull;
+// endinterface
+
+// interface PipeInAdapterB2#(type tData);
+//     method tData first;
+//     method Action deq;
+//     method Bool notEmpty;
+//     interface PipeInB2#(tData) pipeInIfc;
+// endinterface
+
+module mkPipeInAdapterB2(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
+
+    FIFOF#(tData) innerFifo <- mkFIFOF;
+
+    Wire#(tData) dataWire <- mkWire;
+    Wire#(Bool)  notEmptyWire <- mkWire;
+    PulseWire deqSignalWire <- mkPulseWire;
+
+    rule doEnq;
+        if (notEmptyWire) begin
+            innerFifo.enq(dataWire);
+            deqSignalWire.send;
+        end
+    endrule
+
+    method first = innerFifo.first;
+    method deq = innerFifo.deq;
+    method notEmpty = innerFifo.notEmpty;
+
+    interface PipeInB0 pipeInIfc;
+        method Action firstIn(tData dataIn);
+            dataWire <= dataIn;
+        endmethod
+        
+        method Action notEmptyIn(Bool val);
+            notEmptyWire <= val;
+        endmethod
+
+        method Bool deqSignalOut;
+            return deqSignalWire;
+        endmethod
+    endinterface
+endmodule
+
+// instance Connectable#(PipeOut#(t), PipeInB2#(t));
+//     module mkConnection#(PipeOut#(t) fo, PipeInB2#(t) fi)(Empty);
+//         rule handleForward;
+//             fi.enq(fo.first);
+//             fo.deq;
+//         endrule
+//     endmodule
+// endinstance
+
+// instance Connectable#(PipeInB2#(t), PipeOut#(t));
+//     module mkConnection#(PipeInB2#(t) fi, PipeOut#(t) fo)(Empty);
+//         mkConnection(fo, fi);
+//     endmodule
+// endinstance

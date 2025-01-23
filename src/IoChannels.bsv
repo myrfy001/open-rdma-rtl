@@ -30,17 +30,17 @@ typedef DtldStreamMasterWritePipes#(DATA, ADDR, Length) IoChannelMemoryWriteMast
 typedef DtldStreamSlaveReadPipes#(DATA, ADDR, Length) IoChannelMemoryReadSlavePipe;
 typedef DtldStreamSlaveWritePipes#(DATA, ADDR, Length) IoChannelMemoryWriteSlavePipe;
 
-typedef DtldStreamMasterReadPipesNrIn#(DATA, ADDR, Length) IoChannelMemoryReadMasterPipeNrIn;
-typedef DtldStreamSlaveReadPipesNrIn#(DATA, ADDR, Length) IoChannelMemoryReadSlavePipeNrIn;
-typedef DtldStreamSlaveWritePipesNrIn#(DATA, ADDR, Length) IoChannelMemoryWriteSlavePipeNrIn;
+typedef DtldStreamMasterReadPipesB0In#(DATA, ADDR, Length) IoChannelMemoryReadMasterPipeB0In;
+typedef DtldStreamSlaveReadPipesB0In#(DATA, ADDR, Length) IoChannelMemoryReadSlavePipeB0In;
+typedef DtldStreamSlaveWritePipesB0In#(DATA, ADDR, Length) IoChannelMemoryWriteSlavePipeB0In;
 
 typedef DtldStreamBiDirMasterPipes#(DATA, ADDR, Length) IoChannelMemoryMasterPipe;
 typedef DtldStreamBiDirSlavePipes#(DATA, ADDR, Length) IoChannelMemorySlavePipe;
 
-typedef DtldStreamBiDirMasterPipesNrIn#(DATA, ADDR, Length) IoChannelMemoryMasterPipeNrIn;
-typedef DtldStreamBiDirSlavePipesNrIn#(DATA, ADDR, Length) IoChannelMemorySlavePipeNrIn;
+typedef DtldStreamBiDirMasterPipesB0In#(DATA, ADDR, Length) IoChannelMemoryMasterPipeB0In;
+typedef DtldStreamBiDirSlavePipesB0In#(DATA, ADDR, Length) IoChannelMemorySlavePipeB0In;
 
 typedef DtldStreamNoMetaBiDirPipes#(DATA)       IoChannelBiDirStreamNoMetaPipe;
-typedef DtldStreamNoMetaBiDirPipesNrIn#(DATA)   IoChannelBiDirStreamNoMetaPipeNrIn;
+typedef DtldStreamNoMetaBiDirPipesB0In#(DATA)   IoChannelBiDirStreamNoMetaPipeB0In;
 
 typedef DtldStreamArbiterSlave#(NUMERIC_TYPE_THREE, DATA, ADDR, Length) IoChannelThreeChannelDmaMux;

@@ -45,7 +45,7 @@ interface PayloadGen;
     interface PipeInB0#(PayloadGenReq) genReqPipeIn;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
-    interface IoChannelMemoryReadMasterPipeNrIn dmaReadMasterPipe;
+    interface IoChannelMemoryReadMasterPipeB0In dmaReadMasterPipe;
 endinterface
 
 interface PayloadCon;
@@ -70,7 +70,7 @@ interface PayloadGenAndCon;
     interface PipeOut#(Bool) conRespPipeOut;
     interface PipeIn#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
-    interface IoChannelMemoryMasterPipeNrIn ioChannelMemoryMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeB0In ioChannelMemoryMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -88,7 +88,7 @@ module mkPayloadGenAndCon(PayloadGenAndCon);
     interface conRespPipeOut = payloadCon.conRespPipeOut;
     interface payloadConStreamPipeIn = payloadCon.payloadConStreamPipeIn;
 
-    interface IoChannelMemoryMasterPipeNrIn ioChannelMemoryMasterPipeIfc;
+    interface IoChannelMemoryMasterPipeB0In ioChannelMemoryMasterPipeIfc;
         interface writePipeIfc  = payloadCon.dmaWriteMasterPipe;
         interface readPipeIfc   = payloadGen.dmaReadMasterPipe;
     endinterface
@@ -193,15 +193,15 @@ module mkPayloadGen(PayloadGen);
         // );
     endrule
 
-    let fifoToPipeInNrBridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
+    let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
     interface genReqPipeIn = toPipeInB0(genReqPipeInQ);
     interface payloadGenStreamPipeOut = dsConcator.dataPipeOut;
 
-    interface IoChannelMemoryReadMasterPipeNrIn dmaReadMasterPipe;
+    interface IoChannelMemoryReadMasterPipeB0In dmaReadMasterPipe;
         interface readMetaPipeOut = toPipeOut(dmaReadReqPipeOutQ);
-        interface readDataPipeIn = fifoToPipeInNrBridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
+        interface readDataPipeIn = fifoToPipeInB0Bridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
     endinterface
 
 endmodule

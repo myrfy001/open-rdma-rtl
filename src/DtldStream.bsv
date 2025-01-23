@@ -33,10 +33,14 @@ interface DtldStreamMasterReadPipes#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
     interface PipeIn#(DtldStreamData#(tData))                   readDataPipeIn;
 endinterface
-interface DtldStreamMasterReadPipesNrIn#(type tData, type tAddr, type tLen);
+interface DtldStreamMasterReadPipesB0In#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
     interface PipeInB0#(DtldStreamData#(tData))                 readDataPipeIn;
 endinterface
+// interface DtldStreamMasterReadPipesB2In#(type tData, type tAddr, type tLen);
+//     interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
+//     interface PipeInB2#(DtldStreamData#(tData))                 readDataPipeIn;
+// endinterface
 
 
 
@@ -44,38 +48,54 @@ interface DtldStreamBiDirMasterPipes#(type tData, type tAddr, type tLen);
     interface DtldStreamMasterWritePipes#(tData, tAddr, tLen)  writePipeIfc;
     interface DtldStreamMasterReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
-interface DtldStreamBiDirMasterPipesNrIn#(type tData, type tAddr, type tLen);
+interface DtldStreamBiDirMasterPipesB0In#(type tData, type tAddr, type tLen);
     interface DtldStreamMasterWritePipes#(tData, tAddr, tLen)  writePipeIfc;
-    interface DtldStreamMasterReadPipesNrIn#(tData, tAddr, tLen)   readPipeIfc;
+    interface DtldStreamMasterReadPipesB0In#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
+// interface DtldStreamBiDirMasterPipesB2In#(type tData, type tAddr, type tLen);
+//     interface DtldStreamMasterWritePipes#(tData, tAddr, tLen)  writePipeIfc;
+//     interface DtldStreamMasterReadPipesB2In#(tData, tAddr, tLen)   readPipeIfc;
+// endinterface
 
 
 interface DtldStreamSlaveWritePipes#(type tData, type tAddr, type tLen);
     interface PipeIn#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
     interface PipeIn#(DtldStreamData#(tData))                   writeDataPipeIn;
 endinterface
-interface DtldStreamSlaveWritePipesNrIn#(type tData, type tAddr, type tLen);
+interface DtldStreamSlaveWritePipesB0In#(type tData, type tAddr, type tLen);
     interface PipeInB0#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
     interface PipeInB0#(DtldStreamData#(tData))                   writeDataPipeIn;
 endinterface
+// interface DtldStreamSlaveWritePipesB2In#(type tData, type tAddr, type tLen);
+//     interface PipeInB2#(DtldStreamMemAccessMeta#(tAddr, tLen))    writeMetaPipeIn;
+//     interface PipeInB2#(DtldStreamData#(tData))                   writeDataPipeIn;
+// endinterface
 
 interface DtldStreamSlaveReadPipes#(type tData, type tAddr, type tLen);
     interface PipeIn#(DtldStreamMemAccessMeta#(tAddr, tLen))     readMetaPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                   readDataPipeOut;
 endinterface
-interface DtldStreamSlaveReadPipesNrIn#(type tData, type tAddr, type tLen);
+interface DtldStreamSlaveReadPipesB0In#(type tData, type tAddr, type tLen);
     interface PipeInB0#(DtldStreamMemAccessMeta#(tAddr, tLen))      readMetaPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                      readDataPipeOut;
 endinterface
+// interface DtldStreamSlaveReadPipesB2In#(type tData, type tAddr, type tLen);
+//     interface PipeInB2#(DtldStreamMemAccessMeta#(tAddr, tLen))      readMetaPipeIn;
+//     interface PipeOut#(DtldStreamData#(tData))                      readDataPipeOut;
+// endinterface
 
 interface DtldStreamBiDirSlavePipes#(type tData, type tAddr, type tLen);
     interface DtldStreamSlaveWritePipes#(tData, tAddr, tLen)  writePipeIfc;
     interface DtldStreamSlaveReadPipes#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
-interface DtldStreamBiDirSlavePipesNrIn#(type tData, type tAddr, type tLen);
-    interface DtldStreamSlaveWritePipesNrIn#(tData, tAddr, tLen)  writePipeIfc;
-    interface DtldStreamSlaveReadPipesNrIn#(tData, tAddr, tLen)   readPipeIfc;
+interface DtldStreamBiDirSlavePipesB0In#(type tData, type tAddr, type tLen);
+    interface DtldStreamSlaveWritePipesB0In#(tData, tAddr, tLen)  writePipeIfc;
+    interface DtldStreamSlaveReadPipesB0In#(tData, tAddr, tLen)   readPipeIfc;
 endinterface
+// interface DtldStreamBiDirSlavePipesB2In#(type tData, type tAddr, type tLen);
+//     interface DtldStreamSlaveWritePipesB2In#(tData, tAddr, tLen)  writePipeIfc;
+//     interface DtldStreamSlaveReadPipesB2In#(tData, tAddr, tLen)   readPipeIfc;
+// endinterface
 
 
 
@@ -88,7 +108,7 @@ interface DtldStreamNoMetaBiDirPipes#(type tData);
     interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
 endinterface
 
-interface DtldStreamNoMetaBiDirPipesNrIn#(type tData);
+interface DtldStreamNoMetaBiDirPipesB0In#(type tData);
     interface PipeInB0#(DtldStreamData#(tData))                 dataPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
 endinterface
@@ -102,8 +122,8 @@ instance Connectable#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen), DtldStrea
     endmodule
 endinstance
 
-instance Connectable#(DtldStreamBiDirMasterPipesNrIn#(tData, tAddr, tLen), DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen));
-    module mkConnection#(DtldStreamBiDirMasterPipesNrIn#(tData, tAddr, tLen) master, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen) slave)(Empty);
+instance Connectable#(DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen), DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen));
+    module mkConnection#(DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen) master, DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen) slave)(Empty);
         mkConnection(master.writePipeIfc.writeMetaPipeOut, slave.writePipeIfc.writeMetaPipeIn);
         mkConnection(master.writePipeIfc.writeDataPipeOut, slave.writePipeIfc.writeDataPipeIn);
         mkConnection(master.readPipeIfc.readMetaPipeOut, slave.readPipeIfc.readMetaPipeIn);
@@ -113,8 +133,8 @@ endinstance
 
 
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);
-    interface Vector#(channelCnt, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen))       slaveIfcVec;
-    interface DtldStreamBiDirMasterPipesNrIn#(tData, tAddr, tLen)                           masterIfc;
+    interface Vector#(channelCnt, DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen))       slaveIfcVec;
+    interface DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen)                           masterIfc;
     interface PipeOut#(Bit#(TLog#(channelCnt)))                                             writeSourceChannelIdPipeOut;
     interface PipeOut#(Bit#(TLog#(channelCnt)))                                             readSourceChannelIdPipeOut;
 endinterface
@@ -129,7 +149,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         FShow#(tData)
     );
 
-    Vector#(channelCnt, DtldStreamBiDirSlavePipesNrIn#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
+    Vector#(channelCnt, DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen))     slaveIfcVecInst = newVector;
 
     Vector#(channelCnt, PipeInAdapterB0#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkPipeInAdapterB0);
     Vector#(channelCnt, PipeInAdapterB0#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkPipeInAdapterB0);
@@ -268,13 +288,13 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
         slaveIfcVecInst[channelIdx] = (
-            interface DtldStreamBiDirSlavePipesNrIn 
-                interface DtldStreamSlaveWritePipesNrIn writePipeIfc;
+            interface DtldStreamBiDirSlavePipesB0In 
+                interface DtldStreamSlaveWritePipesB0In writePipeIfc;
                     interface  writeMetaPipeIn  = toPipeInB0(slaveSideQueueVecWm[channelIdx]);
                     interface  writeDataPipeIn  = toPipeInB0(slaveSideQueueVecWd[channelIdx]);
                 endinterface
 
-                interface DtldStreamSlaveReadPipesNrIn readPipeIfc;
+                interface DtldStreamSlaveReadPipesB0In readPipeIfc;
                     interface  readMetaPipeIn  = toPipeInB0(slaveSideQueueVecRm[channelIdx]);
                     interface  readDataPipeOut = toPipeOut(slaveSideQueueVecRd[channelIdx]);
                 endinterface
@@ -282,13 +302,13 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
     end
 
     interface slaveIfcVec = slaveIfcVecInst;
-    interface DtldStreamBiDirMasterPipesNrIn masterIfc;
+    interface DtldStreamBiDirMasterPipesB0In masterIfc;
         interface DtldStreamMasterWritePipes writePipeIfc;
             interface  writeMetaPipeOut  = toPipeOut(masterSideQueueWm);
             interface  writeDataPipeOut  = toPipeOut(masterSideQueueWd);
         endinterface
 
-        interface DtldStreamMasterReadPipesNrIn readPipeIfc;
+        interface DtldStreamMasterReadPipesB0In readPipeIfc;
             interface  readMetaPipeOut  = toPipeOut(masterSideQueueRm);
             interface  readDataPipeIn   = toPipeInB0(masterSideQueueRd);
         endinterface

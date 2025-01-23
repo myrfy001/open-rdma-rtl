@@ -50,6 +50,19 @@ module mkTestB(TestB);
     interface pi = ad.pipeInIfc;
 endmodule
 
+
+interface TestC;
+    method Int#(32) m1(Int#(32) i);
+endinterface
+
+module mkTestC(TestC);
+    method Int#(32) m1(Int#(32) i);
+        return i+1;
+    endmethod
+endmodule
+
+
+
 module mkTop(Empty);
     let mA <- mkTestA;
     let mB <- mkTestB;
