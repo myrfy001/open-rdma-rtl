@@ -209,9 +209,8 @@ class SendQueueReqDescSeg0(Structure):
 
                 ("F_TOTAL_LEN", c_uint32, 32),
                 ("F_RKEY", c_uint32, 32),
-                ("F_R_ADDR", c_uint64, 64),
-
                 ("F_DST_IP", c_uint32, 32),
+                ("F_R_ADDR", c_uint64, 64),
 
 
                 ("F_PSN", c_uint32, 24),

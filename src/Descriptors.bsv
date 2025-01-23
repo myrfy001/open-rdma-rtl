@@ -31,8 +31,8 @@ typedef struct {
     TypeQP                      qpType;           // 4  bits
     PSN                         psn;              // 24 bits
 
-    IpAddr                      dqpIP;            // 32 bits
     ADDR                        raddr;            // 64 bits
+    IpAddr                      dqpIP;            // 32 bits
     RKEY                        rkey;             // 32 bits
     Length                      totalLen;         // 32 bits
 
