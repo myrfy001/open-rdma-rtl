@@ -142,21 +142,11 @@ async def small_desc_fp_test(dut):
     tb = TB(dut)
     await cocotb.start(Clock(tb.clock, 2, "ns").start())
 
+    await cocotb.start(tb.start_single_card_loop_back())
+
     await tb.gen_reset()
 
-    await tb.start_single_card_loop_back()
-
-    # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
-
-    # eth_layer = Ether(dst="AA:BB:CC:DD:EE", src="AA:BB:CC:DD:FF")
-    # ip_layer = IP(dst="17.34.51.68")
-    # udp_layer = UDP(dport=1111, sport=2222)
-
-    # payload_to_send = "0123456789abcdef"
-    # bytes_to_send = bytes(eth_layer/ip_layer/udp_layer/payload_to_send)
-    # await tb.put_rx_data(bytes_to_send)
-
-    await Timer(3000, units='ns')
+    await Timer(15000, units='ns')
     tb.clean_up()
 
 
