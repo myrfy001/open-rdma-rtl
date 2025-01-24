@@ -864,6 +864,9 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         rule deqNotused;
             ethTxStreamArbiterVec[idx].sourceChannelIdPipeOut.deq;
         endrule
+        rule setChannelIdx;
+            rqVec[idx].set_channle_idx(fromInteger(idx));
+        endrule
     end
 
     // other meta report desc related connection

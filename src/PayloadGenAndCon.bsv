@@ -235,11 +235,11 @@ module mkPayloadCon(PayloadCon);
         rawReqToBurstChunker.requestPipeIn.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple2(req.pgtOffset, req.baseVA));
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadCon handleInReq"),
-        //     toBlue(", req="), fshow(req),
-        //     toBlue(", chunkReq="), fshow(chunkReq)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadCon handleInReq"),
+            toBlue(", req="), fshow(req),
+            toBlue(", chunkReq="), fshow(chunkReq)
+        );
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
@@ -259,11 +259,11 @@ module mkPayloadCon(PayloadCon);
         addrTranslateCltInst.putReq(addrTranslateReq);
 
         issueDmaWritePipelineQ.enq(burstAddrBoundry.len);
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq"),
-        //     toBlue(", addrTranslateReq="), fshow(addrTranslateReq),
-        //     toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq"),
+            toBlue(", addrTranslateReq="), fshow(addrTranslateReq),
+            toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
+        );
     endrule
 
     rule getBeatChunkMetaCalculateRespAndIssueAxiWrite;
@@ -282,12 +282,12 @@ module mkPayloadCon(PayloadCon);
             totalLen: len
         };
         dmaWriteReqAddrPipeOutQ.enq(writeReq);
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite"),
-        //     toBlue(", writeReq="), fshow(writeReq),
-        //     toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
-        //     toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite"),
+            toBlue(", writeReq="), fshow(writeReq),
+            toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
+            toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc)
+        );
     endrule
 
     rule calcStreamSpliterMeta;
@@ -310,20 +310,20 @@ module mkPayloadCon(PayloadCon);
         if (ds.isLast) begin
             conRespPipeOutQ.enq(True);
         end
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadCon forwardConsumedFinishedSignal"),
-        //     toBlue(", ds="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadCon forwardConsumedFinishedSignal"),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     rule debugForwardSplitOutput;
         let ds = dsSpliter.dataPipeOut.first;
         dsSpliter.dataPipeOut.deq;
         dmaWriteReqDataPipeOutQ.enq(ds);
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadCon debugForwardSplitOutput"),
-        //     toBlue(", ds="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadCon debugForwardSplitOutput"),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     interface addrTranslateClt = addrTranslateCltInst.clt;

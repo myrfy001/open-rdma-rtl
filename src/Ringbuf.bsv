@@ -558,6 +558,8 @@ module mkRingbufDescriptorReadProxy(RingbufDescriptorReadProxy#(n_desc));
         segBuf[0] <= rawDesc;
         RingbufDescCommonHead head = unpack(truncate(rawDesc));
 
+        $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "fillAllReqSegments descriptor: ", fshow(rawDesc));
+
         let hasMoreSegs = head.hasNextFrag;
         if (!hasMoreSegs) begin
             curSegCntReg <= 0;

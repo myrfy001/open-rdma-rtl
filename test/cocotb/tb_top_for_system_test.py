@@ -76,6 +76,16 @@ class TB(object):
         cocotb.start_soon(self._forward_csr_write_task())
         cocotb.start_soon(self._forward_csr_read_req_task())
 
+    async def start_single_card_loop_back(self):
+        async def _loop_back_task(self):
+            while True:
+                tx_beat = await self.eth_bfm.get_tx_packet()
+                await self.eth_bfm.inject_rx_packet(tx_beat)
+                self.log.debug(
+                    f"single_card_loop_back forward beat: {tx_beat}")
+
+        cocotb.start_soon(_loop_back_task(self))
+
     def clean_up(self):
         self.rpc_server.stop()
 
@@ -134,17 +144,19 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
+    await tb.start_single_card_loop_back()
+
     # await tb.pcie_bfm.host_write_blocking(0x02 << 2, 4)
 
-    eth_layer = Ether(dst="AA:BB:CC:DD:EE", src="AA:BB:CC:DD:FF")
-    ip_layer = IP(dst="17.34.51.68")
-    udp_layer = UDP(dport=1111, sport=2222)
+    # eth_layer = Ether(dst="AA:BB:CC:DD:EE", src="AA:BB:CC:DD:FF")
+    # ip_layer = IP(dst="17.34.51.68")
+    # udp_layer = UDP(dport=1111, sport=2222)
 
-    payload_to_send = "0123456789abcdef"
-    bytes_to_send = bytes(eth_layer/ip_layer/udp_layer/payload_to_send)
-    await tb.put_rx_data(bytes_to_send)
+    # payload_to_send = "0123456789abcdef"
+    # bytes_to_send = bytes(eth_layer/ip_layer/udp_layer/payload_to_send)
+    # await tb.put_rx_data(bytes_to_send)
 
-    await Timer(500, units='ns')
+    await Timer(3000, units='ns')
     tb.clean_up()
 
 

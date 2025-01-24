@@ -201,13 +201,13 @@ module mkAutoAckGenerator(AutoAckGenerator);
                     needCheckKey: False
                 });
 
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
-                //     toBlue(", channelIdx=%d"), idx,
-                //     toBlue(", respMaybe="), fshow(respMaybe),
-                //     toBlue(", hasPacketLost="), fshow(hasPacketLost),
-                //     toBlue(", needSendAckNow="), fshow(needSendAckNow)
-                // );
+                $display(
+                    "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
+                    toBlue(", channelIdx=%d"), idx,
+                    toBlue(", respMaybe="), fshow(respMaybe),
+                    toBlue(", hasPacketLost="), fshow(hasPacketLost),
+                    toBlue(", needSendAckNow="), fshow(needSendAckNow)
+                );
             end
             else begin
                 autoAckMetaAtomicUpdateStorage.reqPipeInVec[idx].enq(tagged Invalid);
@@ -422,10 +422,10 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 metaReportDescPipeOutQueueVec[2].enq(pack(desc0));
                 lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
 
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
-                //     toBlue(", desc="), fshow(desc0)
-                // );
+                $display(
+                    "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
+                    toBlue(", desc="), fshow(desc0)
+                );
             end
         end
         else begin

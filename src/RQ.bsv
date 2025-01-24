@@ -118,6 +118,7 @@ interface RQ;
     interface PipeOut#(RingbufRawDescriptor)    metaReportDescPipeOut;
     interface PipeOut#(AutoAckGeneratorReq)     autoAckGenReqPipeOut;
     interface PipeOut#(CnpPacketGenReq)         genCnpReqPipeOut;
+    method Action set_channle_idx(Bit#(2) chIdx);
 endinterface
 
 // FIXME: handle illegal packet length. don't trust length or other meta extracted from header. 
@@ -125,6 +126,8 @@ endinterface
 //        And for packet that isn't normal, make sure all related queues are dequeued. otherwise deadlock.
 (* synthesize *)
 module mkRQ(RQ);
+
+    Reg#(Bit#(2)) chIdxReg <- mkRegU;
 
     FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkLFIFOF;
     FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkLFIFOF;
@@ -285,7 +288,8 @@ module mkRQ(RQ);
             "time=%0t:", $time, toGreen(" mkRQ sendQpcQueryReqAndSomeSimpleParse"),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut),
             toBlue(", isRespNeedDMAWrite="), fshow(isRespNeedDMAWrite),
-            toBlue(", isReqNeedDMAWrite="), fshow(isReqNeedDMAWrite)
+            toBlue(", isReqNeedDMAWrite="), fshow(isReqNeedDMAWrite),
+            toBlue(", reth="), fshow(reth)
         );
     endrule
 
@@ -577,10 +581,12 @@ module mkRQ(RQ);
                 };
                 conReqPipeOutQ.enq(payloadConReq);
                 discardDebugFlag = False;
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkRQ issuePayloadConReqOrDiscard"),
-                //     toBlue(", payloadConReq="), fshow(payloadConReq)
-                // );
+                $display(
+                    "time=%0t:", $time, toGreen(" mkRQ issuePayloadConReqOrDiscard send con req"),
+                    toBlue(", chIdx="), fshow(chIdxReg),
+                    toBlue(", payloadConReq="), fshow(payloadConReq),
+                    toBlue(", bth="), fshow(bth)
+                );
             end
         end
         else begin
@@ -633,7 +639,7 @@ module mkRQ(RQ);
             if (!isDiscard) begin
                 let resp = conRespPipeInQ.first;
                 conRespPipeInQ.deq;
-                $display("payload con resp = ", fshow(resp));
+                $display("payload con resp = ", fshow(resp), toBlue(", chIdx="), fshow(chIdxReg),  ", bth=", fshow(bth));
             end
         end
 
@@ -663,16 +669,16 @@ module mkRQ(RQ);
             
         end
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRQ handleConResp")
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRQ handleConResp")
+        // );
     endrule
    
 
     rule genMetaReportQueueDesc;
 
         // write them in a function to make sure they are all comb logic.
-        function Tuple2#(Vector#(NUMERIC_TYPE_TWO, Maybe#(RingbufRawDescriptor)), Bool) genDescVector();
+        function Tuple3#(Vector#(NUMERIC_TYPE_TWO, Maybe#(RingbufRawDescriptor)), Bool, Bool) genDescVector();
             let pipelineEntryIn = handleGenMetaReportQueueDescPipeQ.first;
             let rdmaPacketMeta  = pipelineEntryIn.rdmaPacketMeta;
 
@@ -694,6 +700,7 @@ module mkRQ(RQ);
             Maybe#(RingbufRawDescriptor) rawDescToEnqueueMaybe0 = tagged Invalid;
             Maybe#(RingbufRawDescriptor) rawDescToEnqueueMaybe1 = tagged Invalid;
             Bool decodeSuccess = True;
+            Bool noNeedToGenDesc = False;
             case (opcode)
                 fromInteger(valueOf(RC_SEND_FIRST)),
                 fromInteger(valueOf(RC_SEND_LAST)),
@@ -764,6 +771,9 @@ module mkRQ(RQ);
                         };
                         rawDescToEnqueueMaybe0 = tagged Valid unpack(pack(desc0));
                     end
+                    else begin
+                        noNeedToGenDesc = True;
+                    end
                 end
                 fromInteger(valueOf(RC_ACKNOWLEDGE)):
                 begin
@@ -802,10 +812,10 @@ module mkRQ(RQ);
                     decodeSuccess = False;
                 end
             endcase
-            return tuple2(vec(rawDescToEnqueueMaybe0, rawDescToEnqueueMaybe1), decodeSuccess);
+            return tuple3(vec(rawDescToEnqueueMaybe0, rawDescToEnqueueMaybe1), decodeSuccess, noNeedToGenDesc);
         endfunction
 
-        let {vecToEnqMaybe, decodeSuccess} = genDescVector;
+        let {vecToEnqMaybe, decodeSuccess, noNeedToGenDesc} = genDescVector;
 
         if (!decodeSuccess) begin
             $display("Warn: Received Not Supported Packet, Will not report to software.");
@@ -825,11 +835,20 @@ module mkRQ(RQ);
                 handleGenMetaReportQueueDescPipeQ.deq;
             end
         end
+        else begin
+            if (noNeedToGenDesc) begin
+                handleGenMetaReportQueueDescPipeQ.deq;
+            end
+            else begin
+                // metaReportMimoQueue doesn't have enough space, so nothing to do, and no need to deq;
+            end
+        end
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc"),
-            toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
-        );
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc"),
+        //     toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
+        // );
     endrule
 
     rule forwardMetaReportDescToOutput;
@@ -877,7 +896,9 @@ module mkRQ(RQ);
     interface payloadConRespPipeIn      = toPipeIn(conRespPipeInQ);
 
     method setLocalNetworkSettings      = packetParser.setLocalNetworkSettings; 
-
+    method Action set_channle_idx(Bit#(2) chIdx);
+        chIdxReg <= chIdx;
+    endmethod
     interface metaReportDescPipeOut     = toPipeOut(metaReportDescPipeOutQueue);
     interface autoAckGenReqPipeOut      = toPipeOut(autoAckGenReqPipeOutQueue);
     interface genCnpReqPipeOut          = toPipeOut(genCnpReqPipeOutQueue);
