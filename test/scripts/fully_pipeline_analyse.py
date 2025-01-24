@@ -20,8 +20,16 @@ non_continous_cnt = 0
 for line in sys.stdin:
     if not filter_re.search(line):
         continue
+    if "time=" not in line[:40]:
+        continue
 
-    time_str = line.split(":", maxsplit=1)[0]
+    splited_line = line.split(":", maxsplit=2)
+
+    if line.startswith(("INFO cocotb: ", "DEBUG cocotb: ")):
+        time_str = splited_line[1].strip()
+    else:
+        time_str = splited_line[0].strip()
+
     if not time_str.startswith(TIME_PREFIX):
         continue
     time_str = time_str[len(TIME_PREFIX):]
