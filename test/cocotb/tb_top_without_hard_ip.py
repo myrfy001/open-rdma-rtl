@@ -274,17 +274,25 @@ class TB(object):
         await self.init_helper.start_meta_report_queue_collector()
 
         src_buf_mem_addr, src_buf_mem = self.init_helper.alloc_physical_memory(
-            65536, 1)
+            65536, 4096)
         src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 65536)
 
         dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
-            65536, 1)
+            65536, 4096)
         dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 65536)
 
-        for d in range(8192):
+        self.log.info(
+            f"addr before random: src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
+
+        src_addr_offset = random.randint(0, 15)
+        dst_addr_offset = random.randint(0, 15)
+        write_src_addr = src_buf_mem_addr + src_addr_offset
+        write_dst_addr = dst_buf_mem_addr + dst_addr_offset
+        write_len = 8191
+
+        for d in range(65536):
             src_buf_mem[d] = d % 256
             dst_buf_mem[d] = 0xFF
-        dst_buf_mem[8191] = 0x66
 
         self_qpn = self.init_helper.alloc_qpn()
         peer_qpn = self.init_helper.alloc_qpn()
@@ -294,7 +302,7 @@ class TB(object):
         self.log.info(
             f"src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
 
-        pmtu = PMTU.IBV_MTU_2048
+        pmtu = PMTU.IBV_MTU_1024
         # create qp for send side
         await self.init_helper.create_qp(
             peer_mac_addr=CARD_A_MAC_ADDRESS,
@@ -325,11 +333,11 @@ class TB(object):
             is_last=True,
             is_retry=False,
             enable_ecn=False,
-            total_len=8191,
+            total_len=write_len,
             lkey=src_mr_key,
-            laddr=src_buf_mem_addr,
-            data_len=8191,
-            r_va=dst_buf_mem_addr,
+            laddr=write_src_addr,
+            data_len=write_len,
+            r_va=write_dst_addr,
             r_key=dst_mr_key,
             r_ip=CARD_A_IP_ADDRESS,
             r_mac=CARD_A_MAC_ADDRESS,
@@ -369,11 +377,16 @@ class TB(object):
         # write finish signal. Or delay the desc report on hardware.
         await Timer(600, units='ns')
 
-        for d in range(8191):
+        for d in range(write_len):
+            expected_data = src_buf_mem[d+src_addr_offset]
+            got_data = dst_buf_mem[d+dst_addr_offset]
             self.log.debug(
-                f"checking at idx = {d}, addr={hex(d+dst_buf_mem_addr)}, data={hex(dst_buf_mem[d])}")
-            assert dst_buf_mem[d] == d % 256  # should be modified
-        assert dst_buf_mem[8191] == 0x66  # should not be modified
+                f"checking at idx = {d}, src addr={hex(d+write_src_addr)}, dst addr={hex(d+write_dst_addr)}, expected_data={hex(expected_data)}, got_data={hex(got_data)}")
+            assert expected_data == got_data  # should be modified
+        for d in range(dst_addr_offset):
+            assert dst_buf_mem[d] == 0xFF  # should not be modified
+        for d in range(dst_addr_offset+write_len, 65536):
+            assert dst_buf_mem[d] == 0xFF  # should not be modified
 
         # # check meta report desc for ACK packet generated at recv side
         # resp_raw = await self.init_helper.get_meta_report_from_collected_queue()
@@ -434,6 +447,10 @@ class TB(object):
         #     0x0100+0x0020+0x0002) * 4)
         # self.log.debug(f"read metrics: {metrics_csr_val}")
 
+    async def testcase_simple_nic_loop_back(self):
+        self.init_helper.simple_nix_tx_queue.put_tx_request(1000, 0)
+        await self.init_helper.simple_nix_tx_queue.sync_pointers()
+
 
 @ cocotb.test(timeout_time=3000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
@@ -448,8 +465,9 @@ async def small_desc_fp_test(dut):
 
     # await tb.testcase_send_simple_write_loopback_req()
     await tb.testcase_send_simple_write_loopback_req_8191()
+    # await tb.testcase_simple_nic_loop_back()
 
-    await Timer(100, units='ns')
+    await Timer(10, units='ns')
     tb.clean_up()
 
 
