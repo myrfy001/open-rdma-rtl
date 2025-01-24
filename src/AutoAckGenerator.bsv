@@ -404,7 +404,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                     hasNextFrag     : False,
                     reserved0       : unpack(0),
                     isExtendOpcode  : False,
-                    opCode          : {pack(TRANS_TYPE_CNP), pack(ACKNOWLEDGE)}
+                    opCode          : {pack(TRANS_TYPE_RC), pack(ACKNOWLEDGE)}
                 };
 
                 let desc0 = MetaReportQueueAckDesc{
