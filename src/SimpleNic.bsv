@@ -174,22 +174,36 @@ module mkSimpleNic(SimpleNic);
         SimpleNicTxQueueDesc desc = unpack(pack(simpleNicDescPipeInQueue.first));
         simpleNicDescPipeInQueue.deq;
 
-        txAddrChunker.requestPipeIn.enq(AddressChunkReq {
+        let chunkReq = AddressChunkReq {
             startAddr: desc.addr,
             len: desc.len,
             chunk: fromInteger(valueOf(TLog#(PCIE_NAP_MAX_BYTE_IN_BURST)))
-        });
+        };
+        txAddrChunker.requestPipeIn.enq(chunkReq);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkSimpleNic handleTxReq"),
+        //     toBlue(", desc="), fshow(desc),
+        //     toBlue(", chunkReq="), fshow(chunkReq)
+        // );
     endrule
 
     rule handleTxAddrChunkResp;
         let chunkInfo = txAddrChunker.responsePipeOut.first;
         txAddrChunker.responsePipeOut.deq;
 
-        dmaReadMetaPipeOutQueue.enq(IoChannelMemoryAccessMeta{
+        let dmaReadReq = IoChannelMemoryAccessMeta{
             addr: chunkInfo.startAddr,
             totalLen: chunkInfo.len
-        });
+        };
+        dmaReadMetaPipeOutQueue.enq(dmaReadReq);
         txConcatorIsLastStreamFlagPipeInConverter.enq(chunkInfo.isLast);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkSimpleNic handleTxAddrChunkResp"),
+        //     toBlue(", chunkInfo="), fshow(chunkInfo),
+        //     toBlue(", dmaReadReq="), fshow(dmaReadReq)
+        // );
     endrule
 
 

@@ -452,7 +452,10 @@ module mkPacketGen(PacketGen);
     DtldStreamSplitor#(DATA, AlignBlockCntInPmtu, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) payloadSplitor <- mkDtldStreamSplitor;
     mkConnection(payloadStreamShifter.streamPipeOut, payloadSplitor.dataPipeIn);
 
-    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkFIFOF;
+    // Important: fully-pipeline cretical
+    // this queue will directly connect to ETH packet gen module. Eth gen will consume 3 beat to gen header,
+    // so we need at least 3 storage slot to make it fully-pipelined
+    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkSizedFIFOF(3);
 
     EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator;
     mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);   // already Nr
@@ -474,6 +477,7 @@ module mkPacketGen(PacketGen);
     //     if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
     //     if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
     //     if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
+    //     if (!perPacketPayloadDataStreamQ.notFull) $display("time=%0t, ", $time, "FullQueue: perPacketPayloadDataStreamQ");
     // endrule
     
     rule queryMrTable;
