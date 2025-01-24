@@ -810,12 +810,15 @@ class SimplePcieBehaviorModel(object):
                             data >>= (write_data.start_byte_index() * 8)
 
                         old_write_addr = cur_write_addr
-                        for _ in range(write_data.byte_num()):
-                            self.mem[cur_write_addr] = data & 0xff
+                        # since pcie stream is aligned to 4 byte, each beat's first 3 byte may be invalid
+                        skip_byte_cnt = cur_write_addr % 4
+                        for byte_idx in range(write_data.byte_num()):
+                            if byte_idx >= skip_byte_cnt:
+                                self.mem[cur_write_addr] = data & 0xff
+                                cur_write_addr += 1
                             data >>= 8
-                            cur_write_addr += 1
 
-                        total_len += write_data.byte_num()
+                        total_len += (write_data.byte_num() - skip_byte_cnt)
                         self.log.debug(
                             f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
@@ -980,8 +983,8 @@ class SimpleEthBehaviorModel(object):
 
                 if ds.is_last():
                     await self.main_tx_queue.put(packet_data)
-                    # self.log.debug(
-                    #     f"eth bfm channel {idx} got full packet, data={packet_data}")
+                    self.log.info(
+                        f"eth bfm channel {idx} got full packet, data={packet_data}")
                     packet_data = b""
             await RisingEdge(self.clock)
 

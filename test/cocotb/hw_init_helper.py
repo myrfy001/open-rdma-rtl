@@ -110,6 +110,8 @@ class HardwareTestHelper:
         self.qp_list = []
 
     def alloc_physical_memory(self, size, align):
+        self.log.info(
+            f"alloc phy mem self.mem_alloc_ptr = {self.mem_alloc_ptr}, size={size}, align={align}")
         tmp_start_ptr = self.mem_alloc_ptr
         if self.mem_alloc_ptr % align != 0:
             tmp_start_ptr += (align - (self.mem_alloc_ptr % align))
