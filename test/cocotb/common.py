@@ -795,7 +795,7 @@ class SimplePcieBehaviorModel(object):
                 cur_write_addr = write_meta.addr()
                 total_len = 0
 
-                self.log.debug(
+                self.log.info(
                     f"cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
                 # loop to handle each beat in a request
                 while True:
@@ -819,7 +819,7 @@ class SimplePcieBehaviorModel(object):
                             data >>= 8
 
                         total_len += (write_data.byte_num() - skip_byte_cnt)
-                        self.log.debug(
+                        self.log.info(
                             f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
                         if (write_data.is_last()):
@@ -953,6 +953,7 @@ class SimpleEthBehaviorModel(object):
         for idx in range(len(tx_ifc_base_names)):
             self.txChannels.append(BluespecPipeOut(
                 dut, tx_ifc_base_names[idx], self.clock))
+        for idx in range(len(rx_ifc_base_names)):
             self.rxChannels.append(BluespecPipeInNrWithQueue(
                 dut, rx_ifc_base_names[idx], self.clock))
 
@@ -961,6 +962,7 @@ class SimpleEthBehaviorModel(object):
 
         for idx in range(len(tx_ifc_base_names)):
             cocotb.start_soon(self._handle_dut_tx_task(idx))
+        for idx in range(len(rx_ifc_base_names)):
             cocotb.start_soon(self._handle_dut_rx_task(idx))
 
     async def get_tx_packet(self):
@@ -1007,9 +1009,9 @@ class SimpleEthBehaviorModel(object):
                         is_last=is_last
                     )
                     await self.rxChannels[idx].enq(ds.pack())
-                    self.log.debug(f"inject rx beat to dut, ds={ds}")
+                    self.log.info(
+                        f"inject rx beat to dut, channel={idx} ds={ds}")
                 await RisingEdge(self.clock)
-            await RisingEdge(self.clock)
 
 
 class DeviceRingbufTestHelper:
