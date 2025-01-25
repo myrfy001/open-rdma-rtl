@@ -11,6 +11,7 @@ GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 SYSTEM_TEST_TOP_BSV_SRC_FILE = ../src/Top.bsv
 SYSTEM_TEST_TOP_MODULE = mkBsvTopWithoutHardIpInstance
 SYSTEM_TEST_TB_FILE = tb_top_for_system_test.py
+SYSTEM_TEST_TB_FILE_TWO_CARD = tb_top_for_system_test_two_card.py
 
 # TOP_BSV_SRC_FILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOP_MODULE ?= mkTestRTilePcieByCocotbTest
@@ -68,8 +69,24 @@ run_system_test_server:
 	mkdir -p log
 
 	set -o pipefail ; \
-	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) INST_ID=1 python3 $(SYSTEM_TEST_TB_FILE) 2>&1 | tee $(LOG_FILE).1 &  \
-	# COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) INST_ID=2 python3 $(SYSTEM_TEST_TB_FILE) 2>&1 | tee $(LOG_FILE).2 &
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=1 python3 $(SYSTEM_TEST_TB_FILE) 2>&1 | tee $(LOG_FILE).1
+
+run_system_test_server_1:
+	cd $(TB_DIR)
+	mkdir -p log
+
+	set -o pipefail ; \
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=1 python3 $(SYSTEM_TEST_TB_FILE_TWO_CARD) 2>&1 | tee $(LOG_FILE).1
+
+run_system_test_server_2:
+	cd $(TB_DIR)
+	mkdir -p log
+
+	set -o pipefail ; \
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=2 python3 $(SYSTEM_TEST_TB_FILE_TWO_CARD) 2>&1 | tee $(LOG_FILE).2
+
+
+
 
 cocotb:clean verilog prepare run
 
