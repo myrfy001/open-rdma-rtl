@@ -73,7 +73,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     FIFOF#(DataStream) otherRawPacketOutQ <- mkFIFOF;
 
     FIFOF#(DataStream) waitingForRouteQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
-    FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkLFIFOF;
+    FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkFIFOF;   // maybe not need FIFOF
 
     Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntryReg <- mkRegU;
 
@@ -120,6 +120,14 @@ module mkInputPacketClassifier(InputPacketClassifier);
         endactionvalue
     endfunction
     CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_ONE), "mkInputPacketClassifier");
+
+
+
+    rule printDebugInfo;
+        if (!rdmaRawPacketOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkInputPacketClassifier rdmaRawPacketOutQ");
+        if (!waitingForRouteQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkInputPacketClassifier waitingForRouteQ");
+        if (waitingForRouteQ.notEmpty && !ethPacketMetaQ.notEmpty) $display("time=%0t, ", $time, "EmptyQueue: mkInputPacketClassifier ethPacketMetaQ");
+    endrule
 
     rule discardPacketWhenNetworkSettingsNotReady;
         let ds = ethRawPacketInQ.first;
@@ -335,6 +343,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
             if (ethPktMeta.isRdmaPacket) begin
                 rdmaRawPacketOutQ.enq(ds);
                 metricsRdmaPacketCntReg <= metricsRdmaPacketCntReg + 1;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier dispatchStream recv rdma packte"),
+                //     toBlue(", ds="), fshow(ds),
+                //     toBlue(", metricsRdmaPacketCntReg="), fshow(metricsRdmaPacketCntReg)
+                // );
             end
             else begin
                 otherRawPacketOutQ.enq(ds);
@@ -690,13 +703,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     IpID defaultIpId = 1;
 
 
-    function IoChannelEthDataStream genEthernetPacket(NocData data, ByteIndexInBeat startByteIdx, EthernetNapMod mod, Bool isFirst, Bool isLast);
+    function IoChannelEthDataStream genEthernetPacket(NocData data, DataBusOneBasedByteIndex byteNum, ByteIndexInBeat startByteIdx, Bool isFirst, Bool isLast);
         
-        let byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        if (isLast) begin
-            byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(mod);
-        end
-
         // Note: the ethernet packet is a pure stream, so startByteIdx must always be zero.
         // when handling the first beat of payload, since the input payload from PCIe is aligned to DWord, the input beat's
         // startByteIdx may not be 0, but we can force it to 0. so, at the same time, we need to add the bytes skiped by
@@ -805,7 +813,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(DATA_BUS_WIDTH));
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), 0, mod, False, isLast);
+        let outBeat = genEthernetPacket(swapEndianByte(data), fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)), 0, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -853,7 +861,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let macIpUdpBthEth = {pack(macIpUdpHeader), pack(rdmaMeta.header)};
         NocData data = truncateLSB(macIpUdpBthEth << valueOf(BYTE_NUM_OF_TWO_BEATS) * valueOf(BYTE_WIDTH));
 
-        let outBeat = genEthernetPacket(swapEndianByte(data), 0, mod, False, isLast);
+        let outBeat = genEthernetPacket(swapEndianByte(data), fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)), 0, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -891,7 +899,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         NocData data = payload.data;
 
         // Form the forth beat and so on, these beats are payloads, no need to change byte order.
-        let outBeat = genEthernetPacket(data, payload.startByteIdx, mod, False, isLast);
+        let outBeat = genEthernetPacket(data, payload.byteNum, payload.startByteIdx, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
 
@@ -914,11 +922,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
                 $format("Got payload = ", fshow(payload), "ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
             );
 
-            ByteEnBitNum byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-            if (isLast) begin
-                byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(pack(mod));
-            end
-
+            ByteEnBitNum byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(pack(mod));
             let byteNumPlusPcieDwordAlign = payload.byteNum + zeroExtend(payload.startByteIdx);
             immAssert(
                 byteNumPlusPcieDwordAlign == byteNum,
