@@ -8,6 +8,9 @@ from multiprocessing import shared_memory
 import threading
 import time
 import json
+import errno
+import base64
+import collections
 
 from abc import ABC, abstractmethod
 
@@ -81,3 +84,56 @@ class UserspaceDriverServer:
                     {"value": value, "addr": recv_req["addr"], "is_write": False}).encode("utf-8"), resp_addr)
 
         server_socket.close()
+
+
+class EthPacketRpc:
+    def __init__(self, inst_id):
+        self.inst_id = inst_id
+        self.peer_inst_id = "1" if self.inst_id == "2" else "2"
+
+        self.to_peer_pipe_name = f"/tmp/bluerdma-sim-eth-rpc-pipe-{self.inst_id}-to-{self.peer_inst_id}"
+        self.from_peer_pipe_name = f"/tmp/bluerdma-sim-eth-rpc-pipe-{self.peer_inst_id}-to-{self.inst_id}"
+
+        try:
+            os.mkfifo(self.to_peer_pipe_name)
+        except OSError as e:
+            if e.errno != errno.EEXIST:  # ignore exist
+                raise
+
+        try:
+            os.mkfifo(self.from_peer_pipe_name)
+        except OSError as e:
+            if e.errno != errno.EEXIST:  # ignore exist
+                raise
+
+        self.read_buf = collections.deque()
+        self.write_buf = collections.deque()
+
+        self.read_thread = threading.Thread(target=self._get_packet_task)
+        self.write_thread = threading.Thread(target=self._put_packet_task)
+        self.read_thread.start()
+        self.write_thread.start()
+
+    def send_packet(self, buf):
+        self.write_buf.append(base64.standard_b64encode(buf).decode() + "\n")
+
+    def recv_packet(self):
+        if len(self.read_buf) == 0:
+            return None
+        return self.read_buf.popleft()
+
+    def _get_packet_task(self):
+        self.from_peer_pipe = open(self.from_peer_pipe_name, "r")
+        while True:
+            packet_b64 = self.from_peer_pipe.readline()
+            packet_bytes = base64.standard_b64decode(packet_b64)
+            self.read_buf.append(packet_bytes)
+
+    def _put_packet_task(self):
+        self.to_peer_pipe = open(self.to_peer_pipe_name, "w")
+        while True:
+            if len(self.write_buf) == 0:
+                time.sleep(0.001)
+                continue
+            packet_b64 = self.write_buf.popleft()
+            self.to_peer_pipe.write(packet_b64)
