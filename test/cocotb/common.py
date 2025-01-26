@@ -727,7 +727,7 @@ class BluespecPipeInNrWithQueue:
 
 
 class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=100):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -735,6 +735,8 @@ class SimplePcieBehaviorModel(object):
 
         self.clock = dut.CLK
         self.resetn = dut.RST_N
+
+        self.read_delay_time_ns = read_delay_time_ns
 
         self.requester_write_meta_pipes = []
         self.requester_write_data_pipes = []
@@ -752,6 +754,10 @@ class SimplePcieBehaviorModel(object):
                 dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
 
         self.requester_channel_cnt = len(requester_ifc_base_names)
+
+        self.read_delay_queues = [
+            deque() for _ in range(self.requester_channel_cnt)
+        ]
 
         self.completer_write_meta_pipes = []
         self.completer_write_data_pipes = []
@@ -779,6 +785,8 @@ class SimplePcieBehaviorModel(object):
         for channel_idx in range(self.requester_channel_cnt):
             cocotb.start_soon(self._handle_requester_write_req(channel_idx))
             cocotb.start_soon(self._handle_requester_read_req(channel_idx))
+            cocotb.start_soon(
+                self._forward_delayed_requester_read_resp(channel_idx))
 
         for channel_idx in range(self.completer_channel_cnt):
             cocotb.start_soon(self._handle_completer_read_resp(channel_idx))
@@ -823,6 +831,8 @@ class SimplePcieBehaviorModel(object):
                             f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
                         if (write_data.is_last()):
+                            print(
+                                f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, {total_len}, {write_meta.total_len()}")
                             assert total_len == write_meta.total_len()
                             break
                     await RisingEdge(self.clock)  # wait for next beat
@@ -875,9 +885,12 @@ class SimplePcieBehaviorModel(object):
                             is_first=is_first,
                             is_last=is_last
                         )
-                        await self.requester_read_data_pipes[channel_idx].enq(read_data.pack())
-                        self.log.debug(
-                            f"addr={hex(old_read_addr)}, read_data={read_data}")
+                        cur_time = cocotb.utils.get_sim_time("ns")
+                        self.read_delay_queues[channel_idx].append(
+                            (read_data.pack(), cur_time, old_read_addr))
+
+                        self.log.info(
+                            f"pcie bfm sample read data and put into delay queue addr={hex(old_read_addr)}, read_data={read_data}")
 
                         is_first = False
                         bytes_left -= byte_num
@@ -886,6 +899,19 @@ class SimplePcieBehaviorModel(object):
                             break
                     await RisingEdge(self.clock)  # wait for next beat
 
+            await RisingEdge(self.clock)  # wait for next read req
+
+    async def _forward_delayed_requester_read_resp(self, channel_idx):
+        while True:
+            if len(self.read_delay_queues[channel_idx]) > 0:
+                cur_time = cocotb.utils.get_sim_time("ns")
+                beat_to_forward, beat_read_time, old_read_addr = self.read_delay_queues[
+                    channel_idx][0]
+                if cur_time - beat_read_time >= self.read_delay_time_ns:
+                    self.read_delay_queues[channel_idx].popleft()
+                    await self.requester_read_data_pipes[channel_idx].enq(beat_to_forward)
+                    self.log.info(
+                        f"pcie bfm read addr={hex(old_read_addr)}")
             await RisingEdge(self.clock)  # wait for next read req
 
     async def _handle_completer_read_resp(self, channel_idx):

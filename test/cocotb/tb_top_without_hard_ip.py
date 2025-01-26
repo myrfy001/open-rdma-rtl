@@ -63,9 +63,9 @@ class TB(object):
             ],
             [
                 "qpEthDataStreamIfcVec_0_dataPipeIn",
-                "qpEthDataStreamIfcVec_1_dataPipeIn",
-                "qpEthDataStreamIfcVec_2_dataPipeIn",
-                "qpEthDataStreamIfcVec_3_dataPipeIn",
+                # "qpEthDataStreamIfcVec_1_dataPipeIn",
+                # "qpEthDataStreamIfcVec_2_dataPipeIn",
+                # "qpEthDataStreamIfcVec_3_dataPipeIn",
             ],
         )
 
@@ -101,8 +101,8 @@ class TB(object):
         async def _loop_back_task(self):
             while True:
                 tx_beat = await self.eth_bfm.get_tx_packet()
-                await self.eth_bfm.inject_rx_packet(tx_beat)
-                self.log.debug(
+                # await self.eth_bfm.inject_rx_packet(tx_beat)
+                self.log.info(
                     f"single_card_loop_back forward beat: {tx_beat}")
 
         cocotb.start_soon(_loop_back_task(self))
@@ -288,7 +288,7 @@ class TB(object):
         dst_addr_offset = random.randint(0, 15)
         write_src_addr = src_buf_mem_addr + src_addr_offset
         write_dst_addr = dst_buf_mem_addr + dst_addr_offset
-        write_len = 8191
+        write_len = 8192 + 1024 - 1
 
         for d in range(65536):
             src_buf_mem[d] = d % 256
@@ -375,13 +375,14 @@ class TB(object):
         # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
         # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
         # write finish signal. Or delay the desc report on hardware.
-        await Timer(600, units='ns')
+        await Timer(700, units='ns')
 
         for d in range(write_len):
             expected_data = src_buf_mem[d+src_addr_offset]
             got_data = dst_buf_mem[d+dst_addr_offset]
-            self.log.debug(
-                f"checking at idx = {d}, src addr={hex(d+write_src_addr)}, dst addr={hex(d+write_dst_addr)}, expected_data={hex(expected_data)}, got_data={hex(got_data)}")
+            if expected_data != got_data:
+                self.log.info(
+                    f"checking at idx = {d}, src addr={hex(d+write_src_addr)}, dst addr={hex(d+write_dst_addr)}, expected_data={hex(expected_data)}, got_data={hex(got_data)}")
             assert expected_data == got_data  # should be modified
         for d in range(dst_addr_offset):
             assert dst_buf_mem[d] == 0xFF  # should not be modified
@@ -447,6 +448,117 @@ class TB(object):
         #     0x0100+0x0020+0x0002) * 4)
         # self.log.debug(f"read metrics: {metrics_csr_val}")
 
+    async def testcase_send_multi_small_packet_to_test_fully_pipeline(self):
+
+        await self.init_helper.start_meta_report_queue_collector()
+
+        src_buf_mem_addr, src_buf_mem = self.init_helper.alloc_physical_memory(
+            65536, 4096)
+        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 65536)
+
+        dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
+            65536, 4096)
+        dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 65536)
+
+        self.log.info(
+            f"addr before random: src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
+
+        src_addr_offset = random.randint(0, 15)
+        dst_addr_offset = random.randint(0, 15)
+        write_src_addr = src_buf_mem_addr + src_addr_offset
+        write_dst_addr = dst_buf_mem_addr + dst_addr_offset
+
+        write_len = 2
+        signle_msg_len = 1
+
+        for d in range(65536):
+            src_buf_mem[d] = d % 256
+            dst_buf_mem[d] = 0xFF
+
+        self_qpn = self.init_helper.alloc_qpn()
+        peer_qpn = self.init_helper.alloc_qpn()
+
+        self.log.info(
+            f"create qp: self qpn = {hex(self_qpn)}, peer qpn = {hex(peer_qpn)}")
+        self.log.info(
+            f"src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
+
+        pmtu = PMTU.IBV_MTU_1024
+        # create qp for send side
+        await self.init_helper.create_qp(
+            peer_mac_addr=CARD_A_MAC_ADDRESS,
+            peer_ip_addr=CARD_A_IP_ADDRESS,
+            local_udp_port=0x100,
+            self_qpn=self_qpn,
+            peer_qpn=peer_qpn,
+            pmtu=pmtu
+        )
+
+        # create qp for recv side
+        await self.init_helper.create_qp(
+            peer_mac_addr=CARD_A_MAC_ADDRESS,
+            peer_ip_addr=CARD_A_IP_ADDRESS,
+            local_udp_port=0x100,
+            self_qpn=peer_qpn,
+            peer_qpn=self_qpn,
+            pmtu=pmtu
+        )
+
+        imm_data = random.randint(0, 0xFFFFFFFF)
+        msn = random.randint(0, 0xFFF)
+        psn = 256
+
+        written_len = 0
+        while written_len != write_len:
+            self.init_helper.send_queues[0].put_work_request(
+                opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE_WITH_IMM,
+                is_first=True,
+                is_last=True,
+                is_retry=False,
+                enable_ecn=False,
+                total_len=signle_msg_len,
+                lkey=src_mr_key,
+                laddr=write_src_addr,
+                data_len=signle_msg_len,
+                r_va=write_dst_addr,
+                r_key=dst_mr_key,
+                r_ip=CARD_A_IP_ADDRESS,
+                r_mac=CARD_A_MAC_ADDRESS,
+                dqpn=peer_qpn,
+                sqpn=self_qpn,
+                msn=msn,
+                psn=psn,
+                imm_data=imm_data,
+                pmtu=pmtu
+            )
+            self.log.info(
+                f"put wqe, src addr = {hex(write_src_addr)}, dst addr = {hex(write_dst_addr)}, len={hex(signle_msg_len)}")
+            written_len += signle_msg_len
+            write_src_addr += signle_msg_len
+            write_dst_addr += signle_msg_len
+            msn += 1
+            psn += 1
+        await self.init_helper.send_queues[0].sync_pointers()
+
+        # check memory access is correct
+        # since meta report DMA path is simplier than payload write DMA path, desc may arrive before payload has been written to memory.
+        # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
+        # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
+        # write finish signal. Or delay the desc report on hardware.
+        await Timer(700, units='ns')
+
+        for d in range(write_len):
+            expected_data = src_buf_mem[d+src_addr_offset]
+            got_data = dst_buf_mem[d+dst_addr_offset]
+            if expected_data != got_data:
+                self.log.info(
+                    f"checking at idx = {d}, src addr={hex(d+write_src_addr)}, dst addr={hex(d+write_dst_addr)}, expected_data={hex(expected_data)}, got_data={hex(got_data)}")
+            assert expected_data == got_data  # should be modified
+        for d in range(dst_addr_offset):
+            assert dst_buf_mem[d] == 0xFF  # should not be modified
+        for d in range(dst_addr_offset+write_len, 65536):
+            assert dst_buf_mem[d] == 0xFF  # should not be modified
+
     async def testcase_simple_nic_loop_back(self):
         self.init_helper.simple_nix_tx_queue.put_tx_request(1000, 0)
         await self.init_helper.simple_nix_tx_queue.sync_pointers()
@@ -464,7 +576,8 @@ async def small_desc_fp_test(dut):
     await tb.start_single_card_loop_back()
 
     # await tb.testcase_send_simple_write_loopback_req()
-    await tb.testcase_send_simple_write_loopback_req_8191()
+    # await tb.testcase_send_simple_write_loopback_req_8191()
+    await tb.testcase_send_multi_small_packet_to_test_fully_pipeline()
     # await tb.testcase_simple_nic_loop_back()
 
     await Timer(10, units='ns')

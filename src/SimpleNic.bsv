@@ -69,6 +69,9 @@ module mkSimpleNic(SimpleNic);
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rxAddrChunker <- mkAddressChunker;
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) txAddrChunker <- mkAddressChunker;
 
+    let rxAddrChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rxAddrChunker.requestPipeIn, 1);
+    let txAddrChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(txAddrChunker.requestPipeIn, 1);
+
     DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) txConcator <- mkDtldStreamConcator;
     DtldStreamSplitor#(DATA, AlignBlockCntInSimpleNicSlot, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) rxSplitor <- mkDtldStreamSplitor;
 
@@ -112,7 +115,9 @@ module mkSimpleNic(SimpleNic);
 
         ADDR writeAddr = rxBufferBaseAddrReg + (zeroExtend(curSlotIdxReg) << valueOf(TLog#(SIMPLE_NIC_SLOT_BYTE_SIZE)));
         curSlotIdxReg <= curSlotIdxReg + 1;
-        rxAddrChunker.requestPipeIn.enq(AddressChunkReq{
+
+        
+        rxAddrChunkerRequestPipeInAdapter.enq(AddressChunkReq{
             startAddr: writeAddr,
             len: zeroExtend(totalLen),
             chunk: fromInteger(valueOf(TLog#(PCIE_NAP_MAX_BYTE_IN_BURST)))
@@ -179,7 +184,7 @@ module mkSimpleNic(SimpleNic);
             len: desc.len,
             chunk: fromInteger(valueOf(TLog#(PCIE_NAP_MAX_BYTE_IN_BURST)))
         };
-        txAddrChunker.requestPipeIn.enq(chunkReq);
+        txAddrChunkerRequestPipeInAdapter.enq(chunkReq);
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkSimpleNic handleTxReq"),

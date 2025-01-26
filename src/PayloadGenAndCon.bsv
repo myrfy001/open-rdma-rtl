@@ -105,6 +105,7 @@ module mkPayloadGen(PayloadGen);
 
     QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientP("mkPayloadGen addrTranslateCltInst");
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
+    let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 
     DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator;
     mkConnection(toPipeOut(dmaReadRespPipeInQ), dsConcator.dataPipeIn);
@@ -122,8 +123,8 @@ module mkPayloadGen(PayloadGen);
 
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkLFIFOF;
-    FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkLFIFOF;
+    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkSizedFIFOF(2);
+    FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkSizedFIFOF(4);
 
 
     let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
@@ -138,15 +139,15 @@ module mkPayloadGen(PayloadGen);
             chunk: fromInteger(valueOf(TLog#(IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE)))
         };
 
-        rawReqToBurstChunker.requestPipeIn.enq(chunkReq);
+        rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple2(req.pgtOffset, req.baseVA));
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadGen handleInReq"),
-        //     toBlue(", req="), fshow(req),
-        //     toBlue(", chunkReq="), fshow(chunkReq)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadGen handleInReq"),
+            toBlue(", req="), fshow(req),
+            toBlue(", chunkReq="), fshow(chunkReq)
+        );
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
@@ -166,11 +167,11 @@ module mkPayloadGen(PayloadGen);
         addrTranslateCltInst.putReq(addrTranslateReq);
         issueDmaReadPipelineQ.enq(tuple2(burstAddrBoundry.len, burstAddrBoundry.isLast));
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq"),
-        //     toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry),
-        //     toBlue(", addrTranslateReq="), fshow(addrTranslateReq)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq"),
+            toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry),
+            toBlue(", addrTranslateReq="), fshow(addrTranslateReq)
+        );
     endrule
 
     rule issueDmaRead;
@@ -185,12 +186,12 @@ module mkPayloadGen(PayloadGen);
         dmaReadReqPipeOutQ.enq(readReq);
         dsConcatorIsLastStreamFlagPipeInConverter.enq(isLast);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPayloadGen issueDmaRead"),
-        //     toBlue(", translatedAddr="), fshow(translatedAddr),
-        //     toBlue(", len="), fshow(len),
-        //     toBlue(", isLast="), fshow(isLast)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadGen issueDmaRead"),
+            toBlue(", translatedAddr="), fshow(translatedAddr),
+            toBlue(", len="), fshow(len),
+            toBlue(", isLast="), fshow(isLast)
+        );
     endrule
 
     let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
@@ -220,6 +221,7 @@ module mkPayloadCon(PayloadCon);
 
     QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientP("mkPayloadCon addrTranslateCltInst");
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
+    let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 
     DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
 
@@ -240,7 +242,7 @@ module mkPayloadCon(PayloadCon);
             chunk: fromInteger(valueOf(TLog#(IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE)))
         };
 
-        rawReqToBurstChunker.requestPipeIn.enq(chunkReq);
+        rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple2(req.pgtOffset, req.baseVA));
         $display(

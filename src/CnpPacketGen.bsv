@@ -42,9 +42,14 @@ module mkCnpPacketGenerator(CnpPacketGenerator);
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
 
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(ThinMacIpUdpMetaDataForSend)) ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RdmaSendPacketMeta)) ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec = newVector;
+
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         genReqPipeInVecInst[idx] = toPipeInB0(genReqPipeInQueueVec[idx]);
         cnpEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut;
+        ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec[idx] <- mkPipeInB0ToPipeIn(ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn, 4); 
+        ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec[idx] <- mkPipeInB0ToPipeIn(ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn, 4); 
     end
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
@@ -85,8 +90,8 @@ module mkCnpPacketGenerator(CnpPacketGenerator);
                 },
                 hasPayload: False
             };
-            ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn.enq(thinMacIpUdpMetaDataForSend);
-            ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn.enq(rdmaSendPacketMeta);
+            ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec[idx].enq(thinMacIpUdpMetaDataForSend);
+            ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec[idx].enq(rdmaSendPacketMeta);
         endrule
     end
 

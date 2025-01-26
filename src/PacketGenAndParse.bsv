@@ -470,9 +470,11 @@ module mkPacketGen(PacketGen);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkLFIFOF;
     
 
-    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 1);
-    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 1);
-
+    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 8);
+    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 16);
+    let wqeToPacketChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(wqeToPacketChunker.requestPipeIn, 1);
+    let ethernetPacketGenRdmaPacketMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.rdmaPacketMetaPipeIn, 512);
+    let ethernetPacketGenMacIpUdpMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.macIpUdpMetaPipeIn, 512);
     // rule debugRule;
     //     if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
     //     if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
@@ -507,6 +509,7 @@ module mkPacketGen(PacketGen);
         );
     endrule
 
+    
     rule sendChunkByRemoteAddrReqAndPayloadGenReq;
         let pipelineEntryIn = sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.first;
         sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.deq;
@@ -521,7 +524,7 @@ module mkPacketGen(PacketGen);
                 len: wqe.len,
                 chunk: getPmtuSizeByPmtuEnum(wqe.pmtu)
             };
-            wqeToPacketChunker.requestPipeIn.enq(remoteAddrChunkReq);
+            wqeToPacketChunkerRequestPipeInAdapter.enq(remoteAddrChunkReq);
 
 
             let mrTableMaybe <- mrTableQueryCltInst.getResp;
@@ -680,7 +683,7 @@ module mkPacketGen(PacketGen);
                 },
                 hasPayload: hasPayload
             };
-            ethernetPacketGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);
+            ethernetPacketGenRdmaPacketMetaPipeInAdapter.enq(rdmaPacketMeta);
         end
         else begin
             immFail(
@@ -707,14 +710,13 @@ module mkPacketGen(PacketGen);
             udpPayloadLen: udpPayloadLen,
             ethType: fromInteger(valueOf(ETH_TYPE_IP))
         };
-        ethernetPacketGen.macIpUdpMetaPipeIn.enq(macIpUdpMeta);
+        ethernetPacketGenMacIpUdpMetaPipeInAdapter.enq(macIpUdpMeta);
 
-
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeader"),
-        //     toBlue(", bthMaybe="), fshow(bthMaybe),
-        //     toBlue(", extendHeaderBufferMaybe="), fshow(extendHeaderBufferMaybe)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeaderStep2"),
+            toBlue(", bthMaybe="), fshow(bthMaybe),
+            toBlue(", extendHeaderBufferMaybe="), fshow(extendHeaderBufferMaybe)
+        );
 
 
         // let pipelineEntryOut = GenEthernetPacketPipelineEntry{

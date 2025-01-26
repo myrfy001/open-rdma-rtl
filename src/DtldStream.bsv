@@ -282,11 +282,11 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
             if (rd.isLast) begin
                 readKeepOrderQueue.deq;
             end
-            $display(
-                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardReadResp"),
-                toBlue(", channelIdx="), fshow(channelIdx),
-                toBlue(", rd="), fshow(rd)
-            );
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardReadResp"),
+            //     toBlue(", channelIdx="), fshow(channelIdx),
+            //     toBlue(", rd="), fshow(rd)
+            // );
         endrule
     end
 

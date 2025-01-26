@@ -612,8 +612,8 @@ endmodule
 
 
 interface EthernetPacketGenerator;
-    interface PipeIn#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
-    interface PipeIn#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
+    interface PipeInB0#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
+    interface PipeInB0#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
     interface PipeInB0#(DataStream) rdmaPayloadPipeIn;
     interface PipeOut#(IoChannelEthDataStream) ethernetPacketPipeOut;
 
@@ -679,8 +679,8 @@ typedef struct {
 
 (*synthesize*)
 module mkEthernetPacketGenerator(EthernetPacketGenerator);
-    FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkLFIFOF;
-    FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkLFIFOF;
+    PipeInAdapterB0#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkPipeInAdapterB0;
     PipeInAdapterB0#(DataStream) rdmaPayloadPipeInQ <- mkPipeInAdapterB0;
     FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
 
@@ -909,11 +909,11 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             $format("outBeat=", fshow(outBeat))
         );
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genMoreBeat"),
-        //     toBlue(", outBeat="), fshow(outBeat),
-        //     toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genMoreBeat"),
+            toBlue(", outBeat="), fshow(outBeat),
+            toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg)
+        );
 
         if (isLast) begin
             immAssert(
@@ -945,8 +945,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         networkSettingsReg <= tagged Valid networkSettings;
     endmethod
 
-    interface macIpUdpMetaPipeIn    = toPipeIn(macIpUdpMetaPipeInQ);
-    interface rdmaPacketMetaPipeIn  = toPipeIn(rdmaPacketMetaPipeInQ);
+    interface macIpUdpMetaPipeIn    = toPipeInB0(macIpUdpMetaPipeInQ);
+    interface rdmaPacketMetaPipeIn  = toPipeInB0(rdmaPacketMetaPipeInQ);
     interface rdmaPayloadPipeIn     = toPipeInB0(rdmaPayloadPipeInQ);
     interface ethernetPacketPipeOut = toPipeOut(ethernetPacketPipeOutQ);
 endmodule

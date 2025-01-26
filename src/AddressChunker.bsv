@@ -46,7 +46,7 @@ typedef struct {
 } AddressChunkResp#(type tAddr, type tLen) deriving(Bits, FShow);
 
 interface AddressChunker#(type tAddr, type tLen, type tChunkAlignLog);
-    interface PipeIn#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) requestPipeIn;  // no need PipeInB0
+    interface PipeInB0#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) requestPipeIn;
     interface PipeOut#(AddressChunkResp#(tAddr, tLen)) responsePipeOut;
 endinterface
 
@@ -71,7 +71,7 @@ module mkAddressChunker(AddressChunker#(tAddr, tLen, tChunkAlignLog)) provisos (
         PrimShiftIndex#(tChunkAlignLog, c__)
     );
 
-    FIFOF#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) reqQ <- mkLFIFOF;
+    PipeInAdapterB0#(AddressChunkReq#(tAddr, tLen, tChunkAlignLog)) reqQ <- mkPipeInAdapterB0;
     FIFOF#(AddressChunkResp#(tAddr, tLen)) respQ <- mkFIFOF;
 
     FIFOF#(Tuple5#(tLen, tLen, tLen, tAddr, tLen)) preCalcResultQueue <- mkLFIFOF;
@@ -180,6 +180,6 @@ module mkAddressChunker(AddressChunker#(tAddr, tLen, tChunkAlignLog)) provisos (
         // );
     endrule
     
-    interface requestPipeIn = toPipeIn(reqQ);
+    interface requestPipeIn = toPipeInB0(reqQ);
     interface responsePipeOut = toPipeOut(respQ);
 endmodule

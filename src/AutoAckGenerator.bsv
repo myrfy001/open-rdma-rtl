@@ -112,8 +112,14 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     QpContextTwoWayQuery  qpContextForAutoAck <- mkQpContextTwoWayQuery;
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(ReadReqQPC)) qpContextForAutoAckQuerySrvPipeInB0AdapterVec = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(ThinMacIpUdpMetaDataForSend)) ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec = newVector;
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(RdmaSendPacketMeta)) ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec = newVector;
+
+
     for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
         qpContextForAutoAckQuerySrvPipeInB0AdapterVec[idx] <- mkPipeInB0ToPipeIn(qpContextForAutoAck.querySrvVec[idx].request, 1); 
+        ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec[idx] <- mkPipeInB0ToPipeIn(ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn, 4); 
+        ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec[idx] <- mkPipeInB0ToPipeIn(ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn, 4); 
     end
 
     
@@ -283,8 +289,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
                             },
                             hasPayload: False
                         };
-                        ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn.enq(thinMacIpUdpMetaDataForSend);
-                        ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn.enq(rdmaSendPacketMeta);
+                        ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec[idx].enq(thinMacIpUdpMetaDataForSend);
+                        ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec[idx].enq(rdmaSendPacketMeta);
 
                         let qpnKeyPart = qpCtxResp.qpnKeyPart;
                         genAutoAckReportDescriptorPipelineQueueVec[idx].enq(tuple3(bitmapInfo, msnInfo, qpnKeyPart));
