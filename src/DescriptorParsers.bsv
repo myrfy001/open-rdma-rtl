@@ -92,8 +92,8 @@ endmodule
 interface CommandQueueDescParserAndDispatcher;
     interface PipeIn#(RingbufRawDescriptor)                                 reqRawDescPipeIn;
     interface PipeOut#(RingbufRawDescriptor)                                respRawDescPipeOut;
-    interface Client#(RingbufRawDescriptor, Bool)                           mrAndPgtManagerClt;
-    interface Client#(WriteReqQPC, Bool)                                    qpcModifyClt;
+    interface ClientP#(RingbufRawDescriptor, Bool)                           mrAndPgtManagerClt;
+    interface ClientP#(WriteReqQPC, Bool)                                    qpcModifyClt;
     interface PipeOut#(LocalNetworkSettings)                                setNetworkParamReqPipeOut;
     interface Get#(RawPacketReceiveMeta)                                    setRawPacketReceiveMetaReqOut;
     interface PipeOut#(IndexQP)                                             qpResetReqPipeOut;
@@ -108,9 +108,9 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     
     FIFOF#(RingbufRawDescriptor) mrAndPgtReqQ                                               <- mkLFIFOF;
     FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
-    FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkLFIFOF;
+    PipeInAdapterB0#(Bool) mrAndPgtRespQ                                                    <- mkPipeInAdapterB0;
 
-    QueuedClient#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClient("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst");
+    QueuedClientP#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClientP("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst");
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
 
     FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;
@@ -233,7 +233,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     interface reqRawDescPipeIn = descReadProxy.rawDescPipeIn;
     interface respRawDescPipeOut = descWriteProxy.rawDescPipeOut;
 
-    interface mrAndPgtManagerClt = toGPClient(mrAndPgtReqQ, mrAndPgtRespQ);
+    interface mrAndPgtManagerClt = toGPClientP(toPipeOut(mrAndPgtReqQ), toPipeInB0(mrAndPgtRespQ));
     interface qpcModifyClt = qpcUpdateCltInst.clt;
 
     interface setNetworkParamReqPipeOut = toPipeOut(setNetworkParamPipeOutQ);

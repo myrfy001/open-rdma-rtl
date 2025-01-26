@@ -2,6 +2,7 @@ import ClientServer :: *;
 import GetPut :: *;
 import FIFOF :: *;
 import Connectable :: *;
+import ConnectableF :: *;
 
 import BasicDataTypes :: *;
 import RdmaUtils :: *;
@@ -16,14 +17,14 @@ import Arbitration :: *;
 
 
 interface QpContext;
-    interface Server#(ReadReqQPC, Maybe#(EntryQPC)) querySrv;
-    interface Server#(WriteReqQPC, Bool) updateSrv;
+    interface ServerP#(ReadReqQPC, Maybe#(EntryQPC)) querySrv;
+    interface ServerP#(WriteReqQPC, Bool) updateSrv;
 endinterface
 
 (* synthesize *)
 module mkQpContext(QpContext);
-    QueuedServer#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServer("qpcQuerySrvInst");
-    QueuedServer#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServer("qpcUpdateSrvInst");
+    QueuedServerP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServerP("qpcQuerySrvInst");
+    QueuedServerP#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServerP("qpcUpdateSrvInst");
 
     AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "");
 
@@ -78,8 +79,8 @@ endmodule
 
 
 interface QpContextTwoWayQuery;
-    interface Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
-    interface Server#(WriteReqQPC, Bool) updateSrv;
+    interface Vector#(NUMERIC_TYPE_TWO, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
+    interface ServerP#(WriteReqQPC, Bool) updateSrv;
 endinterface
 
 
@@ -92,38 +93,25 @@ module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
     endfunction
 
     QpContext qpContext <- mkQpContext;
-
-    Vector#(NUMERIC_TYPE_TWO, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
-    Vector#(NUMERIC_TYPE_TWO, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
-    Vector#(NUMERIC_TYPE_TWO, Client#(ReadReqQPC, Maybe#(EntryQPC))) queryCltVecInst = newVector;
-
-    querySrvVecInst[0] = srvToCltConvertVec[0].srv;
-    querySrvVecInst[1] = srvToCltConvertVec[1].srv;
-
-    queryCltVecInst[0] = srvToCltConvertVec[0].clt;
-    queryCltVecInst[1] = srvToCltConvertVec[1].clt;
-    
-
-    let arbitratedClient <- mkClientArbiter(
+    let arbiter <- mkServerToClientArbitP(
         "QpContextTwoWayQuery",
-        False,
         2,
-        queryCltVecInst,
+        True,
         alwaysTrue,
         alwaysTrue
     );
 
-    mkConnection(arbitratedClient, qpContext.querySrv);
+    mkConnection(arbiter.cltIfc, qpContext.querySrv);
 
-    interface querySrvVec = querySrvVecInst;
+    interface querySrvVec = arbiter.srvIfcVec;
     interface updateSrv = qpContext.updateSrv;
 endmodule
 
 
 
 interface QpContextFourWayQuery;
-    interface Vector#(NUMERIC_TYPE_FOUR, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
-    interface Server#(WriteReqQPC, Bool) updateSrv;
+    interface Vector#(NUMERIC_TYPE_FOUR, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
+    interface ServerP#(WriteReqQPC, Bool) updateSrv;
 endinterface
 
 (* synthesize *)
@@ -131,37 +119,39 @@ module mkQpContextFourWayQuery(QpContextFourWayQuery);
     
 
     Vector#(NUMERIC_TYPE_TWO, QpContextTwoWayQuery) twoWayQpContextVec <- replicateM(mkQpContextTwoWayQuery);
+    Vector#(NUMERIC_TYPE_FOUR, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
 
-    Vector#(NUMERIC_TYPE_FOUR, Server2Client#(ReadReqQPC, Maybe#(EntryQPC))) srvToCltConvertVec <- replicateM(mkServer2ClientTwoBeat);
-    Vector#(NUMERIC_TYPE_FOUR, Server#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
-    Vector#(NUMERIC_TYPE_FOUR, Client#(ReadReqQPC, Maybe#(EntryQPC))) queryCltVecInst = newVector;
-
-    querySrvVecInst[0] = srvToCltConvertVec[0].srv;
-    querySrvVecInst[1] = srvToCltConvertVec[1].srv;
-    querySrvVecInst[2] = srvToCltConvertVec[2].srv;
-    querySrvVecInst[3] = srvToCltConvertVec[3].srv;
+    querySrvVecInst[0] = twoWayQpContextVec[0].querySrvVec[0];
+    querySrvVecInst[1] = twoWayQpContextVec[0].querySrvVec[1];
+    querySrvVecInst[2] = twoWayQpContextVec[1].querySrvVec[0];
+    querySrvVecInst[3] = twoWayQpContextVec[1].querySrvVec[1];
     
-    mkConnection(srvToCltConvertVec[0].clt, twoWayQpContextVec[0].querySrvVec[0]);
-    mkConnection(srvToCltConvertVec[1].clt, twoWayQpContextVec[0].querySrvVec[1]);
-    mkConnection(srvToCltConvertVec[2].clt, twoWayQpContextVec[1].querySrvVec[0]);
-    mkConnection(srvToCltConvertVec[3].clt, twoWayQpContextVec[1].querySrvVec[1]);
-
     interface querySrvVec = querySrvVecInst;
 
-    interface Server updateSrv;
-        interface Put request;
-            method Action put(WriteReqQPC req);
-                twoWayQpContextVec[0].updateSrv.request.put(req);
-                twoWayQpContextVec[1].updateSrv.request.put(req);
+    interface ServerP updateSrv;
+        interface PipeInB0 request;
+            method Action firstIn(WriteReqQPC dataIn);
+                twoWayQpContextVec[0].updateSrv.request.firstIn(dataIn);
+                twoWayQpContextVec[1].updateSrv.request.firstIn(dataIn);
             endmethod
+
+            method Action notEmptyIn(Bool val);
+                twoWayQpContextVec[0].updateSrv.request.notEmptyIn(val);
+                twoWayQpContextVec[1].updateSrv.request.notEmptyIn(val);
+            endmethod
+
+            // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
+            method deqSignalOut = twoWayQpContextVec[0].updateSrv.request.deqSignalOut;
         endinterface
 
-        interface Get response;
-            method ActionValue#(Bool) get;
-                let resp <- twoWayQpContextVec[0].updateSrv.response.get;
-                let _ <- twoWayQpContextVec[1].updateSrv.response.get;
-                // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-                return resp;
+        interface PipeOut response;
+            // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
+            method first = twoWayQpContextVec[0].updateSrv.response.first;
+            method Bool notEmpty = twoWayQpContextVec[0].updateSrv.response.notEmpty;
+              
+            method Action deq;
+                twoWayQpContextVec[0].updateSrv.response.deq;
+                twoWayQpContextVec[1].updateSrv.response.deq;
             endmethod
         endinterface
     endinterface

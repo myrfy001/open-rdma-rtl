@@ -40,6 +40,8 @@ export toPipeOutSync;
 export toPipeInSync;
 export ugToPipeOut;
 export ugToPipeIn;
+export toGPServerP;
+export toGPClientP;
 export Connectable;
 
 
@@ -76,14 +78,42 @@ interface ClientF#(type tReq, type tResp);
 endinterface
 
 interface ServerP#(type tReq, type tResp);
-    interface PipeIn#(tReq) request;
+    interface PipeInB0#(tReq) request;
     interface PipeOut#(tResp) response;
 endinterface
 
 interface ClientP#(type tReq, type tResp);
     interface PipeOut#(tReq) request;
-    interface PipeIn#(tResp) response;
+    interface PipeInB0#(tResp) response;
 endinterface
+
+
+instance Connectable#(ServerP#(tReq, tResp), ClientP#(tReq, tResp));
+    module mkConnection#(ServerP#(tReq, tResp) srv, ClientP#(tReq, tResp) clt)(Empty);
+        mkConnection(srv.request, clt.request);
+        mkConnection(srv.response, clt.response);
+    endmodule
+endinstance
+
+instance Connectable#(ClientP#(tReq, tResp), ServerP#(tReq, tResp));
+    module mkConnection#(ClientP#(tReq, tResp) clt, ServerP#(tReq, tResp) srv)(Empty);
+        mkConnection(srv, clt);
+    endmodule
+endinstance
+
+function ServerP#(tReq, tResp) toGPServerP(PipeInB0#(tReq) request, PipeOut#(tResp) response);
+    return (interface ServerP;
+        interface request = request;
+        interface response = response;
+    endinterface);
+endfunction
+
+function ClientP#(tReq, tResp) toGPClientP(PipeOut#(tReq) request, PipeInB0#(tResp) response);
+    return (interface ClientP;
+        interface request = request;
+        interface response = response;
+    endinterface);
+endfunction
 
 function PipeIn#(tData) f_FIFOF_to_PipeIn(FIFOF#(tData) fifof);
     return (interface PipeIn;

@@ -26,7 +26,7 @@ interface SQ;
     interface PipeInB0#(WorkQueueElem) wqePipeIn;
     interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
 
-    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
+    interface ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 

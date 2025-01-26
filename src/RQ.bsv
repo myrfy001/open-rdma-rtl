@@ -104,8 +104,8 @@ typedef struct {
 interface RQ;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
 
-    interface Client#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
-    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
+    interface ClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
+    interface ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
     interface PipeInB0#(IoChannelEthDataStream) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
@@ -134,8 +134,8 @@ module mkRQ(RQ);
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
 
-    QueuedClient#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClient("qpcQueryCltInst");
-    QueuedClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClient("mrTableQueryCltInst");
+    QueuedClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClientP("qpcQueryCltInst");
+    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientP("mrTableQueryCltInst");
 
     FIFOF#(PayloadConReq) conReqPipeOutQ <- mkSizedFIFOF(4);
     FIFOF#(Bool) conRespPipeInQ <- mkSizedFIFOF(4);

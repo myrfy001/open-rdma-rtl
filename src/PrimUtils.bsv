@@ -236,8 +236,8 @@ module mkFifofByType#(Integer depth, QueuedClientServerQueueType typ, Clock srcC
 endmodule
 
 
-interface QueuedClient#(type t_req, type t_resp);
-    interface Client#(t_req, t_resp) clt;
+interface QueuedClientP#(type t_req, type t_resp);
+    interface ClientP#(t_req, t_resp) clt;
     method Action putReq(t_req req);
     method Bool canPutReq;
 
@@ -246,7 +246,7 @@ interface QueuedClient#(type t_req, type t_resp);
 endinterface
 
 
-module mkSizedQueuedClient#(
+module mkSizedQueuedClientP#(
         String name, 
         Integer reqDepth, 
         Integer respDepth, 
@@ -256,7 +256,7 @@ module mkSizedQueuedClient#(
         Clock dstClk,
         Reset srcRst,
         Reset dstRst
-    )(QueuedClient#(t_req, t_resp)) provisos (
+    )(QueuedClientP#(t_req, t_resp)) provisos (
         Bits#(t_req, sz_req),
         Bits#(t_resp, sz_resp),
         FShow#(t_req),
@@ -265,6 +265,8 @@ module mkSizedQueuedClient#(
     
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
     FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, dstClk, srcClk, dstRst);
+
+    let respQueuePipeInB0 <- mkFifofToPipeInB0(respQ);
 
     // rule debug;
     //     if (!reqQ.notFull) begin
@@ -275,19 +277,7 @@ module mkSizedQueuedClient#(
     //     end
     // endrule
 
-    interface Client clt;
-        interface Get request;
-            method ActionValue#(t_req) get();
-                reqQ.deq;
-                return reqQ.first;
-            endmethod
-        endinterface
-        interface Put response;
-            method Action put(t_resp resp);
-                respQ.enq(resp);
-            endmethod
-        endinterface
-    endinterface
+    interface clt = toGPClientP(toPipeOut(reqQ), respQueuePipeInB0);
 
     method Action putReq(t_req req);
         reqQ.enq(req);
@@ -303,7 +293,7 @@ module mkSizedQueuedClient#(
     method Bool hasResp = respQ.notEmpty;
 endmodule
 
-module mkQueuedClient#(String name)(QueuedClient#(t_req, t_resp)) provisos (
+module mkQueuedClientP#(String name)(QueuedClientP#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp),
     FShow#(t_req),
@@ -311,29 +301,29 @@ module mkQueuedClient#(String name)(QueuedClient#(t_req, t_resp)) provisos (
 );
     let curClk <- exposeCurrentClock;
     let curRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
+    let t <- mkSizedQueuedClientP(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
     return t;
 endmodule
 
-module mkSyncQueuedClient#(
-        String name,
-        Clock srvClk,
-        Reset srvRst
-    )(QueuedClient#(t_req, t_resp)) provisos (
-        Bits#(t_req, sz_req),
-        Bits#(t_resp, sz_resp),
-        FShow#(t_req),
-        FShow#(t_resp)
-    );
-    let cltClk <- exposeCurrentClock;
-    let cltRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeSync, QueuedClientServerQueueTypeSync, cltClk, srvClk, cltRst, srvRst);
-    return t;
-endmodule
+// module mkSyncQueuedClient#(
+//         String name,
+//         Clock srvClk,
+//         Reset srvRst
+//     )(QueuedClient#(t_req, t_resp)) provisos (
+//         Bits#(t_req, sz_req),
+//         Bits#(t_resp, sz_resp),
+//         FShow#(t_req),
+//         FShow#(t_resp)
+//     );
+//     let cltClk <- exposeCurrentClock;
+//     let cltRst <- exposeCurrentReset;
+//     let t <- mkSizedQueuedClient(name, 2, 2, QueuedClientServerQueueTypeSync, QueuedClientServerQueueTypeSync, cltClk, srvClk, cltRst, srvRst);
+//     return t;
+// endmodule
 
 
-interface QueuedServer#(type t_req, type t_resp);
-    interface Server#(t_req, t_resp) srv;
+interface QueuedServerP#(type t_req, type t_resp);
+    interface ServerP#(t_req, t_resp) srv;
 
     method ActionValue#(t_req) getReq();
     method Bool hasReq;
@@ -342,7 +332,7 @@ interface QueuedServer#(type t_req, type t_resp);
     method Bool canPutResp;
 endinterface
 
-module mkSizedQueuedServer#(String name, 
+module mkSizedQueuedServerP#(String name, 
         Integer reqDepth,
         Integer respDepth, 
         QueuedClientServerQueueType reqType, 
@@ -351,7 +341,7 @@ module mkSizedQueuedServer#(String name,
         Clock dstClk,
         Reset srcRst,
         Reset dstRst
-    )(QueuedServer#(t_req, t_resp)) provisos (
+    )(QueuedServerP#(t_req, t_resp)) provisos (
         Bits#(t_req, sz_req),
         Bits#(t_resp, sz_resp),
         FShow#(t_req),
@@ -360,6 +350,8 @@ module mkSizedQueuedServer#(String name,
 
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
     FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, dstClk, srcClk, dstRst);
+
+    let reqQueuePipeInB0 <- mkFifofToPipeInB0(reqQ);
 
     rule debug;
         if (!reqQ.notFull) begin
@@ -370,20 +362,7 @@ module mkSizedQueuedServer#(String name,
         end
     endrule
 
-    interface Server srv;
-        interface Get response;
-            method ActionValue#(t_resp) get();
-                respQ.deq;
-                return respQ.first;
-            endmethod
-        endinterface
-        interface Put request;
-            method Action put(t_req req);
-                // $display("time=%0t: ", $time, "mkQueuedServer put req [", fshow(name) , "] req=", fshow(req));
-                reqQ.enq(req);
-            endmethod
-        endinterface
-    endinterface
+    interface srv = toGPServerP(reqQueuePipeInB0, toPipeOut(respQ));
 
     method Action putResp(t_resp resp);
         respQ.enq(resp);
@@ -402,7 +381,7 @@ module mkSizedQueuedServer#(String name,
 endmodule
 
 
-module mkQueuedServer#(String name)(QueuedServer#(t_req, t_resp)) provisos (
+module mkQueuedServerP#(String name)(QueuedServerP#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp),
     FShow#(t_req),
@@ -410,25 +389,25 @@ module mkQueuedServer#(String name)(QueuedServer#(t_req, t_resp)) provisos (
 );
     let curClk <- exposeCurrentClock;
     let curRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
+    let t <- mkSizedQueuedServerP(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
     return t;
 endmodule
 
-module mkSyncQueuedServer#(
-        String name,
-        Clock cltClk,
-        Reset cltRst
-    )(QueuedServer#(t_req, t_resp)) provisos (
-        Bits#(t_req, sz_req),
-        Bits#(t_resp, sz_resp),
-        FShow#(t_req),
-        FShow#(t_resp)
-    );
-    let srvClk <- exposeCurrentClock;
-    let srvRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, cltClk, srvClk, cltRst, srvRst);
-    return t;
-endmodule
+// module mkSyncQueuedServer#(
+//         String name,
+//         Clock cltClk,
+//         Reset cltRst
+//     )(QueuedServer#(t_req, t_resp)) provisos (
+//         Bits#(t_req, sz_req),
+//         Bits#(t_resp, sz_resp),
+//         FShow#(t_req),
+//         FShow#(t_resp)
+//     );
+//     let srvClk <- exposeCurrentClock;
+//     let srvRst <- exposeCurrentReset;
+//     let t <- mkSizedQueuedServer(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, cltClk, srvClk, cltRst, srvRst);
+//     return t;
+// endmodule
 
 function tData getAbsValue(tData a) provisos(Arith#(tData), Bitwise#(tData));
     return msb(a) == 0 ? a : (~a) + 1;

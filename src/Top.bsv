@@ -260,8 +260,8 @@ interface RingbufAndDescriptorHandler;
     interface PipeIn#(RingbufRawDescriptor)                                     simpleNicRxDescPipeIn;
     interface PipeOut#(RingbufRawDescriptor)                                    simpleNicTxDescPipeOut;
     
-    interface Client#(RingbufRawDescriptor, Bool)                               mrAndPgtManagerClt;
-    interface Client#(WriteReqQPC, Bool)                                        qpcModifyClt;
+    interface ClientP#(RingbufRawDescriptor, Bool)                               mrAndPgtManagerClt;
+    interface ClientP#(WriteReqQPC, Bool)                                        qpcModifyClt;
     interface PipeOut#(LocalNetworkSettings)                                    setNetworkParamReqPipeOut;
     interface PipeOut#(IndexQP)                                                 qpResetReqPipeOut;
 endinterface
@@ -777,8 +777,8 @@ interface QpMrPgtQpc;
 
     interface PipeIn#(IndexQP)                                                      qpResetReqPipeIn;
         
-    interface Server#(WriteReqQPC, Bool)                                            qpContextUpdateSrv;
-    interface Server#(RingbufRawDescriptor, Bool)                                   mrAndPgtModifyDescSrv;
+    interface ServerP#(WriteReqQPC, Bool)                                            qpContextUpdateSrv;
+    interface ServerP#(RingbufRawDescriptor, Bool)                                   mrAndPgtModifyDescSrv;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 endinterface
 
@@ -786,7 +786,7 @@ endinterface
 
 (* synthesize *)
 module mkQpMrPgtQpc(QpMrPgtQpc);
-    FIFOF#(WriteReqQPC) qpContextUpdateReqQueue <- mkLFIFOF;
+    PipeInAdapterB0#(WriteReqQPC) qpContextUpdateReqQueue <- mkPipeInAdapterB0;
     FIFOF#(Bool) qpContextUpdateRespQueue <- mkLFIFOF;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
 
@@ -878,7 +878,8 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[0] , ethTxStreamArbiterVec[1].pipeInIfcVec[2]);
     mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1] , ethTxStreamArbiterVec[2].pipeInIfcVec[2]);
 
-    
+    let qpContextUpdateSrvRequestPipeInB0Adapter <- mkPipeInB0ToPipeIn(qpContext.updateSrv.request, 1);
+    let autoAckGeneratorQpcUpdateSrvRequestPipeInB0Adapter <- mkPipeInB0ToPipeIn(autoAckGenerator.qpcUpdateSrv.request, 1);
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
@@ -912,13 +913,15 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     rule forwardQpContextUpdateReq;
         let req = qpContextUpdateReqQueue.first;
         qpContextUpdateReqQueue.deq;
-        qpContext.updateSrv.request.put(req);
-        autoAckGenerator.qpcUpdateSrv.request.put(req);
+        qpContextUpdateSrvRequestPipeInB0Adapter.enq(req);
+        autoAckGeneratorQpcUpdateSrvRequestPipeInB0Adapter.enq(req);
     endrule
     
     rule forwardQpContextUpdateResp;
-        let r1 <- qpContext.updateSrv.response.get;
-        let r2 <-autoAckGenerator.qpcUpdateSrv.response.get;
+        let r1 = qpContext.updateSrv.response.first;
+        qpContext.updateSrv.response.deq;
+        let r2 = autoAckGenerator.qpcUpdateSrv.response.first;
+        autoAckGenerator.qpcUpdateSrv.response.deq;
         qpContextUpdateRespQueue.enq(r1 && r2);
     endrule
 
@@ -937,7 +940,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     interface metaReportDescPipeOutVec          = metaReportDescPipeOutVecInst;
     interface qpDmaRequestMasterIfcVec          = qpDmaRequestMasterIfcVecInst;
     interface qpEthDataStreamIfcVec             = qpEthDataStreamIfcVecInst;
-    interface qpContextUpdateSrv                = toGPServer(qpContextUpdateReqQueue, qpContextUpdateRespQueue);
+    interface qpContextUpdateSrv                = toGPServerP(toPipeInB0(qpContextUpdateReqQueue), toPipeOut(qpContextUpdateRespQueue));
 
     interface simpleNicRxDescPipeOut            = simpleNic.simpleNicRxDescPipeOut;
     interface simpleNicTxDescPipeIn             = simpleNic.simpleNicTxDescPipeIn;

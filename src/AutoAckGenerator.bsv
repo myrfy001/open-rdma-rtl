@@ -72,7 +72,7 @@ interface AutoAckGenerator;
 
     interface Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
 
-    interface Server#(WriteReqQPC, Bool) qpcUpdateSrv;
+    interface ServerP#(WriteReqQPC, Bool) qpcUpdateSrv;
 
     interface PipeIn#(IndexQP) resetReqPipeIn;
     // interface PipeOut#(Bit#(0)) resetRespPipeOut;
@@ -111,6 +111,13 @@ module mkAutoAckGenerator(AutoAckGenerator);
     end
 
     QpContextTwoWayQuery  qpContextForAutoAck <- mkQpContextTwoWayQuery;
+    Vector#(NUMERIC_TYPE_TWO, PipeIn#(ReadReqQPC)) qpContextForAutoAckQuerySrvPipeInB0AdapterVec = newVector;
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        qpContextForAutoAckQuerySrvPipeInB0AdapterVec[idx] <- mkPipeInB0ToPipeIn(qpContextForAutoAck.querySrvVec[idx].request, 1); 
+    end
+
+    
+    
 
     Reg#(Dword) curTimeReg <- mkReg(0);
     Reg#(IndexQP) pollingQpIdxReg <- mkReg(0);
@@ -199,7 +206,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 };
                 autoAckMetaAtomicUpdateStorage.reqPipeInVec[idx].enq(tagged Valid autoAckMetaUpdateReq);
                 genAutoAckEthPacketPipelineQueueVec[idx].enq(resp);
-                qpContextForAutoAck.querySrvVec[idx].request.put(ReadReqQPC{
+                qpContextForAutoAckQuerySrvPipeInB0AdapterVec[idx].enq(ReadReqQPC{
                     qpn: genQPN(resp.rowAddr, ?),
                     needCheckKey: False
                 });
@@ -225,7 +232,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
             autoAckMetaAtomicUpdateStorage.respPipeOutVec[idx].deq;
 
             if (msnInfoMaybe matches tagged Valid .msnInfo) begin
-                let qpCtxRespMaybe <- qpContextForAutoAck.querySrvVec[idx].response.get;
+                let qpCtxRespMaybe = qpContextForAutoAck.querySrvVec[idx].response.first;
+                qpContextForAutoAck.querySrvVec[idx].response.deq;
                 let bitmapInfo = genAutoAckEthPacketPipelineQueueVec[idx].first;
                 genAutoAckEthPacketPipelineQueueVec[idx].deq;
 

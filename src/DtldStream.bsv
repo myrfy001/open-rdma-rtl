@@ -218,6 +218,11 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
             isWriteFirstBeatReg <= wd.isLast;
             curWriteChannelIdxReg <= curChannelIdx;
             writeSourceChannelIdPipeOutQueue.enq(curChannelIdx);
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forward write beat first"),
+            //     toBlue(", wm="), fshow(wm),
+            //     toBlue(", wd="), fshow(wd)
+            // );
         end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave recvWriteArbitResp"),
@@ -232,10 +237,10 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         masterSideQueueWd.enq(wd);
         isWriteFirstBeatReg <= wd.isLast;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardMoreWriteBeat"),
-        //     toBlue(", wd="), fshow(wd)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardMoreWriteBeat"),
+            toBlue(", wd="), fshow(wd)
+        );
     endrule
 
     rule sendReadArbitReq;
