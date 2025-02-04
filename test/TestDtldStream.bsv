@@ -141,12 +141,12 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
 
     function DtldStreamData#(DATA) maskOutUnusedBytes(DtldStreamData#(DATA) dsIn);
         DATA mask = -1;
-        BusBitNum shiftCnt = zeroExtend(dsIn.startByteIdx) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+        BusBitCnt shiftCnt = zeroExtend(dsIn.startByteIdx) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
         mask = mask >> (shiftCnt);
         mask = mask << (shiftCnt);
 
         if (dsIn.isLast) begin
-            ByteEnBitNum emptyByteCntAtTail = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - dsIn.byteNum - zeroExtend(dsIn.startByteIdx);
+            BusByteCnt emptyByteCntAtTail = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - dsIn.byteNum - zeroExtend(dsIn.startByteIdx);
             shiftCnt = zeroExtend(emptyByteCntAtTail) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
             mask = mask << shiftCnt;
             mask = mask >> shiftCnt;
@@ -237,7 +237,7 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
             seq
                 action
 
-                    ByteEnBitNum byteCntCanHoldInThisBeat = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(targetOriginDsStartByteIdxReg);
+                    BusByteCnt byteCntCanHoldInThisBeat = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - truncate(targetOriginDsStartByteIdxReg);
 
                     let isFirst = originDsIsFirstReg;
                     let isLast = (targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) && (truncate(targetOriginDsTotalByteNumReg - curOriginDsTotalByteNumReg) <= byteCntCanHoldInThisBeat);
@@ -245,8 +245,8 @@ module mkTestDtldStreamSpliterAndConcator(Empty);
                     targetOriginDsStartByteIdxReg <= 0;
 
                     // $display("targetOriginDsStartByteIdxReg=", fshow(targetOriginDsStartByteIdxReg), ", curOriginDsTotalByteNumReg=", fshow(curOriginDsTotalByteNumReg), ", targetOriginDsTotalByteNumReg=", fshow(targetOriginDsTotalByteNumReg));
-                    ByteEnBitNum byteNum;
-                    ByteIndexInBeat    startByteIdx;
+                    BusByteCnt byteNum;
+                    BusByteIdx    startByteIdx;
 
                     if (isFirst && isLast) begin
                         byteNum = truncate(targetOriginDsTotalByteNumReg);

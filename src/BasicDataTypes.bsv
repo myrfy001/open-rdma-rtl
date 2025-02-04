@@ -90,10 +90,7 @@ typedef TAdd#(1, TLog#(MAX_PMTU))                                       PKT_LEN_
 
 typedef TDiv#(ATOMIC_ADDR_BIT_ALIGNMENT, BYTE_WIDTH) ATOMIC_ADDR_BYTE_ALIGNMENT; // 8
 
-typedef TExp#(PAD_WIDTH) FRAG_MIN_VALID_BYTE_NUM; // 4
 
-typedef TMul#(MIN_PKT_NUM_IN_RECV_BUF, PMTU_MAX_FRAG_NUM)   DATA_STREAM_FRAG_BUF_SIZE;
-typedef TDiv#(DATA_STREAM_FRAG_BUF_SIZE, PMTU_MIN_FRAG_NUM) PKT_META_DATA_BUF_SIZE;
 
 
 typedef 48                                            PHYSICAL_ADDR_WIDTH; // X86 physical address width
@@ -117,17 +114,13 @@ typedef Bit#(DATA_BUS_BYTE_WIDTH) ByteEn;
 typedef Bit#(32) ADDR32;
 
 
-typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8 (bus 256b), 9 (bus 512b)
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5 (bus 256b), 6 (bus 512b)
-// typedef Bit#(PAD_WIDTH)               PadMask;
+typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitCnt;                  // 9 (bus 256b)
+typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) BusByteCnt;                 // 6 (bus 256b)
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH)           BusByteIdx;                 // 5 (bus 256b)
+typedef BusByteCnt                              DataBusSignedShiftOffset;   // 6 (bus 256b)
 
-typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9 (bus 256b), 10 (bus 512b)
-typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6 (bus 256b), 7 (bus 512b)
+typedef TDiv#(DATA_BUS_BYTE_WIDTH, BYTE_CNT_PER_DWOED)  DWORD_CNT_PER_DATA_BUS_BEAT;
 
-typedef ByteEnBitNum DataBusOneBasedByteIndex;          // 6 (bus 256b), 7 (bus 512b)
-typedef ByteEnBitNum DataBusSignedShiftOffset;          // 6 (bus 256b), 7 (bus 512b)
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) DataBusShiftOffset; // 5 (bus 256b), 6 (bus 512b)
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ByteIndexInBeat; // 5 (bus 256b), 6 (bus 512b)
 
 typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;            // 64
 typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;          // 96
@@ -143,22 +136,9 @@ typedef Bit#(PCIE_BAR_DATA_BIT_WIDTH) PcieBarData;
 
 
 
-typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
-typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;
-typedef Bit#(QP_CAP_CNT_WIDTH) ScatterGatherElemCnt;
-
-typedef Bit#(MAX_PMTU_WIDTH)       ResiduePMTU;
-typedef Bit#(TAdd#(1, MAX_PMTU_WIDTH)) ByteNumPMTU;
-typedef Bit#(TOTAL_FRAG_NUM_WIDTH) TotalFragNum;
 typedef Bit#(PMTU_FRAG_NUM_WIDTH)  PktFragNum;
 typedef Bit#(PKT_NUM_WIDTH)        PktNum;
 typedef Bit#(PKT_LEN_WIDTH)        PktLen;
-
-typedef Bit#(RETRY_CNT_WIDTH) RetryCnt;
-typedef Bit#(TIMER_WIDTH)     TimeOutTimer;
-typedef Bit#(TIMER_WIDTH)     RnrTimer;
-
-typedef Bit#(TLog#(ATOMIC_ADDR_BYTE_ALIGNMENT)) AtomicAddrByteAlignment;
 
 
 typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
@@ -490,7 +470,7 @@ typedef TAdd#(1, INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) INPUT_STREA
 typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH) InputStreamFragBufferIdx; 
 
 typedef struct {
-    ByteEnBitNum                byteNum;
+    BusByteCnt                byteNum;
     Bool                        isFirst;
     Bool                        isLast;
     Bool                        isEmpty;

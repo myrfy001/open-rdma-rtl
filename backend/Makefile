@@ -155,7 +155,7 @@ gen_bram_hex:
 
 compile: gen_bram_hex
 	mkdir -p $(BUILDDIR)
-	rm $(BUILDDIR)/FullyPipelineChecker.bo
+	# rm $(BUILDDIR)/FullyPipelineChecker.bo
 	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)
 
 verilog: compile 

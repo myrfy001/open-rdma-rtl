@@ -380,9 +380,12 @@ module mkRQ(RQ);
             packetLen = isFirstPacket ? calculatedFirstPacketLen : reth.dlen;
 
             ADDR rethEndAddrForBeatCountCalc = reth.va + zeroExtend(packetLen) - 1;
-            Length dividedStartAddr = truncate(reth.va >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
-            Length dividedEndAddr = truncate(rethEndAddrForBeatCountCalc >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
-            zerobasedExpectedPayloadBeatNum = truncate(dividedEndAddr - dividedStartAddr);
+            // Since each packet is at most 4kB, which use 13 bit, a Word is 16 bit, which is big enough.
+            Word startAddrAsDwordOffset = truncate(reth.va >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
+            Word endAddrAsDwordOffset = truncate(rethEndAddrForBeatCountCalc >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM));
+            Word zeroBasedDwordCntInThisPacket = endAddrAsDwordOffset - startAddrAsDwordOffset;
+            Word zeroBasedBeatCntInThisPacket = zeroBasedDwordCntInThisPacket >> (valueOf(TLog#(DWORD_CNT_PER_DATA_BUS_BEAT)));
+            zerobasedExpectedPayloadBeatNum = truncate(zeroBasedBeatCntInThisPacket);
 
             if (isNeedQueryMrTable) begin
                 let mrEntryMaybe <- mrTableQueryCltInst.getResp;

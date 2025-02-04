@@ -1995,11 +1995,11 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         let readOutBeat = dataStreamStorageVec[beatMeta.srcSegIdx].readRespPipeOut.first;
         dataStreamStorageVec[beatMeta.srcSegIdx].readRespPipeOut.deq;
 
-        ByteEnBitNum byteNum;
+        BusByteCnt byteNum;
         DwordIdxInUserLogicBeat dwordCntForNextCpltShiftOffset;
         let isFirst = isCurCpltOutputFirstBeatReg;
         let isLast = beatMeta.isLast;
-        ByteIndexInBeat startByteIdx = zeroExtend(fromInteger(valueOf(BYTE_CNT_PER_DWOED))-beatMeta.firstBeCnt);
+        BusByteIdx startByteIdx = zeroExtend(fromInteger(valueOf(BYTE_CNT_PER_DWOED))-beatMeta.firstBeCnt);
 
 
         if (isFirst && isLast) begin

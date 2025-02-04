@@ -53,7 +53,7 @@ module mkTestBiDirectionStreamShifter(Empty);
 
         Length byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
-        ByteIndexInBeat startByteIdx = 0;
+        BusByteIdx startByteIdx = 0;
         if (isFirst || isLast) begin
             byteNum = inputBeatLengthRandomGenPipeOut.first;
             inputBeatLengthRandomGenPipeOut.deq;

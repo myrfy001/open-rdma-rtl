@@ -733,7 +733,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     IpID defaultIpId = 1;
 
 
-    function IoChannelEthDataStream genEthernetPacket(NocData data, DataBusOneBasedByteIndex byteNum, ByteIndexInBeat startByteIdx, Bool isFirst, Bool isLast);
+    function IoChannelEthDataStream genEthernetPacket(NocData data, BusByteCnt byteNum, BusByteIdx startByteIdx, Bool isFirst, Bool isLast);
         
         // Note: the ethernet packet is a pure stream, so startByteIdx must always be zero.
         // when handling the first beat of payload, since the input payload from PCIe is aligned to DWord, the input beat's
@@ -952,7 +952,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
                 $format("Got payload = ", fshow(payload), "ethernetFrameLeftByteCounterReg=", fshow(ethernetFrameLeftByteCounterReg))
             );
 
-            ByteEnBitNum byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(pack(mod));
+            BusByteCnt byteNum = mod == 0 ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(pack(mod));
             let byteNumPlusPcieDwordAlign = payload.byteNum + zeroExtend(payload.startByteIdx);
             immAssert(
                 byteNumPlusPcieDwordAlign == byteNum,

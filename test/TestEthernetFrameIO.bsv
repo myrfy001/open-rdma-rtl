@@ -142,7 +142,7 @@ module mkTestEthernetFrameIO(Empty);
         if (isRdmaPacket) begin
             let rdmaExtendHeaderByteNum = bthAndEthTotalLength - fromInteger(valueOf(BTH_BYTE_WIDTH));
             let rdmaExtendHeaderBufInvalidByteNum = fromInteger(valueOf(RDMA_EXTEND_HEADER_BUFFER_BYTE_WIDTH)) - rdmaExtendHeaderByteNum;
-            BusBitNum tmpShiftCnt = zeroExtend(rdmaExtendHeaderBufInvalidByteNum) * fromInteger(valueOf(BYTE_WIDTH));
+            BusBitCnt tmpShiftCnt = zeroExtend(rdmaExtendHeaderBufInvalidByteNum) * fromInteger(valueOf(BYTE_WIDTH));
             RdmaExtendHeaderBuffer rdmaExtendHeaderMask = ~((1 << tmpShiftCnt) - 1);
             rdmaExtendHeaderBuf = rdmaExtendHeaderBuf & rdmaExtendHeaderMask;
             
@@ -160,8 +160,8 @@ module mkTestEthernetFrameIO(Empty);
             if (hasPayload) begin
                 payloadStreamGen.reqPipeIn.enq(zeroExtend(rdmaPayloadLen));
                 
-                DataBusOneBasedByteIndex firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - truncate(bthAndEthTotalLength);
-                ByteIndexInBeat firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue = truncate(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
+                BusByteCnt firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - truncate(bthAndEthTotalLength);
+                BusByteIdx firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue = truncate(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
                 firstPayloadByteOneBasedOffsetInFirstPayloadBeat = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue);
                 DataBusSignedShiftOffset signedShiftOffset = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeat) - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
                 txStreamShifter.offsetPipeIn.enq(signedShiftOffset);
@@ -225,7 +225,7 @@ module mkTestEthernetFrameIO(Empty);
 
             let rdmaTotalHeaderLen = calcHeaderLenByTransTypeAndRdmaOpCode(got.header.bth.trans, got.header.bth.opcode);
             let invalidExtHeaderBufferBitNum = (valueOf(RDMA_BTH_AND_ETH_MAX_BYTE_WIDTH) - rdmaTotalHeaderLen) * valueOf(BYTE_WIDTH);
-            BusBitNum shiftInvalidExtHeaderBufferBitNum = fromInteger(invalidExtHeaderBufferBitNum);
+            BusBitCnt shiftInvalidExtHeaderBufferBitNum = fromInteger(invalidExtHeaderBufferBitNum);
             // Note, the rdmaExtendHeaderBuf may contain garbage data at it's lower bits.
             immAssert(
                 (pack(got.header) >> shiftInvalidExtHeaderBufferBitNum) == (pack(expected.header) >> shiftInvalidExtHeaderBufferBitNum),

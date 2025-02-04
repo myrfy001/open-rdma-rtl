@@ -873,8 +873,8 @@ typedef struct {
     Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT))    startBramBlockIdx;
     Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT))    endBramBlockIdx;
     FtileMacSegmentIdx                      firstOutputBeatShiftSegCnt;
-    ByteEnBitNum                            firstOutputBeatByteNum;
-    ByteEnBitNum                            lastOutputBeatByteNum;
+    BusByteCnt                            firstOutputBeatByteNum;
+    BusByteCnt                            lastOutputBeatByteNum;
     Bool                                    isFirst;             
     Bool                                    isLast;                    
 } FtileMacRxGearBoxMeta deriving(Bits, FShow);
@@ -940,8 +940,8 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
         Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT)) startBramBlockIdx   = truncateLSB(rawReq.startSegIdx);
         Bit#(TLog#(RTILE_RX_BRAM_BLOCK_CNT)) endBramBlockIdx     = truncateLSB(endSegIdx);
 
-        ByteEnBitNum lastOutputBeatByteNum = ?;
-        ByteEnBitNum firstOutputBeatByteNum = ?;
+        BusByteCnt lastOutputBeatByteNum = ?;
+        BusByteCnt firstOutputBeatByteNum = ?;
 
         if (startBramBlockIdx == endBramBlockIdx) begin
             lastOutputBeatByteNum = ((zeroExtend(rawReq.zeroBasedValidSegCnt) + 1) << valueOf(FTILE_MAC_SEGMENT_CNT_TO_BYTE_CNT_CONVERT_SHIFT_NUM)) - (rawReq.isLast ? zeroExtend(rawReq.lastSegEmptyByteCnt) : 0);

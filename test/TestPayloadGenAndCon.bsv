@@ -101,7 +101,7 @@ module mkTestCocotbPayloadGenAndCon(TestCocotbPayloadGenAndCon);
         payloadStreamGen.reqPipeIn.enq(zeroExtend(rdmaPayloadLen));
 
         ByteIdxInDword startByteOffset = truncate(rdmaPayloadStartAddr);
-        DataBusShiftOffset signedShiftOffset = zeroExtend(startByteOffset);
+        BusByteIdx signedShiftOffset = zeroExtend(startByteOffset);
         writeStreamShifter.offsetPipeIn.enq(signedShiftOffset);
 
         let conReq = PayloadConReq{
@@ -160,7 +160,7 @@ module mkTestCocotbPayloadGenAndCon(TestCocotbPayloadGenAndCon);
         // mask out non-valid bytes.
         if (ds.isFirst) begin
             // only first beat is right aligned.
-            BusBitNum shiftOffset = zeroExtend(ds.startByteIdx) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+            BusBitCnt shiftOffset = zeroExtend(ds.startByteIdx) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
             DATA maskForStartByteIdx = ~((1 << shiftOffset) - 1);
 
             shiftOffset = (zeroExtend(ds.startByteIdx) + zeroExtend(ds.byteNum)) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
@@ -170,7 +170,7 @@ module mkTestCocotbPayloadGenAndCon(TestCocotbPayloadGenAndCon);
             expectedDs.data = expectedDs.data & maskForStartByteIdx & maskForByteNum;
         end
         else if (ds.isLast) begin
-            BusBitNum shiftOffset = zeroExtend(ds.byteNum) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
+            BusBitCnt shiftOffset = zeroExtend(ds.byteNum) << valueOf(BIT_BYTE_CONVERT_SHIFT_NUM);
             DATA maskForByteNum = (1 << shiftOffset) - 1;
             ds.data = ds.data & maskForByteNum;
             expectedDs.data = expectedDs.data & maskForByteNum;

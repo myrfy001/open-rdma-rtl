@@ -235,8 +235,8 @@ module mkFixedLengthDateStreamRandomGen(FixedLengthDateStreamRandomGen);
         let data = dataRandomGenPipeOut.first;
         dataRandomGenPipeOut.deq;
 
-        ByteIndexInBeat startByteIdx = 0;
-        ByteEnBitNum byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        BusByteIdx startByteIdx = 0;
+        BusByteCnt byteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
         if (len <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
             isLast = True;
