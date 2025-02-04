@@ -145,6 +145,9 @@ export FAMILY
 export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
 
 
+ifdef IS_COMPILE_FOR_SIM
+	MISCFLAGS += -D IS_COMPILE_FOR_SIM
+endif
 
 gen_bram_hex:
 	mkdir -p $(BUILDDIR)	
@@ -152,6 +155,7 @@ gen_bram_hex:
 
 compile: gen_bram_hex
 	mkdir -p $(BUILDDIR)
+	rm $(BUILDDIR)/FullyPipelineChecker.bo
 	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)
 
 verilog: compile 

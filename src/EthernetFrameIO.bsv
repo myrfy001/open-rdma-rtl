@@ -132,7 +132,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule discardPacketWhenNetworkSettingsNotReady;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let ds = ethRawPacketInQ.first;
         ethRawPacketInQ.deq;
 
@@ -163,7 +163,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleFirstBeatStage if (stateReg == InputPacketClassifierStateHandleFirstBeat);
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let {ds, macUnicastMatch, fpDebugTime} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
 
@@ -246,7 +246,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleSecondBeatStage if (stateReg == InputPacketClassifierStateHandleSecondBeat);
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let {ds, _dontCareMacUnicastMatch, fpDebugTime} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
 
@@ -346,7 +346,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule dispatchStream;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let ds = waitingForRouteQ.first;
         waitingForRouteQ.deq;
         let ethPktMeta = ethPacketMetaQ.first;
@@ -450,7 +450,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     Integer bthEndBitOneBasedPosInSecondBeat = valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - valueOf(SizeOf#(BTH));
 
     rule handleFirstBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         // first beat is totally ETH and IP header, skip them
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
@@ -476,7 +476,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     endrule
 
     rule handleSecondBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleSecondBeat);
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         // second beat has some part of IP header, total UDP header, total BTH header, and maybe some RDMA extended header or payload
         // we only interested in the BTH and following part.
 
@@ -529,7 +529,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     endrule
 
     rule handleThirdBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleThirdBeat);
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
         ds.data = swapEndianByte(ds.data);
@@ -556,7 +556,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     endrule
 
     rule handleMoreBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleMoreBeat);
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
         ds.isFirst = payloadStreamOutputIsFirstReg;

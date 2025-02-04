@@ -252,7 +252,7 @@ module mkRQ(RQ);
 
 
     rule sendQpcQueryReqAndSomeSimpleParse;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let rdmaPacketMeta = packetParser.rdmaPacketMetaPipeOut.first;
         packetParser.rdmaPacketMetaPipeOut.deq;
 
@@ -305,7 +305,7 @@ module mkRQ(RQ);
     endrule
 
     rule checkQpcAndMrTable;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let pipelineEntryIn = checkQpcAndMrTablePipeQ.first;
         checkQpcAndMrTablePipeQ.deq;
 
@@ -483,7 +483,7 @@ module mkRQ(RQ);
     
 
     rule checkMrTableStep2;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let pipelineEntryIn = checkMrTableStep2PipeQ.first;
         checkMrTableStep2PipeQ.deq;
 
@@ -515,7 +515,7 @@ module mkRQ(RQ);
     endrule
 
     rule checkMrTableStep3;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
 
         let pipelineEntryIn = checkMrTableStep3PipeQ.first;
         checkMrTableStep3PipeQ.deq;
@@ -587,7 +587,7 @@ module mkRQ(RQ);
 
 
     rule issuePayloadConReqOrDiscard;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
 
         let pipelineEntryIn = issuePayloadConReqOrDiscardPipeQ.first;
         issuePayloadConReqOrDiscardPipeQ.deq;
@@ -657,7 +657,7 @@ module mkRQ(RQ);
     endrule
 
     rule handleConResp;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
 
         let pipelineEntryIn = handleConRespPipeQ.first;
         handleConRespPipeQ.deq;
@@ -709,7 +709,7 @@ module mkRQ(RQ);
    
 
     rule genMetaReportQueueDesc;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
 
         // write them in a function to make sure they are all comb logic.
         function Tuple3#(Vector#(NUMERIC_TYPE_TWO, Maybe#(RingbufRawDescriptor)), Bool, Bool) genDescVector();
@@ -886,7 +886,7 @@ module mkRQ(RQ);
     endrule
 
     rule forwardMetaReportDescToOutput;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         if (metaReportMimoQueue.deqReadyN(1)) begin
             metaReportMimoQueue.deq(1);
             let desc = metaReportMimoQueue.first[0];
@@ -900,7 +900,7 @@ module mkRQ(RQ);
     endrule
 
     rule filterDiscardedPayloadStream;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let isDiscard = filterCmdQ.first;
         let ds = payloadStorage.first;
         payloadStorage.deq;

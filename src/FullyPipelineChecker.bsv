@@ -14,17 +14,31 @@ function Action immAssertForFpCheck(Bool condition, String assertName, Fmt asser
     endaction
 endfunction
 
+function ActionValue#(SimulationTime) getSimulationTime;
+    actionvalue
+        `ifdef IS_COMPILE_FOR_SIM
+            SimulationTime curTime <- $time;
+            curTime = unpack(pack(curTime));
+            return curTime;
+        `else
+            return 0;
+        `endif
+    endactionvalue
+endfunction
+
 function Action checkFullyPipeline(SimulationTime previousBeatTime, Integer maxAllowedBeat, Integer clockPeriod, String name);
     action
-        SimulationTime curTime <- $time;
-        let deltaTime = (curTime - previousBeatTime) * 1000;
-        SimulationTime allowedDelta = fromInteger(maxAllowedBeat * clockPeriod);
-        Bool needFullyPipelineCheck <- $test$plusargs("fully-pipeline-check");
-        immAssertForFpCheck(
-            (!needFullyPipelineCheck) || (deltaTime <= allowedDelta),
-            "checkFullyPipeline Failed",
-            $format("name = %s", name, ", previousBeatTime=", fshow(previousBeatTime), ", curTime=", fshow(curTime), ", deltaTime=", fshow(deltaTime), ", allowedDelta=", fshow(allowedDelta))
-        );
-        // $display("checkFullyPipeline name = %s", name, ", previousBeatTime=", fshow(previousBeatTime), ", curTime=", fshow(curTime), ", deltaTime=", fshow(deltaTime), ", allowedDelta=", fshow(allowedDelta));
+        `ifdef IS_COMPILE_FOR_SIM
+            SimulationTime curTime <- $time;
+            let deltaTime = (curTime - previousBeatTime) * 1000;
+            SimulationTime allowedDelta = fromInteger(maxAllowedBeat * clockPeriod);
+            Bool needFullyPipelineCheck <- $test$plusargs("fully-pipeline-check");
+            immAssertForFpCheck(
+                (!needFullyPipelineCheck) || (deltaTime <= allowedDelta),
+                "checkFullyPipeline Failed",
+                $format("name = %s", name, ", previousBeatTime=", fshow(previousBeatTime), ", curTime=", fshow(curTime), ", deltaTime=", fshow(deltaTime), ", allowedDelta=", fshow(allowedDelta))
+            );
+            // $display("checkFullyPipeline name = %s", name, ", previousBeatTime=", fshow(previousBeatTime), ", curTime=", fshow(curTime), ", deltaTime=", fshow(deltaTime), ", allowedDelta=", fshow(allowedDelta));
+        `endif
     endaction
 endfunction

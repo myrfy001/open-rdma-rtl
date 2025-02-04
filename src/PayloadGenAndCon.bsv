@@ -132,7 +132,7 @@ module mkPayloadGen(PayloadGen);
     let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
 
     rule handleInReq;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let req = genReqPipeInQ.first;
         genReqPipeInQ.deq;
 
@@ -154,7 +154,7 @@ module mkPayloadGen(PayloadGen);
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
@@ -179,7 +179,7 @@ module mkPayloadGen(PayloadGen);
     endrule
 
     rule issueDmaRead;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let translatedAddr <- addrTranslateCltInst.getResp;
         let {len, isLast} = issueDmaReadPipelineQ.first;
         issueDmaReadPipelineQ.deq;
@@ -244,7 +244,7 @@ module mkPayloadCon(PayloadCon);
 
     
     rule handleInReq;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let req = conReqPipeInQ.first;
         conReqPipeInQ.deq;
 
@@ -266,7 +266,7 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
@@ -294,7 +294,7 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     rule getBeatChunkMetaCalculateRespAndIssueAxiWrite;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let {len, fpDebugTime} = issueDmaWritePipelineQ.first;
         issueDmaWritePipelineQ.deq;
 
@@ -320,7 +320,7 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     rule calcStreamSpliterMeta;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let {truncatedStartAddr, truncatedEndAddrForALignCalc, fpDebugTime} = streamSplitorMetaCalcPipelineQ.first;
         streamSplitorMetaCalcPipelineQ.deq;
 
@@ -341,7 +341,7 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     rule forwardConsumedFinishedSignal;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let ds = payloadConStreamPipeInQ.first;
         payloadConStreamPipeInQ.deq;
         dsSpliterDataPipeInConverter.enq(ds);
@@ -356,7 +356,7 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     rule debugForwardSplitOutput;
-        let curFpDebugTime <- $time;
+        let curFpDebugTime <- getSimulationTime;
         let ds = dsSpliter.dataPipeOut.first;
         dsSpliter.dataPipeOut.deq;
         dmaWriteReqDataPipeOutQ.enq(ds);

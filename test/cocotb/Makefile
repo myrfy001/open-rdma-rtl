@@ -55,7 +55,7 @@ gen_bram_hex:
 
 
 verilog: gen_bram_hex
-	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} BSV_TOP_MODULE=${TOP_MODULE} verilog
+	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} BSV_TOP_MODULE=${TOP_MODULE} IS_COMPILE_FOR_SIM=True verilog
 
 prepare:
 	sed -i '1i `timescale 1ns/1ps' $(GENERATED_VSRC_DIR)/$(TOP_FILE)
