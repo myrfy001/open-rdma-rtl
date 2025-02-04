@@ -3,6 +3,7 @@ import PAClib :: *;
 import Vector :: *;
 import GetPut :: *;
 
+import FullyPipelineChecker :: *;
 import RdmaHeaders :: *;
 import Settings :: *;
 import EthernetTypes :: *;
@@ -237,15 +238,18 @@ typedef struct {
     RdmaBthAndExtendHeader header;
     Bool hasPayload;
     Bool isEcnMarked;
+    SimulationTime  fpDebugTime;
 } RdmaRecvPacketMeta deriving(Bits, FShow);
 
 typedef struct {
     PktFragNum beatCnt;
+    SimulationTime  fpDebugTime;
 } RdmaRecvPacketTailMeta deriving(Bits, FShow);
 
 typedef struct {
     RdmaBthAndExtendHeader header;
     Bool hasPayload;
+    // SimulationTime  fpDebugTime;
 } RdmaSendPacketMeta deriving(Bits, FShow);
 
 

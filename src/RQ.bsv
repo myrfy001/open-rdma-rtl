@@ -6,7 +6,7 @@ import ClientServer :: *;
 import Clocks :: *;
 import MIMO :: *;
 
-
+import FullyPipelineChecker :: *;
 import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
@@ -43,6 +43,7 @@ typedef struct {
     Bool isZeroPayload;
     Bool isFirstPacket;
     ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
+    SimulationTime  fpDebugTime;
 } CheckQpcAndMrTablePipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -57,6 +58,7 @@ typedef struct {
     Length packetLen;
     TruncatedAddrForMrBoundCheck deltaLen;
     ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
+    SimulationTime  fpDebugTime;
 } CheckMrTableStep2PipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -71,6 +73,7 @@ typedef struct {
     Length packetLen;
     TruncatedAddrForMrBoundCheck deltaLen;
     ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
+    SimulationTime  fpDebugTime;
 } CheckMrTableStep3PipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -83,6 +86,7 @@ typedef struct {
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
     ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
+    SimulationTime  fpDebugTime;
 } IssuePayloadConReqOrDiscardPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
@@ -95,10 +99,12 @@ typedef struct {
     PktFragNum zerobasedExpectedPayloadBeatNum;
     Length packetLen;
     ThinMacIpUdpMetaDataForRecv peerMacIpUdpMeta;
+    SimulationTime  fpDebugTime;
 } HandleConRespPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
     RdmaRecvPacketMeta rdmaPacketMeta;
+    SimulationTime  fpDebugTime;
 } GenMetaReportQueueDescPipelineEntry deriving(Bits, FShow);
 
 interface RQ;
@@ -131,7 +137,7 @@ module mkRQ(RQ);
     FIFOF#(CnpPacketGenReq)         genCnpReqPipeOutQueue       <- mkFIFOF;
     
     PacketParse packetParser <- mkPacketParse;
-    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ));
+    FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_INPUT_DATA_STREAM_BUF));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
 
     QueuedClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClientP("qpcQueryCltInst");
@@ -237,10 +243,16 @@ module mkRQ(RQ);
         if (!checkMrTableStep3PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep3PipeQ");
         if (!issuePayloadConReqOrDiscardPipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ issuePayloadConReqOrDiscardPipeQ");
         if (!handleConRespPipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ handleConRespPipeQ");
+        if (!metaReportDescPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ metaReportDescPipeOutQueue");
+        if (!autoAckGenReqPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ autoAckGenReqPipeOutQueue");
+        if (!genCnpReqPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ genCnpReqPipeOutQueue");
+        if (!handleGenMetaReportQueueDescPipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ handleGenMetaReportQueueDescPipeQ");
+        
     endrule
 
 
     rule sendQpcQueryReqAndSomeSimpleParse;
+        let curFpDebugTime <- $time;
         let rdmaPacketMeta = packetParser.rdmaPacketMetaPipeOut.first;
         packetParser.rdmaPacketMetaPipeOut.deq;
 
@@ -277,7 +289,8 @@ module mkRQ(RQ);
             isNeedQueryMrTable  : isNeedQueryMrTable,
             isZeroPayload       : isZeroPayload,
             isFirstPacket       : isFirstPacket,
-            peerMacIpUdpMeta    : peerMacIpUdpMeta
+            peerMacIpUdpMeta    : peerMacIpUdpMeta,
+            fpDebugTime         : curFpDebugTime
         };
         checkQpcAndMrTablePipeQ.enq(pipelineEntryOut);
 
@@ -288,9 +301,11 @@ module mkRQ(RQ);
             toBlue(", isReqNeedDMAWrite="), fshow(isReqNeedDMAWrite),
             toBlue(", reth="), fshow(reth)
         );
+        checkFullyPipeline(rdmaPacketMeta.fpDebugTime, 1, 2000, "mkRQ sendQpcQueryReqAndSomeSimpleParse");
     endrule
 
     rule checkQpcAndMrTable;
+        let curFpDebugTime <- $time;
         let pipelineEntryIn = checkQpcAndMrTablePipeQ.first;
         checkQpcAndMrTablePipeQ.deq;
 
@@ -451,7 +466,8 @@ module mkRQ(RQ);
             zerobasedExpectedPayloadBeatNum  : zerobasedExpectedPayloadBeatNum,
             packetLen               : packetLen,
             deltaLen                : deltaLen,
-            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta,
+            fpDebugTime             : curFpDebugTime
         };
         checkMrTableStep2PipeQ.enq(pipelineEntryOut);
 
@@ -459,10 +475,15 @@ module mkRQ(RQ);
             "time=%0t:", $time, toGreen(" mkRQ checkQpcAndMrTable"),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
+        // QPC and MR Table need 10 beat for worst case to generate resp.
+        // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
+        // For MR Table, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 10, 2000, "mkRQ checkQpcAndMrTable");
     endrule
     
 
     rule checkMrTableStep2;
+        let curFpDebugTime <- $time;
         let pipelineEntryIn = checkMrTableStep2PipeQ.first;
         checkMrTableStep2PipeQ.deq;
 
@@ -482,16 +503,19 @@ module mkRQ(RQ);
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen,
             deltaLen                : deltaLen,
-            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta,
+            fpDebugTime         : curFpDebugTime
         };
         checkMrTableStep3PipeQ.enq(pipelineEntryOut);
         $display(
             "time=%0t:", $time, toGreen(" mkRQ checkMrTableStep2"),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ checkMrTableStep2");
     endrule
 
     rule checkMrTableStep3;
+        let curFpDebugTime <- $time;
 
         let pipelineEntryIn = checkMrTableStep3PipeQ.first;
         checkMrTableStep3PipeQ.deq;
@@ -509,10 +533,14 @@ module mkRQ(RQ);
         Bool isAccessRangeCheckPass = False;
         Bool isPacketBeatCountCheckPass = False;
         let packetTailMeta = ?;
+
+        if (rdmaPacketMeta.hasPayload) begin
+            packetParser.rdmaPacketTailMetaPipeOut.deq;
+        end
+
         if (isRecvPacketStatusNormal(packetStatus)) begin
             if (rdmaPacketMeta.hasPayload) begin
                 packetTailMeta = packetParser.rdmaPacketTailMetaPipeOut.first;
-                packetParser.rdmaPacketTailMetaPipeOut.deq;
                 if (packetTailMeta.beatCnt - 1 == zerobasedExpectedPayloadBeatNum) begin
                     isPacketBeatCountCheckPass = True;
                 end
@@ -544,7 +572,8 @@ module mkRQ(RQ);
             qpc                     : pipelineEntryIn.qpc,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen,
-            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta,
+            fpDebugTime             : curFpDebugTime
         };
         issuePayloadConReqOrDiscardPipeQ.enq(pipelineEntryOut);
         $display(
@@ -552,11 +581,14 @@ module mkRQ(RQ);
             toBlue(", packetTailMeta="), fshow(packetTailMeta),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ checkMrTableStep3");
     endrule
 
 
 
     rule issuePayloadConReqOrDiscard;
+        let curFpDebugTime <- $time;
+
         let pipelineEntryIn = issuePayloadConReqOrDiscardPipeQ.first;
         issuePayloadConReqOrDiscardPipeQ.deq;
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
@@ -571,10 +603,11 @@ module mkRQ(RQ);
             filterCmdQ.enq(isDiscard);
             if (!isDiscard) begin
                 let payloadConReq = PayloadConReq{
-                    addr: reth.va,
-                    len: pipelineEntryIn.packetLen,
-                    baseVA: mrEntry.baseVA,    
-                    pgtOffset: mrEntry.pgtOffset 
+                    addr        : reth.va,
+                    len         : pipelineEntryIn.packetLen,
+                    baseVA      : mrEntry.baseVA,    
+                    pgtOffset   : mrEntry.pgtOffset,
+                    fpDebugTime : curFpDebugTime
                 };
                 conReqPipeOutQ.enq(payloadConReq);
                 discardDebugFlag = False;
@@ -597,7 +630,8 @@ module mkRQ(RQ);
             qpc                     : pipelineEntryIn.qpc,
             zerobasedExpectedPayloadBeatNum  : pipelineEntryIn.zerobasedExpectedPayloadBeatNum,
             packetLen               : pipelineEntryIn.packetLen,
-            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta
+            peerMacIpUdpMeta        : pipelineEntryIn.peerMacIpUdpMeta,
+            fpDebugTime         : curFpDebugTime
         };
         handleConRespPipeQ.enq(pipelineEntryOut);
 
@@ -619,9 +653,12 @@ module mkRQ(RQ);
             discardDebugFlag ? toRed(" Discard!") : " keeped",
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ issuePayloadConReqOrDiscard");
     endrule
 
     rule handleConResp;
+        let curFpDebugTime <- $time;
+
         let pipelineEntryIn = handleConRespPipeQ.first;
         handleConRespPipeQ.deq;
         let rdmaPacketMeta = pipelineEntryIn.rdmaPacketMeta;
@@ -640,7 +677,8 @@ module mkRQ(RQ);
 
         if (!isDiscard) begin
             let pipelineEntryOut = GenMetaReportQueueDescPipelineEntry{
-                rdmaPacketMeta: pipelineEntryIn.rdmaPacketMeta
+                rdmaPacketMeta      : pipelineEntryIn.rdmaPacketMeta,
+                fpDebugTime         : curFpDebugTime
             };
             handleGenMetaReportQueueDescPipeQ.enq(pipelineEntryOut);
 
@@ -671,6 +709,7 @@ module mkRQ(RQ);
    
 
     rule genMetaReportQueueDesc;
+        let curFpDebugTime <- $time;
 
         // write them in a function to make sure they are all comb logic.
         function Tuple3#(Vector#(NUMERIC_TYPE_TWO, Maybe#(RingbufRawDescriptor)), Bool, Bool) genDescVector();
@@ -847,6 +886,7 @@ module mkRQ(RQ);
     endrule
 
     rule forwardMetaReportDescToOutput;
+        let curFpDebugTime <- $time;
         if (metaReportMimoQueue.deqReadyN(1)) begin
             metaReportMimoQueue.deq(1);
             let desc = metaReportMimoQueue.first[0];
@@ -860,6 +900,7 @@ module mkRQ(RQ);
     endrule
 
     rule filterDiscardedPayloadStream;
+        let curFpDebugTime <- $time;
         let isDiscard = filterCmdQ.first;
         let ds = payloadStorage.first;
         payloadStorage.deq;

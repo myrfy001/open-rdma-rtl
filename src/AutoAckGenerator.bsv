@@ -162,7 +162,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
             AtomicUpdateStorageUpdateResp#(IndexQP, AutoAckGenAtomicUpdateStorageEntry),
             KeyQP
         ))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkLFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkSizedFIFOF(3));
     Reg#(Tuple4#(
             BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary),
             AutoAckGenAtomicUpdateStorageEntry,
@@ -178,7 +178,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
 
     for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-        psnMergeAndStorage_reqPipeInVec[idx] <- mkPipeInB0ToPipeIn(psnMergeAndStorage.reqPipeInVec[idx], 2);
+        psnMergeAndStorage_reqPipeInVec[idx] <- mkPipeInB0ToPipeInWithDebug(psnMergeAndStorage.reqPipeInVec[idx], 2, False, "psnMergeAndStorage_reqPipeInVec");
         rule forwardInputReqToPsnPreMerge;
             let req = reqPipeInQueueVec[idx].first;
             reqPipeInQueueVec[idx].deq;

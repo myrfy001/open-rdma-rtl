@@ -62,7 +62,7 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkSizedFIFOF(2);
+    // FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkSizedFIFOF(2);
 
     DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA) ethStreamArbiter <- mkDtldStreamNoMetaArbiterSlave(valueOf(HARDWARE_QP_CHANNEL_CNT));
 
@@ -80,7 +80,7 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(Tuple2#(SimpleNicSlotIdx, Word)) rxDescMetaPipelineQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
 
     mkConnection(ethStreamArbiter.pipeOutIfc, rxSplitor.dataPipeIn);
-    mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
+    // mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
     mkConnection(txConcator.dataPipeOut, toPipeIn(rawEthernetPacketPipeOutQueue));
 
     let rxSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(rxSplitor.streamAlignBlockCountPipeIn, 1);
@@ -212,7 +212,7 @@ module mkSimpleNic(SimpleNic);
     endrule
 
 
-    let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
+    // let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
 
 
     interface rawEthernetPacketPipeInVec = rawEthernetPacketPipeInVecInst;
@@ -227,7 +227,7 @@ module mkSimpleNic(SimpleNic);
         endinterface
         interface DtldStreamMasterReadPipesB0In  readPipeIfc;
             interface readMetaPipeOut   = toPipeOut(dmaReadMetaPipeOutQueue);
-            interface readDataPipeIn    = fifoToPipeInB0Bridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
+            interface readDataPipeIn    = txConcator.dataPipeIn;
         endinterface
     endinterface
 endmodule

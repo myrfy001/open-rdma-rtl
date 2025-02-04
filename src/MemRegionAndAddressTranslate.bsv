@@ -149,9 +149,11 @@ module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
 
     MemRegionTable memRegionTable <- mkMemRegionTable;
 
+    // MR Table need 10 beat for worst case to generate resp.
+    // For MR Table, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
     let arbiter <- mkServerToClientArbitP(
         "MemRegionTableTwoWayQuery",
-        2,
+        3,
         True,
         alwaysTrue,
         alwaysTrue
@@ -337,9 +339,11 @@ module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
 
     AddressTranslate addressTranslate <- mkAddressTranslate;
 
+    // PGT need 10 beat for worst case to generate resp.
+    // For PGT, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
     let arbiter <- mkServerToClientArbitP(
         "AddressTranslateTwoWayQuery",
-        2,
+        3,
         True,
         alwaysTrue,
         alwaysTrue

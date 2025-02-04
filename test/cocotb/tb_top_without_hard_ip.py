@@ -10,6 +10,7 @@ import time
 
 import cocotb_test.simulator
 import pytest
+from collections import deque
 
 import cocotb
 from cocotb.triggers import RisingEdge, FallingEdge, Timer
@@ -72,6 +73,9 @@ class TB(object):
         self.init_helper: HardwareTestHelper = HardwareTestHelper(
             self.pcie_bfm)
 
+        self.eth_packet_forward_delay_ns = 7000
+        self.eth_packet_forward_delay_queue = deque()
+
     def clean_up(self):
         # need to ensure no reference to shared_mem, if not, the shared memory resource can not be released.
         self.pcie_bfm = None
@@ -98,14 +102,29 @@ class TB(object):
         await self.init_helper.do_device_init()
 
     async def start_single_card_loop_back(self):
-        async def _loop_back_task(self):
+
+        async def _loop_back_collect_tx_packet(self):
             while True:
                 tx_beat = await self.eth_bfm.get_tx_packet()
-                # await self.eth_bfm.inject_rx_packet(tx_beat)
+                self.eth_packet_forward_delay_queue.append(tx_beat)
                 self.log.info(
-                    f"single_card_loop_back forward beat: {tx_beat}")
+                    f"single_card_loop_back forward beat to delay queue: {tx_beat}")
 
-        cocotb.start_soon(_loop_back_task(self))
+        async def _loop_back_inject_rx_packet(self):
+            while True:
+                await Timer(2, units='ns')
+                cur_time = cocotb.utils.get_sim_time("ns")
+                if cur_time < self.eth_packet_forward_delay_ns:
+                    continue
+                if len(self.eth_packet_forward_delay_queue) == 0:
+                    continue
+                tx_beat = self.eth_packet_forward_delay_queue.popleft()
+                await self.eth_bfm.inject_rx_packet(tx_beat)
+                self.log.info(
+                    f"single_card_loop_back inject to rx port: {tx_beat}")
+
+        cocotb.start_soon(_loop_back_collect_tx_packet(self))
+        cocotb.start_soon(_loop_back_inject_rx_packet(self))
 
     '''
     In this test, will send a write only packet with PSN = 256, which will lead the bitmap window overflow.
@@ -468,7 +487,7 @@ class TB(object):
         write_src_addr = src_buf_mem_addr + src_addr_offset
         write_dst_addr = dst_buf_mem_addr + dst_addr_offset
 
-        write_len = 2
+        write_len = 160
         signle_msg_len = 1
 
         for d in range(65536):
@@ -545,7 +564,7 @@ class TB(object):
         # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
         # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
         # write finish signal. Or delay the desc report on hardware.
-        await Timer(700, units='ns')
+        await Timer(10000, units='ns')
 
         for d in range(write_len):
             expected_data = src_buf_mem[d+src_addr_offset]
@@ -564,7 +583,7 @@ class TB(object):
         await self.init_helper.simple_nix_tx_queue.sync_pointers()
 
 
-@ cocotb.test(timeout_time=3000, timeout_unit="ns")
+@ cocotb.test(timeout_time=11000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -604,6 +623,7 @@ def test_top_without_hard_ip():
         timescale="1ns/1ps",
         sim_build=sim_build,
         waves=True,
+        plus_args=["+fully-pipeline-check"]
     )
 
 

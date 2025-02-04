@@ -9,6 +9,7 @@ import Printf:: *;
 
 import EthernetTypes :: *;
 import NapWrapper :: *;
+import FullyPipelineChecker :: *;
 
 import Settings :: *;
 import DtldStream :: *;
@@ -58,9 +59,10 @@ typedef struct {
 } EthernetPacketMetaExtractPipelineEntry deriving(Bits, FShow, Eq);
 
 typedef struct {
-    Bool isRdmaPacket;
-    Bool isError;
-    Bool isAddrMatch;
+    Bool            isRdmaPacket;
+    Bool            isError;
+    Bool            isAddrMatch;
+    SimulationTime  fpDebugTime;
 } EthernetPacketMeta deriving(Bits, FShow, Eq);
 
 (*synthesize*)
@@ -84,7 +86,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     // the dst IP filed begins at #30 byte of first beat, so the first beat only has the higher 16 bits
     Reg#(Bool) partialDstIpAddrHigher16BitsMatchReg <- mkRegU;
 
-    FIFOF#(Tuple2#(DataStream, Bool)) ethRawPacketForHandleQ <- mkLFIFOF;
+    FIFOF#(Tuple3#(DataStream, Bool, SimulationTime)) ethRawPacketForHandleQ <- mkLFIFOF;
 
 
     // Metrics Regs
@@ -130,6 +132,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule discardPacketWhenNetworkSettingsNotReady;
+        let curFpDebugTime <- $time;
         let ds = ethRawPacketInQ.first;
         ethRawPacketInQ.deq;
 
@@ -139,11 +142,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
         if (networkSettingsIsSetReg && ds.isFirst) begin
             canAcceptRawInputPacketReg <= True;
 
-            ethRawPacketForHandleQ.enq(tuple2(ds, macUnicastMatch));
+            ethRawPacketForHandleQ.enq(tuple3(ds, macUnicastMatch, curFpDebugTime));
             waitingForRouteQ.enq(ds);
         end
         else if (canAcceptRawInputPacketReg) begin
-            ethRawPacketForHandleQ.enq(tuple2(ds, macUnicastMatch));
+            ethRawPacketForHandleQ.enq(tuple3(ds, macUnicastMatch, curFpDebugTime));
             waitingForRouteQ.enq(ds);
         end
         else begin
@@ -160,8 +163,10 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
     rule handleFirstBeatStage if (stateReg == InputPacketClassifierStateHandleFirstBeat);
-        let {ds, macUnicastMatch} = ethRawPacketForHandleQ.first;
+        let curFpDebugTime <- $time;
+        let {ds, macUnicastMatch, fpDebugTime} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
+
         ds.data = swapEndianByte(ds.data);
 
         // Ethernet packet is atleast 64 byte, smaller packet should already be filtered by ETH IP.
@@ -218,11 +223,12 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
 
         if (ds.isLast) begin
-            // defensive coding. each if packet corrupted, oly have one beat, then stay in current state, and discard packet.
+            // defensive coding. each if packet corrupted, only have one beat, then stay in current state, and discard packet.
             ethPacketMetaQ.enq(EthernetPacketMeta{
                 isRdmaPacket: False,
                 isError: True,
-                isAddrMatch: False
+                isAddrMatch: False,
+                fpDebugTime: curFpDebugTime
             });
         end
         else begin
@@ -236,11 +242,14 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         // );
+        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleFirstBeatStage");
     endrule
 
     rule handleSecondBeatStage if (stateReg == InputPacketClassifierStateHandleSecondBeat);
-        let {ds, _dontCareMacUnicastMatch} = ethRawPacketForHandleQ.first;
+        let curFpDebugTime <- $time;
+        let {ds, _dontCareMacUnicastMatch, fpDebugTime} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
+
         ds.data = swapEndianByte(ds.data);
 
         immAssert(
@@ -292,7 +301,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
         ethPacketMetaQ.enq(EthernetPacketMeta{
             isRdmaPacket: isRDMA,
             isError: isError,
-            isAddrMatch: isAddrMatch
+            isAddrMatch: isAddrMatch,
+            fpDebugTime: curFpDebugTime
         });
 
         let macIpUdpMeta = ethPacketMetaExtractPipelineEntryReg.macIpUdpMeta;
@@ -309,10 +319,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", macIpUdpMeta="), fshow(macIpUdpMeta)
         // );
+        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleSecondBeatStage");
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);
-        let {ds, macUnicastMatch} = ethRawPacketForHandleQ.first;
+        let {ds, macUnicastMatch, fpDebugTime} = ethRawPacketForHandleQ.first;
         ethRawPacketForHandleQ.deq;
 
         immAssert(
@@ -331,9 +342,11 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleMoreBeatStage"),
         //     toBlue(", ds="), fshow(ds)
         // );
+        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleMoreBeatStage");
     endrule
 
     rule dispatchStream;
+        let curFpDebugTime <- $time;
         let ds = waitingForRouteQ.first;
         waitingForRouteQ.deq;
         let ethPktMeta = ethPacketMetaQ.first;
@@ -366,6 +379,9 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
         if (ds.isLast) begin
             ethPacketMetaQ.deq;
+        end
+        if (ds.isFirst) begin
+            checkFullyPipeline(ethPktMeta.fpDebugTime, 1, 2000, "mkInputPacketClassifier dispatchStream");
         end
     endrule
 
@@ -423,23 +439,25 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
     PipeInAdapterB0#(DataStream) ethPipeInQ                   <- mkPipeInAdapterB0;
     FIFOF#(RdmaRecvPacketMeta) rdmaPacketMetaPipeOutQ   <- mkFIFOF;
-    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkFIFOF;
+    FIFOF#(RdmaRecvPacketTailMeta) rdmaPacketTailMetaPipeOutQ   <- mkSizedFIFOF(4);  // Since this queue span about 14 beat, if each message with payload is at least 4 beat, then the queue at least be 4 in depth
     FIFOF#(DataStream) rdmaPayloadPipeOutQ          <- mkFIFOF;
 
     Reg#(RdmaRecvPacketMeta) partialRdmaMetaReg <- mkRegU;
     Reg#(Bool) payloadStreamOutputIsFirstReg <- mkReg(True);
 
     Reg#(PktFragNum) beatCntReg <- mkReg(1);
-    Reg#(Bool) ecnFlagReg <- mkRegU;
+    Reg#(Tuple2#(Bool, SimulationTime)) firstBeatToSecondBeatPipelineReg <- mkRegU;
     Integer bthEndBitOneBasedPosInSecondBeat = valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - valueOf(SizeOf#(BTH));
 
     rule handleFirstBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
+        let curFpDebugTime <- $time;
         // first beat is totally ETH and IP header, skip them
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
 
         IpHeader  partialIpHeader   = unpack(truncateLSB(pack(ds.data) << valueOf(IP_HEADER_OFFSET_IN_FIRST_BEAT) * valueOf(BYTE_WIDTH)));
-        ecnFlagReg <= (pack(partialIpHeader.ipEcn) == pack(IpHeaderEcnFlagMarked));
+        let ecnMarked = (pack(partialIpHeader.ipEcn) == pack(IpHeaderEcnFlagMarked));
+        firstBeatToSecondBeatPipelineReg <= tuple2(ecnMarked, curFpDebugTime);
 
         if (ds.isLast) begin
             // this is defensive code, shoud not enter this branch. but if it does, stay in handle first packet state.
@@ -458,8 +476,11 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     endrule
 
     rule handleSecondBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleSecondBeat);
+        let curFpDebugTime <- $time;
         // second beat has some part of IP header, total UDP header, total BTH header, and maybe some RDMA extended header or payload
         // we only interested in the BTH and following part.
+
+        let {ecnFlag, fpDebugTime} = firstBeatToSecondBeatPipelineReg;
 
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
@@ -478,7 +499,8 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
                 rdmaExtendHeaderBuf: rdmaExtendHeaderBuf
             },
             hasPayload: hasPayload,
-            isEcnMarked: ecnFlagReg
+            isEcnMarked: ecnFlag,
+            fpDebugTime: curFpDebugTime
         };
 
         partialRdmaMetaReg <= outPacketMeta;
@@ -503,16 +525,21 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         //     toBlue(", outPacketMeta="), fshow(outPacketMeta),
         //     toBlue(", payloadDs="), outputPayloadInThisBeat ? fshow(payloadDs) : $format("No Payload In This beat")
         // );
+        checkFullyPipeline(fpDebugTime, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleSecondBeat");
     endrule
 
     rule handleThirdBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleThirdBeat);
+        let curFpDebugTime <- $time;
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
         ds.data = swapEndianByte(ds.data);
 
         let rdmaMeta = partialRdmaMetaReg;
+        let fpDebugTime = rdmaMeta.fpDebugTime;
+
         RdmaExtendHeaderFragmentInSecondBeat rdmaExtendHeaderSecondBeatFragment = truncateLSB(rdmaMeta.header.rdmaExtendHeaderBuf);
         rdmaMeta.header.rdmaExtendHeaderBuf = truncateLSB({rdmaExtendHeaderSecondBeatFragment, ds.data});
+        rdmaMeta.fpDebugTime = curFpDebugTime;
 
         rdmaPacketMetaPipeOutQ.enq(rdmaMeta);
     
@@ -525,9 +552,11 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         //     toBlue(", payloadDs="), rdmaMeta.hasPayload ? fshow(payloadDs) : $format("No Payload"),
         //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
         // );
+        checkFullyPipeline(fpDebugTime, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleThirdBeat");
     endrule
 
     rule handleMoreBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleMoreBeat);
+        let curFpDebugTime <- $time;
         let ds = ethPipeInQ.first;
         ethPipeInQ.deq;
         ds.isFirst = payloadStreamOutputIsFirstReg;
@@ -538,7 +567,8 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
             payloadStreamOutputIsFirstReg <= True;
             beatCntReg <= 1;
             rdmaPacketTailMetaPipeOutQ.enq(RdmaRecvPacketTailMeta{
-                beatCnt: beatCntReg
+                beatCnt: beatCntReg,
+                fpDebugTime: curFpDebugTime
             });
         end
         else begin

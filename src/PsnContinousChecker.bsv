@@ -62,7 +62,7 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
 
     // Pipeline Queues 
     FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnInputPipelineQueue <- mkLFIFOF;
-    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnOutputPipelineQueue <- mkSizedFIFOF(5);
+    FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(Tuple2#(QPN, CpsnCheckerChannelIdx)))) bitonicSortQpnOutputPipelineQueue <- mkSizedFIFOF(6);
     FIFOF#(Bit#(3)) channelQpnEqualMapPipelineQueue <- mkLFIFOF;
 
     Vector#(GET_MAX_PSN_PIPELINE_STAGE_CNT, FIFOF#(Vector#(CPSN_CHECKER_CHANNEL_NUM, Maybe#(FourChannelPsnBitmapPreMergeGetMaxPsnInternalState)))) maxPsnBroadcastPipelineQueueVec <- replicateM(mkLFIFOF);
@@ -113,6 +113,33 @@ module mkFourChannelPsnBitmapPreMerge(FourChannelPsnBitmapPreMerge);
             end
         end
     endfunction
+
+    // rule printDebugInfo0;
+    //     if (!maxPsnBroadcastPipelineQueueVec[0].notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge maxPsnBroadcastPipelineQueueVec[0]");
+    // endrule
+    // rule printDebugInfo01;
+    //     if (!bitonicSortQpnInputPipelineQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge bitonicSortQpnInputPipelineQueue");
+    // endrule
+    // rule printDebugInfo02;
+    //     if (!reorderedFourChannelReqWithMaxPsnPipelineQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge reorderedFourChannelReqWithMaxPsnPipelineQueue");
+    // endrule
+
+    // rule printDebugInfo1;
+    //     if (!onehotGenMetaCalcPipelineQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge onehotGenMetaCalcPipelineQueue");
+    // endrule
+
+    // rule printDebugInfo2;
+    //     if (!respPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge respPipeOutQueue");
+    // endrule
+
+    // rule printDebugInfo3;
+    //     if (!onehotGenToOnehotMergePipelineQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge onehotGenToOnehotMergePipelineQueue");
+    // endrule
+
+    // rule printDebugInfo4;
+    //     if (!channelQpnEqualMapPipelineQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkFourChannelPsnBitmapPreMerge channelQpnEqualMapPipelineQueue");
+    // endrule
+
 
     rule handleInputReqEveryTwoBeta;
         evenOddCounterReg <= !evenOddCounterReg;
@@ -663,6 +690,13 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         let in2 = fromMaybe(?, in2Maybe);
         return isValid(in1Maybe) && isValid(in1Maybe) && in1.rowAddr == in2.rowAddr;
     endfunction
+
+    // rule printDebugInfo0;
+    //     if (!respPipeOutQueueVec[0].notFull) $display("time=%0t, ", $time, "FullQueue: mkBitmapWindowStorage respPipeOutQueueVec[0]");
+    //     if (!respPipeOutQueueVec[1].notFull) $display("time=%0t, ", $time, "FullQueue: mkBitmapWindowStorage respPipeOutQueueVec[1]");
+    // endrule
+
+
 
     // reorder Pipeline Stage One
     rule enqueueIntoReorderBuffer;
@@ -1233,8 +1267,8 @@ module mkPsnPerMergeAndStorage(PsnPerMergeAndStorage);
 
     Reg#(Bool) forwardToStorageEvenOddReg <- mkReg(True);
 
-        let allPacketPsnBitmapStorage_reqPipeInVec_0 <- mkPipeInB0ToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[0], 2);
-        let allPacketPsnBitmapStorage_reqPipeInVec_1 <- mkPipeInB0ToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[1], 2);
+    let allPacketPsnBitmapStorage_reqPipeInVec_0 <- mkPipeInB0ToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[0], 2);
+    let allPacketPsnBitmapStorage_reqPipeInVec_1 <- mkPipeInB0ToPipeIn(allPacketPsnBitmapStorage.reqPipeInVec[1], 2);
 
     rule forwardPremergeToStorage;
         forwardToStorageEvenOddReg <= !forwardToStorageEvenOddReg;

@@ -727,7 +727,7 @@ class BluespecPipeInNrWithQueue:
 
 
 class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=100):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=30):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")

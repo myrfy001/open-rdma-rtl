@@ -21,6 +21,7 @@ export mkPipeInAdapterB2;
 export mkPipeInB0Debug;
 export toPipeInB0;
 export mkPipeInB0ToPipeIn;
+export mkPipeInB0ToPipeInWithDebug;
 export mkFifofToPipeInB0;
 export GetF(..);
 export PutF(..);
@@ -332,11 +333,39 @@ function PipeInB0#(anytype) toPipeInB0(PipeInAdapterB0#(anytype) queue);
     return queue.pipeInIfc;
 endfunction
 
-module mkPipeInB0ToPipeIn#(PipeInB0#(tData) pipeInNr, Integer bufferDepth)(PipeIn#(tData)) provisos(Bits#(tData, szData));
+module mkPipeInB0ToPipeInWithDebug#(PipeInB0#(tData) pipeInNr, Integer bufferDepth, Bool enableDebug, String name)(PipeIn#(tData)) provisos(Bits#(tData, szData), FShow#(tData));
 
     FIFOF#(tData) innerQ <- (bufferDepth == 1 ? mkLFIFOF : mkSizedFIFOF(bufferDepth));
     mkConnection(toPipeOut(innerQ), pipeInNr);
+
+    if (enableDebug) begin
+        rule debugA;
+            if (!innerQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPipeInB0ToPipeInWithDebug [%s]", name);
+        endrule
+
+        rule debugB;
+            if (!innerQ.notEmpty) $display("time=%0t, ", $time, "EmptyQueue: mkPipeInB0ToPipeInWithDebug [%s]", name);
+        endrule
+
+        rule debugC;
+            if (innerQ.notEmpty && pipeInNr.deqSignalOut) begin
+                // if deq handshake success, then print debug info
+                $display(
+                    "time=%0t:", $time, " mkPipeInB0ToPipeInWithDebug forward",
+                    ", name=", fshow(name),
+                    ", data=", fshow(innerQ.first)
+                );
+            end
+        endrule
+    end
     return toPipeIn(innerQ);
+endmodule
+
+
+module mkPipeInB0ToPipeIn#(PipeInB0#(tData) pipeInNr, Integer bufferDepth)(PipeIn#(tData)) provisos(Bits#(tData, szData), FShow#(tData));
+
+    let inst <- mkPipeInB0ToPipeInWithDebug(pipeInNr, bufferDepth, False, "");
+    return inst;
 endmodule
 
 module mkFifofToPipeInB0#(FIFOF#(tData) fifo)(PipeInB0#(tData)) provisos (Bits#(tData, szData));

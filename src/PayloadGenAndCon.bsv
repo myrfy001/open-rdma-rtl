@@ -6,6 +6,7 @@ import ClientServer :: *;
 import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
+import FullyPipelineChecker :: *;
 
 import DtldStream :: *;
 import StreamDataTypes :: *;
@@ -27,10 +28,11 @@ typedef struct {
 } PayloadGenReq deriving(Bits, FShow);
 
 typedef struct {
-    ADDR   addr;
-    Length len;
-    PTEIndex pgtOffset;
-    ADDR baseVA;
+    ADDR            addr;
+    Length          len;
+    PTEIndex        pgtOffset;
+    ADDR            baseVA;
+    SimulationTime  fpDebugTime;
 } PayloadConReq deriving(Bits, FShow);
 
 typedef IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE                          PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE;
@@ -50,10 +52,10 @@ endinterface
 
 interface PayloadCon;
     interface ClientP#(PgtAddrTranslateReq, ADDR) addrTranslateClt;
-    interface PipeIn#(PayloadConReq) conReqPipeIn;
+    interface PipeInB0#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
 
-    interface PipeIn#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
+    interface PipeInB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
     interface IoChannelMemoryWriteMasterPipe dmaWriteMasterPipe;
 endinterface
@@ -66,9 +68,9 @@ interface PayloadGenAndCon;
     interface PipeOut#(IoChannelMemoryAccessDataStream) payloadGenStreamPipeOut;
 
     interface ClientP#(PgtAddrTranslateReq, ADDR) conAddrTranslateClt;
-    interface PipeIn#(PayloadConReq) conReqPipeIn;
+    interface PipeInB0#(PayloadConReq) conReqPipeIn;
     interface PipeOut#(Bool) conRespPipeOut;
-    interface PipeIn#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
+    interface PipeInB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
     interface IoChannelMemoryMasterPipeB0In ioChannelMemoryMasterPipeIfc;
 endinterface
@@ -100,7 +102,7 @@ module mkPayloadGen(PayloadGen);
     PipeInAdapterB0#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapterB0;
 
     FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
+    // FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
 
 
     QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientP("mkPayloadGen addrTranslateCltInst");
@@ -108,7 +110,7 @@ module mkPayloadGen(PayloadGen);
     let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 
     DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator;
-    mkConnection(toPipeOut(dmaReadRespPipeInQ), dsConcator.dataPipeIn);
+    // mkConnection(toPipeOut(dmaReadRespPipeInQ), dsConcator.dataPipeIn);
 
     // rule forwardReadRespToConcator;
     //     let ds = dmaReadRespPipeInQ.first;
@@ -130,6 +132,7 @@ module mkPayloadGen(PayloadGen);
     let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
 
     rule handleInReq;
+        let curFpDebugTime <- $time;
         let req = genReqPipeInQ.first;
         genReqPipeInQ.deq;
 
@@ -151,6 +154,7 @@ module mkPayloadGen(PayloadGen);
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
+        let curFpDebugTime <- $time;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
@@ -175,6 +179,7 @@ module mkPayloadGen(PayloadGen);
     endrule
 
     rule issueDmaRead;
+        let curFpDebugTime <- $time;
         let translatedAddr <- addrTranslateCltInst.getResp;
         let {len, isLast} = issueDmaReadPipelineQ.first;
         issueDmaReadPipelineQ.deq;
@@ -194,7 +199,7 @@ module mkPayloadGen(PayloadGen);
         );
     endrule
 
-    let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
+    // let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
     interface genReqPipeIn = toPipeInB0(genReqPipeInQ);
@@ -202,7 +207,7 @@ module mkPayloadGen(PayloadGen);
 
     interface IoChannelMemoryReadMasterPipeB0In dmaReadMasterPipe;
         interface readMetaPipeOut = toPipeOut(dmaReadReqPipeOutQ);
-        interface readDataPipeIn = fifoToPipeInB0Bridge;   // TODO: when stream spliter/concator is refactored into NR, replace this one
+        interface readDataPipeIn = dsConcator.dataPipeIn;
     endinterface
 
 endmodule
@@ -211,12 +216,12 @@ endmodule
 (* synthesize *)
 module mkPayloadCon(PayloadCon);
 
-    FIFOF#(PayloadConReq) conReqPipeInQ <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkLFIFOF;
-    FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;
+    PipeInAdapterB0#(PayloadConReq) conReqPipeInQ <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkPipeInAdapterB0;
+    FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;  // TODO: maybe need to be sized fifo
 
-    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF));
+    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF));
 
 
     QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientP("mkPayloadCon addrTranslateCltInst");
@@ -225,14 +230,21 @@ module mkPayloadCon(PayloadCon);
 
     DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
 
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkLFIFOF;
-    FIFOF#(Length) issueDmaWritePipelineQ <- mkLFIFOF;
-    FIFOF#(Tuple2#(Length, Length)) streamSplitorMetaCalcPipelineQ <- mkLFIFOF;
+    FIFOF#(Tuple3#(PTEIndex, ADDR, SimulationTime)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkSizedFIFOF(2);  // Pipeline Fifo for forked path, so at least 2
+    FIFOF#(Tuple2#(Length, SimulationTime)) issueDmaWritePipelineQ <- mkSizedFIFOF(3);
+    FIFOF#(Tuple3#(Length, Length, SimulationTime)) streamSplitorMetaCalcPipelineQ <- mkLFIFOF;
 
-    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(dsSpliter.streamAlignBlockCountPipeIn, 1);
-    let dsSpliterDataPipeInConverter <- mkPipeInB0ToPipeIn(dsSpliter.dataPipeIn, 1);
+    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeInWithDebug(dsSpliter.streamAlignBlockCountPipeIn, 1, False, "dsSpliterStreamAlignBlockCountPipeInConverter");
+    let dsSpliterDataPipeInConverter <- mkPipeInB0ToPipeInWithDebug(dsSpliter.dataPipeIn, 2, False, "dsSpliterDataPipeInConverter");
 
+
+    rule printDebugInfo;
+        if (!conRespPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadCon conRespPipeOutQ");
+    endrule
+
+    
     rule handleInReq;
+        let curFpDebugTime <- $time;
         let req = conReqPipeInQ.first;
         conReqPipeInQ.deq;
 
@@ -244,19 +256,21 @@ module mkPayloadCon(PayloadCon);
 
         rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
-            tuple2(req.pgtOffset, req.baseVA));
+            tuple3(req.pgtOffset, req.baseVA, curFpDebugTime));
         $display(
             "time=%0t:", $time, toGreen(" mkPayloadCon handleInReq"),
             toBlue(", req="), fshow(req),
             toBlue(", chunkReq="), fshow(chunkReq)
         );
+        checkFullyPipeline(req.fpDebugTime, 1, 2000, "mkPayloadCon handleInReq");
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
+        let curFpDebugTime <- $time;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
-        let {pgtOffset, baseVA} = getBurstChunRespAndIssueAddrTranslateReqPipelineQ.first;
+        let {pgtOffset, baseVA, fpDebugTime} = getBurstChunRespAndIssueAddrTranslateReqPipelineQ.first;
         if (burstAddrBoundry.isLast) begin
             getBurstChunRespAndIssueAddrTranslateReqPipelineQ.deq;
         end
@@ -268,16 +282,20 @@ module mkPayloadCon(PayloadCon);
         };
         addrTranslateCltInst.putReq(addrTranslateReq);
 
-        issueDmaWritePipelineQ.enq(burstAddrBoundry.len);
+        issueDmaWritePipelineQ.enq(tuple2(burstAddrBoundry.len, curFpDebugTime));
         $display(
             "time=%0t:", $time, toGreen(" mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq"),
             toBlue(", addrTranslateReq="), fshow(addrTranslateReq),
             toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
         );
+        if (burstAddrBoundry.isFirst) begin
+            checkFullyPipeline(fpDebugTime, 3, 2000, "mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq");
+        end
     endrule
 
     rule getBeatChunkMetaCalculateRespAndIssueAxiWrite;
-        let len = issueDmaWritePipelineQ.first;
+        let curFpDebugTime <- $time;
+        let {len, fpDebugTime} = issueDmaWritePipelineQ.first;
         issueDmaWritePipelineQ.deq;
 
         let translatedAddr <- addrTranslateCltInst.getResp;
@@ -285,7 +303,7 @@ module mkPayloadCon(PayloadCon);
         ADDR truncatedStartAddr = translatedAddr;
         ADDR truncatedEndAddrForALignCalc = translatedAddr + zeroExtend(len - 1);
 
-        streamSplitorMetaCalcPipelineQ.enq(tuple2(truncate(truncatedStartAddr), truncate(truncatedEndAddrForALignCalc)));
+        streamSplitorMetaCalcPipelineQ.enq(tuple3(truncate(truncatedStartAddr), truncate(truncatedEndAddrForALignCalc), curFpDebugTime));
 
         let writeReq = DtldStreamMemAccessMeta {
             addr: translatedAddr,
@@ -298,10 +316,12 @@ module mkPayloadCon(PayloadCon);
             toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
             toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc)
         );
+        checkFullyPipeline(fpDebugTime, 10, 2000, "mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite");
     endrule
 
     rule calcStreamSpliterMeta;
-        let {truncatedStartAddr, truncatedEndAddrForALignCalc} = streamSplitorMetaCalcPipelineQ.first;
+        let curFpDebugTime <- $time;
+        let {truncatedStartAddr, truncatedEndAddrForALignCalc, fpDebugTime} = streamSplitorMetaCalcPipelineQ.first;
         streamSplitorMetaCalcPipelineQ.deq;
 
         AlignBlockCntInPayloadConAndGenBurst alignBlockCntForStreamSplit = truncate( 
@@ -310,9 +330,18 @@ module mkPayloadCon(PayloadCon);
         ) + 1;
 
         dsSpliterStreamAlignBlockCountPipeInConverter.enq(alignBlockCntForStreamSplit);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkPayloadCon calcStreamSpliterMeta"),
+            toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
+            toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc),
+            toBlue(", alignBlockCntForStreamSplit="), fshow(alignBlockCntForStreamSplit)
+        );
+        checkFullyPipeline(fpDebugTime, 1, 2000, "mkPayloadCon calcStreamSpliterMeta");
     endrule
 
     rule forwardConsumedFinishedSignal;
+        let curFpDebugTime <- $time;
         let ds = payloadConStreamPipeInQ.first;
         payloadConStreamPipeInQ.deq;
         dsSpliterDataPipeInConverter.enq(ds);
@@ -327,6 +356,7 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     rule debugForwardSplitOutput;
+        let curFpDebugTime <- $time;
         let ds = dsSpliter.dataPipeOut.first;
         dsSpliter.dataPipeOut.deq;
         dmaWriteReqDataPipeOutQ.enq(ds);
@@ -337,9 +367,9 @@ module mkPayloadCon(PayloadCon);
     endrule
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
-    interface conReqPipeIn = toPipeIn(conReqPipeInQ);
+    interface conReqPipeIn = toPipeInB0(conReqPipeInQ);
     interface conRespPipeOut = toPipeOut(conRespPipeOutQ);
-    interface payloadConStreamPipeIn = toPipeIn(payloadConStreamPipeInQ);
+    interface payloadConStreamPipeIn = toPipeInB0(payloadConStreamPipeInQ);
 
     interface IoChannelMemoryWriteMasterPipe dmaWriteMasterPipe;
         interface writeMetaPipeOut = toPipeOut(dmaWriteReqAddrPipeOutQ);
