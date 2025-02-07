@@ -73,7 +73,7 @@ class TB(object):
         self.init_helper: HardwareTestHelper = HardwareTestHelper(
             self.pcie_bfm)
 
-        self.eth_packet_forward_delay_ns = 7000
+        self.eth_packet_forward_delay_ns = 0
         self.eth_packet_forward_delay_queue = deque()
 
     def clean_up(self):
@@ -487,7 +487,8 @@ class TB(object):
         write_src_addr = src_buf_mem_addr + src_addr_offset
         write_dst_addr = dst_buf_mem_addr + dst_addr_offset
 
-        write_len = 160
+        # this var controls the total write request cnt. with the signle_msg_len set to 1, we can make the worst case (the control is the most busy one), and to check if fully-pipeline is achieved.
+        write_len = 512
         signle_msg_len = 1
 
         for d in range(65536):
@@ -564,7 +565,7 @@ class TB(object):
         # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
         # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
         # write finish signal. Or delay the desc report on hardware.
-        await Timer(10000, units='ns')
+        await Timer(7000, units='ns')
 
         for d in range(write_len):
             expected_data = src_buf_mem[d+src_addr_offset]

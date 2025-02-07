@@ -11,6 +11,7 @@ import PrimUtils :: *;
 import CsrRootConnector :: *;
 import CsrAddress :: *;
 import CsrFramework :: *;
+import FullyPipelineChecker :: *;
 
 import StreamDataTypes :: *;
 import BasicDataTypes :: *;
@@ -58,6 +59,7 @@ typedef struct {
     Bool isLast;                                    // 1  bit
     Bool isRetry;                                   // 1  bit
     Bool enableEcn;                                 // 1  bit
+    SimulationTime fpDebugTime;                     // removed when synthesize
 } WorkQueueElem deriving(Bits, FShow);
 
 
@@ -462,27 +464,29 @@ module mkPacketGen(PacketGen);
 
     Reg#(PSN) psnReg <- mkRegU;
 
-    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientP("mrTableQueryCltInst");
+    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientPWithDebug("mkPacketGen mrTableQueryCltInst", False);
 
     // Pipeline Queues
-    FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkSizedFIFOF(4);
+    FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkSizedFIFOF(5);
     FIFOF#(GenPacketHeaderStep1PipelineEntry) genPacketHeaderStep1PipelineQ <- mkSizedFIFOF(4);
     FIFOF#(GenPacketHeaderStep2PipelineEntry) genPacketHeaderStep2PipelineQ <- mkLFIFOF;
     
 
-    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 8);
-    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 16);
-    let wqeToPacketChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(wqeToPacketChunker.requestPipeIn, 1);
-    let ethernetPacketGenRdmaPacketMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.rdmaPacketMetaPipeIn, 512);
-    let ethernetPacketGenMacIpUdpMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.macIpUdpMetaPipeIn, 1);
-    // rule debugRule;
-    //     if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
-    //     if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
-    //     if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
-    //     if (!perPacketPayloadDataStreamQ.notFull) $display("time=%0t, ", $time, "FullQueue: perPacketPayloadDataStreamQ");
-    // endrule
+    let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 256);
+    let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 256);  // to hold enough pcie read delay
+    let wqeToPacketChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(wqeToPacketChunker.requestPipeIn, 1, False, "wqeToPacketChunkerRequestPipeInAdapter");
+    let ethernetPacketGenRdmaPacketMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.rdmaPacketMetaPipeIn, 256);  // to hold enough pcie read delay
+    let ethernetPacketGenMacIpUdpMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.macIpUdpMetaPipeIn, 256); // to hold enough pcie read delay
+    rule debugRule;
+        // if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
+        if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
+        if (!genReqPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: genReqPipeOutQ");
+        // if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
+        // if (!perPacketPayloadDataStreamQ.notFull) $display("time=%0t, ", $time, "FullQueue: perPacketPayloadDataStreamQ");
+    endrule
     
     rule queryMrTable;
+        let curFpDebugTime <- getSimulationTime;
         let wqe = wqePipeInQ.first;
         wqePipeInQ.deq;
         Bool isZeroPayload = isZeroR(wqe.len);
@@ -500,6 +504,7 @@ module mkPacketGen(PacketGen);
             wqe: wqe,
             hasPayload: hasPayload
         };
+        pipelineEntryOut.wqe.fpDebugTime = curFpDebugTime;
         sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.enq(pipelineEntryOut);
 
         $display(
@@ -507,10 +512,12 @@ module mkPacketGen(PacketGen);
             toBlue(", wqe="), fshow(wqe),
             toBlue(", hasPayload="), fshow(hasPayload)
         );
+        // checkFullyPipeline(wqe.fpDebugTime, 1, 2000, "mkPacketGen queryMrTable");
     endrule
 
     
     rule sendChunkByRemoteAddrReqAndPayloadGenReq;
+        let curFpDebugTime <- getSimulationTime;
         let pipelineEntryIn = sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.first;
         sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.deq;
 
@@ -556,6 +563,7 @@ module mkPacketGen(PacketGen);
             wqe: wqe,
             hasPayload: hasPayload
         };
+        pipelineEntryOut.wqe.fpDebugTime = curFpDebugTime;
         genPacketHeaderStep1PipelineQ.enq(pipelineEntryOut);
 
         $display(
@@ -563,9 +571,11 @@ module mkPacketGen(PacketGen);
             toBlue(", wqe="), fshow(wqe),
             toBlue(", hasPayload="), fshow(hasPayload)
         );
+        checkFullyPipeline(wqe.fpDebugTime, 11, 2000, "mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq");
     endrule
 
     rule genPacketHeaderStep1;
+        let curFpDebugTime <- getSimulationTime;
         let pipelineEntryIn = genPacketHeaderStep1PipelineQ.first;
         let wqe = pipelineEntryIn.wqe;
         let hasPayload = pipelineEntryIn.hasPayload;
@@ -644,6 +654,7 @@ module mkPacketGen(PacketGen);
             udpPayloadLen: udpPayloadLen,
             truncatedStreamSplitEndAddrForAlignCalc: truncatedStreamSplitEndAddrForAlignCalc
         };
+        pipelineEntryOut.wqe.fpDebugTime = curFpDebugTime;
         genPacketHeaderStep2PipelineQ.enq(pipelineEntryOut);
         $display(
             "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeaderStep1"),
@@ -651,9 +662,11 @@ module mkPacketGen(PacketGen);
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut),
             toBlue(", packetInfo="), hasPayload ? fshow(packetInfo) : fshow("No payload")
         );
+        checkFullyPipeline(wqe.fpDebugTime, 3, 2000, "mkPacketGen genPacketHeaderStep1");
     endrule
 
     rule genPacketHeaderStep2;
+        let curFpDebugTime <- getSimulationTime;
 
         let pipelineEntryIn = genPacketHeaderStep2PipelineQ.first;
         genPacketHeaderStep2PipelineQ.deq;
@@ -717,6 +730,7 @@ module mkPacketGen(PacketGen);
             toBlue(", bthMaybe="), fshow(bthMaybe),
             toBlue(", extendHeaderBufferMaybe="), fshow(extendHeaderBufferMaybe)
         );
+        checkFullyPipeline(wqe.fpDebugTime, 1, 2000, "mkPacketGen genPacketHeaderStep2");
 
 
         // let pipelineEntryOut = GenEthernetPacketPipelineEntry{
@@ -727,6 +741,7 @@ module mkPacketGen(PacketGen);
     endrule
 
     rule forwardSplitStream;
+        let curFpDebugTime <- getSimulationTime;
         // since the output of payloadGen is a single very long stream, we need to split it into
         // multi sub-stream according to packet boundary.
 

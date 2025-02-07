@@ -694,17 +694,19 @@ function UdpIpHeader genUdpIpHeader(ThinMacIpUdpMetaDataForSend ethIpUdpMeta, Lo
 endfunction
 
 typedef struct {
-    MacIpUdpHeader                 macIpUdpHeader;
-    RdmaEthernetFrameByteLen    totalEthernetFrameLen;
+    MacIpUdpHeader               macIpUdpHeader;
+    RdmaEthernetFrameByteLen     totalEthernetFrameLen;
 } IpHeaderChecksumCalcPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
-    MacIpUdpHeader                 macIpUdpHeader;
+    MacIpUdpHeader               macIpUdpHeader;
+    SimulationTime               fpDebugTime;
 } PacketGeneratorFirstBeatToSecondBeatPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
-    MacIpUdpHeader                 macIpUdpHeader;
+    MacIpUdpHeader              macIpUdpHeader;
     RdmaSendPacketMeta          rdmaMeta;
+    SimulationTime              fpDebugTime;
 } PacketGeneratorSecondBeatToThirdBeatPipelineEntry deriving(Bits, FShow);
 
 (*synthesize*)
@@ -727,6 +729,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
 
     Reg#(EthernetPacketGeneratorState) statusReg <- mkReg(EthernetPacketGeneratorStateGenFirstBeat);
+
+    Reg#(SimulationTime) dataOutputFullyPipelineCheckTimeReg <- mkRegU;
 
     let ipHdrCheckSumStreamPipeOut <- mkIpHdrCheckSumStream(toPipeOut(ipHeaderForChecksumCalcQ));
 
@@ -752,6 +756,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     endfunction
 
     rule prepareIpHeader;
+        let curFpDebugTime <- getSimulationTime;
         let macIpUdpMeta = macIpUdpMetaPipeInQ.first;
         macIpUdpMetaPipeInQ.deq;
 
@@ -787,6 +792,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     endrule
 
     rule genFirstBeat if (statusReg == EthernetPacketGeneratorStateGenFirstBeat);
+        let curFpDebugTime <- getSimulationTime;
         let checksum = ipHdrCheckSumStreamPipeOut.first;
         ipHdrCheckSumStreamPipeOut.deq;
 
@@ -807,7 +813,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         ethernetPacketPipeOutQ.enq(outBeat);
 
         let outPipelineEntry = PacketGeneratorFirstBeatToSecondBeatPipelineEntry {
-            macIpUdpHeader: pipelineEntry.macIpUdpHeader
+            macIpUdpHeader  : pipelineEntry.macIpUdpHeader,
+            fpDebugTime     : curFpDebugTime
         };
         firstBeatToSecondBeatPipelineReg <= outPipelineEntry;
         statusReg <= EthernetPacketGeneratorStateGenSecondBeat;
@@ -824,6 +831,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
 
     rule genSecondBeat if (statusReg == EthernetPacketGeneratorStateGenSecondBeat);
+        let curFpDebugTime <- getSimulationTime;
         let rdmaMeta = rdmaPacketMetaPipeInQ.first;
         rdmaPacketMetaPipeInQ.deq;
 
@@ -848,8 +856,9 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         ethernetPacketPipeOutQ.enq(outBeat);
 
         let outPipelineEntry = PacketGeneratorSecondBeatToThirdBeatPipelineEntry{
-            macIpUdpHeader : firstBeatToSecondBeatPipelineReg.macIpUdpHeader,
-            rdmaMeta    : rdmaMeta
+            macIpUdpHeader  : firstBeatToSecondBeatPipelineReg.macIpUdpHeader,
+            rdmaMeta        : rdmaMeta,
+            fpDebugTime     : curFpDebugTime
         };
         secondBeatToThirdBeatPipelineReg <= outPipelineEntry;
 
@@ -877,10 +886,11 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
             toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         );
+        checkFullyPipeline(firstBeatToSecondBeatPipelineReg.fpDebugTime, 1, 2000, "mkEthernetPacketGenerator genSecondBeat");
     endrule
 
     rule genThirdBeat if (statusReg == EthernetPacketGeneratorStateGenThirdBeat);
-
+        let curFpDebugTime <- getSimulationTime;
         let rdmaMeta = secondBeatToThirdBeatPipelineReg.rdmaMeta;
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
@@ -914,11 +924,13 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
             toBlue(", rdmaMeta="), fshow(rdmaMeta)
         );
+        checkFullyPipeline(secondBeatToThirdBeatPipelineReg.fpDebugTime, 1, 2000, "mkEthernetPacketGenerator genThirdBeat");
     endrule
 
     
 
     rule genMoreBeat if (statusReg == EthernetPacketGeneratorStateGenMoreBeat);
+        let curFpDebugTime <- getSimulationTime;
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         let isLast = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
@@ -927,6 +939,10 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let payload = rdmaPayloadPipeInQ.first;
         rdmaPayloadPipeInQ.deq;
         NocData data = payload.data;
+
+        if (!payload.isLast) begin
+            dataOutputFullyPipelineCheckTimeReg <= curFpDebugTime;
+        end
 
         // Form the forth beat and so on, these beats are payloads, no need to change byte order.
         let outBeat = genEthernetPacket(data, payload.byteNum, payload.startByteIdx, False, isLast);
@@ -968,7 +984,9 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
         end
 
-        
+        if (!payload.isFirst) begin
+            checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, "mkEthernetPacketGenerator genMoreBeat");
+        end
     endrule
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);

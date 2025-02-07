@@ -367,7 +367,7 @@ module mkServerToClientArbitP#(
                 respKeepOrderQueue.enq(curChannelIdx);
             end
             $display(
-                "time=%0t:", $time, toGreen(" mkServerToClientArbitP forward write beat first"),
+                "time=%0t:", $time, toGreen(" mkServerToClientArbitP forward request first beat"),
                 toBlue(", req="), fshow(req)
             );
         end
@@ -385,7 +385,7 @@ module mkServerToClientArbitP#(
         isReqFirstBeatReg <= isReqFinished(req);
 
         $display(
-            "time=%0t:", $time, toGreen(" mkServerToClientArbitP forwardMoreReqBeat"),
+            "time=%0t:", $time, toGreen(" mkServerToClientArbitP forward request more beat"),
             toBlue(", req="), fshow(req)
         );
     endrule

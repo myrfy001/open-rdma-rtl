@@ -15,6 +15,7 @@ import ConfigReg :: * ;
 import Randomizable :: *;
 import PrimUtils :: *;
 import RdmaUtils :: *;
+import FullyPipelineChecker :: *;
 
 import ConnectableF :: *;
 import NapWrapper :: *;
@@ -44,6 +45,7 @@ module mkWorkQueueDescParser(WorkQueueDescParser);
     RingbufDescriptorReadProxy#(SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) sqDescReadProxy <- mkRingbufDescriptorReadProxy;
     
     rule forwardSQ;
+        let curFpDebugTime <- getSimulationTime;
         let {reqSegBuf, headDescIdx} = sqDescReadProxy.descFragsPipeOut.first;
         sqDescReadProxy.descFragsPipeOut.deq;
 
@@ -71,6 +73,7 @@ module mkWorkQueueDescParser(WorkQueueDescParser);
         req.isFirst         = desc1.isFirst;
         req.isLast          = desc1.isLast;
         req.isRetry         = desc1.isRetry;
+        req.fpDebugTime     = curFpDebugTime;
         
 
         let hasImmDt = workReqHasImmDt(req.opcode);

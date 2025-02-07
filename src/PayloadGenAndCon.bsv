@@ -101,11 +101,11 @@ module mkPayloadGen(PayloadGen);
 
     PipeInAdapterB0#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapterB0;
 
-    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkSizedFIFOF(256);  // Since DMA port is shared by multi module (e.g., WQE desc fetch), we may queue up here. 
     // FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
 
 
-    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientP("mkPayloadGen addrTranslateCltInst");
+    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug("mkPayloadGen addrTranslateCltInst", False);
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
     let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 
@@ -125,11 +125,16 @@ module mkPayloadGen(PayloadGen);
 
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(PTEIndex, ADDR)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkSizedFIFOF(2);
-    FIFOF#(Tuple2#(Length, Bool)) issueDmaReadPipelineQ <- mkSizedFIFOF(4);
+    FIFOF#(Tuple3#(PTEIndex, ADDR, SimulationTime)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkSizedFIFOF(2);
+    FIFOF#(Tuple3#(Length, Bool, SimulationTime)) issueDmaReadPipelineQ <- mkSizedFIFOF(10);
 
 
-    let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 1);
+    let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 256);   // PCIe has max outstanding read req limit (PCIe tag).
+
+    rule printDebugInfo;
+        if (!dmaReadReqPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ dmaReadReqPipeOutQ");
+    endrule
+
 
     rule handleInReq;
         let curFpDebugTime <- getSimulationTime;
@@ -144,7 +149,7 @@ module mkPayloadGen(PayloadGen);
 
         rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
-            tuple2(req.pgtOffset, req.baseVA));
+            tuple3(req.pgtOffset, req.baseVA, curFpDebugTime));
 
         $display(
             "time=%0t:", $time, toGreen(" mkPayloadGen handleInReq"),
@@ -158,7 +163,7 @@ module mkPayloadGen(PayloadGen);
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
 
-        let {pgtOffset, baseVA} = getBurstChunRespAndIssueAddrTranslateReqPipelineQ.first;
+        let {pgtOffset, baseVA, fpDebugTime} = getBurstChunRespAndIssueAddrTranslateReqPipelineQ.first;
         if (burstAddrBoundry.isLast) begin
             getBurstChunRespAndIssueAddrTranslateReqPipelineQ.deq;
         end
@@ -169,19 +174,20 @@ module mkPayloadGen(PayloadGen);
             addrToTrans: burstAddrBoundry.startAddr
         };
         addrTranslateCltInst.putReq(addrTranslateReq);
-        issueDmaReadPipelineQ.enq(tuple2(burstAddrBoundry.len, burstAddrBoundry.isLast));
+        issueDmaReadPipelineQ.enq(tuple3(burstAddrBoundry.len, burstAddrBoundry.isLast, curFpDebugTime));
 
         $display(
             "time=%0t:", $time, toGreen(" mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq"),
             toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry),
             toBlue(", addrTranslateReq="), fshow(addrTranslateReq)
         );
+        checkFullyPipeline(fpDebugTime, 3, 2000, "mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq");
     endrule
 
     rule issueDmaRead;
         let curFpDebugTime <- getSimulationTime;
         let translatedAddr <- addrTranslateCltInst.getResp;
-        let {len, isLast} = issueDmaReadPipelineQ.first;
+        let {len, isLast, fpDebugTime} = issueDmaReadPipelineQ.first;
         issueDmaReadPipelineQ.deq;
         
         let readReq = DtldStreamMemAccessMeta {
@@ -197,6 +203,7 @@ module mkPayloadGen(PayloadGen);
             toBlue(", len="), fshow(len),
             toBlue(", isLast="), fshow(isLast)
         );
+        checkFullyPipeline(fpDebugTime, 11, 2000, "mkPayloadGen issueDmaRead");
     endrule
 
     // let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
@@ -224,7 +231,7 @@ module mkPayloadCon(PayloadCon);
     FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF));
 
 
-    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientP("mkPayloadCon addrTranslateCltInst");
+    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug("mkPayloadCon addrTranslateCltInst", False);
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
     let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 

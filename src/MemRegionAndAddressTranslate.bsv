@@ -150,10 +150,12 @@ module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
     MemRegionTable memRegionTable <- mkMemRegionTable;
 
     // MR Table need 10 beat for worst case to generate resp.
-    // For MR Table, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
+    // For in RQ path, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
+    // For in SQ path, each WQE taks 2 beat, then the arbiter's keep order queue depth should be at least 5
+    // so, we use depth 5 here.
     let arbiter <- mkServerToClientArbitP(
         "MemRegionTableTwoWayQuery",
-        3,
+        5,
         True,
         alwaysTrue,
         alwaysTrue
@@ -284,7 +286,7 @@ module mkAddressTranslate(AddressTranslate);
         pageTableStorageReadRequestAdapter.enq(pteIdx);
         offsetInputQ.enq(getPageOffset(va));
 
-        $display("query AddressTranslate req = ", fshow(req), "pte index=", fshow(pteIdx));
+        $display("time=%0t, ", $time, " query AddressTranslate req = ", fshow(req), "pte index=", fshow(pteIdx));
     endrule
 
     rule handleTranslateResp;
@@ -297,7 +299,7 @@ module mkAddressTranslate(AddressTranslate);
         let pa = restorePA(pte.pn, pageOffset);
         translateSrvInst.putResp(pa);
 
-        $display("query AddressTranslate resp pageOffset= ", fshow(pageOffset), "pte =", fshow(pte));
+        $display("time=%0t, ", $time, "query AddressTranslate resp pageOffset= ", fshow(pageOffset), "pte =", fshow(pte));
         
     endrule
 
@@ -340,10 +342,12 @@ module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
     AddressTranslate addressTranslate <- mkAddressTranslate;
 
     // PGT need 10 beat for worst case to generate resp.
-    // For PGT, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
+    // For RQ, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
+    // For SQ, WQE takes 2 beats, then the arbiter's keep order queue depth should be at least 5
+    // so we use depth 5 here.
     let arbiter <- mkServerToClientArbitP(
         "AddressTranslateTwoWayQuery",
-        3,
+        5,
         True,
         alwaysTrue,
         alwaysTrue

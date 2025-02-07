@@ -98,7 +98,7 @@ typedef RingbufC2h#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufC2hSlot4096;
 typedef RingbufH2c#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufH2cSlot4096;
 typedef RingbufMetadata#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufSlot4096Meta;
 
-typedef 8 RINGBUF_DESC_ENTRY_PER_READ_BLOCK;
+typedef 16 RINGBUF_DESC_ENTRY_PER_READ_BLOCK;
 typedef 4 RINGBUF_DESC_ENTRY_PER_WRITE_BLOCK;
 
 
@@ -145,8 +145,8 @@ module mkRingbufH2c(RingbufNumber qIdx, RingbufH2c#(szPtrIdx) ifc) provisos(
         Add#(c__, szPtrIdx, SizeOf#(ADDR))
     );
 
-    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT));
-    FIFOF#(RingbufRawDescriptor) outputQ <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) bufQ <- mkSizedFIFOF(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
+    FIFOF#(RingbufRawDescriptor) outputQ <- mkSizedFIFOF(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
 
     mkConnection(toGet(bufQ), toPut(outputQ));
     
@@ -303,7 +303,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     FIFOF#(Bool)                    dmaWriteRespQ   <- mkLFIFOF;
     FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkLFIFOF;
 
-    Reg#(Bit#(NUMERIC_TYPE_TWO))       batchDelayCounterReg        <- mkReg(0);
+    Reg#(Bit#(NUMERIC_TYPE_FOUR))      batchDelayCounterReg        <- mkReg(0);
     Reg#(Bool)                         isSendingDescBodyReg        <- mkReg(False);
     Reg#(RingBufWriteBlockOffset)      zeroBasedDescWriteCntReg    <- mkRegU;
     Reg#(Bool)                         isWriteStreamFirstBeatReg   <- mkReg(True);                     

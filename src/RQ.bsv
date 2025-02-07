@@ -478,10 +478,10 @@ module mkRQ(RQ);
             "time=%0t:", $time, toGreen(" mkRQ checkQpcAndMrTable"),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
-        // QPC and MR Table need 10 beat for worst case to generate resp.
+        // QPC and MR Table need 11 beat for worst case to generate resp.
         // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
         // For MR Table, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
-        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 10, 2000, "mkRQ checkQpcAndMrTable");
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 11, 2000, "mkRQ checkQpcAndMrTable");
     endrule
     
 

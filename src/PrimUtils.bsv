@@ -252,6 +252,7 @@ module mkSizedQueuedClientP#(
         Integer respDepth, 
         QueuedClientServerQueueType reqType,
         QueuedClientServerQueueType respType,
+        Bool enableDebug,
         Clock srcClk,
         Clock dstClk,
         Reset srcRst,
@@ -268,29 +269,59 @@ module mkSizedQueuedClientP#(
 
     let respQueuePipeInB0 <- mkFifofToPipeInB0(respQ);
 
-    // rule debug;
-    //     if (!reqQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " reqQ");
-    //     end
-    //     if (!respQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
-    //     end
-    // endrule
+    rule debug if (enableDebug);
+        if (!reqQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " reqQ");
+        end
+        if (!respQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
+        end
+
+        if (!respQ.notEmpty) begin
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
+        end
+    endrule
 
     interface clt = toGPClientP(toPipeOut(reqQ), respQueuePipeInB0);
 
     method Action putReq(t_req req);
         reqQ.enq(req);
+        if (enableDebug) begin
+            $display(
+                "time=%0t: ", $time, "mkQueuedClient [", fshow(name) , "] put req:",
+                ", req=", fshow(req)
+            );
+        end
     endmethod
 
     method Bool canPutReq = reqQ.notFull;
 
     method ActionValue#(t_resp) getResp();
         respQ.deq;
+
+        if (enableDebug) begin
+            $display(
+                "time=%0t: ", $time, "mkQueuedClient [", fshow(name) , "] get resp:",
+                ", resp=", fshow(respQ.first)
+            );
+        end
+
         return respQ.first;
     endmethod
 
     method Bool hasResp = respQ.notEmpty;
+endmodule
+
+module mkQueuedClientPWithDebug#(String name, Bool enableDebug)(QueuedClientP#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp),
+    FShow#(t_req),
+    FShow#(t_resp)
+);
+    let curClk <- exposeCurrentClock;
+    let curRst <- exposeCurrentReset;
+    let t <- mkSizedQueuedClientP(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, enableDebug, curClk, curClk, curRst, curRst);
+    return t;
 endmodule
 
 module mkQueuedClientP#(String name)(QueuedClientP#(t_req, t_resp)) provisos (
@@ -299,9 +330,7 @@ module mkQueuedClientP#(String name)(QueuedClientP#(t_req, t_resp)) provisos (
     FShow#(t_req),
     FShow#(t_resp)
 );
-    let curClk <- exposeCurrentClock;
-    let curRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedClientP(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
+    let t <- mkQueuedClientPWithDebug(name, False);
     return t;
 endmodule
 
