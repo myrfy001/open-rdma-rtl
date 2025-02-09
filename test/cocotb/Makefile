@@ -33,13 +33,17 @@ SYSTEM_TEST_TB_FILE_TWO_CARD = tb_top_for_system_test_two_card.py
 # TOP_MODULE ?= mkTestCocotbPsnPerMergeAndStorage
 # TB_FILE = tb_psn_per_merge_and_storage.py
 
-TOP_BSV_SRC_FILE ?= ../src/Top.bsv
-TOP_MODULE ?= mkBsvTopWithoutHardIpInstance
-TB_FILE = tb_top_without_hard_ip.py
+# TOP_BSV_SRC_FILE ?= ../src/Top.bsv
+# TOP_MODULE ?= mkBsvTopWithoutHardIpInstance
+# TB_FILE = tb_top_without_hard_ip.py
 
 # TOP_BSV_SRC_FILE ?= ../test/TestPipeIoAdaptor.bsv
 # TOP_MODULE ?= mkTestB
 # TB_FILE = tb_tmp.py
+
+TOP_BSV_SRC_FILE ?= ../src/TwoChannelBuildBlock.bsv
+TOP_MODULE ?= mkQpMrPgtQpc
+TB_FILE = tb_top_without_hard_ip.py
 
 
 

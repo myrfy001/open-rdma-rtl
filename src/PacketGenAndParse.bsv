@@ -554,7 +554,7 @@ module mkPacketGen(PacketGen);
 
             ByteIdxInDword localAddrOffset = truncate(wqe.laddr);
             ByteIdxInDword remoteAddrOffset = truncate(wqe.raddr);
-            DataBusSignedShiftOffset localToRemoteAlignShiftOffset = zeroExtend(localAddrOffset) - zeroExtend(remoteAddrOffset);
+            DataBusSignedByteShiftOffset localToRemoteAlignShiftOffset = zeroExtend(localAddrOffset) - zeroExtend(remoteAddrOffset);
             payloadStreamShifterOffsetPipeInConverter.enq(localToRemoteAlignShiftOffset);
         end
 

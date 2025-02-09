@@ -14,11 +14,7 @@ import RdmaHeaders :: *;
 import NapWrapper :: *;
 import AddressChunker :: *;
 import EthernetTypes :: *;
-import FTileMacAdaptor :: *;
-import RTilePcieAdaptor :: *;
 import DtldStream :: *;
-
-typedef PCIE_MPS IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE;
 
 
 typedef DtldStreamMemAccessMeta#(ADDR, Length) IoChannelMemoryAccessMeta;

@@ -9,7 +9,8 @@ typedef TMul#(2, MAX_QP_WR) MAX_PENDING_WORK_COMP_NUM;
 // RDMA device attributes
 // Must be power of 2
 
-typedef 256 DATA_BUS_WIDTH;
+typedef 512 DATA_BUS_WIDTH;
+typedef 512 IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE;  // Important: must be suitable for the selected PCIe IO implementation
 
 
 typedef TExp#(31)           MAX_MR_SIZE;   // 2GB

@@ -13,24 +13,6 @@ import RdmaHeaders :: *;
 import RdmaHeaders :: *;
 import NapWrapper :: *;
 
-typedef 16 AXI_MAX_BURST_BEATS;
-typedef TMul#(AXI_MAX_BURST_BEATS, DATA_BUS_BYTE_WIDTH) AXI_MAX_BURST_BYTES;                        // 512
-
-typedef TSub#(4096, 1) AXI_ADDR_4K_BOUNDARY_MASK;                                                   // 'hFFF
-typedef TSub#(DATA_BUS_BYTE_WIDTH, 1) AXI_ADDR_32B_BOUNDARY_MASK;                                   // 'h1F  
-typedef TSub#(AXI_MAX_BURST_BYTES, 1) AXI_ADDR_512B_BOUNDARY_MASK;                                  // 'h1FF           Achronix NAP is (256 bits * 16 bursts) max, which is 512 Bytes
-
-typedef TLog#(AXI_MAX_BURST_BYTES) AXI_BURST_BYTE_NUM_WIDTH;                                        // 9
-typedef Bit#(AXI_BURST_BYTE_NUM_WIDTH) ByteIdxInAxiBurst;
-typedef Bit#(TAdd#(1, AXI_BURST_BYTE_NUM_WIDTH)) ByteNumInAxiBurst;  
-
-typedef TLog#(AXI_MAX_BURST_BEATS) BEAT_IDX_IN_AXI_BURST_WIDTH;                                     // 4
-typedef Bit#(BEAT_IDX_IN_AXI_BURST_WIDTH) BeatIdxInAxiBurst;
-typedef Bit#(TAdd#(1,BEAT_IDX_IN_AXI_BURST_WIDTH)) BeatNumInAxiBurst;
-
-typedef TSub#(TSub#(RDMA_MAX_LEN_WIDTH, AXI_BURST_BYTE_NUM_WIDTH), BEAT_IDX_IN_AXI_BURST_WIDTH) BURST_IDX_IN_RDMA_LENGTH;         // 19
-typedef Bit#(BURST_IDX_IN_RDMA_LENGTH) BurstIdxInRdmaLength;
-typedef Bit#(TAdd#(1,BURST_IDX_IN_RDMA_LENGTH)) BurstNumInRdmaLength;
 
 typedef struct {
     tAddr startAddr;

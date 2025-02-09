@@ -118,7 +118,7 @@ module mkTestBiDirectionStreamShifter(Empty);
         if (dutInputQ.notEmpty) begin
             let ds = dutInputQ.first;
             if (ds.isFirst) begin
-                DataBusSignedShiftOffset offset = truncate(forwardShiftOffsetRandomGenPipeOut.first);
+                DataBusSignedByteShiftOffset offset = truncate(forwardShiftOffsetRandomGenPipeOut.first);
                 forwardShiftOffsetRandomGenPipeOut.deq;
                 let absOffset = getAbsValue(offset); 
                 Bool offsetAcceptable = False;

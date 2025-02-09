@@ -163,7 +163,7 @@ module mkTestEthernetFrameIO(Empty);
                 BusByteCnt firstPayloadByteOneBasedOffsetInFirstPayloadBeat = fromInteger(valueOf(BTH_FIRST_BYTE_ONE_BASED_INDEX_IN_SECOND_BEAT)) - truncate(bthAndEthTotalLength);
                 BusByteIdx firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue = truncate(firstPayloadByteOneBasedOffsetInFirstPayloadBeat);
                 firstPayloadByteOneBasedOffsetInFirstPayloadBeat = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeatTmpValue);
-                DataBusSignedShiftOffset signedShiftOffset = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeat) - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+                DataBusSignedByteShiftOffset signedShiftOffset = zeroExtend(firstPayloadByteOneBasedOffsetInFirstPayloadBeat) - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
                 txStreamShifter.offsetPipeIn.enq(signedShiftOffset);
             end
             packetGen.rdmaPacketMetaPipeIn.enq(rdmaPacketMeta);

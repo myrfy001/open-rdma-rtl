@@ -78,6 +78,9 @@ typedef TDiv#(DATA_BUS_WIDTH, BYTE_WIDTH)   DATA_BUS_BYTE_WIDTH; // 32 (bus 256b
 typedef TLog#(DATA_BUS_BYTE_WIDTH)          DATA_BUS_BYTE_NUM_WIDTH; // 5 (bus 256b), 6 (bus 512b)
 typedef TLog#(DATA_BUS_WIDTH)               DATA_BUS_BIT_NUM_WIDTH; // 8 (bus 256b), 9 (bus 512b)
 
+typedef 256 DESC_DATA_WIDTH;
+typedef Bit#(DESC_DATA_WIDTH)               DESC_DATA;
+
 
 typedef TLog#(MAX_PMTU)                      MAX_PMTU_WIDTH; // 12
 // typedef TLog#(TLog#(MAX_PMTU))               PMTU_VALUE_MAX_WIDTH; // 4
@@ -110,21 +113,18 @@ typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
 
 // Derived types
 typedef Bit#(DATA_BUS_WIDTH)      DATA;
-typedef Bit#(DATA_BUS_BYTE_WIDTH) ByteEn;
 
 typedef Bit#(32) ADDR32;
 
 
-typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitCnt;                  // 9 (bus 256b)
-typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) BusByteCnt;                 // 6 (bus 256b)
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH)           BusByteIdx;                 // 5 (bus 256b)
-typedef BusByteCnt                              DataBusSignedShiftOffset;   // 6 (bus 256b)
+typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitCnt;                      // 9 (bus 256b)
+typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)            BusBitIdx;                      // 8 (bus 256b)
+typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) BusByteCnt;                     // 6 (bus 256b)
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH)           BusByteIdx;                     // 5 (bus 256b)
+typedef BusByteCnt                              DataBusSignedByteShiftOffset;   // 6 (bus 256b)
 
 typedef TDiv#(DATA_BUS_BYTE_WIDTH, BYTE_CNT_PER_DWOED)  DWORD_CNT_PER_DATA_BUS_BEAT;
 
-
-typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;            // 64
-typedef TMul#(3, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_THREE_BEATS;          // 96
 
 typedef 3 RDMA_PACKET_HEADER_BETA_CNT;
 

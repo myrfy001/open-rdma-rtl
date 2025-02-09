@@ -111,7 +111,7 @@ typedef struct {
 } RingbufDmaReadReq deriving(Bits, FShow);
 
 typedef struct {
-    DataStream data;
+    DescDataStream data;
 } RingbufDmaReadResp deriving(Bits, FShow);
 
 typedef struct {
@@ -269,7 +269,7 @@ endinterface
 interface RingbufC2h#(numeric type szPtrIdx);
     interface RingbufMetadata#(szPtrIdx) controlRegs;
     interface PipeOut#(RingbufDmaWriteReq) dmaWriteReqPipeOut;
-    interface PipeOut#(DataStream) dmaWriteDataPipeOut;
+    interface PipeOut#(DescDataStream) dmaWriteDataPipeOut;
     interface PipeIn#(Bool) dmaWriteRespPipeIn;
     interface PipeIn#(RingbufRawDescriptor) descPipeIn;
 endinterface
@@ -299,7 +299,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     Reg#(tPtrWithGuard)    tailReg[2]      <- mkCReg(2, unpack(0));
     Reg#(tPtrWithGuard)    headShadowReg   <- mkConfigReg(unpack(0));
     FIFOF#(RingbufDmaWriteReq)      dmaWriteAddrQ   <- mkFIFOF;
-    FIFOF#(DataStream)              dmaWriteDataQ   <- mkFIFOF;
+    FIFOF#(DescDataStream)          dmaWriteDataQ   <- mkFIFOF;
     FIFOF#(Bool)                    dmaWriteRespQ   <- mkLFIFOF;
     FIFOF#(tPtrWithGuard)           inFlightWriteReqHeaadUpdateQ <- mkLFIFOF;
 
@@ -371,7 +371,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
             inFlightWriteReqHeaadUpdateQ.enq(newHeadShadow);
         end
 
-        DataStream ds;
+        DescDataStream ds;
         ds.isLast = isLast; 
         ds.isFirst = isWriteStreamFirstBeatReg;
         ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
@@ -431,7 +431,7 @@ interface RingbufDmaIfcConvertor;
     interface PipeInB0#(RingbufDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(RingbufDmaReadResp) dmaReadRespPipeOut;
     interface PipeInB0#(RingbufDmaWriteReq) dmaWriteReqPipeIn;
-    interface PipeInB0#(DataStream) dmaWriteDataPipeIn;
+    interface PipeInB0#(DescDataStream) dmaWriteDataPipeIn;
     interface PipeOut#(Bool) dmaWriteRespPipeOut;
 
     // dma side interface
@@ -440,16 +440,29 @@ endinterface
 
 (* synthesize *)
 module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
-    PipeInAdapterB0#(RingbufDmaReadReq)   dmaReadReqPipeInQ       <- mkPipeInAdapterB0;
-    FIFOF#(RingbufDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
-    PipeInAdapterB0#(RingbufDmaWriteReq)  dmaWriteReqPipeInQ      <- mkPipeInAdapterB0;
-    PipeInAdapterB0#(DataStream)          dmaWriteDataPipeInQ     <- mkPipeInAdapterB0;
-    FIFOF#(Bool)                dmaWriteRespPipeOutQ    <- mkFIFOF;
+    PipeInAdapterB0#(RingbufDmaReadReq)     dmaReadReqPipeInQ       <- mkPipeInAdapterB0;
+    FIFOF#(RingbufDmaReadResp)              dmaReadRespPipeOutQ     <- mkFIFOF;
+    PipeInAdapterB0#(RingbufDmaWriteReq)    dmaWriteReqPipeInQ      <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(DescDataStream)        dmaWriteDataPipeInQ     <- mkPipeInAdapterB0;
+    FIFOF#(Bool)                            dmaWriteRespPipeOutQ    <- mkFIFOF;
 
-    FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
-    PipeInAdapterB0#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkPipeInAdapterB0;
-    FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)                       dmaReadMetaPipeOutQueue     <- mkFIFOF;
+    PipeInAdapterB0#(IoChannelMemoryAccessDataStream)       dmaReadDataPipeInQueue      <- mkPipeInAdapterB0;
+    FIFOF#(IoChannelMemoryAccessMeta)                       dmaWriteMetaPipeOutQueue    <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream)                 dmaWriteDataPipeOutQueue    <- mkFIFOF;
+
+    let needWidthConvert = valueOf(DATA_BUS_WIDTH) != valueOf(DESC_DATA_WIDTH);
+
+    Reg#(Bit#(TMax#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH))))) writeDataWidthConvertIdxNowReg <- mkReg(0);
+    Reg#(Bit#(TMax#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH))))) readDataWidthConvertIdxNowReg <- mkReg(0);
+    Reg#(Bit#(TMax#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH))))) readDataWidthConvertIdxTargetReg <- mkReg(0);
+
+    Reg#(DATA) writeDataWidthConvertBufReg <- mkRegU;
+    Reg#(DATA) readDataWidthConvertBufReg  <- mkRegU;
+    Reg#(Bool) writeDataWidthConvertIsFirstFlagReg <- mkReg(True);
+    Reg#(Bool) readDataWidthConvertIsFirstFlagReg <- mkReg(True);
+
+
 
     rule forwardWriteAddr;
         let req = dmaWriteReqPipeInQ.first;
@@ -467,18 +480,68 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         // );
     endrule
 
-    rule forwardWriteData;
-        let ds = dmaWriteDataPipeInQ.first;
-        dmaWriteDataPipeInQ.deq;
-        dmaWriteDataPipeOutQueue.enq(ds);
-        if (ds.isLast) begin
-            dmaWriteRespPipeOutQ.enq(True);
-        end
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData"),
-        //     toBlue(", ds="), fshow(ds)
-        // );
-    endrule
+    if (needWidthConvert) begin
+        rule forwardWriteData;
+            let descDs = dmaWriteDataPipeInQ.first;
+            dmaWriteDataPipeInQ.deq;
+            
+            let wideNewData = zeroExtend(descDs.data);
+            let wideExistData = descDs.isFirst ? wideNewData : writeDataWidthConvertBufReg;
+
+            BusBitIdx bitShiftOffset = zeroExtend(writeDataWidthConvertIdxNowReg) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH));
+            let wideShiftedNewData = wideNewData << bitShiftOffset;
+
+            let newWideData = wideExistData | wideShiftedNewData;
+
+            writeDataWidthConvertBufReg <= newWideData;
+            
+            let newIdx = writeDataWidthConvertIdxNowReg + 1;
+            let totalDescInWideBeatNow = zeroExtend(writeDataWidthConvertIdxNowReg) + 1;
+
+            if (newIdx == maxBound || descDs.isLast) begin
+                let ds = DataStream {
+                    data: newWideData,
+                    startByteIdx: 0,
+                    byteNum: totalDescInWideBeatNow << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                    isFirst: writeDataWidthConvertIsFirstFlagReg,
+                    isLast: descDs.isLast
+                };
+                dmaWriteDataPipeOutQueue.enq(ds);
+                newIdx = 0;
+                writeDataWidthConvertIsFirstFlagReg <= descDs.isLast;
+            end
+
+            writeDataWidthConvertIdxNowReg <= newIdx;
+
+            if (descDs.isLast) begin
+                dmaWriteRespPipeOutQ.enq(True);
+            end
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData"),
+            //     toBlue(", descDs="), fshow(descDs)
+            // );
+        endrule
+    end
+    else begin
+        rule forwardWriteData;
+            let ds = dmaWriteDataPipeInQ.first;
+            dmaWriteDataPipeInQ.deq;
+            dmaWriteDataPipeOutQueue.enq(DataStream{
+                data: zeroExtend(ds.data),
+                startByteIdx: 0,
+                byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                isFirst: ds.isFirst,
+                isLast: ds.isLast
+            });
+            if (ds.isLast) begin
+                dmaWriteRespPipeOutQ.enq(True);
+            end
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData"),
+            //     toBlue(", ds="), fshow(ds)
+            // );
+        endrule
+    end
 
 
 
@@ -498,21 +561,74 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         );
     endrule
 
-    rule forwardReadResp;
-        let dmaResp = dmaReadDataPipeInQueue.first;
-        dmaReadDataPipeInQueue.deq;
+    if (needWidthConvert) begin
+        rule forwardReadResp;
+            let wideData = readDataWidthConvertBufReg;
+            let targetIdx = readDataWidthConvertIdxTargetReg;
+            let nowIdx = readDataWidthConvertIdxNowReg;
+            if (readDataWidthConvertIsFirstFlagReg) begin
+                let dmaResp = dmaReadDataPipeInQueue.first;
+                dmaReadDataPipeInQueue.deq;
+                wideData = dmaResp.data;
+                nowIdx = 1;
+                targetIdx = truncate(dmaResp.byteNum >> valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)));
 
-        let resp = RingbufDmaReadResp {
-            data: dmaResp
-        };
+                immAssert(
+                    // make sure the received payload is power of 2, and also can hold atleast one desc.
+                    countOnes(dmaResp.byteNum) == 1 && dmaResp.byteNum >= fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                    "the received payload size must be power of two, and at least have one descriptor in it.",
+                    $format("dmaResp=", fshow(dmaResp))
+                );
+            end
+            
 
-        dmaReadRespPipeOutQ.enq(resp);
+            let isLast = targetIdx == nowIdx;
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardReadResp"),
-            toBlue(", resp="), fshow(resp)
-        );
-    endrule
+            let resp = RingbufDmaReadResp {
+                data: DescDataStream {
+                    data: truncate(wideData),
+                    startByteIdx: 0,
+                    byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                    isFirst: readDataWidthConvertIsFirstFlagReg,
+                    isLast: isLast
+                }
+            };
+
+            dmaReadRespPipeOutQ.enq(resp);
+            readDataWidthConvertBufReg <= (wideData >> valueOf(USER_LOGIC_DESCRIPTOR_BIT_WIDTH));
+            readDataWidthConvertIdxTargetReg <= targetIdx;
+            readDataWidthConvertIdxNowReg <= nowIdx;
+            readDataWidthConvertIsFirstFlagReg <= isLast;
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardReadResp"),
+                toBlue(", resp="), fshow(resp)
+            );
+        endrule
+    end
+    else begin
+        rule forwardReadResp;
+            let dmaResp = dmaReadDataPipeInQueue.first;
+            dmaReadDataPipeInQueue.deq;
+
+            let resp = RingbufDmaReadResp {
+                data: DescDataStream {
+                    data: truncate(dmaResp.data),
+                    startByteIdx: 0,
+                    byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                    isFirst: dmaResp.isFirst,
+                    isLast: dmaResp.isLast
+                }
+            };
+
+            dmaReadRespPipeOutQ.enq(resp);
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardReadResp"),
+                toBlue(", resp="), fshow(resp)
+            );
+        endrule
+    end
 
     interface dmaReadReqPipeIn = toPipeInB0(dmaReadReqPipeInQ);
     interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);
