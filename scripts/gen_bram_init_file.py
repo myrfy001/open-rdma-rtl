@@ -11,10 +11,8 @@ MAX_QP_CNT = 1024
 def gen_init_bram_psn_merge_storage():
     '''
     typedef struct {
-        tData       data;
-        tBoundary   leftBound;
-        OooWindowBitmapStorageEntryEpoch    epoch;
-        OooWindowBitmapStorageChannelIdx    channelIdx;
+        tData                               data;
+        tBoundary                           leftBound;
         KeyQP                               qpnKeyPart;
     } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
     '''
@@ -24,11 +22,9 @@ def gen_init_bram_psn_merge_storage():
             for i in range(MAX_QP_CNT):
                 data_part = "1" * 128                       # -1
                 left_boundary_part = "1" * 20               # -1
-                epoch_part = "0" * 4                        # 0
                 qpn_key_part = "0" * 14                     # 0
-                channel_idx_part = f"{channel_idx}" * 1
                 fo.write(data_part + left_boundary_part +
-                         epoch_part + channel_idx_part + qpn_key_part + "\n")
+                         qpn_key_part + "\n")
 
 
 def gen_init_bram_auto_ack_meta_storage():
@@ -38,10 +34,9 @@ def gen_init_bram_auto_ack_meta_storage():
                 last_entry_receive_time = "0" * 32
                 ack_msn = "0" * 16
                 has_reported = "0" * 1
-                epoch_part = "0" * 4                        # 0
-                channel_idx_part = f"{channel_idx}" * 1
+
                 fo.write(last_entry_receive_time + ack_msn +
-                         has_reported + epoch_part + channel_idx_part + "\n")
+                         has_reported + "\n")
 
 
 def gen_init_bram_last_report_time():
