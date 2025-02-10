@@ -36,59 +36,59 @@ import RQ :: *;
 
 
 
-(* synthesize *)
-module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
-    let qpMrPgtQpc <- mkQpMrPgtQpc;
-    let ringbufAndDescriptorHandler <- mkRingbufAndDescriptorHandler;
-    mkConnection(ringbufAndDescriptorHandler.wqePipeOutVec, qpMrPgtQpc.wqePipeInVec);  // already Nr
+// (* synthesize *)
+// module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
+//     let qpMrPgtQpc <- mkQpMrPgtQpc;
+//     let ringbufAndDescriptorHandler <- mkRingbufAndDescriptorHandler;
+//     mkConnection(ringbufAndDescriptorHandler.wqePipeOutVec, qpMrPgtQpc.wqePipeInVec);  // already Nr
 
-    TopLevelDmaChannelMux topLevelDmaChannelMux <- mkTopLevelDmaChannelMux;
+//     TopLevelDmaChannelMux topLevelDmaChannelMux <- mkTopLevelDmaChannelMux;
     
 
-    let csrRootConnector <- mkCsrRootConnector;
-    function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
-        actionvalue
-            let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
-            let addrBlockMask = ~fromInteger(valueOf(CSR_ADDR_BLOCK_SIZE_FOR_RINGBUFS) - 1);
-            let maskedAddr = addrBlockMask & regIdx;
-            if (fromInteger(valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_RINGBUFS)) == maskedAddr) begin
-                return tagged CsrNodeResultForward 0;
-            end
-            else begin
-                return tagged CsrNodeResultForward 1;
-            end
-        endactionvalue
-    endfunction
-    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO), "mkBsvTopWithoutHardIpInstance");
+//     let csrRootConnector <- mkCsrRootConnector;
+//     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
+//         actionvalue
+//             let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+//             let addrBlockMask = ~fromInteger(valueOf(CSR_ADDR_BLOCK_SIZE_FOR_RINGBUFS) - 1);
+//             let maskedAddr = addrBlockMask & regIdx;
+//             if (fromInteger(valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_RINGBUFS)) == maskedAddr) begin
+//                 return tagged CsrNodeResultForward 0;
+//             end
+//             else begin
+//                 return tagged CsrNodeResultForward 1;
+//             end
+//         endactionvalue
+//     endfunction
+//     CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_TWO), "mkBsvTopWithoutHardIpInstance");
     
-    mkConnection(csrRootConnector.csrNodeRootPortIfc, csrNode.upStreamPort);
-    mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
-    mkConnection(qpMrPgtQpc.csrUpStreamPort, csrNode.downStreamPortsVec[1]);
+//     mkConnection(csrRootConnector.csrNodeRootPortIfc, csrNode.upStreamPort);
+//     mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
+//     mkConnection(qpMrPgtQpc.csrUpStreamPort, csrNode.downStreamPortsVec[1]);
 
 
-    mkConnection(qpMrPgtQpc.pgtUpdateDmaMasterPipe, topLevelDmaChannelMux.pgtUpdateDmaSlavePipe);    // already Nr
-    mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfcVec, topLevelDmaChannelMux.qpDmaRequestSlaveIfcVec);  // already Nr
-    mkConnection(ringbufAndDescriptorHandler.qpRingbufDmaMasterPipeIfcVec, topLevelDmaChannelMux.qpRingbufDmaSlavePipeIfcVec); // already Nr
-    mkConnection(ringbufAndDescriptorHandler.cmdQueueRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.cmdQueueRingbufDmaSlavePipeIfc);  // already Nr
-    mkConnection(ringbufAndDescriptorHandler.simpleNicRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicRingbufDmaSlavePipeIfc);  // already Nr
-    mkConnection(ringbufAndDescriptorHandler.qpResetReqPipeOut, qpMrPgtQpc.qpResetReqPipeIn);
-    mkConnection(qpMrPgtQpc.metaReportDescPipeOutVec, ringbufAndDescriptorHandler.metaReportDescPipeInVec);
-    mkConnection(ringbufAndDescriptorHandler.mrAndPgtManagerClt, qpMrPgtQpc.mrAndPgtModifyDescSrv);
-    mkConnection(ringbufAndDescriptorHandler.qpcModifyClt, qpMrPgtQpc.qpContextUpdateSrv);
+//     mkConnection(qpMrPgtQpc.pgtUpdateDmaMasterPipe, topLevelDmaChannelMux.pgtUpdateDmaSlavePipe);    // already Nr
+//     mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfcVec, topLevelDmaChannelMux.qpDmaRequestSlaveIfcVec);  // already Nr
+//     mkConnection(ringbufAndDescriptorHandler.qpRingbufDmaMasterPipeIfcVec, topLevelDmaChannelMux.qpRingbufDmaSlavePipeIfcVec); // already Nr
+//     mkConnection(ringbufAndDescriptorHandler.cmdQueueRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.cmdQueueRingbufDmaSlavePipeIfc);  // already Nr
+//     mkConnection(ringbufAndDescriptorHandler.simpleNicRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicRingbufDmaSlavePipeIfc);  // already Nr
+//     mkConnection(ringbufAndDescriptorHandler.qpResetReqPipeOut, qpMrPgtQpc.qpResetReqPipeIn);
+//     mkConnection(qpMrPgtQpc.metaReportDescPipeOutVec, ringbufAndDescriptorHandler.metaReportDescPipeInVec);
+//     mkConnection(ringbufAndDescriptorHandler.mrAndPgtManagerClt, qpMrPgtQpc.mrAndPgtModifyDescSrv);
+//     mkConnection(ringbufAndDescriptorHandler.qpcModifyClt, qpMrPgtQpc.qpContextUpdateSrv);
 
-    mkConnection(qpMrPgtQpc.simpleNicRxDescPipeOut, ringbufAndDescriptorHandler.simpleNicRxDescPipeIn);
-    mkConnection(qpMrPgtQpc.simpleNicTxDescPipeIn, ringbufAndDescriptorHandler.simpleNicTxDescPipeOut);
-    mkConnection(qpMrPgtQpc.simpleNicPacketDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicPacketDmaSlavePipeIfc);
-    rule forwardSetNetworkParamReqPipeOut;
-        ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.deq;
-        qpMrPgtQpc.setLocalNetworkSettings(ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.first);
-    endrule
+//     mkConnection(qpMrPgtQpc.simpleNicRxDescPipeOut, ringbufAndDescriptorHandler.simpleNicRxDescPipeIn);
+//     mkConnection(qpMrPgtQpc.simpleNicTxDescPipeIn, ringbufAndDescriptorHandler.simpleNicTxDescPipeOut);
+//     mkConnection(qpMrPgtQpc.simpleNicPacketDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicPacketDmaSlavePipeIfc);
+//     rule forwardSetNetworkParamReqPipeOut;
+//         ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.deq;
+//         qpMrPgtQpc.setLocalNetworkSettings(ringbufAndDescriptorHandler.setNetworkParamReqPipeOut.first);
+//     endrule
  
 
-    interface dmaSlavePipeIfc = csrRootConnector.dmaSidePipeIfc;
-    interface dmaMasterPipeIfcVec = topLevelDmaChannelMux.dmaMasterPipeIfcVec;
-    interface qpEthDataStreamIfcVec = qpMrPgtQpc.qpEthDataStreamIfcVec;
-endmodule
+//     interface dmaSlavePipeIfc = csrRootConnector.dmaSidePipeIfc;
+//     interface dmaMasterPipeIfcVec = topLevelDmaChannelMux.dmaMasterPipeIfcVec;
+//     interface qpEthDataStreamIfcVec = qpMrPgtQpc.qpEthDataStreamIfcVec;
+// endmodule
 
 
 
@@ -98,14 +98,10 @@ interface QpMrPgtQpc;
     // DMA interfaces
     interface IoChannelMemoryMasterPipeB0In pgtUpdateDmaMasterPipe;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)       qpDmaRequestMasterIfcVec;
-    interface IoChannelMemoryMasterPipeB0In                                         simpleNicPacketDmaMasterPipeIfc;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem))            wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor))      metaReportDescPipeOutVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeB0In)  qpEthDataStreamIfcVec;
-
-    interface PipeOut#(RingbufRawDescriptor)                                        simpleNicRxDescPipeOut;
-    interface PipeIn#(RingbufRawDescriptor)                                         simpleNicTxDescPipeIn;
 
     interface PipeIn#(IndexQP)                                                      qpResetReqPipeIn;
         
@@ -202,7 +198,6 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);  // already Nr
 
     // Ethernet Tx channel 0 will handle simple Nic's traffic. Tx channel 1 and 2 will handle auto ack traffic. It may lead to unbalance between other channels.
-    mkConnection(simpleNic.rawEthernetPacketPipeOut         , ethTxStreamArbiterVec[0].pipeInIfcVec[2]);
     mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[0] , ethTxStreamArbiterVec[1].pipeInIfcVec[2]);
     mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1] , ethTxStreamArbiterVec[2].pipeInIfcVec[2]);
 

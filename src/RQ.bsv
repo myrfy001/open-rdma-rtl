@@ -25,7 +25,6 @@ import NapWrapper :: *;
 import AddressChunker :: *;
 import EthernetTypes :: *;
 import PayloadGenAndCon :: *;
-import EthernetFrameIO :: *;
 import QPContext :: *;
 import PacketGenAndParse :: *;
 import IoChannels :: *;

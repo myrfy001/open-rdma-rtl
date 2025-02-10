@@ -17,7 +17,7 @@ import RdmaHeaders :: *;
 import Ringbuf :: *;
 import Descriptors :: *;
 import EthernetTypes :: *;
-import EthernetFrameIO :: *;
+import EthernetFrameIO512 :: *;
 import QPContext :: *;
 import IoChannels :: *;
 

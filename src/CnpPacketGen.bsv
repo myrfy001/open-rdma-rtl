@@ -18,7 +18,7 @@ import IoChannels :: *;
 import Ringbuf :: *;
 import Descriptors :: *;
 import EthernetTypes :: *;
-import EthernetFrameIO :: *;
+import EthernetFrameIO512 :: *;
 
 typedef struct {
     ThinMacIpUdpMetaDataForRecv peerAddrInfo;
