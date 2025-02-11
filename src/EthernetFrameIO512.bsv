@@ -28,7 +28,7 @@ import IoChannels :: *;
 
 interface InputPacketClassifier;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
-    interface PipeInB0#(IoChannelEthDataStream)       ethRawPacketPipeIn;
+    interface PipeInB0#(IoChannelEthDataStream)         ethRawPacketPipeIn;
     interface PipeOut#(DataStream)                      rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream)                      otherRawPacketPipeOut;

@@ -33,7 +33,7 @@ typedef TDiv#(SIMPLE_NIC_SLOT_BYTE_SIZE, TLog#(LOG_OF_DATA_STREAM_ALIGN_BLOCK_SI
 typedef Bit#(TAdd#(1, TLog#(SIMPLE_NIC_STREAM_ALIGN_BLOCK_CNT_PER_SLOT))) AlignBlockCntInSimpleNicSlot;
 
 interface SimpleNic;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(IoChannelEthDataStream)) rawEthernetPacketPipeInVec;
+    interface PipeIn#(IoChannelEthDataStream)                                   rawEthernetPacketPipeIn;
     interface PipeOut#(IoChannelEthDataStream)                                  rawEthernetPacketPipeOut;
     
     interface PipeIn#(RingbufRawDescriptor)                                     simpleNicTxDescPipeIn;
@@ -46,12 +46,11 @@ module mkSimpleNic(SimpleNic);
     Reg#(SimpleNicSlotIdx) curSlotIdxReg <- mkReg(0);
     Reg#(ADDR) rxBufferBaseAddrReg <- mkReg(0);
     
-    Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(IoChannelEthDataStream)) rawEthernetPacketPipeInQueueVec <- replicateM(mkLFIFOF);
+    FIFOF#(IoChannelEthDataStream) rawEthernetPacketPipeInQueue <- mkLFIFOF;
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, FIFOF#(Word)) rawEthernetPacketLengthQueueVec <- replicateM(mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT)));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, Reg#(Word)) rawEthernetPacketLengthRegVec <- replicateM(mkReg(0));
+    FIFOF#(Word) rawEthernetPacketLengthQueue <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_EIGHT));
+    Reg#(Word) rawEthernetPacketLengthReg <- mkReg(0);
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(IoChannelEthDataStream)) rawEthernetPacketPipeInVecInst = newVector;
     FIFOF#(IoChannelEthDataStream) rawEthernetPacketPipeOutQueue <- mkFIFOF;
 
 
@@ -63,8 +62,6 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
     // FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkSizedFIFOF(2);
-
-    DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA) ethStreamArbiter <- mkDtldStreamNoMetaArbiterSlave(valueOf(HARDWARE_QP_CHANNEL_CNT));
 
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rxAddrChunker <- mkAddressChunker;
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) txAddrChunker <- mkAddressChunker;
@@ -79,44 +76,41 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(AddressChunkResp#(ADDR, Length)) forwardRxChunkedDataStreamToDmaPipelineQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
     FIFOF#(Tuple2#(SimpleNicSlotIdx, Word)) rxDescMetaPipelineQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
 
-    mkConnection(ethStreamArbiter.pipeOutIfc, rxSplitor.dataPipeIn);
+
     // mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
     mkConnection(txConcator.dataPipeOut, toPipeIn(rawEthernetPacketPipeOutQueue));
 
+    let rxSplitorDataPipeInPipeInConverter <- mkPipeInB0ToPipeIn(rxSplitor.dataPipeIn, 128);
     let rxSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(rxSplitor.streamAlignBlockCountPipeIn, 1);
     let txConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(txConcator.isLastStreamFlagPipeIn, 1);
     
-    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-        rawEthernetPacketPipeInVecInst[idx] = toPipeIn(rawEthernetPacketPipeInQueueVec[idx]);
 
-        rule calcPacketLenAndPutToBuffer;
-            let ds = rawEthernetPacketPipeInQueueVec[idx].first;
-            rawEthernetPacketPipeInQueueVec[idx].deq;
-            ethStreamArbiter.pipeInIfcVec[idx].enq(ds);
+    rule calcPacketLenAndPutToBuffer;
+        let ds = rawEthernetPacketPipeInQueue.first;
+        rawEthernetPacketPipeInQueue.deq;
+        rxSplitorDataPipeInPipeInConverter.enq(ds);
 
-            let newLength = rawEthernetPacketLengthRegVec[idx] + zeroExtend(ds.byteNum);
+        let newLength = rawEthernetPacketLengthReg + zeroExtend(ds.byteNum);
 
-            if (ds.isLast) begin
-                rawEthernetPacketLengthRegVec[idx] <= 0;
-                rawEthernetPacketLengthQueueVec[idx].enq(newLength);
-            end
-            else begin
-                rawEthernetPacketLengthRegVec[idx] <= newLength;
-            end
-        endrule
-    end
+        if (ds.isLast) begin
+            rawEthernetPacketLengthReg <= 0;
+            rawEthernetPacketLengthQueue.enq(newLength);
+        end
+        else begin
+            rawEthernetPacketLengthReg <= newLength;
+        end
+    endrule
+
 
     rule forwardRxDsLengthToChunkCalc;
-        let selChannel = ethStreamArbiter.sourceChannelIdPipeOut.first;
-        ethStreamArbiter.sourceChannelIdPipeOut.deq;
 
-        let totalLen = rawEthernetPacketLengthQueueVec[selChannel].first;
-        rawEthernetPacketLengthQueueVec[selChannel].deq;
+
+        let totalLen = rawEthernetPacketLengthQueue.first;
+        rawEthernetPacketLengthQueue.deq;
 
         ADDR writeAddr = rxBufferBaseAddrReg + (zeroExtend(curSlotIdxReg) << valueOf(TLog#(SIMPLE_NIC_SLOT_BYTE_SIZE)));
         curSlotIdxReg <= curSlotIdxReg + 1;
 
-        
         rxAddrChunkerRequestPipeInAdapter.enq(AddressChunkReq{
             startAddr: writeAddr,
             len: zeroExtend(totalLen),
@@ -215,7 +209,7 @@ module mkSimpleNic(SimpleNic);
     // let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
 
 
-    interface rawEthernetPacketPipeInVec = rawEthernetPacketPipeInVecInst;
+    interface rawEthernetPacketPipeIn = toPipeIn(rawEthernetPacketPipeInQueue);
     interface rawEthernetPacketPipeOut = toPipeOut(rawEthernetPacketPipeOutQueue);
     interface simpleNicTxDescPipeIn = toPipeIn(simpleNicDescPipeInQueue);
     interface simpleNicRxDescPipeOut = toPipeOut(simpleNicDescPipeOutQueue);

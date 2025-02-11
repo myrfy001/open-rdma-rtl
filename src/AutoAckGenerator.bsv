@@ -11,6 +11,7 @@ import Printf:: *;
 import MIMO :: *;
 
 import Settings :: *;
+import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import RdmaUtils :: *;
 import RdmaHeaders :: *;
@@ -26,30 +27,21 @@ import ConnectableF :: *;
 import PsnContinousChecker :: *;
 
 typedef struct {
-    PSN psn;
-    QPN qpn;
+    PSN         psn;
+    QPN         qpn;
+    EntryQPC    qpc;
 } AutoAckGeneratorReq deriving(Bits, FShow);
 
 typedef struct {
-    IndexQP qpnIdx;
-    Bool bitmapUnrecoverable;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) newBitmapEntry;
-} AutoAckGeneratorToCpsnCounterPipelineEntry deriving(Bits, FShow);
+    QPN         qpn;
+    EntryQPC    qpc;
+} AutoAckGeneratorToHandleMergedBitmapPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
-    IndexQP qpnIdx;
-    Bool bitmapUnrecoverable;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) newBitmapEntry;
-} AutoAckGeneratorToMaxAckPsnCalculatorPipelineEntry deriving(Bits, FShow);
-
-typedef struct {
-    IndexQP qpnIdx;
-    Bool bitmapUnrecoverable;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) oldBitmapEntry;
-    BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary) newBitmapEntry;
-} AutoAckGeneratorToMaxAckPsnStoragePipelineEntry deriving(Bits, FShow);
+    QPN         qpn;
+    EntryQPC    qpc;
+    BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary) bitmapUpdateResp;
+} AutoAckGeneratorToGenAutoAckEthPacketPipelineEntry deriving(Bits, FShow);
 
 typedef struct {
     Dword lastEntryReceiveTime;
@@ -63,67 +55,33 @@ typedef enum {
     AutoAckGenBackgroundPollingStateHandleResp = 2
 }  AutoAckGenBackgroundPollingState deriving(Bits, Eq, FShow);
 
-
 typedef 10000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
 
 interface AutoAckGenerator;
-    interface Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(AutoAckGeneratorReq)) reqPipeInVec;
-    interface Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream))     ackEthPacketPipeOutVec;
+    interface PipeInB0#(AutoAckGeneratorReq) reqPipeIn;
 
-    interface Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVec;
+    interface PipeOut#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaSendPacketMeta)          rdmaPacketMetaPipeOut;
+    interface PipeOut#(DataStream)                  rdmaPayloadPipeOut;
 
-    interface ServerP#(WriteReqQPC, Bool) qpcUpdateSrv;
+    interface PipeOut#(RingbufRawDescriptor) metaReportDescPipeOut;
 
     interface PipeIn#(IndexQP) resetReqPipeIn;
     // interface PipeOut#(Bit#(0)) resetRespPipeOut;
-
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
-
 
 (* synthesize *)
 module mkAutoAckGenerator(AutoAckGenerator);
 
     FIFOF#(IndexQP) resetReqPipeInQueue <- mkLFIFOF;
 
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInB0#(AutoAckGeneratorReq)) reqPipeInVecInst = newVector;
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeInAdapterB0#(AutoAckGeneratorReq)) reqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
 
-    Vector#(NUMERIC_TYPE_TWO, PipeOut#(IoChannelEthDataStream)) ackEthPacketPipeOutVecInst = newVector;
+    PipeInAdapterB0#(AutoAckGeneratorReq) reqPipeInQueue <- mkPipeInAdapterB0;
+    FIFOF#(RingbufRawDescriptor) metaReportDescPipeOutQueue <- mkFIFOF;
 
-    Vector#(NUMERIC_TYPE_THREE, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;
-    Vector#(NUMERIC_TYPE_THREE, FIFOF#(RingbufRawDescriptor)) metaReportDescPipeOutQueueVec <- replicateM(mkFIFOF);
-
-    Vector#(NUMERIC_TYPE_TWO, EthernetPacketGenerator) ethernetPacketGeneratorVec <- replicateM(mkEthernetPacketGenerator);
-
-    Vector#(CPSN_CHECKER_CHANNEL_NUM, PipeIn#(FourChannelPsnBitmapPreMergeReq)) psnMergeAndStorage_reqPipeInVec = newVector;
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        ackEthPacketPipeOutVecInst[idx] = ethernetPacketGeneratorVec[idx].ethernetPacketPipeOut; 
-    end
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_THREE); idx = idx + 1) begin
-        metaReportDescPipeOutVecInst[idx] = toPipeOut(metaReportDescPipeOutQueueVec[idx]);
-    end
-
-    for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-        reqPipeInVecInst[idx] = toPipeInB0(reqPipeInQueueVec[idx]);
-    end
-
-    QpContextTwoWayQuery  qpContextForAutoAck <- mkQpContextTwoWayQuery;
-    Vector#(NUMERIC_TYPE_TWO, PipeIn#(ReadReqQPC)) qpContextForAutoAckQuerySrvPipeInB0AdapterVec = newVector;
-    Vector#(NUMERIC_TYPE_TWO, PipeIn#(ThinMacIpUdpMetaDataForSend)) ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec = newVector;
-    Vector#(NUMERIC_TYPE_TWO, PipeIn#(RdmaSendPacketMeta)) ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec = newVector;
-
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        qpContextForAutoAckQuerySrvPipeInB0AdapterVec[idx] <- mkPipeInB0ToPipeIn(qpContextForAutoAck.querySrvVec[idx].request, 1); 
-        ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec[idx] <- mkPipeInB0ToPipeIn(ethernetPacketGeneratorVec[idx].macIpUdpMetaPipeIn, 4); 
-        ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec[idx] <- mkPipeInB0ToPipeIn(ethernetPacketGeneratorVec[idx].rdmaPacketMetaPipeIn, 4); 
-    end
-
-    
-    
+    FIFOF#(ThinMacIpUdpMetaDataForSend) ethernetPacketGeneratorMacIpUdpMetaPipeOutQueue <- mkFIFOF;
+    FIFOF#(RdmaSendPacketMeta) ethernetPacketGeneratorRdmaPacketMetaPipeOutQueue <- mkFIFOF;
+    FIFOF#(DataStream) rdmaPayloadPipeOutQueue <- mkFIFOF;  // dummy one, not used
 
     Reg#(Dword) curTimeReg <- mkReg(0);
     Reg#(IndexQP) pollingQpIdxReg <- mkReg(0);
@@ -138,7 +96,6 @@ module mkAutoAckGenerator(AutoAckGenerator);
         return oldVal;
     endfunction
 
-    PsnPerMergeAndStorage psnMergeAndStorage <- mkPsnPerMergeAndStorage;
     AtomicUpdateStorage#(IndexQP, AutoAckGenAtomicUpdateStorageEntry, Bool) autoAckMetaAtomicUpdateStorage <- mkAtomicUpdateStorage(
         atomicUpdateFunction,
         "init_bram_auto_ack_meta_storage"
@@ -149,20 +106,24 @@ module mkAutoAckGenerator(AutoAckGenerator);
         unguarded: False,
         bram_based: False
     };
-    Vector#(NUMERIC_TYPE_TWO, MIMO#(
+    MIMO#(
         NUMERIC_TYPE_TWO,
         NUMERIC_TYPE_ONE,
         NUMERIC_TYPE_FOUR,
         RingbufRawDescriptor
-    )) metaReportMimoQueueVec <- replicateM(mkMIMO(mimoCfg));
+    ) metaReportMimoQueue <- mkMIMO(mimoCfg);
+    FIFOF#(RingbufRawDescriptor) pollingTimeoutDescQueue <- mkFIFOF;
 
     // Pipeline Queues
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(Tuple3#(
+    FIFOF#(AutoAckGeneratorToHandleMergedBitmapPipelineEntry) handleMergedBitmapPipelineQueue <- mkFIFOF;
+    FIFOF#(AutoAckGeneratorToGenAutoAckEthPacketPipelineEntry) genAutoAckEthPacketPipelineQueue <- mkSizedFIFOF(3);
+
+    FIFOF#(Tuple3#(
             BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary),
             AtomicUpdateStorageUpdateResp#(IndexQP, AutoAckGenAtomicUpdateStorageEntry),
             KeyQP
-        ))) genAutoAckReportDescriptorPipelineQueueVec <- replicateM(mkLFIFOF);
-    Vector#(NUMERIC_TYPE_TWO, FIFOF#(BitmapWindowStorageUpdateResp#(IndexQP, AckBitmap, PsnMergeWindowBoundary))) genAutoAckEthPacketPipelineQueueVec <- replicateM(mkSizedFIFOF(3));
+        )) genAutoAckReportDescriptorPipelineQueue <- mkLFIFOF;
+    
     Reg#(Tuple4#(
             BitmapWindowStorageEntry#(AckBitmap, PsnMergeWindowBoundary),
             AutoAckGenAtomicUpdateStorageEntry,
@@ -172,236 +133,224 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     Reg#(AutoAckGenBackgroundPollingState) backgroundPollingStateReg <- mkReg(AutoAckGenBackgroundPollingStateSendReadReq);
 
+    BitmapWindowStorage#(IndexQP, AckBitmap, PsnMergeWindowBoundary, ACK_WINDOW_STRIDE) bitmapStorage <- mkBitmapWindowStorage;
+    let bitmapStorageReqPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(bitmapStorage.reqPipeIn, 1, False, "bitmapStorageReqPipeInAdapter");
+    
     rule timerTask;
         curTimeReg <= curTimeReg + 1;
     endrule
 
+    rule forwardInputReqToPsnBitMapStorage;
+        let req = reqPipeInQueue.first;
+        reqPipeInQueue.deq;
 
-    for (Integer idx = 0; idx < valueOf(CPSN_CHECKER_CHANNEL_NUM); idx = idx + 1) begin
-        psnMergeAndStorage_reqPipeInVec[idx] <- mkPipeInB0ToPipeInWithDebug(psnMergeAndStorage.reqPipeInVec[idx], 2, False, "psnMergeAndStorage_reqPipeInVec");
-        rule forwardInputReqToPsnPreMerge;
-            let req = reqPipeInQueueVec[idx].first;
-            reqPipeInQueueVec[idx].deq;
+        let updateReq = BitmapWindowStorageUpdateReq {
+            psn: req.psn,
+            qpn: req.qpn
+        };
+        bitmapStorageReqPipeInAdapter.enq(updateReq);
+        
+        let outPipelineEntry = AutoAckGeneratorToHandleMergedBitmapPipelineEntry {
+            qpn: req.qpn,
+            qpc: req.qpc
+        };
+        handleMergedBitmapPipelineQueue.enq(outPipelineEntry);
 
-            let preMergeReq = FourChannelPsnBitmapPreMergeReq {
-                psn: req.psn,
-                qpn: req.qpn
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnBitMapStorage"),
+        //     toBlue(", preMergeReq="), fshow(preMergeReq)
+        // );
+    endrule
+
+    rule handleMergedBitmap;
+        let bitmapResp = bitmapStorage.respPipeOut.first;
+        bitmapStorage.respPipeOut.deq;
+
+        let pipelineEntryIn = handleMergedBitmapPipelineQueue.first;
+        handleMergedBitmapPipelineQueue.deq;
+
+        let hasPacketLost = bitmapResp.isShiftWindow && bitmapResp.windowShiftedOutData != -1;
+        let needSendAckNow = hasPacketLost;
+        let autoAckMetaUpdateReq = AtomicUpdateStorageUpdateReq {
+            rowAddr: bitmapResp.rowAddr,
+            reqData: needSendAckNow
+        };
+        autoAckMetaAtomicUpdateStorage.reqPipeIn.enq(autoAckMetaUpdateReq);
+
+        let outPipelineEntry = AutoAckGeneratorToGenAutoAckEthPacketPipelineEntry {
+            qpn: pipelineEntryIn.qpn,
+            qpc: pipelineEntryIn.qpc,
+            bitmapUpdateResp: bitmapResp
+        };
+        genAutoAckEthPacketPipelineQueue.enq(outPipelineEntry);
+        
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
+        //     toBlue(", bitmapResp="), fshow(bitmapResp),
+        //     toBlue(", hasPacketLost="), fshow(hasPacketLost),
+        //     toBlue(", needSendAckNow="), fshow(needSendAckNow)
+        // );
+    endrule
+
+    rule genAutoAckEthPacket;
+
+        let ackMsnInfo = autoAckMetaAtomicUpdateStorage.respPipeOut.first;
+        autoAckMetaAtomicUpdateStorage.respPipeOut.deq;
+
+        let pipelineEntryIn = genAutoAckEthPacketPipelineQueue.first;
+        genAutoAckEthPacketPipelineQueue.deq;
+
+        let qpCtx       = pipelineEntryIn.qpc;
+        let bitmapInfo  = pipelineEntryIn.bitmapUpdateResp;
+
+        let needSendAckNow  = ackMsnInfo.newValue.hasReported;
+        let isPacketLost    = needSendAckNow;
+
+        if (needSendAckNow) begin
+            let thinMacIpUdpMetaDataForSend = ThinMacIpUdpMetaDataForSend {
+                dstMacAddr: qpCtx.peerMacAddr,
+                ipDscp: 0,
+                ipEcn: 0,
+                dstIpAddr: qpCtx.peerIpAddr,
+                srcPort: qpCtx.localUdpPort,
+                dstPort: fromInteger(valueOf(UDP_PORT_RDMA)),
+                udpPayloadLen: fromInteger(valueOf(RDMA_FIXED_HEADER_BYTE_NUM)),
+                ethType: fromInteger(valueOf(ETH_TYPE_IP))
             };
-            psnMergeAndStorage_reqPipeInVec[idx].enq(preMergeReq);
+
+            let rdmaSendPacketMeta = RdmaSendPacketMeta {
+                header:RdmaBthAndExtendHeader{
+                    bth: BTH {
+                        trans    : TRANS_TYPE_RC,
+                        opcode   : ACKNOWLEDGE,
+                        solicited: False,
+                        isRetry  : False,
+                        padCnt   : unpack(0),
+                        tver     : unpack(0),
+                        msn      : ackMsnInfo.oldValue.ackMsn,  // msn should start from 0, if use newValue's msn, it becomes one
+                        fecn     : unpack(0),
+                        becn     : unpack(0),
+                        resv6    : unpack(0),
+                        dqpn     : qpCtx.peerQPN,
+                        ackReq   : False,
+                        resv7    : unpack(0),
+                        psn      : zeroExtendLSB(bitmapInfo.newEntry.leftBound)
+                    },
+                    rdmaExtendHeaderBuf: buildRdmaExtendHeaderBuffer(pack(AETH{
+                            preBitmap:  bitmapInfo.oldEntry.data,
+                            newBitmap:  bitmapInfo.newEntry.data,
+                            isPacketLost: True,
+                            isWindowSlided: True,
+                            isSendByDriver: False,
+                            resv0: unpack(0),
+                            preBitmapPsn: zeroExtendLSB(bitmapInfo.oldEntry.leftBound)
+                        }))
+                },
+                hasPayload: False
+            };
+            ethernetPacketGeneratorMacIpUdpMetaPipeOutQueue.enq(thinMacIpUdpMetaDataForSend);
+            ethernetPacketGeneratorRdmaPacketMetaPipeOutQueue.enq(rdmaSendPacketMeta);
+
+            let qpnKeyPart = qpCtx.qpnKeyPart;
+            genAutoAckReportDescriptorPipelineQueue.enq(tuple3(bitmapInfo, ackMsnInfo, qpnKeyPart));
+            
+        end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckEthPacket"),
+        //     toBlue(", ackMsnInfo="), fshow(ackMsnInfo),
+        //     toBlue(", pipelineEntryIn="), fshow(pipelineEntryIn)
+        // );
+    endrule
+
+    rule genAutoAckReportDescriptor;
+        let {bitmapInfo, ackMsnInfo, qpnKeyPart} = genAutoAckReportDescriptorPipelineQueue.first;
+        
+
+        // write them in a function to make sure they are all comb logic.
+        function Vector#(NUMERIC_TYPE_TWO, RingbufRawDescriptor) genDescVector();
+            
+            let commonHeader = RingbufDescCommonHead {
+                valid           : True,
+                hasNextFrag     : False,
+                reserved0       : unpack(0),
+                isExtendOpcode  : False,
+                opCode          : {pack(TRANS_TYPE_RC), pack(ACKNOWLEDGE)}
+            };
+
+            let desc0 = MetaReportQueueAckDesc{
+                nowBitmap       : bitmapInfo.newEntry.data,
+                msn             : ackMsnInfo.oldValue.ackMsn,
+                qpn             : genQPN(ackMsnInfo.rowAddr, qpnKeyPart),
+                psnNow          : zeroExtendLSB(bitmapInfo.newEntry.leftBound),
+                reserved2       : unpack(0),
+                psnBeforeSlide  : zeroExtendLSB(bitmapInfo.oldEntry.leftBound),
+                reserved1       : unpack(0),
+                isPacketLost    : True,
+                isWindowSlided  : True,
+                isSendByDriver  : False,
+                isSendByLocalHw : True,
+                reserved0       : unpack(0),
+                commonHeader    : commonHeader
+            };
+            desc0.commonHeader.hasNextFrag = True;
+
+            let desc1 = MetaReportQueueAckExtraDesc{
+                preBitmap   :   bitmapInfo.oldEntry.data,
+                reserved2   :   unpack(0),
+                reserved1   :   unpack(0),
+                reserved0   :   unpack(0),
+                commonHeader:   commonHeader
+            };
+
+            return vec(pack(desc0), pack(desc1));
+        endfunction
+
+        let vecToEnq = genDescVector;
+        if (metaReportMimoQueue.enqReadyN(2)) begin
+            metaReportMimoQueue.enq(2, vecToEnq);
+            genAutoAckReportDescriptorPipelineQueue.deq;
 
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnPreMerge"),
-            //     toBlue(", channelIdx=%d"), idx,
-            //     toBlue(", preMergeReq="), fshow(preMergeReq)
+            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckReportDescriptor"),
+            //     toBlue(", vecToEnq="), fshow(vecToEnq)
             // );
-        endrule
-    end
+        end
+        
+    endrule
 
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-        rule handleMergedBitmap;
-            let respMaybe = psnMergeAndStorage.respPipeOutVec[idx].first;
-            psnMergeAndStorage.respPipeOutVec[idx].deq;
-
-            if (respMaybe matches tagged Valid .resp) begin
-                let hasPacketLost = resp.isShiftWindow && resp.windowShiftedOutData != -1;
-                let needSendAckNow = hasPacketLost;
-                let autoAckMetaUpdateReq = AtomicUpdateStorageUpdateReq {
-                    rowAddr: resp.rowAddr,
-                    reqData: needSendAckNow
-                };
-                autoAckMetaAtomicUpdateStorage.reqPipeInVec[idx].enq(tagged Valid autoAckMetaUpdateReq);
-                genAutoAckEthPacketPipelineQueueVec[idx].enq(resp);
-                qpContextForAutoAckQuerySrvPipeInB0AdapterVec[idx].enq(ReadReqQPC{
-                    qpn: genQPN(resp.rowAddr, ?),
-                    needCheckKey: False
-                });
-
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
-                //     toBlue(", channelIdx=%d"), idx,
-                //     toBlue(", respMaybe="), fshow(respMaybe),
-                //     toBlue(", hasPacketLost="), fshow(hasPacketLost),
-                //     toBlue(", needSendAckNow="), fshow(needSendAckNow)
-                // );
-            end
-            else begin
-                autoAckMetaAtomicUpdateStorage.reqPipeInVec[idx].enq(tagged Invalid);
-            end
-
-            
-        endrule
-
-        rule genAutoAckEthPacket;
-
-            let msnInfoMaybe = autoAckMetaAtomicUpdateStorage.respPipeOutVec[idx].first;
-            autoAckMetaAtomicUpdateStorage.respPipeOutVec[idx].deq;
-
-            if (msnInfoMaybe matches tagged Valid .msnInfo) begin
-                let qpCtxRespMaybe = qpContextForAutoAck.querySrvVec[idx].response.first;
-                qpContextForAutoAck.querySrvVec[idx].response.deq;
-                let bitmapInfo = genAutoAckEthPacketPipelineQueueVec[idx].first;
-                genAutoAckEthPacketPipelineQueueVec[idx].deq;
-
-                let needSendAckNow = msnInfo.newValue.hasReported;
-                let isPacketLost = needSendAckNow;
-
-                if (needSendAckNow) begin
-                    if (qpCtxRespMaybe matches tagged Valid .qpCtxResp) begin
-                        let thinMacIpUdpMetaDataForSend = ThinMacIpUdpMetaDataForSend {
-                            dstMacAddr: qpCtxResp.peerMacAddr,
-                            ipDscp: 0,
-                            ipEcn: 0,
-                            dstIpAddr: qpCtxResp.peerIpAddr,
-                            srcPort: qpCtxResp.localUdpPort,
-                            dstPort: fromInteger(valueOf(UDP_PORT_RDMA)),
-                            udpPayloadLen: fromInteger(valueOf(RDMA_FIXED_HEADER_BYTE_NUM)),
-                            ethType: fromInteger(valueOf(ETH_TYPE_IP))
-                        };
-
-                        let rdmaSendPacketMeta = RdmaSendPacketMeta {
-                            header:RdmaBthAndExtendHeader{
-                                bth: BTH {
-                                    trans    : TRANS_TYPE_RC,
-                                    opcode   : ACKNOWLEDGE,
-                                    solicited: False,
-                                    isRetry  : False,
-                                    padCnt   : unpack(0),
-                                    tver     : unpack(0),
-                                    msn      : msnInfo.oldValue.ackMsn,  // msn should start from 0, if use newValue's msn, it becomes one
-                                    fecn     : unpack(0),
-                                    becn     : unpack(0),
-                                    resv6    : unpack(0),
-                                    dqpn     : qpCtxResp.peerQPN,
-                                    ackReq   : False,
-                                    resv7    : unpack(0),
-                                    psn      : zeroExtendLSB(bitmapInfo.newEntry.leftBound)
-                                },
-                                rdmaExtendHeaderBuf: buildRdmaExtendHeaderBuffer(pack(AETH{
-                                        preBitmap:  bitmapInfo.oldEntry.data,
-                                        newBitmap:  bitmapInfo.newEntry.data,
-                                        isPacketLost: True,
-                                        isWindowSlided: True,
-                                        isSendByDriver: False,
-                                        resv0: unpack(0),
-                                        preBitmapPsn: zeroExtendLSB(bitmapInfo.oldEntry.leftBound)
-                                    }))
-                            },
-                            hasPayload: False
-                        };
-                        ethernetPacketGeneratorMacIpUdpMetaPipeInAdapterVec[idx].enq(thinMacIpUdpMetaDataForSend);
-                        ethernetPacketGeneratorRdmaPacketMetaPipeInAdapterVec[idx].enq(rdmaSendPacketMeta);
-
-                        let qpnKeyPart = qpCtxResp.qpnKeyPart;
-                        genAutoAckReportDescriptorPipelineQueueVec[idx].enq(tuple3(bitmapInfo, msnInfo, qpnKeyPart));
-                    end
-                    else begin
-                        immFail(
-                            "qp ctx must be perpared.",
-                            $format("")
-                        );
-                    end
-                end
-
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckEthPacket"),
-                //     toBlue(", channelIdx=%d"), idx,
-                //     toBlue(", qpCtxRespMaybe="), fshow(qpCtxRespMaybe),
-                //     toBlue(", msnInfoMaybe="), fshow(msnInfoMaybe),
-                //     toBlue(", needSendAckNow="), fshow(needSendAckNow),
-                //     toBlue(", isPacketLost="), fshow(isPacketLost)
-                // );
-            end
-
-
-        endrule
-
-
-        rule genAutoAckReportDescriptor;
-            let {bitmapInfo, msnInfo, qpnKeyPart} = genAutoAckReportDescriptorPipelineQueueVec[idx].first;
-            
-
-            // write them in a function to make sure they are all comb logic.
-            function Vector#(NUMERIC_TYPE_TWO, RingbufRawDescriptor) genDescVector();
-                
-                let commonHeader = RingbufDescCommonHead {
-                    valid           : True,
-                    hasNextFrag     : False,
-                    reserved0       : unpack(0),
-                    isExtendOpcode  : False,
-                    opCode          : {pack(TRANS_TYPE_RC), pack(ACKNOWLEDGE)}
-                };
-
-
-                let desc0 = MetaReportQueueAckDesc{
-                    nowBitmap       : bitmapInfo.newEntry.data,
-                    msn             : msnInfo.oldValue.ackMsn,
-                    qpn             : genQPN(msnInfo.rowAddr, qpnKeyPart),
-                    psnNow          : zeroExtendLSB(bitmapInfo.newEntry.leftBound),
-                    reserved2       : unpack(0),
-                    psnBeforeSlide  : zeroExtendLSB(bitmapInfo.oldEntry.leftBound),
-                    reserved1       : unpack(0),
-                    isPacketLost    : True,
-                    isWindowSlided  : True,
-                    isSendByDriver  : False,
-                    isSendByLocalHw : True,
-                    reserved0       : unpack(0),
-                    commonHeader    : commonHeader
-                };
-                desc0.commonHeader.hasNextFrag = True;
-
-                let desc1 = MetaReportQueueAckExtraDesc{
-                    preBitmap   :   bitmapInfo.oldEntry.data,
-                    reserved2   :   unpack(0),
-                    reserved1   :   unpack(0),
-                    reserved0   :   unpack(0),
-                    commonHeader:   commonHeader
-                };
-
-                return vec(pack(desc0), pack(desc1));
-            endfunction
-
-            let vecToEnq = genDescVector;
-            if (metaReportMimoQueueVec[idx].enqReadyN(2)) begin
-                metaReportMimoQueueVec[idx].enq(2, vecToEnq);
-                genAutoAckReportDescriptorPipelineQueueVec[idx].deq;
-
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckReportDescriptor"),
-                //     toBlue(", channelIdx=%d"), idx,
-                //     toBlue(", vecToEnq="), fshow(vecToEnq)
-                // );
-            end
-           
-        endrule
-
-        rule forwardMetaReportDescToOutput;
-            if (metaReportMimoQueueVec[idx].deqReadyN(1)) begin
-                metaReportMimoQueueVec[idx].deq(1);
-                let desc = metaReportMimoQueueVec[idx].first[0];
-                metaReportDescPipeOutQueueVec[idx].enq(desc);
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
-                //     toBlue(", channelIdx=%d"), idx,
-                //     toBlue(", desc="), fshow(desc)
-                // );
-            end
-        endrule
-
-    end
+    rule forwardMetaReportDescToOutput;
+        if (metaReportMimoQueue.deqReadyN(1)) begin
+            metaReportMimoQueue.deq(1);
+            let desc = metaReportMimoQueue.first[0];
+            metaReportDescPipeOutQueue.enq(desc);
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
+            //     toBlue(", desc="), fshow(desc)
+            // );
+        end
+        else if (pollingTimeoutDescQueue.notEmpty) begin  
+            let desc = pollingTimeoutDescQueue.first;
+            metaReportDescPipeOutQueue.enq(desc);
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
+            //     toBlue(", desc="), fshow(desc)
+            // );
+        end
+    endrule
 
     rule sendPollingReq if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateSendReadReq);
-        psnMergeAndStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
+        bitmapStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         autoAckMetaAtomicUpdateStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         lastReportTimeStorage.putReadReq(pollingQpIdxReg);
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateGetReadResp;
     endrule
 
     rule getPollingResp if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateGetReadResp);
-        let bitmapInfo = psnMergeAndStorage.readOnlyRespPipeOut.first;
+        let bitmapInfo = bitmapStorage.readOnlyRespPipeOut.first;
         let ackMeta = autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.first;
         let lastPollInfo <- lastReportTimeStorage.getReadResp;
-        psnMergeAndStorage.readOnlyRespPipeOut.deq;
+        bitmapStorage.readOnlyRespPipeOut.deq;
         autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.deq;
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateHandleResp;
         pollingQpIdxReg <= pollingQpIdxReg + 1;
@@ -436,7 +385,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
                     reserved0       : unpack(0),
                     commonHeader    : commonHeader
                 };
-                metaReportDescPipeOutQueueVec[2].enq(pack(desc0));
+                pollingTimeoutDescQueue.enq(pack(desc0));
                 lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
 
                 // $display(
@@ -454,24 +403,19 @@ module mkAutoAckGenerator(AutoAckGenerator);
     rule forwardQpResetSignal;
         let req = resetReqPipeInQueue.first;
         resetReqPipeInQueue.deq;
-        psnMergeAndStorage.resetReqPipeIn.enq(req);
+        bitmapStorage.resetReqPipeIn.enq(req);
         autoAckMetaAtomicUpdateStorage.resetReqPipeIn.enq(req);
     endrule
 
-    interface reqPipeInVec = reqPipeInVecInst;
-    interface ackEthPacketPipeOutVec = ackEthPacketPipeOutVecInst;
-
-    interface qpcUpdateSrv = qpContextForAutoAck.updateSrv;
-
-    interface metaReportDescPipeOutVec = metaReportDescPipeOutVecInst;
+    interface reqPipeIn = toPipeInB0(reqPipeInQueue);
+    
+    interface macIpUdpMetaPipeOut = toPipeOut(ethernetPacketGeneratorMacIpUdpMetaPipeOutQueue);
+    interface rdmaPacketMetaPipeOut = toPipeOut(ethernetPacketGeneratorRdmaPacketMetaPipeOutQueue);
+    interface rdmaPayloadPipeOut = toPipeOut(rdmaPayloadPipeOutQueue);
+    interface metaReportDescPipeOut = toPipeOut(metaReportDescPipeOutQueue);
 
     interface resetReqPipeIn = toPipeIn(resetReqPipeInQueue);
     // interface resetRespPipeOut = allPacketPsnBitmapStorage.resetRespPipeOut;
 
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
-        for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
-            ethernetPacketGeneratorVec[idx].setLocalNetworkSettings(networkSettings);
-        end
-    endmethod
 endmodule
 

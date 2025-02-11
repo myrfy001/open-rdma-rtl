@@ -139,7 +139,7 @@ module mkRQ(RQ);
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_INPUT_DATA_STREAM_BUF));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
 
-    QueuedClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClientP("qpcQueryCltInst");
+    QueuedClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClientP("qpcQueryCltInst in RQ");
     QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientP("mrTableQueryCltInst");
 
     FIFOF#(PayloadConReq) conReqPipeOutQ <- mkSizedFIFOF(4);
@@ -688,7 +688,8 @@ module mkRQ(RQ);
             if (needUpdatePsnBitmap) begin
                 autoAckGenReqPipeOutQueue.enq(AutoAckGeneratorReq{
                     psn: bth.psn,
-                    qpn: bth.dqpn
+                    qpn: bth.dqpn,
+                    qpc: pipelineEntryIn.qpc
                 });
             end
 

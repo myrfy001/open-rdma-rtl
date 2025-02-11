@@ -2,11 +2,14 @@ import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
 import Clocks :: *;
+import Arbiter :: *;
+import Vector :: *;
 
 
 import ConnectableF :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
+
 
 import CsrRootConnector :: *;
 import CsrAddress :: *;
@@ -428,11 +431,12 @@ typedef Bit#( PACKET_GEN_AND_PARSE_MAX_DWORD_CNT_PER_PACKET_WIDTH)         Align
 
 interface PacketGen;
     interface PipeInB0#(WorkQueueElem) wqePipeIn;
-    interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
+
+    interface PipeOut#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaSendPacketMeta)          rdmaPacketMetaPipeOut;
+    interface PipeOut#(DataStream)                  rdmaPayloadPipeOut;
 
     interface ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
-
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 
     interface PipeOut#(PayloadGenReq) genReqPipeOut;
     interface PipeIn#(DataStream) genRespPipeIn;
@@ -459,8 +463,6 @@ module mkPacketGen(PacketGen);
     // so we need at least 3 storage slot to make it fully-pipelined
     FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkSizedFIFOF(3);
 
-    EthernetPacketGenerator ethernetPacketGen <- mkEthernetPacketGenerator;
-    mkConnection(toPipeOut(perPacketPayloadDataStreamQ), ethernetPacketGen.rdmaPayloadPipeIn);   // already Nr
 
     Reg#(PSN) psnReg <- mkRegU;
 
@@ -475,8 +477,9 @@ module mkPacketGen(PacketGen);
     let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 256);
     let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 256);  // to hold enough pcie read delay
     let wqeToPacketChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(wqeToPacketChunker.requestPipeIn, 1, False, "wqeToPacketChunkerRequestPipeInAdapter");
-    let ethernetPacketGenRdmaPacketMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.rdmaPacketMetaPipeIn, 256);  // to hold enough pcie read delay
-    let ethernetPacketGenMacIpUdpMetaPipeInAdapter <- mkPipeInB0ToPipeIn(ethernetPacketGen.macIpUdpMetaPipeIn, 256); // to hold enough pcie read delay
+    FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOutQueue <- mkSizedFIFOF(256);  // to hold enough pcie read delay
+    FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeOutQueue <- mkSizedFIFOF(256);  // to hold enough pcie read delay
+
     rule debugRule;
         // if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
         if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
@@ -696,7 +699,7 @@ module mkPacketGen(PacketGen);
                 },
                 hasPayload: hasPayload
             };
-            ethernetPacketGenRdmaPacketMetaPipeInAdapter.enq(rdmaPacketMeta);
+            rdmaPacketMetaPipeOutQueue.enq(rdmaPacketMeta);
         end
         else begin
             immFail(
@@ -723,7 +726,7 @@ module mkPacketGen(PacketGen);
             udpPayloadLen: udpPayloadLen,
             ethType: fromInteger(valueOf(ETH_TYPE_IP))
         };
-        ethernetPacketGenMacIpUdpMetaPipeInAdapter.enq(macIpUdpMeta);
+        macIpUdpMetaPipeOutQueue.enq(macIpUdpMeta);
 
         $display(
             "time=%0t:", $time, toGreen(" mkPacketGen genPacketHeaderStep2"),
@@ -756,10 +759,12 @@ module mkPacketGen(PacketGen);
     endrule
 
 
-    method setLocalNetworkSettings = ethernetPacketGen.setLocalNetworkSettings; 
-
     interface wqePipeIn = toPipeInB0(wqePipeInQ);
-    interface packetPipeOut = ethernetPacketGen.ethernetPacketPipeOut;
+
+    interface macIpUdpMetaPipeOut = toPipeOut(macIpUdpMetaPipeOutQueue);
+    interface rdmaPacketMetaPipeOut = toPipeOut(rdmaPacketMetaPipeOutQueue);
+    interface rdmaPayloadPipeOut = toPipeOut(perPacketPayloadDataStreamQ);
+
     interface mrTableQueryClt = mrTableQueryCltInst.clt;
     interface genReqPipeOut = toPipeOut(genReqPipeOutQ);
     interface genRespPipeIn = toPipeIn(genRespPipeInQ);
@@ -797,3 +802,114 @@ module mkPacketParse(PacketParse);
     method setLocalNetworkSettings      = inputPacketClassifier.setLocalNetworkSettings; 
 endmodule
 
+
+interface PacketGenReqArbiter;
+    interface Vector#(NUMERIC_TYPE_THREE, PipeInB0#(ThinMacIpUdpMetaDataForSend)) macIpUdpMetaPipeInVec;
+    interface Vector#(NUMERIC_TYPE_THREE, PipeInB0#(RdmaSendPacketMeta)) rdmaPacketMetaPipeInVec;
+    interface Vector#(NUMERIC_TYPE_THREE, PipeInB0#(DataStream)) rdmaPayloadPipeInVec;
+
+    interface PipeOut#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaSendPacketMeta) rdmaPacketMetaPipeOut;
+    interface PipeOut#(DataStream) rdmaPayloadPipeOut;
+endinterface
+
+
+module mkPacketGenReqArbiter(PacketGenReqArbiter);
+    Vector#(NUMERIC_TYPE_THREE, PipeInB0#(ThinMacIpUdpMetaDataForSend)) macIpUdpMetaPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_THREE, PipeInB0#(RdmaSendPacketMeta)) rdmaPacketMetaPipeInVecInst = newVector;
+    Vector#(NUMERIC_TYPE_THREE, PipeInB0#(DataStream)) rdmaPayloadPipeInVecInst = newVector;
+
+    Vector#(NUMERIC_TYPE_THREE, PipeInAdapterB0#(ThinMacIpUdpMetaDataForSend)) macIpUdpMetaPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
+    Vector#(NUMERIC_TYPE_THREE, PipeInAdapterB0#(RdmaSendPacketMeta)) rdmaPacketMetaPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
+    Vector#(NUMERIC_TYPE_THREE, PipeInAdapterB0#(DataStream)) rdmaPayloadPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
+
+    
+    FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOutQueue <- mkFIFOF;
+    FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeOutQueue <- mkFIFOF;
+    FIFOF#(DataStream) rdmaPayloadPipeOutQueue <- mkFIFOF;
+
+    Arbiter_IFC#(NUMERIC_TYPE_THREE) arbiter <- mkArbiter(False);
+
+    Reg#(Bool) isForwardFirstBeatReg <- mkReg(True);
+
+    Reg#(Bit#(TLog#(NUMERIC_TYPE_THREE))) curChannelIdxReg <- mkRegU;
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(NUMERIC_TYPE_THREE); channelIdx = channelIdx + 1) begin
+        macIpUdpMetaPipeInVecInst[channelIdx]       = macIpUdpMetaPipeInQueueVec[channelIdx].pipeInIfc;
+        rdmaPacketMetaPipeInVecInst[channelIdx]     = rdmaPacketMetaPipeInQueueVec[channelIdx].pipeInIfc;
+        rdmaPayloadPipeInVecInst[channelIdx]        = rdmaPayloadPipeInQueueVec[channelIdx].pipeInIfc;
+    end
+
+    rule sendArbitReq if (isForwardFirstBeatReg);
+        for (Integer channelIdx = 0; channelIdx < valueOf(NUMERIC_TYPE_THREE); channelIdx = channelIdx + 1) begin
+            if (macIpUdpMetaPipeInQueueVec[channelIdx].notEmpty && rdmaPacketMetaPipeInQueueVec[channelIdx].notEmpty) begin
+                arbiter.clients[channelIdx].request;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkPacketGenReqArbiter sendArbitReq"),
+                //     toBlue(", channelIdx=%d"), channelIdx
+                // );
+            end
+        end
+    endrule
+
+
+    rule recvArbitResp if (isForwardFirstBeatReg);
+        Maybe#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaMaybe = tagged Invalid;
+        RdmaSendPacketMeta rdmaMeta = ?;
+        Bit#(TLog#(NUMERIC_TYPE_THREE)) curChannelIdx = 0;
+
+        for (Integer channelIdx = 0; channelIdx < valueOf(NUMERIC_TYPE_THREE); channelIdx = channelIdx + 1) begin
+            if (arbiter.clients[channelIdx].grant) begin
+                macIpUdpMetaMaybe = tagged Valid macIpUdpMetaPipeInQueueVec[channelIdx].first;
+                rdmaMeta      = rdmaPacketMetaPipeInQueueVec[channelIdx].first;
+                macIpUdpMetaPipeInQueueVec[channelIdx].deq;
+                rdmaPacketMetaPipeInQueueVec[channelIdx].deq;
+
+                curChannelIdx = fromInteger(channelIdx);
+            end
+        end
+
+        if (macIpUdpMetaMaybe matches tagged Valid .macIpUdpMeta) begin
+            macIpUdpMetaPipeOutQueue.enq(macIpUdpMeta);
+            rdmaPacketMetaPipeOutQueue.enq(rdmaMeta);
+            if (rdmaMeta.hasPayload) begin
+                let ds = rdmaPayloadPipeInQueueVec[curChannelIdx].first;
+                rdmaPayloadPipeInQueueVec[curChannelIdx].deq;
+                isForwardFirstBeatReg <= ds.isLast;
+                curChannelIdxReg <= curChannelIdx;
+                rdmaPayloadPipeOutQueue.enq(ds);
+            end
+           
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkPacketGenReqArbiter forward beat first"),
+            //     toBlue(", macIpUdpMeta="), fshow(macIpUdpMeta),
+            //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
+            // );
+        end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPacketGenReqArbiter recvArbitResp"),
+        //     toBlue(", wmMaybe="), fshow(wmMaybe),
+        //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+        // );
+    endrule
+
+    rule forwardMoreBeat if (!isForwardFirstBeatReg);
+        let ds  = rdmaPayloadPipeInQueueVec[curChannelIdxReg].first;
+        rdmaPayloadPipeInQueueVec[curChannelIdxReg].deq;
+        rdmaPayloadPipeOutQueue.enq(ds);
+        isForwardFirstBeatReg <= ds.isLast;
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkPacketGenReqArbiter forwardMoreBeat"),
+            toBlue(", ds="), fshow(ds)
+        );
+    endrule
+
+    interface macIpUdpMetaPipeInVec     = macIpUdpMetaPipeInVecInst;
+    interface rdmaPacketMetaPipeInVec   = rdmaPacketMetaPipeInVecInst;
+    interface rdmaPayloadPipeInVec      = rdmaPayloadPipeInVecInst;
+
+    interface macIpUdpMetaPipeOut       = toPipeOut(macIpUdpMetaPipeOutQueue);
+    interface rdmaPacketMetaPipeOut     = toPipeOut(rdmaPacketMetaPipeOutQueue);
+    interface rdmaPayloadPipeOut        = toPipeOut(rdmaPayloadPipeOutQueue);
+endmodule

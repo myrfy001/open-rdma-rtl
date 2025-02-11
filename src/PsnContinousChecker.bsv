@@ -83,7 +83,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Add#(c__, szWideShiftOffset, szBoundary),
         Add#(d__, szWideShiftOffset, TLog#(szData)),
         FShow#(BitmapWindowStorageUpdateReq),
-        Add#(f__, szBoundary, TLog#(szData)),
+        Add#(f__, TLog#(szData), szBoundary),
         Add#(e__, TLog#(szStride), SizeOf#(PSN)),
         Add#(szBoundary, g__, SizeOf#(PSN)),
         FShow#(tRowAddr),
@@ -197,7 +197,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
 
 
-        Bit#(TLog#(szData)) bitShiftCnt = zeroExtend(pack(boundaryDeltaAbs)) << valueOf(TLog#(szStride));
+        Bit#(TLog#(szData)) bitShiftCnt = truncate(pack(boundaryDeltaAbs)) << valueOf(TLog#(szStride));
         tData allOneData = unpack(-1);
         if (isShiftOutOfBoundary) begin
             newestAlreadyExistEntry.data = unpack(0);

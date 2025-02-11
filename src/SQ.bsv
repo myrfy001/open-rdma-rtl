@@ -23,11 +23,12 @@ import IoChannels :: *;
 
 interface SQ;
     interface PipeInB0#(WorkQueueElem) wqePipeIn;
-    interface PipeOut#(IoChannelEthDataStream) packetPipeOut;
+
+    interface PipeOut#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaSendPacketMeta)          rdmaPacketMetaPipeOut;
+    interface PipeOut#(DataStream)                  rdmaPayloadPipeOut;
 
     interface ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
-
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 
     interface PipeOut#(PayloadGenReq) payloadGenReqPipeOut;
     interface PipeIn#(DataStream) payloadGenRespPipeIn;
@@ -39,9 +40,12 @@ module mkSQ(SQ);
     let packetGen <- mkPacketGen;
     
     interface wqePipeIn = packetGen.wqePipeIn;
-    interface packetPipeOut = packetGen.packetPipeOut;
+    
+    interface macIpUdpMetaPipeOut = packetGen.macIpUdpMetaPipeOut;
+    interface rdmaPacketMetaPipeOut = packetGen.rdmaPacketMetaPipeOut;
+    interface rdmaPayloadPipeOut = packetGen.rdmaPayloadPipeOut;
+
     interface mrTableQueryClt = packetGen.mrTableQueryClt;
-    method setLocalNetworkSettings = packetGen.setLocalNetworkSettings; 
 
     interface payloadGenReqPipeOut = packetGen.genReqPipeOut;
     interface payloadGenRespPipeIn = packetGen.genRespPipeIn;
