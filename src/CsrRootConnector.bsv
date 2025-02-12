@@ -64,6 +64,10 @@ module mkCsrRootConnector(CsrRootConnector);
                 value: ?,
                 isWrite: False
             });
+            // $display(
+            //     "time=%0t:", $time, toGreen("mkCsrRootConnector forwardReadReq"),
+            //     ", readMeta=", fshow(readMeta)
+            // );
         end
         else if (busWriteMetaPipeInQueue.notEmpty && busWriteDataPipeInQueue.notEmpty) begin
             let writeMeta = busWriteMetaPipeInQueue.first;
@@ -77,6 +81,12 @@ module mkCsrRootConnector(CsrRootConnector);
                 isWrite: True
             };
             csrReqQueue.enq(req);
+
+            // $display(
+            //     "time=%0t:", $time, toGreen("mkCsrRootConnector forwardWriteReq"),
+            //     ", writeMeta=", fshow(writeMeta),
+            //     ", writeData=", fshow(writeData)
+            // );
         end
     endrule
 
@@ -90,6 +100,10 @@ module mkCsrRootConnector(CsrRootConnector);
             isFirst: True,
             isLast: True
         });
+        // $display(
+        //     "time=%0t:", $time, toGreen("mkCsrRootConnector forwardReadResp"),
+        //     ", resp=", fshow(resp)
+        // );
     endrule
 
     interface IoChannelMemorySlavePipe dmaSidePipeIfc;

@@ -1516,9 +1516,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     Reg#(CpltBufferCpltTlpInfoBufferAddr)   curCpltTlpBufferAddrToAllocReg <- mkReg(0);  
 
-    Vector#(PCIE_SEGMENT_CNT, AutoInferBramQueuedOutput#(RtilePcieRxPayloadStorageAddr, PcieTlpDataSegment))            dataStreamStorageVec            <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
-    Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaStorageDoubleWriteVec   <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
-    AutoInferBramQueuedOutput#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt)                                 cpltTlpInfoStorage              <- mkAutoInferBramQueuedOutput(False, "");
+    Vector#(PCIE_SEGMENT_CNT, AutoInferBramQueuedOutput#(RtilePcieRxPayloadStorageAddr, PcieTlpDataSegment))            dataStreamStorageVec            <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkPcieCompletionBuffer dataStreamStorageVec"));
+    Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaStorageDoubleWriteVec   <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkPcieCompletionBuffer slotMetaStorageDoubleWriteVec"));
+    AutoInferBramQueuedOutput#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt)                                 cpltTlpInfoStorage              <- mkAutoInferBramQueuedOutput(False, "", "mkPcieCompletionBuffer cpltTlpInfoStorage");
 
     Integer slotMetaStorageBramIdxForPtrUpdateRead = 0;
     Integer slotMetaStorageBramIdxForOutputStatePollRead = 1;
@@ -2523,10 +2523,10 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, 
             Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, 
-                    AutoInferBramQueuedOutput#(RtilePcieTxChannelBufferAddr, DATA)))  dataStreamStorageVec  <- replicateM(replicateM(mkAutoInferBramQueuedOutput(False, "")));
+                    AutoInferBramQueuedOutput#(RtilePcieTxChannelBufferAddr, DATA)))  dataStreamStorageVec  <- replicateM(replicateM(mkAutoInferBramQueuedOutput(False, "", "mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor dataStreamStorageVec")));
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, 
-            AutoInferBramQueuedOutput#(RtilePcieTxChannelBufferAddr, PcieTlpHeaderBuffer))  tlpHeaderStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+            AutoInferBramQueuedOutput#(RtilePcieTxChannelBufferAddr, PcieTlpHeaderBuffer))  tlpHeaderStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor tlpHeaderStorageVec"));
 
     Reg#(RtilePcieTxChannelBufferAddr)      curRowAddrReg               <- mkReg(0);
     Reg#(RtilePcieTxChannelBufferAddr)      startRowAddrReg             <- mkReg(0);
@@ -3616,7 +3616,7 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
 
     // TODO: try optmize this buffer, don't storage all input datastream only for seldom completer's request.
     // maybe we canextract and embed all data (32 or 64 bits) into RtilePcieRxTlpInfo
-    Vector#(PCIE_SEGMENT_CNT, AutoInferBramQueuedOutput#(RtilePcieRxPayloadStorageAddr, PcieTlpDataSegment))    dataStreamStorageVec            <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+    Vector#(PCIE_SEGMENT_CNT, AutoInferBramQueuedOutput#(RtilePcieRxPayloadStorageAddr, PcieTlpDataSegment))    dataStreamStorageVec            <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkRtilePcieCompleter dataStreamStorageVec"));
 
 
     // Pipeline Queues:

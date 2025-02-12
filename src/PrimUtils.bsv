@@ -794,7 +794,7 @@ module mkAutoInferBramSingleClockWr#(Bool bypassWriteData, String initFile)(Auto
 endmodule
 
 // ungarded interface, use with care!
-module mkAutoInferBramUG#(Bool bypassWriteData, String initFile)(AutoInferBram#(tAddr, tData)) provisos (
+module mkAutoInferBramUG#(Bool bypassWriteData, String initFile, String debugName)(AutoInferBram#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(tAddr),
@@ -830,7 +830,7 @@ module mkAutoInferBramUG#(Bool bypassWriteData, String initFile)(AutoInferBram#(
         immAssert(
             illegalReadMonitorCounter == 1,
             "mkAutoInferBramUG, illegal read, illegalReadMonitorCounter must be 1, 0 means read not ready, and greater than 0 means some data is lost due to not read timely.",
-            $format("illegalReadMonitorCounter=", fshow(illegalReadMonitorCounter))
+            $format("debugName=", fshow(debugName), ", illegalReadMonitorCounter=", fshow(illegalReadMonitorCounter))
         );
         illegalReadMonitorCounter.decr(1);
 
@@ -842,7 +842,7 @@ module mkAutoInferBramUG#(Bool bypassWriteData, String initFile)(AutoInferBram#(
 endmodule
 
 
-module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoInferBramQueuedOutput#(tAddr, tData)) provisos (
+module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile, String debugName)(AutoInferBramQueuedOutput#(tAddr, tData)) provisos (
         Bits#(tAddr, szAddr),
         Bits#(tData, szData),
         Bounded#(tAddr),
@@ -852,7 +852,7 @@ module mkAutoInferBramQueuedOutput#(Bool bypassWriteData, String initFile)(AutoI
         FShow#(tData)
     );
 
-    AutoInferBram#(tAddr, tData) storage <- mkAutoInferBramUG(bypassWriteData, initFile);
+    AutoInferBram#(tAddr, tData) storage <- mkAutoInferBramUG(bypassWriteData, initFile, debugName);
 
     FIFOF#(Bit#(0)) hasPendingReadReqSignalQueue <- mkUGFIFOF;
     FIFOF#(tData)   outputQ <- mkUGSizedFIFOF(3);

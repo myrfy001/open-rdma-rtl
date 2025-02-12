@@ -142,6 +142,10 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     let csrRootConnector <- mkCsrRootConnector;
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
+            // $display(
+            //     "time=%0t:", $time, toGreen("mkBsvTopWithoutHardIpInstance csrMatchFunc"),
+            //     ", req=", fshow(req)
+            // );
             let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
             let addrBlockMask = ~fromInteger(valueOf(CSR_ADDR_BLOCK_SIZE_FOR_RINGBUFS) - 1);
             let maskedAddr = addrBlockMask & regIdx;
@@ -256,7 +260,11 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
-        actionvalue
+        actionvalue        
+            // $display(
+            //     "time=%0t:", $time, toGreen("mkRingbufAndDescriptorHandler csrMatchFunc"),
+            //     ", req=", fshow(req)
+            // );
             if (req.isWrite) begin
                 case (req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM))
                     // QP ring bufs

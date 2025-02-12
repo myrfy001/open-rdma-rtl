@@ -79,6 +79,10 @@ typedef TLog#(DATA_BUS_BYTE_WIDTH)          DATA_BUS_BYTE_NUM_WIDTH; // 5 (bus 2
 typedef TLog#(DATA_BUS_WIDTH)               DATA_BUS_BIT_NUM_WIDTH; // 8 (bus 256b), 9 (bus 512b)
 
 typedef 256 DESC_DATA_WIDTH;
+typedef TDiv#(DESC_DATA_WIDTH, BYTE_WIDTH)  DESC_DATA_BUS_BYTE_WIDTH; // 32 
+typedef TLog#(DESC_DATA_BUS_BYTE_WIDTH)     DESC_DATA_BUS_BYTE_NUM_WIDTH; // 5 
+typedef TLog#(DESC_DATA_WIDTH)              DESC_DATA_BUS_BIT_NUM_WIDTH; // 8
+
 typedef Bit#(DESC_DATA_WIDTH)               DESC_DATA;
 
 

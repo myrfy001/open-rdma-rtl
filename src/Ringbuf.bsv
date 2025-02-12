@@ -175,7 +175,7 @@ module mkRingbufH2c(RingbufNumber qIdx, RingbufH2c#(szPtrIdx) ifc) provisos(
         nextReadBlockAlignedPointer = nextReadBlockAlignedPointer + 1;
         nextReadBlockAlignedPointer = unpack(pack(nextReadBlockAlignedPointer) << valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)));
         
-        ADDR dmaReadStartAddr = baseAddrReg + (zeroExtend(pack(tailShadowReg.idx)) << valueOf(DATA_BUS_BYTE_NUM_WIDTH));
+        ADDR dmaReadStartAddr = baseAddrReg + (zeroExtend(pack(tailShadowReg.idx)) << valueOf(DESC_DATA_BUS_BYTE_NUM_WIDTH));
 
         if (needDoDMA) begin
 
@@ -332,7 +332,7 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
 
         Bool needDoDMA = isBatchDelayCounterFired && bufQ.notEmpty && (pack(freeSlotCnt) > 0);
         if (needDoDMA) begin
-            ADDR dmaWriteStartAddr = baseAddrReg + (zeroExtend(pack(headShadowReg.idx)) << valueOf(DATA_BUS_BYTE_NUM_WIDTH));
+            ADDR dmaWriteStartAddr = baseAddrReg + (zeroExtend(pack(headShadowReg.idx)) << valueOf(DESC_DATA_BUS_BYTE_NUM_WIDTH));
             dmaWriteAddrQ.enq(RingbufDmaWriteReq{
                 addr: dmaWriteStartAddr,
                 zeroBasedDescWriteCnt: zeroBasedDescWriteCnt
@@ -453,16 +453,14 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
 
     let needWidthConvert = valueOf(DATA_BUS_WIDTH) != valueOf(DESC_DATA_WIDTH);
 
-    Reg#(Bit#(TMax#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH))))) writeDataWidthConvertIdxNowReg <- mkReg(0);
-    Reg#(Bit#(TMax#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH))))) readDataWidthConvertIdxNowReg <- mkReg(0);
-    Reg#(Bit#(TMax#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH))))) readDataWidthConvertIdxTargetReg <- mkReg(0);
+    Reg#(Bit#(TMax#(1, TAdd#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH)))))) writeDataWidthConvertDescIdxInBeatNowReg <- mkReg(0);
+    Reg#(Bit#(TMax#(1, TAdd#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH)))))) readDataWidthConvertDescIdxInBeatNowReg <- mkReg(0);
+    Reg#(Bit#(TMax#(1, TAdd#(1, TLog#(TDiv#(DATA_BUS_WIDTH, DESC_DATA_WIDTH)))))) readDataWidthConvertDescIdxInBeatTargetReg <- mkReg(0);
 
     Reg#(DATA) writeDataWidthConvertBufReg <- mkRegU;
-    Reg#(DATA) readDataWidthConvertBufReg  <- mkRegU;
+    Reg#(IoChannelMemoryAccessDataStream) readDataWidthConvertBufReg  <- mkRegU;
     Reg#(Bool) writeDataWidthConvertIsFirstFlagReg <- mkReg(True);
     Reg#(Bool) readDataWidthConvertIsFirstFlagReg <- mkReg(True);
-
-
 
     rule forwardWriteAddr;
         let req = dmaWriteReqPipeInQ.first;
@@ -488,15 +486,15 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
             let wideNewData = zeroExtend(descDs.data);
             let wideExistData = descDs.isFirst ? wideNewData : writeDataWidthConvertBufReg;
 
-            BusBitIdx bitShiftOffset = zeroExtend(writeDataWidthConvertIdxNowReg) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH));
+            BusBitIdx bitShiftOffset = zeroExtend(writeDataWidthConvertDescIdxInBeatNowReg) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH));
             let wideShiftedNewData = wideNewData << bitShiftOffset;
 
             let newWideData = wideExistData | wideShiftedNewData;
 
             writeDataWidthConvertBufReg <= newWideData;
             
-            let newIdx = writeDataWidthConvertIdxNowReg + 1;
-            let totalDescInWideBeatNow = zeroExtend(writeDataWidthConvertIdxNowReg) + 1;
+            let newIdx = writeDataWidthConvertDescIdxInBeatNowReg + 1;
+            let totalDescInWideBeatNow = zeroExtend(writeDataWidthConvertDescIdxInBeatNowReg) + 1;
 
             if (newIdx == maxBound || descDs.isLast) begin
                 let ds = DataStream {
@@ -511,7 +509,7 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
                 writeDataWidthConvertIsFirstFlagReg <= descDs.isLast;
             end
 
-            writeDataWidthConvertIdxNowReg <= newIdx;
+            writeDataWidthConvertDescIdxInBeatNowReg <= newIdx;
 
             if (descDs.isLast) begin
                 dmaWriteRespPipeOutQ.enq(True);
@@ -563,13 +561,13 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
 
     if (needWidthConvert) begin
         rule forwardReadResp;
-            let wideData = readDataWidthConvertBufReg;
-            let targetIdx = readDataWidthConvertIdxTargetReg;
-            let nowIdx = readDataWidthConvertIdxNowReg;
-            if (readDataWidthConvertIsFirstFlagReg) begin
+            let wideDataDs = readDataWidthConvertBufReg;
+            let targetIdx = readDataWidthConvertDescIdxInBeatTargetReg;
+            let nowIdx = readDataWidthConvertDescIdxInBeatNowReg;
+            if (nowIdx == 0) begin
                 let dmaResp = dmaReadDataPipeInQueue.first;
                 dmaReadDataPipeInQueue.deq;
-                wideData = dmaResp.data;
+                wideDataDs = dmaResp;
                 nowIdx = 1;
                 targetIdx = truncate(dmaResp.byteNum >> valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)));
 
@@ -582,11 +580,11 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
             end
             
 
-            let isLast = targetIdx == nowIdx;
+            let isLast = (targetIdx == nowIdx) && wideDataDs.isLast;
 
             let resp = RingbufDmaReadResp {
                 data: DescDataStream {
-                    data: truncate(wideData),
+                    data: truncate(wideDataDs.data),
                     startByteIdx: 0,
                     byteNum: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
                     isFirst: readDataWidthConvertIsFirstFlagReg,
@@ -595,14 +593,18 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
             };
 
             dmaReadRespPipeOutQ.enq(resp);
-            readDataWidthConvertBufReg <= (wideData >> valueOf(USER_LOGIC_DESCRIPTOR_BIT_WIDTH));
-            readDataWidthConvertIdxTargetReg <= targetIdx;
-            readDataWidthConvertIdxNowReg <= nowIdx;
+            wideDataDs.data = wideDataDs.data >> valueOf(USER_LOGIC_DESCRIPTOR_BIT_WIDTH);
+            readDataWidthConvertBufReg <= wideDataDs;
+            readDataWidthConvertDescIdxInBeatTargetReg <= targetIdx;
+            readDataWidthConvertDescIdxInBeatNowReg <= (targetIdx == nowIdx) ? 0 : (nowIdx + 1);
             readDataWidthConvertIsFirstFlagReg <= isLast;
 
             $display(
                 "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardReadResp"),
-                toBlue(", resp="), fshow(resp)
+                toBlue(", resp="), fshow(resp),
+                toBlue(", nowIdx="), fshow(nowIdx),
+                toBlue(", targetIdx="), fshow(targetIdx),
+                toBlue(", wideDataDs="), fshow(wideDataDs)
             );
         endrule
     end

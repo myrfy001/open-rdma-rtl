@@ -889,7 +889,7 @@ module mkFtileMacRxPayloadStorageAndGearBox(FtileMacRxPayloadStorageAndGearBox);
     FIFOF#(FtileMacRxBramBufferWriteReq)    rxBramWriteReqPipeInQ   <- mkLFIFOF;
     PipeInAdapterB0#(FtileMacRxPacketChunkMeta)       packetChunkMetaPipeInQ  <- mkPipeInAdapterB0;
 
-    Vector#(RTILE_RX_BRAM_BLOCK_CNT, AutoInferBramQueuedOutput#(FtileMacRxBramBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+    Vector#(RTILE_RX_BRAM_BLOCK_CNT, AutoInferBramQueuedOutput#(FtileMacRxBramBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkFtileMacRxPayloadStorageAndGearBox dataStreamStorageVec"));
 
     UniDirStreamShifter#(DATA) outputShifter <- mkLsbRightStreamRightShifterG;
 
@@ -1141,7 +1141,7 @@ module mkFtileMacTxUserInputGearboxStorageAndMetaExtractor(FtileMacTxUserInputGe
         bramReadRespPipeOutVecInst[idx] = toPipeOut(bramReadRespPipeOutQueueVec[idx]);
     end
 
-    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, AutoInferBramQueuedOutput#(FtileMacTxChannelBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, ""));
+    Vector#(FTILE_MAC_TX_PING_PONG_CHANNEL_CNT, AutoInferBramQueuedOutput#(FtileMacTxChannelBufferAddr, DATA))  dataStreamStorageVec  <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkFtileMacTxUserInputGearboxStorageAndMetaExtractor dataStreamStorageVec"));
     
     Reg#(FtileMacTxChannelBufferAddr)    curRowAddrReg      <- mkReg(0);
     Reg#(FtileMacTxChannelBufferAddr)    startRowAddrReg    <- mkReg(0);

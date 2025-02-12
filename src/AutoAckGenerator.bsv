@@ -86,7 +86,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Reg#(Dword) curTimeReg <- mkReg(0);
     Reg#(IndexQP) pollingQpIdxReg <- mkReg(0);
 
-    AutoInferBram#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramUG(False, "init_bram_auto_ack_last_report_time.bin");
+    AutoInferBram#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramUG(False, "init_bram_auto_ack_last_report_time.bin", "lastReportTimeStorage");
 
     function AutoAckGenAtomicUpdateStorageEntry atomicUpdateFunction(AutoAckGenAtomicUpdateStorageEntry oldVal, Bool reqVal);
         let needSendAckNow = reqVal;
@@ -158,7 +158,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnBitMapStorage"),
-        //     toBlue(", preMergeReq="), fshow(preMergeReq)
+        //     toBlue(", req="), fshow(req)
         // );
     endrule
 
@@ -344,6 +344,11 @@ module mkAutoAckGenerator(AutoAckGenerator);
         autoAckMetaAtomicUpdateStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         lastReportTimeStorage.putReadReq(pollingQpIdxReg);
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateGetReadResp;
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator sendPollingReq"),
+        //     toBlue(", pollingQpIdxReg="), fshow(pollingQpIdxReg)
+        // );
     endrule
 
     rule getPollingResp if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateGetReadResp);
@@ -356,6 +361,13 @@ module mkAutoAckGenerator(AutoAckGenerator);
         pollingQpIdxReg <= pollingQpIdxReg + 1;
 
         pollingQueryRespPipelineReg <= tuple4(bitmapInfo, ackMeta, lastPollInfo, pollingQpIdxReg);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator getPollingResp"),
+        //     toBlue(", bitmapInfo="), fshow(bitmapInfo),
+        //     toBlue(", ackMeta="), fshow(ackMeta),
+        //     toBlue(", lastPollInfo="), fshow(lastPollInfo),
+        //     toBlue(", pollingQpIdxReg="), fshow(pollingQpIdxReg)
+        // );
     endrule
 
     rule handlePollingResult if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);

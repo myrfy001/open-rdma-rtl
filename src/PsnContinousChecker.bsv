@@ -98,8 +98,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary))) storage = newVector;
-    storage[0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
-    storage[1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin");
+    storage[0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 0");
+    storage[1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 1");
 
 
     // Pipeline Queues
@@ -170,7 +170,11 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         let pipelineEntryIn = stageOneToTwoPipelineQueue.first;
         stageOneToTwoPipelineQueue.deq;
 
-        let entryFromBram <- storage[0].getReadResp;
+        let entryFromBram = ?;
+        if (!pipelineEntryIn.isReset) begin
+            entryFromBram <- storage[0].getReadResp;
+        end
+
         let entryFromForwardCacheMaybe <- storageForwardBuffer.search(pipelineEntryIn.rowAddr);
 
         let newestAlreadyExistEntry = entryFromBram;
@@ -334,8 +338,8 @@ module mkAtomicUpdateStorage#(
 
 
     Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, AtomicUpdateStorageEntry#(tData))) storage = newVector;
-    storage[0] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin");
-    storage[1] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin");
+    storage[0] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 0");
+    storage[1] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 1");
     
     
     PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
@@ -381,60 +385,64 @@ module mkAtomicUpdateStorage#(
         end
     endrule
 
-    // // Merge Pipeline Stage Two
-    // rule getBramQueryRespAndMergeThem;
+    // Merge Pipeline Stage Two
+    rule getBramQueryRespAndMergeThem;
 
-    //     let pipelineEntryIn = stageOneToTwoPipelineQueue.first;
-    //     stageOneToTwoPipelineQueue.deq;
+        let pipelineEntryIn = stageOneToTwoPipelineQueue.first;
+        stageOneToTwoPipelineQueue.deq;
 
-    //     let entryFromBram <- storage[0].getReadResp;
-    //     let entryFromForwardCacheMaybe <- storageForwardBuffer.search(pipelineEntryIn.rowAddr);
 
-    //     let newestAlreadyExistEntry = entryFromBram;
-    //     if (entryFromForwardCacheMaybe matches tagged Valid .entryFromForwardCache) begin
-    //         newestAlreadyExistEntry = entryFromForwardCache;
-    //     end
-    //     let oldEntry = newestAlreadyExistEntry;
+        let entryFromBram = ?;
+        if (!pipelineEntryIn.isReset) begin
+            entryFromBram <- storage[0].getReadResp;
+        end
+        let entryFromForwardCacheMaybe <- storageForwardBuffer.search(pipelineEntryIn.rowAddr);
 
-    //     let newEntry = newestAlreadyExistEntry;
-    //     newEntry.data = updateFunc(newestAlreadyExistEntry.data, pipelineEntryIn.reqData);
+        let newestAlreadyExistEntry = entryFromBram;
+        if (entryFromForwardCacheMaybe matches tagged Valid .entryFromForwardCache) begin
+            newestAlreadyExistEntry = entryFromForwardCache;
+        end
+        let oldEntry = newestAlreadyExistEntry;
+
+        let newEntry = newestAlreadyExistEntry;
+        newEntry.data = updateFunc(newestAlreadyExistEntry.data, pipelineEntryIn.reqData);
                 
-    //     if (!pipelineEntryIn.isReset) begin
-    //         let resp = AtomicUpdateStorageUpdateResp {
-    //             rowAddr : pipelineEntryIn.rowAddr,
-    //             oldValue: oldEntry.data,
-    //             newValue: newEntry.data
-    //         };
-    //         respPipeOutQueue.enq(resp);
-    //     end
+        if (!pipelineEntryIn.isReset) begin
+            let resp = AtomicUpdateStorageUpdateResp {
+                rowAddr : pipelineEntryIn.rowAddr,
+                oldValue: oldEntry.data,
+                newValue: newEntry.data
+            };
+            respPipeOutQueue.enq(resp);
+        end
 
-    //     let bramWriteBackReq = AtomicUpdateStorageStageTwoToThreePipelineEntry {
-    //         rowAddr: pipelineEntryIn.rowAddr,
-    //         newEntry: newEntry
-    //     };
-    //     stageTwoToThreePipelineQueue.enq(bramWriteBackReq);
-    //     storageForwardBuffer.enq(pipelineEntryIn.rowAddr, newEntry);
+        let bramWriteBackReq = AtomicUpdateStorageStageTwoToThreePipelineEntry {
+            rowAddr: pipelineEntryIn.rowAddr,
+            newEntry: newEntry
+        };
+        stageTwoToThreePipelineQueue.enq(bramWriteBackReq);
+        storageForwardBuffer.enq(pipelineEntryIn.rowAddr, newEntry);
 
-    //     // $display("time=%0t", $time, "mkAtomicUpdateStorage 2 doMerge", 
-    //     //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
-    //     //         ", resp=", fshow(resp)
-    //     // ); 
+        // $display("time=%0t", $time, "mkAtomicUpdateStorage 2 doMerge", 
+        //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
+        //         ", resp=", fshow(resp)
+        // ); 
 
-    // endrule
+    endrule
 
-    // // Merge Pipeline Stage Three
-    // rule doBramWriteBack;
+    // Merge Pipeline Stage Three
+    rule doBramWriteBack;
 
-    //     let writeBackReq = stageTwoToThreePipelineQueue.first;
-    //     stageTwoToThreePipelineQueue.deq;
+        let writeBackReq = stageTwoToThreePipelineQueue.first;
+        stageTwoToThreePipelineQueue.deq;
 
-    //     storage[0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
-    //     storage[1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+        storage[0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+        storage[1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
         
-    //     // $display("time=%0t", $time, "mkAtomicUpdateStorage 3 doBramWriteBack", 
-    //     //         ", writeBackReq=", fshow(writeBackReq)
-    //     // );
-    // endrule
+        // $display("time=%0t", $time, "mkAtomicUpdateStorage 3 doBramWriteBack", 
+        //         ", writeBackReq=", fshow(writeBackReq)
+        // );
+    endrule
 
     
     rule handleReadOnlyReq;

@@ -26,7 +26,7 @@ module mkQpContext(QpContext);
     QueuedServerP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServerP("qpcQuerySrvInst");
     QueuedServerP#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServerP("qpcUpdateSrvInst");
 
-    AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "");
+    AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "", "qpcEntryCommonStorage");
 
     FIFOF#(Tuple3#(IndexQP, KeyQP, Bool)) pipeQ <- mkLFIFOF;
 

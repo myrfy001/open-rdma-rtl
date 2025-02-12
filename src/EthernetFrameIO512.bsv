@@ -231,6 +231,10 @@ module mkInputPacketClassifier(InputPacketClassifier);
             fpDebugTime: curFpDebugTime
         });
 
+        if (isAddrMatch && isRDMA && !isError) begin
+            rdmaMacIpUdpMetaOutQ.enq(macIpUdpMeta);
+        end
+
         if (!ds.isLast) begin
             stateReg <= InputPacketClassifierStateHandleMoreBeat;
         end
@@ -404,9 +408,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         fpDebugTimeReg <= curFpDebugTime;
 
         let ds = ethPipeInQ.first;
-        let rawDs = ethPipeInQ.first;
         ethPipeInQ.deq;
-        ds.data = swapEndianByte(ds.data);
 
 
         Tuple2#(MacIpUdpHeader, RdmaBthAndExtendHeader) macIpUdpBthEthTuple = unpack(truncateLSB({swapEndianByte(prevBeatReg.data) , swapEndianByte(ds.data)}));
@@ -428,11 +430,11 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     
 
         if (rdmaMeta.hasPayload) begin
-            if (rawDs.isLast) begin
+            if (ds.isLast) begin
                 let outDs = DataStream{
-                    data: rawDs.data >> valueOf(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT),
+                    data: ds.data >> valueOf(TMul#(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT, BYTE_WIDTH)),
                     startByteIdx: 0,
-                    byteNum: rawDs.byteNum - fromInteger(valueOf(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT)),
+                    byteNum: ds.byteNum - fromInteger(valueOf(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT)),
                     isFirst: True,
                     isLast: True
                 };
@@ -441,16 +443,21 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
                     beatCnt: 1,
                     fpDebugTime: curFpDebugTime
                 });
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleSecondBeat output only beat"),
+                //     toBlue(", ds="), fshow(ds),
+                //     toBlue(", outDs="), fshow(outDs)
+                // );
             end
         end
-        prevBeatReg <= rawDs;
+        prevBeatReg <= ds;
 
         stateReg <= ds.isLast ? RdmaMetaAndPayloadExtractorStateHandleFirstBeat : RdmaMetaAndPayloadExtractorStateHandleMoreBeat;
 
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleSecondBeat"),
         //     toBlue(", ds="), fshow(ds),
-        //     toBlue(", payloadDs="), rdmaMeta.hasPayload ? fshow(payloadDs) : $format("No Payload"),
+        //     toBlue(", payload(with useless lower bits)="), rdmaMeta.hasPayload ? fshow(ds) : $format("No Payload"),
         //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
         // );
         checkFullyPipeline(fpDebugTimeReg, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleSecondBeat");
@@ -515,7 +522,8 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleMoreBeat"),
-        //     toBlue(", ds="), fshow(ds)
+        //     toBlue(", ds="), fshow(ds),
+        //     toBlue(", outDs="), fshow(outDs)
         // );
         checkFullyPipeline(fpDebugTimeReg, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleMoreBeat");
     endrule
@@ -531,7 +539,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         );
 
         let outDs = DataStream{
-            data: prevBeatReg.data >> valueOf(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT),
+            data: prevBeatReg.data >> valueOf(TMul#(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT, BYTE_WIDTH)),
             startByteIdx: 0,
             byteNum: prevBeatReg.byteNum - fromInteger(valueOf(NET_PACKET_PAYLOAD_BYTE_OFFSET_FROM_SECOND_BEAT)),
             isFirst: False,

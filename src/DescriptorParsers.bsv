@@ -132,7 +132,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
 
         RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
         RingbufDescCommonHead descComHdr = unpack(truncate(rawDesc));
-        $display("descComHdr=", fshow(descComHdr));
+
         case (unpack(truncate(descComHdr.opCode)))
             CmdQueueOpcodeUpdateMrTable, CmdQueueOpcodeUpdatePGT: begin
                 mrAndPgtReqQ.enq(rawDesc);

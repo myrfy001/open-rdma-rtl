@@ -25,6 +25,8 @@ BSVSRCDIR = -p +:$(abspath ../src) \
 
 BSV_C_EXT_FILES += \
 	$(abspath ../src)/MockHost.c
+ 
+BLUERDMA_DATA_BUS_WIDTH = 512
 
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)
 MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 \
