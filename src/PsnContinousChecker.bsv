@@ -97,9 +97,9 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     FIFOF#(tRowAddr)                                        readOnlyReqPipeInQueue <- mkLFIFOF;
     FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
 
-    Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary))) storage = newVector;
-    storage[0] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 0");
-    storage[1] <- mkAutoInferBramUG(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 1");
+    Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary))) storage = newVector;
+    storage[0] <- mkAutoInferBramQueuedOutput(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 0");
+    storage[1] <- mkAutoInferBramQueuedOutput(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 1");
 
 
     // Pipeline Queues
@@ -172,7 +172,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
         let entryFromBram = ?;
         if (!pipelineEntryIn.isReset) begin
-            entryFromBram <- storage[0].getReadResp;
+            entryFromBram = storage[0].readRespPipeOut.first;
+            storage[0].readRespPipeOut.deq;
         end
 
         let entryFromForwardCacheMaybe <- storageForwardBuffer.search(pipelineEntryIn.rowAddr);
@@ -262,7 +263,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     rule handleReadOnlyResp;
         readOnlyRespPipelineQueue.deq;
-        let resp <- storage[1].getReadResp;
+        let resp = storage[1].readRespPipeOut.first;
+        storage[1].readRespPipeOut.deq;
         readOnlyRespPipeOutQueue.enq(resp);
     endrule
 
@@ -337,9 +339,9 @@ module mkAtomicUpdateStorage#(
     FIFOF#(tData)    readOnlyRespPipeOutQueue  <- mkFIFOF;
 
 
-    Vector#(NUMERIC_TYPE_TWO, AutoInferBram#(tRowAddr, AtomicUpdateStorageEntry#(tData))) storage = newVector;
-    storage[0] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 0");
-    storage[1] <- mkAutoInferBramUG(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 1");
+    Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(tRowAddr, AtomicUpdateStorageEntry#(tData))) storage = newVector;
+    storage[0] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 0");
+    storage[1] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 1");
     
     
     PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
@@ -394,7 +396,8 @@ module mkAtomicUpdateStorage#(
 
         let entryFromBram = ?;
         if (!pipelineEntryIn.isReset) begin
-            entryFromBram <- storage[0].getReadResp;
+            entryFromBram = storage[0].readRespPipeOut.first;
+            storage[0].readRespPipeOut.deq;
         end
         let entryFromForwardCacheMaybe <- storageForwardBuffer.search(pipelineEntryIn.rowAddr);
 
@@ -454,7 +457,8 @@ module mkAtomicUpdateStorage#(
 
     rule handleReadOnlyResp;
         readOnlyRespPipelineQueue.deq;
-        let resp <- storage[1].getReadResp;
+        let resp = storage[1].readRespPipeOut.first;
+        storage[1].readRespPipeOut.deq;
         readOnlyRespPipeOutQueue.enq(resp.data);
     endrule
 
