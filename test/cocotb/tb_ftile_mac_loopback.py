@@ -17,7 +17,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BluespecPipeInNrWithQueue
+from test_framework.common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BluespecPipeInNrWithQueue
 
 
 class TB(object):

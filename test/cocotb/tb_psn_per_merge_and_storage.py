@@ -14,7 +14,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 
 
-from common import *
+from test_framework.common import *
 from enums import *
 
 

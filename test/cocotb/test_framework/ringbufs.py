@@ -2,8 +2,8 @@ import copy
 import time
 import logging
 
-from descriptors import *
-from hw_consts import *
+from .descriptors import *
+from .hw_consts import *
 
 import cocotb
 

@@ -37,14 +37,15 @@ def copy_mem_file_to_sim_build_dir(src_dirs, target_dir):
 
 
 class BluespecValueMethod:
-    def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_"):
+    def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_", wait_combinational_value_update=False):
 
         self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.INFO)
+        self.log.setLevel(logging.DEBUG)
 
         self.dut = dut
         self.clk = clk
         self.signal_base_name = signal_base_name
+        self.wait_combinational_value_update = wait_combinational_value_update
 
         ready_signal_name = ready_prefix + signal_base_name
         return_value_signal_name = signal_base_name
@@ -52,52 +53,57 @@ class BluespecValueMethod:
         self.ready_signal = getattr(dut, ready_signal_name)
         self.return_value_signal = getattr(dut, return_value_signal_name)
 
-    async def __call__(self, **kwargs):
-        self.log.debug(
-            f"11111111111111={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
+        self.pending_call_evt = cocotb.triggers.Event()
+        self.call_finished_evt = cocotb.triggers.Event()
+        self.call_args = {}
+        self.return_value = None
+        cocotb.start_soon(self._handshake_task())
 
-        await ReadWrite()
-        self.log.debug(
-            f"2222222222={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
-        while not self.ready_signal.value:
-            self.log.debug(
-                f"wait 11111={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
+    async def _handshake_task(self):
+        while True:
             await RisingEdge(self.clk)
-            self.log.debug(
-                f"wait 2222={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
             await ReadWrite()
-        self.log.debug(
-            f"333333333={kwargs}  retval={self.return_value_signal.value}   signal={self.signal_base_name}")
+            if not (self.ready_signal.value == 1 and self.pending_call_evt.is_set()):
+                continue  # handshake failed
 
-        for (arg_name, arg_val) in kwargs.items():
-            getattr(self.dut, self.signal_base_name +
-                    f"_{arg_name}").value = arg_val
+            self.pending_call_evt.clear()
 
-        self.log.debug(
-            f"444444={kwargs}  retval={self.return_value_signal.value} signal={self.signal_base_name}")
-        # await ReadWrite()
-        self.log.debug(
-            f"555555={kwargs}  retval={self.return_value_signal.value} signal={self.signal_base_name}")
+            if self.wait_combinational_value_update:
+                for (arg_name, arg_val) in self.call_args.items():
+                    getattr(self.dut, self.signal_base_name +
+                            f"_{arg_name}").setimmediatevalue(arg_val)
+                await ReadWrite()
+            else:
+                for (arg_name, arg_val) in self.call_args.items():
+                    getattr(self.dut, self.signal_base_name +
+                            f"_{arg_name}").value = arg_val
 
-        async def _tttt():
-            await NextTimeStep()
-            self.log.debug(
-                f"6666666={kwargs}  retval={self.return_value_signal.value} signal={self.signal_base_name}")
-        await cocotb.start(_tttt())
+            if self.return_value_signal is not None:
+                self.return_value = self.return_value_signal.value
+            else:
+                self.return_value = None
 
-        assert self.ready_signal.value
-        return self.return_value_signal.value
+            self.call_finished_evt.set()
+
+    async def __call__(self, **kwargs):
+        self.call_args = kwargs
+        self.pending_call_evt.set()
+        await self.call_finished_evt.wait()
+        # self.log.info(
+        #     f"return_value={self.return_value}, {self.signal_base_name}")
+        return self.return_value
 
 
 class BluespecActionValueMethod:
-    def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_", enable_prefix="EN_"):
+    def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_", enable_prefix="EN_", wait_combinational_value_update=False):
 
         self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.INFO)
+        self.log.setLevel(logging.DEBUG)
 
         self.dut = dut
         self.clk = clk
         self.signal_base_name = signal_base_name
+        self.wait_combinational_value_update = wait_combinational_value_update
 
         ready_signal_name = ready_prefix + signal_base_name
         enable_signal_name = enable_prefix + signal_base_name
@@ -109,71 +115,52 @@ class BluespecActionValueMethod:
 
         self.enable_signal.setimmediatevalue(0)
 
-        self.next_beat_values = {}
+        self.pending_call_evt = cocotb.triggers.Event()
+        self.call_finished_evt = cocotb.triggers.Event()
+        self.call_args = {}
+        self.return_value = None
+        cocotb.start_soon(self._handshake_task())
 
-        # self.ready_signal_new = self.ready_signal.value
-        # self.enable_signal_new = self.enable_signal.value
-        # self.return_value_signal_new = None if self.return_value_signal is None else self.return_value_signal.value
-
-        # self._call_finished_evt = cocotb.triggers.Event()
-        # self.has_pending_task = False
-        # cocotb.start_soon(self._handshake_task())
-
-    # async def _handshake_task(self):
-    #     while True:
-    #         await RisingEdge(self.clk)
-
-    #         self.ready_signal.value = self.ready_signal_new
-    #         self.enable_signal.value = self.enable_signal_new
-    #         self.return_value_signal.value = self.return_value_signal_new
-
-    #         if self.has_pending_task:
-    #             self.enable_signal_new = 1
-    #             if self.ready_signal.value == 1:  # handshake success
-
-    async def __call__(self, **kwargs):
-        async def _deassert_en_signal():
-            self.log.debug(
-                f"aaaaaaaa={kwargs}  signal={self.signal_base_name}")
-            await RisingEdge(self.clk)
-            self.log.debug(
-                f"bbbbbbbb={kwargs}  signal={self.signal_base_name}")
-            self.enable_signal.value = 0
-
-            self.next_beat_values.clear()
-
-        self.log.debug(
-            f"11111111111111={kwargs}  signal={self.signal_base_name}")
-        await ReadWrite()
-        self.log.debug(f"2222222222={kwargs}  signal={self.signal_base_name}")
-        while not self.ready_signal.value:
+    async def _handshake_task(self):
+        while True:
             await RisingEdge(self.clk)
             await ReadWrite()
-        self.log.debug(f"333333333={kwargs}  signal={self.signal_base_name}")
 
-        self.enable_signal.value = 1
-        assert len(self.next_beat_values) == 0
-        for (arg_name, arg_val) in kwargs.items():
-            getattr(self.dut, self.signal_base_name +
-                    f"_{arg_name}").value = arg_val
+            self.enable_signal.setimmediatevalue(
+                self.pending_call_evt.is_set())
+            if not (self.ready_signal.value == 1 and self.pending_call_evt.is_set()):
+                continue  # handshake failed
 
-        await cocotb.start(_deassert_en_signal())
-        # cocotb.start_soon(_deassert_en_signal())
+            self.pending_call_evt.clear()
 
-        self.log.debug(
-            f"444444={kwargs}  retval={self.return_value_signal.value if self.return_value_signal is not None else '<NA>'} signal={self.signal_base_name}")
-        await ReadWrite()
-        self.log.debug(
-            f"555555={kwargs}  retval={self.return_value_signal.value if self.return_value_signal is not None else '<NA>'} signal={self.signal_base_name}")
+            if self.wait_combinational_value_update:
+                for (arg_name, arg_val) in self.call_args.items():
+                    getattr(self.dut, self.signal_base_name +
+                            f"_{arg_name}").setimmediatevalue(arg_val)
+                await ReadWrite()
+            else:
+                for (arg_name, arg_val) in self.call_args.items():
+                    getattr(self.dut, self.signal_base_name +
+                            f"_{arg_name}").value = arg_val
 
-        if self.return_value_signal is not None:
-            # but return value should be returned current beat
-            return self.return_value_signal.value
+            if self.return_value_signal is not None:
+                self.return_value = self.return_value_signal.value
+            else:
+                self.return_value = None
+
+            self.call_finished_evt.set()
+
+    async def __call__(self, **kwargs):
+        self.call_args = kwargs
+        self.pending_call_evt.set()
+        await self.call_finished_evt.wait()
+        return self.return_value
 
 
 class BluespecActionMethod(BluespecActionValueMethod):
-    def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_", enable_prefix="EN_"):
-        super().__init__(dut, signal_base_name, clk, ready_prefix, enable_prefix)
+    def __init__(self, dut, signal_base_name, clk, ready_prefix="RDY_", enable_prefix="EN_", wait_combinational_value_update=False):
+        super().__init__(dut, signal_base_name, clk, ready_prefix,
+                         enable_prefix, wait_combinational_value_update)
         self.return_value_signal = None
 
 
@@ -652,18 +639,18 @@ class BluespecPipeIn:
         await self.bsv_enq(data=data)
 
 
-class BluespecPipeInNr:
+class BluespecPipeInB0:
     def __init__(self, dut, signal_base_name, clk):
         self.dut = dut
         self.clk = clk
         self.signal_base_name = signal_base_name
 
         self.bsv_deq_signal_out = BluespecValueMethod(
-            dut, signal_base_name + "_deqSignalOut", clk)
+            dut, signal_base_name + "_deqSignalOut", clk, wait_combinational_value_update=True)
         self.bsv_first_in = BluespecActionMethod(
-            dut, signal_base_name + "_firstIn", clk)
+            dut, signal_base_name + "_firstIn", clk, wait_combinational_value_update=True)
         self.bsv_not_empty_in = BluespecActionMethod(
-            dut, signal_base_name + "_notEmptyIn", clk)
+            dut, signal_base_name + "_notEmptyIn", clk, wait_combinational_value_update=True)
 
     async def deq_signal_out(self):
         return await self.bsv_deq_signal_out()
@@ -675,7 +662,7 @@ class BluespecPipeInNr:
         await self.bsv_not_empty_in(val=data)
 
 
-class BluespecPipeInNrWithQueue:
+class BluespecPipeInB0WithQueue:
     def __init__(self, dut, signal_base_name, clk):
         self.log = logging.getLogger("cocotb.tb")
         self.log.setLevel(logging.INFO)
@@ -684,7 +671,7 @@ class BluespecPipeInNrWithQueue:
         self.clk = clk
         self.signal_base_name = signal_base_name
 
-        self._pipe_in_nr = BluespecPipeInNr(dut, signal_base_name, clk)
+        self._pipe_in_nr = BluespecPipeInB0(dut, signal_base_name, clk)
         self._queue = deque(maxlen=2)
         self._deq_event = cocotb.triggers.Event()
         cocotb.start_soon(self._forward_task())
@@ -698,7 +685,7 @@ class BluespecPipeInNrWithQueue:
                 self._queue.popleft()
                 self._deq_event.set()
                 self.log.debug(
-                    f"BluespecPipeInNrWithQueue handle deq signal. signal_name={self.signal_base_name}")
+                    f"BluespecPipeInB0WithQueue handle deq signal. signal_name={self.signal_base_name}")
 
             if len(self._queue) > 0:
                 ele = self._queue[0]
@@ -707,7 +694,7 @@ class BluespecPipeInNrWithQueue:
 
                 debug_ds = BlueRdmaDataStream256.unpack(ele)
                 self.log.debug(
-                    f"BluespecPipeInNrWithQueue forward. signal_name={self.signal_base_name}, ele={debug_ds}")
+                    f"BluespecPipeInB0WithQueue forward. signal_name={self.signal_base_name}, ele={debug_ds}")
 
             else:
                 await self._pipe_in_nr.not_empty_in(0)
@@ -723,11 +710,11 @@ class BluespecPipeInNrWithQueue:
             await self._deq_event.wait()
         self._queue.append(data)
         # self.log.debug(
-        #     f"BluespecPipeInNrWithQueue enq. signal_name={self.signal_base_name}, data={data}")
+        #     f"BluespecPipeInB0WithQueue enq. signal_name={self.signal_base_name}, data={data}")
 
 
 class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=30):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -735,8 +722,6 @@ class SimplePcieBehaviorModel(object):
 
         self.clock = dut.CLK
         self.resetn = dut.RST_N
-
-        self.read_delay_time_ns = read_delay_time_ns
 
         self.requester_write_meta_pipes = []
         self.requester_write_data_pipes = []
@@ -750,14 +735,10 @@ class SimplePcieBehaviorModel(object):
                 dut, f"{base_name}_writePipeIfc_writeDataPipeOut", self.clock))
             self.requester_read_meta_pipes.append(BluespecPipeOut(
                 dut, f"{base_name}_readPipeIfc_readMetaPipeOut", self.clock))
-            self.requester_read_data_pipes.append(BluespecPipeInNrWithQueue(
+            self.requester_read_data_pipes.append(BluespecPipeInB0WithQueue(
                 dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
 
         self.requester_channel_cnt = len(requester_ifc_base_names)
-
-        self.read_delay_queues = [
-            deque() for _ in range(self.requester_channel_cnt)
-        ]
 
         self.completer_write_meta_pipes = []
         self.completer_write_data_pipes = []
@@ -785,8 +766,6 @@ class SimplePcieBehaviorModel(object):
         for channel_idx in range(self.requester_channel_cnt):
             cocotb.start_soon(self._handle_requester_write_req(channel_idx))
             cocotb.start_soon(self._handle_requester_read_req(channel_idx))
-            cocotb.start_soon(
-                self._forward_delayed_requester_read_resp(channel_idx))
 
         for channel_idx in range(self.completer_channel_cnt):
             cocotb.start_soon(self._handle_completer_read_resp(channel_idx))
@@ -803,7 +782,7 @@ class SimplePcieBehaviorModel(object):
                 cur_write_addr = write_meta.addr()
                 total_len = 0
 
-                self.log.info(
+                self.log.debug(
                     f"cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
                 # loop to handle each beat in a request
                 while True:
@@ -818,21 +797,16 @@ class SimplePcieBehaviorModel(object):
                             data >>= (write_data.start_byte_index() * 8)
 
                         old_write_addr = cur_write_addr
-                        # since pcie stream is aligned to 4 byte, each beat's first 3 byte may be invalid
-                        skip_byte_cnt = cur_write_addr % 4
-                        for byte_idx in range(write_data.byte_num()):
-                            if byte_idx >= skip_byte_cnt:
-                                self.mem[cur_write_addr] = data & 0xff
-                                cur_write_addr += 1
+                        for _ in range(write_data.byte_num()):
+                            self.mem[cur_write_addr] = data & 0xff
                             data >>= 8
+                            cur_write_addr += 1
 
-                        total_len += (write_data.byte_num() - skip_byte_cnt)
-                        self.log.info(
+                        total_len += write_data.byte_num()
+                        self.log.debug(
                             f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
                         if (write_data.is_last()):
-                            print(
-                                f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, {total_len}, {write_meta.total_len()}")
                             assert total_len == write_meta.total_len()
                             break
                     await RisingEdge(self.clock)  # wait for next beat
@@ -885,12 +859,9 @@ class SimplePcieBehaviorModel(object):
                             is_first=is_first,
                             is_last=is_last
                         )
-                        cur_time = cocotb.utils.get_sim_time("ns")
-                        self.read_delay_queues[channel_idx].append(
-                            (read_data.pack(), cur_time, old_read_addr))
-
-                        self.log.info(
-                            f"pcie bfm sample read data and put into delay queue addr={hex(old_read_addr)}, read_data={read_data}")
+                        await self.requester_read_data_pipes[channel_idx].enq(read_data.pack())
+                        self.log.debug(
+                            f"addr={hex(old_read_addr)}, read_data={read_data}")
 
                         is_first = False
                         bytes_left -= byte_num
@@ -899,19 +870,6 @@ class SimplePcieBehaviorModel(object):
                             break
                     await RisingEdge(self.clock)  # wait for next beat
 
-            await RisingEdge(self.clock)  # wait for next read req
-
-    async def _forward_delayed_requester_read_resp(self, channel_idx):
-        while True:
-            if len(self.read_delay_queues[channel_idx]) > 0:
-                cur_time = cocotb.utils.get_sim_time("ns")
-                beat_to_forward, beat_read_time, old_read_addr = self.read_delay_queues[
-                    channel_idx][0]
-                if cur_time - beat_read_time >= self.read_delay_time_ns:
-                    self.read_delay_queues[channel_idx].popleft()
-                    await self.requester_read_data_pipes[channel_idx].enq(beat_to_forward)
-                    self.log.info(
-                        f"pcie bfm read addr={hex(old_read_addr)}")
             await RisingEdge(self.clock)  # wait for next read req
 
     async def _handle_completer_read_resp(self, channel_idx):
@@ -979,8 +937,7 @@ class SimpleEthBehaviorModel(object):
         for idx in range(len(tx_ifc_base_names)):
             self.txChannels.append(BluespecPipeOut(
                 dut, tx_ifc_base_names[idx], self.clock))
-        for idx in range(len(rx_ifc_base_names)):
-            self.rxChannels.append(BluespecPipeInNrWithQueue(
+            self.rxChannels.append(BluespecPipeInB0WithQueue(
                 dut, rx_ifc_base_names[idx], self.clock))
 
         self.main_rx_queue = Queue()
@@ -988,7 +945,6 @@ class SimpleEthBehaviorModel(object):
 
         for idx in range(len(tx_ifc_base_names)):
             cocotb.start_soon(self._handle_dut_tx_task(idx))
-        for idx in range(len(rx_ifc_base_names)):
             cocotb.start_soon(self._handle_dut_rx_task(idx))
 
     async def get_tx_packet(self):
@@ -1011,8 +967,8 @@ class SimpleEthBehaviorModel(object):
 
                 if ds.is_last():
                     await self.main_tx_queue.put(packet_data)
-                    self.log.info(
-                        f"eth bfm channel {idx} got full packet, data={packet_data}")
+                    # self.log.debug(
+                    #     f"eth bfm channel {idx} got full packet, data={packet_data}")
                     packet_data = b""
             await RisingEdge(self.clock)
 
@@ -1035,9 +991,9 @@ class SimpleEthBehaviorModel(object):
                         is_last=is_last
                     )
                     await self.rxChannels[idx].enq(ds.pack())
-                    self.log.info(
-                        f"inject rx beat to dut, channel={idx} ds={ds}")
+                    self.log.debug(f"inject rx beat to dut, ds={ds}")
                 await RisingEdge(self.clock)
+            await RisingEdge(self.clock)
 
 
 class DeviceRingbufTestHelper:

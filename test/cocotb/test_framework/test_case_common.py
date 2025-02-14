@@ -2,7 +2,7 @@ import os
 import sys
 import signal
 import time
-import mock_host
+import test_framework.mock_host as mock_host
 
 TOTAL_MEMORY_SIZE = 1024 * 1024 * 256
 PGT_ENTRY_OFFSET = 0x200

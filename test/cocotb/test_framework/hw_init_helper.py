@@ -1,10 +1,10 @@
 import logging
 import random
-import test_case_common as tcc
-from descriptors import MemAccessTypeFlag, RingbufDescCommonHead, CmdQueueRespDescOnlyCommonHeader, PMTU
-from hw_consts import MEM_REGION_PAGE_SIZE, LR_KEY_IDX_PART_WIDTH, LR_KEY_KEY_PART_WIDTH, QPN_IDX_PART_WIDTH, QPN_KEY_PART_WIDTH
+from . import test_case_common as tcc
+from .descriptors import MemAccessTypeFlag, RingbufDescCommonHead, CmdQueueRespDescOnlyCommonHeader, PMTU
+from .hw_consts import MEM_REGION_PAGE_SIZE, LR_KEY_IDX_PART_WIDTH, LR_KEY_KEY_PART_WIDTH, QPN_IDX_PART_WIDTH, QPN_KEY_PART_WIDTH
 from ctypes import c_longlong
-from ringbufs import RingbufCommandReqQueue, RingbufCommandRespQueue, RingbufSendQueue, RingbufMetaReportQueue, RingbufSimpleNicTxQueue, RingbufSimpleNicRxQueue
+from .ringbufs import RingbufCommandReqQueue, RingbufCommandRespQueue, RingbufSendQueue, RingbufMetaReportQueue, RingbufSimpleNicTxQueue, RingbufSimpleNicRxQueue
 import cocotb
 from cocotb import queue
 
@@ -26,9 +26,11 @@ def gen_qpn_from_idx_and_key(idx, key):
 
 
 class HardwareTestHelper:
-    def __init__(self, pcie_bfm):
+    def __init__(self, pcie_bfm, channel_cnt=1):
         self.log = logging.getLogger("cocotb.tb")
         self.log.setLevel(logging.INFO)
+
+        self.channel_cnt = channel_cnt
 
         self.pcie_bfm = pcie_bfm
         self.ringbuf_buffer_size = 0x20000
@@ -60,7 +62,7 @@ class HardwareTestHelper:
         self.meta_report_queues = []
         self.collected_meta_report_descs_queue = queue.Queue()
 
-        for channel_idx in range(4):
+        for channel_idx in range(channel_cnt):
             backmem_start_addr, backmem = self.alloc_physical_memory(
                 self.ringbuf_buffer_size, self.ringbuf_buffer_size)
             self.send_queues.append(
@@ -128,10 +130,11 @@ class HardwareTestHelper:
         await self.cmd_resp_queue.init_addr_csr()
         await self.simple_nix_tx_queue.init_addr_csr()
         await self.simple_nix_rx_queue.init_addr_csr()
-        for idx in range(4):
+        for idx in range(self.channel_cnt):
             await self.send_queues[idx].init_addr_csr()
             await self.meta_report_queues[idx].init_addr_csr()
 
+        self.log.info("d------------------1")
         self.cmd_req_queue.put_desc_set_udp_param(
             0x00000000,
             0xFFFFFF00,
@@ -139,7 +142,9 @@ class HardwareTestHelper:
             CARD_A_MAC_ADDRESS
         )
         await self.cmd_req_queue.sync_pointers()
+        self.log.info("d------------------2")
         resp = await self.cmd_resp_queue.deq_blocking()
+        self.log.info("d------------------3")
         self.log.info(f"cmd resp queue got desc: {resp}")
 
     def alloc_qpn(self):
@@ -230,7 +235,7 @@ class HardwareTestHelper:
         async def _inner_thread():
             while True:
                 await cocotb.triggers.Timer(2, "ns")
-                for channel_idx in range(4):
+                for channel_idx in range(self.channel_cnt):
                     desc_raw_maybe = await self.meta_report_queues[channel_idx].try_deq_in_descriptor_valid_bit_polling_mode(
                     )
                     if desc_raw_maybe is None:

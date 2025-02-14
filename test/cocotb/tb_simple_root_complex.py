@@ -16,7 +16,7 @@ from cocotb.clock import Clock
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.intel.rtile import RTilePcieDevice, RTileRxBus, RTileTxBus
 
-from common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, BluespecPipeInNrWithQueue
+from test_framework.common import gen_rtl_file_list, BluespecPipeIn, BluespecPipeOut, BlueRdmaDataStream256, BlueRdmaDtldStreamMemAccessMeta, BluespecPipeInNrWithQueue
 
 
 class TB(object):

@@ -18,13 +18,15 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
-from descriptors import WorkReqOpCode, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc, PMTU
-from mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
-from hw_init_helper import HardwareTestHelper, CARD_A_IP_ADDRESS, CARD_A_MAC_ADDRESS
+from test_framework.descriptors import WorkReqOpCode, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc, PMTU
+from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
+from test_framework.hw_init_helper import HardwareTestHelper, CARD_A_IP_ADDRESS, CARD_A_MAC_ADDRESS
 
-import test_case_common as tcc
+from test_framework import test_case_common as tcc
 
-from common import gen_rtl_file_list, SimplePcieBehaviorModel, SimpleEthBehaviorModel, copy_mem_file_to_sim_build_dir
+from test_framework.common import gen_rtl_file_list, copy_mem_file_to_sim_build_dir
+from test_framework.eth_bfm import SimpleEthBehaviorModel
+from test_framework.pcie_bfm import SimplePcieBehaviorModel
 from scapy.layers.inet import IP, UDP
 from scapy.layers.l2 import Ether
 
@@ -42,36 +44,53 @@ class TB(object):
         self.shared_mem = open_shared_mem_to_hw_simulator(
             tcc.TOTAL_MEMORY_SIZE)
 
-        self.pcie_bfm = SimplePcieBehaviorModel(
-            dut,
-            ["dmaMasterPipeIfcVec_0",
-             "dmaMasterPipeIfcVec_1",
-             "dmaMasterPipeIfcVec_2",
-             "dmaMasterPipeIfcVec_3"],
-            [
-                "dmaSlavePipeIfc"
-            ],
-            self.shared_mem.buf
-        )
+        is_test_100g = True
+        if is_test_100g:
+            channel_cnt = 1
+            self.pcie_bfm = SimplePcieBehaviorModel(
+                dut,
+                ["dmaMasterPipeIfc"],
+                ["dmaSlavePipeIfc"],
+                self.shared_mem.buf
+            )
 
-        self.eth_bfm = SimpleEthBehaviorModel(
-            dut,
-            [
-                "qpEthDataStreamIfcVec_0_dataPipeOut",
-                "qpEthDataStreamIfcVec_1_dataPipeOut",
-                "qpEthDataStreamIfcVec_2_dataPipeOut",
-                "qpEthDataStreamIfcVec_3_dataPipeOut",
-            ],
-            [
-                "qpEthDataStreamIfcVec_0_dataPipeIn",
-                # "qpEthDataStreamIfcVec_1_dataPipeIn",
-                # "qpEthDataStreamIfcVec_2_dataPipeIn",
-                # "qpEthDataStreamIfcVec_3_dataPipeIn",
-            ],
-        )
+            self.eth_bfm = SimpleEthBehaviorModel(
+                dut,
+                ["qpEthDataStreamIfc_dataPipeOut"],
+                ["qpEthDataStreamIfc_dataPipeIn"],
+            )
+        else:
+            channel_cnt = 4
+            self.pcie_bfm = SimplePcieBehaviorModel(
+                dut,
+                ["dmaMasterPipeIfcVec_0",
+                 "dmaMasterPipeIfcVec_1",
+                 "dmaMasterPipeIfcVec_2",
+                 "dmaMasterPipeIfcVec_3"],
+                [
+                    "dmaSlavePipeIfc"
+                ],
+                self.shared_mem.buf
+            )
+
+            self.eth_bfm = SimpleEthBehaviorModel(
+                dut,
+                [
+                    "qpEthDataStreamIfcVec_0_dataPipeOut",
+                    "qpEthDataStreamIfcVec_1_dataPipeOut",
+                    "qpEthDataStreamIfcVec_2_dataPipeOut",
+                    "qpEthDataStreamIfcVec_3_dataPipeOut",
+                ],
+                [
+                    "qpEthDataStreamIfcVec_0_dataPipeIn",
+                    # "qpEthDataStreamIfcVec_1_dataPipeIn",
+                    # "qpEthDataStreamIfcVec_2_dataPipeIn",
+                    # "qpEthDataStreamIfcVec_3_dataPipeIn",
+                ],
+            )
 
         self.init_helper: HardwareTestHelper = HardwareTestHelper(
-            self.pcie_bfm)
+            self.pcie_bfm, channel_cnt)
 
         self.eth_packet_forward_delay_ns = 0
         self.eth_packet_forward_delay_queue = deque()
@@ -144,6 +163,9 @@ class TB(object):
         dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
             1024, 1)
         dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 1024)
+
+        self.log.info(
+            f"src_mr_key={hex(src_mr_key)}, dst_mr_key={hex(dst_mr_key)}")
 
         src_buf_mem[0] = 0x12
         src_buf_mem[1] = 0x13
@@ -482,10 +504,15 @@ class TB(object):
         self.log.info(
             f"addr before random: src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
 
+        self.log.info(
+            f"src_mr_key={hex(src_mr_key)}, dst_mr_key={hex(dst_mr_key)}")
+
         src_addr_offset = random.randint(0, 15)
         dst_addr_offset = random.randint(0, 15)
-        write_src_addr = src_buf_mem_addr + src_addr_offset
-        write_dst_addr = dst_buf_mem_addr + dst_addr_offset
+        write_src_addr_start = src_buf_mem_addr + src_addr_offset
+        write_dst_addr_start = dst_buf_mem_addr + dst_addr_offset
+        write_src_addr = write_src_addr_start
+        write_dst_addr = write_dst_addr_start
 
         # this var controls the total write request cnt. with the signle_msg_len set to 1, we can make the worst case (the control is the most busy one), and to check if fully-pipeline is achieved.
         write_len = 512
@@ -572,7 +599,7 @@ class TB(object):
             got_data = dst_buf_mem[d+dst_addr_offset]
             if expected_data != got_data:
                 self.log.info(
-                    f"checking at idx = {d}, src addr={hex(d+write_src_addr)}, dst addr={hex(d+write_dst_addr)}, expected_data={hex(expected_data)}, got_data={hex(got_data)}")
+                    f"checking at idx = {d}, src addr={hex(d+write_src_addr_start)}, dst addr={hex(d+write_dst_addr_start)}, expected_data={hex(expected_data)}, got_data={hex(got_data)}")
             assert expected_data == got_data  # should be modified
         for d in range(dst_addr_offset):
             assert dst_buf_mem[d] == 0xFF  # should not be modified
