@@ -1,3 +1,4 @@
+import Vector :: *;
 import RdmaHeaders :: *;
 
 /////////////// Link Layer
@@ -221,6 +222,13 @@ typedef Bit#(VIRTUAL_CHANNEL_INDEX_WIDTH) VirtualChannelIndex;
 typedef 16 PFC_PAUSE_QUANTA_WIDTH;
 typedef Bit#(PFC_PAUSE_QUANTA_WIDTH) PfcPauseQuanta;
 
+typedef enum {
+    FLOW_CTRL_STOP,
+    FLOW_CTRL_PASS
+} FlowControlRequest deriving(Bits, Eq, FShow);
+
+typedef Vector#(VIRTUAL_CHANNEL_NUM, Maybe#(FlowControlRequest)) FlowControlReqVec;
+
 // Simplified meta data for RDMA to use.
 typedef struct {
     EthMacAddr srcMacAddr;
@@ -253,3 +261,4 @@ typedef enum {
     IpHeaderEcnFlagEnabled = 2'b01,
     IpHeaderEcnFlagMarked = 2'b11
 } IpHeaderEcnFlag deriving(Bits, FShow, Eq);
+

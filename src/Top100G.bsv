@@ -16,6 +16,7 @@ import BasicDataTypes :: *;
 import IoChannels :: *;
 import PacketGenAndParse :: *;
 import EthernetTypes :: *;
+import AxiBus :: *;
 
 import EthernetFrameIO512 :: *;
 import PacketGenAndParse :: *;
@@ -37,48 +38,162 @@ import Utils4Test :: *;
 import SQ :: *;
 import RQ :: *;
 
-// import RTilePcieAdaptor :: *;
-// import FTileMacAdaptor :: *;
+import XilinxCmacController :: *;
+
+typedef 16 CMAC_SYNC_BRAM_BUF_DEPTH;
+typedef 2 CMAC_CDC_SYNC_STAGE;
+
+typedef Vector#(VIRTUAL_CHANNEL_NUM, Maybe#(FlowControlRequest)) FlowControlReqVec;
+
+interface BsvTop;
+    // Interface with CMAC IP
+    (* prefix = "" *)
+    interface XilinxCmacController cmacController;
+endinterface
 
 
-// interface BsvTop;
-//         (* always_ready, always_enabled *)
-//         interface RTilePcieAdaptorRx rtilePcieAdaptorRxRawIfc;
-//         (* always_ready, always_enabled *)
-//         interface RTilePcieAdaptorTx rtilePcieAdaptorTxRawIfc;
+module mkBsvTop#(
+        Clock cmacRxTxClk,
+        Reset cmacRxReset,
+        Reset cmacTxReset
+    )(BsvTop);
 
-//         (* always_ready, always_enabled *)
-//         interface FTileMacAdaptorRx ftileMacAdaptorRxRawIfc;
-//         (* always_ready, always_enabled *)
-//         interface FTileMacAdaptorTx ftileMacAdaptorTxRawIfc;
-// endinterface
+    BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(cmacRxTxClk, cmacRxReset, cmacTxReset);
+    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
 
 
-// module mkBsvTop#(
-//         Clock ftileClk,
-//         Reset ftileRst
-//     )(BsvTop);
-
-//     BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(ftileClk, ftileRst);
-//     BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
+    mkConnection(bsvTopOnlyHardIp.macStreamBiDirPipe.dataPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfc.dataPipeIn);
+    mkConnection(bsvTopOnlyHardIp.macStreamBiDirPipe.dataPipeIn, bsvTopWithoutHardIpInstance.qpEthDataStreamIfc.dataPipeOut);
 
 
-//     mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
-//     mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec);
 
-//     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-//         mkConnection(bsvTopOnlyHardIp.ftilemacRxStreamPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfc.dataPipeIn);
-//         mkConnection(bsvTopOnlyHardIp.ftilemacTxStreamPipeIn, bsvTopWithoutHardIpInstance.qpEthDataStreamIfc.dataPipeOut);
-//     end
+    interface cmacController = bsvTopOnlyHardIp.cmacController;
+endmodule
 
 
-//     interface rtilePcieAdaptorRxRawIfc  = bsvTopOnlyHardIp.rtilePcieAdaptorRxRawIfc;
-//     interface rtilePcieAdaptorTxRawIfc  = bsvTopOnlyHardIp.rtilePcieAdaptorTxRawIfc;
-//     interface ftileMacAdaptorRxRawIfc   = bsvTopOnlyHardIp.ftileMacAdaptorRxRawIfc;
-//     interface ftileMacAdaptorTxRawIfc   = bsvTopOnlyHardIp.ftileMacAdaptorTxRawIfc;
 
 
-// endmodule
+interface BsvTopOnlyHardIp;
+    // to verilog side ===================================================
+
+    // Interface with CMAC IP
+    (* prefix = "" *)
+    interface XilinxCmacController cmacController;
+
+    // to bsv side =======================================================
+
+    // interface PcieBiDirUserDataStreamMasterPipes                                                    rtilepcieStreamMasterIfc;
+    // interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesB0In)     rtilepcieStreamSlaveIfcVec;
+    interface IoChannelBiDirStreamNoMetaPipeB0In           macStreamBiDirPipe;
+    
+endinterface
+
+(* synthesize *)
+module mkBsvTopOnlyHardIp#(
+        Clock cmacRxTxClk,
+        Reset cmacRxReset,
+        Reset cmacTxReset
+    )(BsvTopOnlyHardIp);
+
+
+    SyncFIFOIfc#(CmacAxiStream) axiStream512TxSyncFifo <- mkSyncFIFOFromCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk);
+    SyncFIFOIfc#(CmacAxiStream) axiStream512RxSyncFifo <- mkSyncFIFOToCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk, cmacRxReset);
+
+    Bool isEnableRsFec = True;
+    Bool isEnableFlowControl = False;
+    Bool isCmacTxWaitRxAligned = True;
+
+    FIFOF#(FlowControlReqVec) dummyTxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacTxReset);
+    FIFOF#(FlowControlReqVec) dummyRxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxReset);
+
+    let xilinxCmacCtrl <- mkXilinxCmacController(
+        isEnableRsFec,
+        isEnableFlowControl,
+        isCmacTxWaitRxAligned,
+        toPipeOutSync(axiStream512TxSyncFifo),
+        toPipeInSync(axiStream512RxSyncFifo),
+        toPipeOut(dummyTxFlowCtrlReqVecQueue),
+        toPipeIn(dummyRxFlowCtrlReqVecQueue),
+        cmacRxReset,
+        cmacTxReset,
+        clocked_by cmacRxTxClk
+    );
+
+    
+    PipeInAdapterB0#(IoChannelEthDataStream) ethTxDataPipeInQueue <- mkPipeInAdapterB0;
+    FIFOF#(IoChannelEthDataStream) ethRxDataPipeOutQueue <- mkFIFOF;
+
+    Reg#(Bool) isEthRxForwardFirstBeatReg <- mkReg(True);
+
+    rule forwardEthRxStream;
+        let axiDs = axiStream512RxSyncFifo.first;
+        axiStream512RxSyncFifo.deq;
+
+        let ds = IoChannelEthDataStream {
+            data: axiDs.axisData,
+            startByteIdx: 0,
+            byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
+            isFirst: isEthRxForwardFirstBeatReg,
+            isLast: axiDs.axisLast
+        };
+        ethRxDataPipeOutQueue.enq(ds);
+        isEthRxForwardFirstBeatReg <= axiDs.axisLast;
+    endrule
+
+    rule forwardEthTxStream;
+        let ds = ethTxDataPipeInQueue.first;
+        ethTxDataPipeInQueue.deq;
+
+        let axiDs = AxiStream {
+            axisData: ds.data,
+            axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
+            axisLast: ds.isLast,
+            axisUser: 0
+        };
+        axiStream512TxSyncFifo.enq(axiDs);
+
+    endrule
+
+    interface cmacController = xilinxCmacCtrl;
+
+    interface IoChannelBiDirStreamNoMetaPipeB0In           macStreamBiDirPipe;
+        interface dataPipeIn = toPipeInB0(ethTxDataPipeInQueue);
+        interface dataPipeOut = toPipeOut(ethRxDataPipeOutQueue);
+    endinterface
+    
+    // RTilePcieAdaptor rtilePcieAdaptor   <- mkRTilePcieAdaptor;
+    // RTilePcie        rtilePcie          <- mkRTilePcie;
+
+    // FTileMacAdaptor  ftileMacAdaptor    <- mkFTileMacAdaptor(clocked_by ftileClk, reset_by ftileRst);
+    // FTileMac         ftileMac           <- mkFTileMac;
+
+    // mkConnection(rtilePcieAdaptor.pcieRxPipeOut, rtilePcie.pcieRxPipeIn);
+    // mkConnection(rtilePcieAdaptor.pcieTxPipeIn, rtilePcie.pcieTxPipeOut);
+    // mkConnection(rtilePcieAdaptor.rxFlowControlReleaseReqPipeIn, rtilePcie.rxFlowControlReleaseReqPipeOut);   // already Nr
+    // mkConnection(rtilePcieAdaptor.txFlowControlConsumeReqPipeIn, rtilePcie.txFlowControlConsumeReqPipeOut);   // already Nr
+    // mkConnection(rtilePcieAdaptor.txFlowControlAvaliablePipeOut, rtilePcie.txFlowControlAvaliablePipeIn);
+
+    // SyncFIFOIfc#(FtileMacRxBeat) ftileRxSyncQueue <- mkSyncFIFOToCC(valueOf(NUMERIC_TYPE_FOUR), ftileClk, ftileRst);
+    // SyncFIFOIfc#(FtileMacTxBeat) ftileTxSyncQueue <- mkSyncFIFOFromCC(valueOf(NUMERIC_TYPE_FOUR), ftileClk);
+
+    // mkConnection(ftileMacAdaptor.ftilemacRxPipeOut, toPipeInSync(ftileRxSyncQueue));
+    // mkConnection(toPipeOutSync(ftileRxSyncQueue), ftileMac.ftilemacRxPipeIn, clocked_by ftileClk, reset_by ftileRst);
+
+    // mkConnection(toPipeInSync(ftileTxSyncQueue), ftileMac.ftilemacTxPipeOut);
+    // mkConnection(ftileMacAdaptor.ftilemacTxPipeIn, toPipeOutSync(ftileTxSyncQueue), clocked_by ftileClk, reset_by ftileRst);
+
+    // interface rtilePcieAdaptorRxRawIfc      = rtilePcieAdaptor.rx;
+    // interface rtilePcieAdaptorTxRawIfc      = rtilePcieAdaptor.tx;
+    // interface ftileMacAdaptorRxRawIfc       = ftileMacAdaptor.rx;
+    // interface ftileMacAdaptorTxRawIfc       = ftileMacAdaptor.tx;
+
+    // interface rtilepcieStreamMasterIfc      = rtilePcie.streamMasterIfc;
+    // interface rtilepcieStreamSlaveIfcVec    = rtilePcie.streamSlaveIfcVec;
+    // interface ftilemacTxStreamPipeInVec     = ftileMac.ftilemacTxStreamPipeInVec;
+    // interface ftilemacRxStreamPipeOutVec    = ftileMac.ftilemacRxStreamPipeOutVec;
+endmodule
+
+
 
 
 typedef DtldStreamArbiterSlave#(NUMERIC_TYPE_SIX, DATA, ADDR, Length) IoChannelSixChannelDmaMux;

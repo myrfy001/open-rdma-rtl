@@ -29,6 +29,11 @@ FAMILY ?= Agilex 7
 VIVADO_PART ?= xcvu13p-fhgb2104-2-i
 
 
+ifeq ($(BLUERDMA_BUILD_TARGET), XILINX_100G)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx)
+	RTL_DIRS += $(BACKENDDIR)/xilinx/rtl/*.v
+endif
+
 
 # TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
 # BSV_TOP_MODULE ?= mkTestFullyPipelinedBackendTimingTest
@@ -114,13 +119,16 @@ VIVADO_PART ?= xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../test/TestTop.bsv
 # BSV_TOP_MODULE ?= mkTestTopTimingNoHardIP
 
-TARGETFILE ?= ../test/TestTop100G.bsv
-BSV_TOP_MODULE ?= mkTestTopTimingNoHardIP
+# TARGETFILE ?= ../test/TestTop100G.bsv
+# BSV_TOP_MODULE ?= mkTestTopTimingNoHardIP
 
 # TARGETFILE ?= ../src/Top.bsv
 # BSV_TOP_MODULE ?= mkBsvTop
 # TOP = bluerdma_top
 
+TARGETFILE ?= ../src/Top100G.bsv
+BSV_TOP_MODULE ?= mkBsvTop
+TOP = bluerdma_top
 
 
 

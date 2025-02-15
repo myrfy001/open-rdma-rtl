@@ -10,12 +10,6 @@ import BasicDataTypes :: *;
 typedef 8 AXI_AXLEN_WIDTH;
 typedef Bit#(AXI_AXLEN_WIDTH) AxiAxlen;
 
-typedef 1024 AXI_DATA_WIDTH_FOR_HIP;
-typedef Bit#(AXI_DATA_WIDTH_FOR_HIP) AxiDataForHip;
-
-typedef 256 AXI_DATA_WIDTH_FOR_LOGIC;
-typedef Bit#(AXI_DATA_WIDTH_FOR_LOGIC) AxiDataForLogic;
-
 
 // AW channel ==============
 typedef 8 AXI_AWID_WIDTH;
@@ -163,157 +157,161 @@ interface AxiSlavePipes#(type tAxiData);
 endinterface
 
 
+// AXI stream
 
+(* always_ready, always_enabled *)
+interface AxiRawBusMaster#(type tRawData);
+    (* result = "data" *) method tRawData  data;
+    (* result = "valid"*) method Bool       valid;
+    (* prefix = "" *) method Action ready((* port = "ready" *) Bool rdy);
+endinterface
 
-interface AxiMmArbiterSlave#(numeric type channelCnt, type tAxiData);
-    interface Vector#(channelCnt, AxiSlavePipes#(tAxiData))     slaveIfcVec;
-    interface AxiMasterPipes#(tAxiData)                         masterIfc;
+(* always_ready, always_enabled *)
+interface AxiRawBusSlave#(type tRawData);
+    (* prefix = "" *) method Action validData(
+        (* port = "valid"   *) Bool     valid,
+        (* port = "data"    *) tRawData data
+    );
+    (* result = "ready" *) method Bool ready;
 endinterface
 
 
-module mkAxiMmArbiterSlave#(Integer depth)(AxiMmArbiterSlave#(channelCnt, tAxiData)) provisos (
-        Bits#(tAxiData, sztAxiData),
-        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx)
-    );
+module mkPipeOutToRawBusMaster#(PipeOut#(tRawData) pipe)(AxiRawBusMaster#(tRawData)) provisos(Bits#(tRawData, dSz));
+    RWire#(tRawData) dataW <- mkRWire;
+    Wire#(Bool) readyW <- mkBypassWire;
 
-    Vector#(channelCnt, AxiSlavePipes#(tAxiData))     slaveIfcVecInst = newVector;
-
-    Vector#(channelCnt, FIFOF#(AxiMmBeatAw))            slaveSideQueueVecAw     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(AxiMmBeatW#(tAxiData)))  slaveSideQueueVecW      <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(AxiMmBeatB))             slaveSideQueueVecB      <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(AxiMmBeatAr))            slaveSideQueueVecAr     <- replicateM(mkFIFOF);
-    Vector#(channelCnt, FIFOF#(AxiMmBeatR#(tAxiData)))  slaveSideQueueVecR      <- replicateM(mkFIFOF);
-
-    FIFOF#(AxiMmBeatAw)            masterSideQueueAw   <-  mkFIFOF;
-    FIFOF#(AxiMmBeatW#(tAxiData))  masterSideQueueW    <-  mkFIFOF;
-    FIFOF#(AxiMmBeatB)             masterSideQueueB    <-  mkFIFOF;
-    FIFOF#(AxiMmBeatAr)            masterSideQueueAr   <-  mkFIFOF;
-    FIFOF#(AxiMmBeatR#(tAxiData))  masterSideQueueR    <-  mkFIFOF;
-
-    Arbiter_IFC#(channelCnt) writeArbiter <- mkArbiter(False);
-    Arbiter_IFC#(channelCnt) readArbiter  <- mkArbiter(False);
-
-    Reg#(Bool) isWriteFirstBeatReg <- mkReg(True);
-
-    Reg#(tChannelIdx) curWriteChannelIdxReg <- mkRegU;
-
-    FIFOF#(tChannelIdx) writeKeepOrderQueue <- mkSizedFIFOF(depth);
-    FIFOF#(tChannelIdx) readKeepOrderQueue <- mkSizedFIFOF(depth);
-
-    rule sendWriteArbitReq if (isWriteFirstBeatReg);
-        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-            if (slaveSideQueueVecAw[channelIdx].notEmpty && slaveSideQueueVecW[channelIdx].notEmpty) begin
-                writeArbiter.clients[channelIdx].request;
-            end
-        end
+    rule passWire if (pipe.notEmpty);
+        dataW.wset(pipe.first);
     endrule
 
-    rule recvWriteArbitResp if (isWriteFirstBeatReg);
-        Maybe#(AxiMmBeatAw) awMaybe = tagged Invalid;
-        AxiMmBeatW#(tAxiData) w;
-        tChannelIdx curChannelIdx = 0;
-        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-            if (writeArbiter.clients[channelIdx].grant) begin
-                awMaybe = tagged Valid slaveSideQueueVecAw[channelIdx].first;
-                w       = slaveSideQueueVecW[channelIdx].first;
-                slaveSideQueueVecAw[channelIdx].deq;
-                slaveSideQueueVecW[channelIdx].deq;
-
-                curChannelIdx = fromInteger(channelIdx);
-            end
-        end
-
-        if (awMaybe matches tagged Valid .aw) begin
-            masterSideQueueAw.enq(aw);
-            masterSideQueueW.enq(w);
-            isWriteFirstBeatReg <= w.wlast;
-            curWriteChannelIdxReg <= curChannelIdx;
-            writeKeepOrderQueue.enq(curChannelIdx);
-        end
+    rule passReady if (pipe.notEmpty && readyW);
+        pipe.deq;
     endrule
 
-    rule forwardMoreWriteBeat if (!isWriteFirstBeatReg);
-        let w  = slaveSideQueueVecW[curWriteChannelIdxReg].first;
-        slaveSideQueueVecW[curWriteChannelIdxReg].deq;
-        masterSideQueueW.enq(w);
-        isWriteFirstBeatReg <= w.wlast;
-    endrule
-
-    rule forwardWriteResp;
-        let b = masterSideQueueB.first;
-        masterSideQueueB.deq;
-
-        let channelIdx = writeKeepOrderQueue.first;
-        writeKeepOrderQueue.deq;
-        slaveSideQueueVecB[channelIdx].enq(b);
-    endrule
-
-    rule sendReadArbitReq;
-        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-            if (slaveSideQueueVecAr[channelIdx].notEmpty) begin
-                readArbiter.clients[channelIdx].request;
-            end
-        end
-    endrule
-
-    rule recvReadArbitResp;
-        Maybe#(AxiMmBeatAr) arMaybe = tagged Invalid;
-        tChannelIdx curChannelIdx = 0;
-        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-            if (readArbiter.clients[channelIdx].grant) begin
-                arMaybe = tagged Valid slaveSideQueueVecAr[channelIdx].first;
-                slaveSideQueueVecAr[channelIdx].deq;
-                curChannelIdx = fromInteger(channelIdx);
-            end
-        end
-
-        if (arMaybe matches tagged Valid .ar) begin
-            masterSideQueueAr.enq(ar);
-            readKeepOrderQueue.enq(curChannelIdx);
-        end
-    endrule
-
-    rule forwardReadResp;
-        let r = masterSideQueueR.first;
-        masterSideQueueR.deq;
-
-        let channelIdx = readKeepOrderQueue.first;
-        slaveSideQueueVecR[channelIdx].enq(r);
-
-        if (r.rlast) begin
-            readKeepOrderQueue.deq;
-        end
-    endrule
-
-
-    for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-        slaveIfcVecInst[channelIdx] = (
-            interface AxiSlavePipes 
-                interface AxiSlaveWritePipes writePipeIfc;
-                    interface  writeAddrPipeIn  = toPipeIn(slaveSideQueueVecAw[channelIdx]);
-                    interface  writeDataPipeIn  = toPipeIn(slaveSideQueueVecW[channelIdx]);
-                    interface  writeRespPipeOut = toPipeOut(slaveSideQueueVecB[channelIdx]);
-                endinterface
-
-                interface AxiSlaveReadPipes readPipeIfc;
-                    interface  readAddrPipeIn  = toPipeIn(slaveSideQueueVecAr[channelIdx]);
-                    interface  readRespPipeOut = toPipeOut(slaveSideQueueVecR[channelIdx]);
-                endinterface
-            endinterface);
-    end
-
-    interface slaveIfcVec = slaveIfcVecInst;
-    interface AxiMasterPipes masterIfc;
-        interface AxiMasterWritePipes writePipeIfc;
-            interface  writeAddrPipeOut  = toPipeOut(masterSideQueueAw);
-            interface  writeDataPipeOut  = toPipeOut(masterSideQueueW);
-            interface  writeRespPipeIn   = toPipeIn(masterSideQueueB);
-        endinterface
-
-        interface AxiMasterReadPipes readPipeIfc;
-            interface  readAddrPipeOut  = toPipeOut(masterSideQueueAr);
-            interface  readRespPipeIn   = toPipeIn(masterSideQueueR);
-        endinterface
-    endinterface
+    method Bool valid = pipe.notEmpty;
+    method tRawData data = fromMaybe(?, dataW.wget);
+    method Action ready(Bool rdy);
+        readyW <= rdy;
+    endmethod
 endmodule
 
+// Note: the output ready signal is valid during reset
+module mkPipeInToRawBusSlave#(PipeIn#(tRawData) pipe)(AxiRawBusSlave#(tRawData)) provisos(Bits#(tRawData, dSz));
+    Wire#(Bool)  validW <- mkBypassWire;
+    Wire#(tRawData) dataW <- mkBypassWire;
+
+    rule passData if (validW);
+        pipe.enq(dataW);
+    endrule
+
+    method Action validData(Bool valid, tRawData data);
+        validW <= valid;
+        dataW <= data;
+    endmethod
+    method Bool ready = pipe.notFull;
+endmodule
+
+
+
+
+function RawAxiStreamMaster#(tData, tKeep, tUser) convertRawBusToRawAxiStreamMaster(
+        AxiRawBusMaster#(AxiStream#(tData, tKeep, tUser)) rawBus
+    ) provisos (Bits#(tData, szData));
+    return (
+        interface RawAxiStreamMaster;
+            method Bool axisValid = rawBus.valid;
+            method tData axisData = rawBus.data.axisData;
+            method tKeep axisKeep = rawBus.data.axisKeep;
+            method Bool axisLast = rawBus.data.axisLast;
+            method tUser axisUser = rawBus.data.axisUser;
+            method Action axisReady(Bool rdy);
+                rawBus.ready(rdy);
+            endmethod
+        endinterface
+    );
+endfunction
+
+function RawAxiStreamSlave#(tData, tKeep, tUser) convertRawBusToRawAxiStreamSlave(
+        AxiRawBusSlave#(AxiStream#(tData, tKeep, tUser)) rawBus
+    ) provisos (Bits#(tData, szData));
+    return (
+        interface RawAxiStreamSlave;
+            method Bool axisReady = rawBus.ready;
+            method Action axisValid(
+                Bool valid, 
+                tData axisData, 
+                tKeep axisKeep, 
+                Bool axisLast, 
+                tUser axisUser
+            );
+                AxiStream#(tData, tKeep, tUser) axiStream = AxiStream {
+                    axisData: axisData,
+                    axisKeep: axisKeep,
+                    axisLast: axisLast,
+                    axisUser: axisUser
+                };
+                rawBus.validData(valid, axiStream);
+            endmethod
+        endinterface
+    );
+endfunction
+
+
+
+
+
+typedef struct {
+    tData                                   axisData;
+    tKeep                                   axisKeep;
+    Bool                                    axisLast;
+    tUser                                   axisUser;
+} AxiStream#(type tData, type tKeep, type tUser) deriving(Bits, FShow, Eq, Bounded);
+
+(*always_ready, always_enabled*)
+interface RawAxiStreamMaster#(type tData, type tKeep, type tUser);
+    (* result = "tvalid" *) method Bool                                     axisValid;
+    (* result = "tdata"  *) method tData                                    axisData;
+    (* result = "tkeep"  *) method tKeep                                    axisKeep;
+    (* result = "tlast"  *) method Bool                                     axisLast;
+    (* result = "tuser"  *) method tUser                                    axisUser;
+    (* always_enabled, prefix = "" *) method Action axisReady((* port="tready" *) Bool ready);
+endinterface
+
+(* always_ready, always_enabled *)
+interface RawAxiStreamSlave#(type tData, type tKeep, type tUser);
+   (* prefix = "" *)
+   method Action axisValid (
+        (* port="tvalid" *) Bool                                    axisValid,
+		(* port="tdata"  *) tData                                   axisData,
+		(* port="tkeep"  *) tKeep                                   axisKeep,
+		(* port="tlast"  *) Bool                                    axisLast,
+        (* port="tuser"  *) tUser                                   axisUser
+    );
+   (* result="tready" *) method Bool    axisReady;
+endinterface
+
+
+module mkPipeOutToRawAxiStreamMaster#(
+        PipeOut#(AxiStream#(tData, tKeep, tUser)) pipe
+    )(RawAxiStreamMaster#(tData, tKeep, tUser)) provisos (
+        Bits#(tData, szData),
+        Bits#(tKeep, szKeep),
+        Bits#(tUser, szUser)
+    );
+
+    let rawBus <- mkPipeOutToRawBusMaster(pipe);
+    return convertRawBusToRawAxiStreamMaster(rawBus);
+endmodule
+
+
+module mkPipeInToRawAxiStreamSlave#(
+        PipeIn#(AxiStream#(tData, tKeep, tUser)) pipe
+    )(RawAxiStreamSlave#(tData, tKeep, tUser)) provisos (
+        Bits#(tData, szData),
+        Bits#(tUser, szUser),
+        Bits#(tKeep, szKeep)
+    );
+
+    let rawBus <- mkPipeInToRawBusSlave(pipe);
+    return convertRawBusToRawAxiStreamSlave(rawBus);
+endmodule
