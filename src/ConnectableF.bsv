@@ -240,7 +240,7 @@ endinterface
 module mkPipeInAdapterB0(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
 
     Wire#(tData) dataWire <- mkWire;
-    Wire#(Bool)  notEmptyWire <- mkWire;
+    Wire#(Bool)  notEmptyWire <- mkDWire(False);
     PulseWire deqSignalWire <- mkPulseWire;
 
     interface PipeInB0 pipeInIfc;

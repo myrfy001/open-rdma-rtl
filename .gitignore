@@ -9,6 +9,7 @@ backend/achronix/syn/*
 !backend/achronix/syn/*.prj
 backend/quartus/*
 !backend/quartus/sdc
+backend/vivado/ip_generated
 
 .Xil
 vivado_workdir*

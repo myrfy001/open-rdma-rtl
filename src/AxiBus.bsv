@@ -30,6 +30,9 @@ typedef Bit#(AXI_AWBURST_WIDTH) AxiAwburst;
 typedef 4 AXI_AWQOS_WIDTH;
 typedef Bit#(AXI_AWQOS_WIDTH) AxiAwqos;
 
+typedef 3 AXI_PROT_WIDTH;
+typedef Bit#(AXI_PROT_WIDTH) AxiProt;
+
 // W channel ==============
     // defined in common part above.
 
@@ -315,3 +318,195 @@ module mkPipeInToRawAxiStreamSlave#(
     let rawBus <- mkPipeInToRawBusSlave(pipe);
     return convertRawBusToRawAxiStreamSlave(rawBus);
 endmodule
+
+
+
+// Write Address channel
+typedef struct {
+    tAddr       awAddr;
+    AxiProt     awProt;
+} Axi4LiteWrAddr#(type tAddr) deriving(Bits, FShow);
+
+// Write Data channel
+typedef struct {
+    tData       wData;
+    tStrb       wStrb;
+} Axi4LiteWrData#(type tData, type tStrb) deriving(Bits, FShow);
+
+// Write Response channel
+typedef AxiBresp Axi4LiteWrResp;
+
+// Read Address channel
+typedef struct {
+    tAddr       arAddr;
+    AxiProt     arProt;
+} Axi4LiteRdAddr#(type tAddr) deriving(Bits, FShow);
+
+// Read Data channel
+typedef struct {
+    AxiBresp    rResp;
+    tData       rData;
+} Axi4LiteRdData#(type tData) deriving(Bits, FShow);
+
+
+
+(* always_ready, always_enabled *)
+interface RawAxi4LiteWrSlave#(type tAddr, type tData, type tStrb);
+    // Wr Addr channel
+    (* prefix = "" *)
+    method Action awValidData(
+         (* port = "awvalid"*) Bool                  awValid, // in
+         (* port = "awaddr" *) tAddr                 awAddr,  // in
+         (* port = "awprot" *) AxiProt               awProt   // in
+     );
+    (* result = "awready" *) method Bool awReady; // out
+ 
+    // Wr Data channel
+    (* prefix = "" *)
+    method Action wValidData(
+         (* port = "wvalid"*) Bool    wValid, // in
+         (* port = "wdata" *) tData   wData,  // in
+         (* port = "wstrb" *) tStrb   wStrb
+     );
+    (* result = "wready" *) method Bool wReady;
+ 
+    // Wr Response channel
+    (* result = "bvalid"*) method Bool                  bValid;    // out
+    (* result = "bresp" *) method AxiBresp              bResp;     // out
+    (* prefix = "" *) method Action bReady((* port = "bready" *) Bool rdy); // in
+ endinterface
+ 
+ (* always_ready, always_enabled *)
+ interface RawAxi4LiteRdSlave#(type tAddr, type tData, type tStrb);
+    // Rd Addr channel
+    (* prefix = "" *)
+    method Action arValidData(
+         (* port = "arvalid"*) Bool                  arValid, // in
+         (* port = "araddr" *) tAddr                 arAddr,  // in
+         (* port = "arprot" *) AxiProt               arProt   // in
+     );
+    (* result = "arready" *) method Bool arReady; // out
+ 
+    // Rd Data channel
+    (* result = "rvalid"*) method Bool          rValid; // out
+    (* result = "rresp" *) method AxiBresp      rResp;  // out
+    (* result = "rdata" *) method tData         rData;  // out
+    (* prefix = "" *) method Action rReady((* port = "rready" *) Bool rdy);         // in
+ endinterface
+ 
+ 
+ interface RawAxi4LiteSlave#(type tAddr, type tData, type tStrb);
+     (* prefix = "" *) interface RawAxi4LiteWrSlave#(tAddr, tData, tStrb) wrSlave;
+     (* prefix = "" *) interface RawAxi4LiteRdSlave#(tAddr, tData, tStrb) rdSlave;
+ endinterface
+ 
+
+
+ module mkRawAxi4LiteSlave#(
+        PipeIn#(Axi4LiteWrAddr#(tAddr)) wrAddr,
+        PipeIn#(Axi4LiteWrData#(tData, tStrb)) wrData,
+        PipeOut#(AxiBresp) wrResp,
+
+        PipeIn#(Axi4LiteRdAddr#(tAddr)) rdAddr,
+        PipeOut#(Axi4LiteRdData#(tData)) rdData
+    )(RawAxi4LiteSlave#(tAddr, tData, tStrb)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Bits#(tStrb, szStrb)
+    );
+    let rawWrAddrBus <- mkPipeInToRawBusSlave(wrAddr);
+    let rawWrDataBus <- mkPipeInToRawBusSlave(wrData);
+    let rawWrRespBus <- mkPipeOutToRawBusMaster(wrResp);
+
+    let rawRdAddrBus <- mkPipeInToRawBusSlave(rdAddr);
+    let rawRdDataBus <- mkPipeOutToRawBusMaster(rdData);
+
+    interface wrSlave = parseRawBusToRawAxi4LiteWrSlave(rawWrAddrBus, rawWrDataBus, rawWrRespBus);
+    interface rdSlave = parseRawBusToRawAxi4LiteRdSlave(rawRdAddrBus, rawRdDataBus);
+endmodule
+
+
+
+function RawAxi4LiteWrSlave#(tAddr, tData, tStrb) parseRawBusToRawAxi4LiteWrSlave(
+        AxiRawBusSlave#(Axi4LiteWrAddr#(tAddr)) rawWrAddrBus,
+        AxiRawBusSlave#(Axi4LiteWrData#(tData, tStrb)) rawWrDataBus,
+        AxiRawBusMaster#(Axi4LiteWrResp) rawWrRespBus
+    ) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Bits#(tStrb, szStrb)
+    );
+    return (
+        interface RawAxi4LiteWrSlave;
+            // Wr Addr channel
+            method Action awValidData(
+                Bool awValid, 
+                tAddr awAddr, 
+                AxiProt awProt
+            );
+                Axi4LiteWrAddr#(tAddr) wrAddr = Axi4LiteWrAddr {
+                    awAddr: awAddr,
+                    awProt: awProt
+                };
+                rawWrAddrBus.validData(awValid, wrAddr);
+            endmethod
+            method Bool awReady = rawWrAddrBus.ready;
+
+            // Wr Data channel
+            method Action wValidData(
+                Bool wValid, 
+                tData wData, 
+                tStrb wStrb
+            );
+                Axi4LiteWrData#(tData, tStrb) wrData = Axi4LiteWrData {
+                    wData: wData,
+                    wStrb: wStrb
+                };
+                rawWrDataBus.validData(wValid, wrData);
+            endmethod
+            method Bool wReady = rawWrDataBus.ready;
+
+            // Wr Response channel
+            method Bool                  bValid = rawWrRespBus.valid;
+            method AxiBresp              bResp  = rawWrRespBus.data;
+            method Action bReady(Bool rdy);
+                rawWrRespBus.ready(rdy);
+            endmethod
+        endinterface
+    );
+endfunction
+
+function RawAxi4LiteRdSlave#(tAddr, tData, tStrb) parseRawBusToRawAxi4LiteRdSlave(
+        AxiRawBusSlave#(Axi4LiteRdAddr#(tAddr)) rawRdAddrBus,
+        AxiRawBusMaster#(Axi4LiteRdData#(tData)) rawRdDataBus
+    ) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tData, szData),
+        Bits#(tStrb, szStrb)
+    );
+    return (
+        interface RawAxi4LiteRdSlave;
+            // Rd Addr channel
+            method Action arValidData(
+                Bool arValid, 
+                tAddr arAddr, 
+                AxiProt arProt
+            );
+                Axi4LiteRdAddr#(tAddr) rdAddr = Axi4LiteRdAddr {
+                    arAddr: arAddr,
+                    arProt: arProt
+                };
+                rawRdAddrBus.validData(arValid, rdAddr);
+            endmethod
+            method Bool arReady = rawRdAddrBus.ready;
+
+            // Rd Data channel
+            method Bool                               rValid = rawRdDataBus.valid;
+            method AxiBresp                           rResp  = rawRdDataBus.data.rResp;
+            method tData                              rData  = rawRdDataBus.data.rData;
+            method Action rReady(Bool rdy);
+                rawRdDataBus.ready(rdy);
+            endmethod
+        endinterface
+    );
+endfunction

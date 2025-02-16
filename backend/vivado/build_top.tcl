@@ -8,8 +8,42 @@ set sdc_dirs 				$::env(VIVADO_SDC_DIRS)
 set bram_init_file_dirs		$::env(BRAM_INIT_FILE_DIRS)
 
 set part $::env(VIVADO_PART)
+set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
 
 set current_time [clock format [clock seconds] -format "%Y-%m-%d-%H-%M-%S"]
+
+proc runGenerateIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+    global device
+
+    set sdc_snapshot_dir "$vivado_work_dir/sdc_snapshot_dir"
+    set dir_ips "$vivado_backend_dir/ips"
+
+    set dir_ip_gen "$vivado_backend_dir/ip_generated"
+    file mkdir $dir_ip_gen
+
+
+    read_xdc [ glob $sdc_snapshot_dir/*.sdc ]
+
+    foreach file [ glob $dir_ips/**/*.tcl ] {
+        source $file
+    }
+
+    report_property $device -file $vivado_work_dir/pre_synth_dev_prop.rpt
+    reset_target all [ get_ips * ]
+    generate_target all [ get_ips * ]
+
+}
+
+proc runSynthIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+    set sdc_snapshot_dir "$vivado_work_dir/sdc_snapshot_dir"
+    set dir_ip_gen "$vivado_backend_dir/ip_generated"
+
+    read_xdc [ glob $sdc_snapshot_dir/*.sdc ]
+    
+    read_ip [glob $dir_ip_gen/**/*.xci]
+    # The following line will generate a .dcp checkpoint file, so no need to create by ourselves
+    synth_ip [ get_ips * ] -quiet
+}
 
 proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype dir_list } {
 	
@@ -30,8 +64,7 @@ proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype 
 
 
 proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
-    global dir_output part device dir_rtl dir_sdc dir_ip_gen dir_bsv_gen
-    global ooc_module_names
+    global dir_ip_gen part device
 
 
     set verilog_snapshot_dir "$vivado_work_dir/verilog_snapshot_dir"
@@ -53,7 +86,7 @@ proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir
     read_xdc [ glob $sdc_snapshot_dir/*.sdc ]
 
 	set_param general.maxthreads 24
-	set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
+	
 	set_part $device
 }
 
@@ -119,6 +152,8 @@ proc runRoute {args} {
 }
 
 createProject $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+# runGenerateIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
 
 runSynthDesign
 
