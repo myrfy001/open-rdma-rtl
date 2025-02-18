@@ -17,26 +17,25 @@ def gen_init_bram_psn_merge_storage():
     } BitmapWindowStorageEntry#(type tData, type tBoundary) deriving(Bits, FShow);
     '''
 
-    for channel_idx in range(2):
-        with open(os.path.join(out_path, f"init_bram_psn_merge_storage_ch{channel_idx}.bin"), "w") as fo:
-            for i in range(MAX_QP_CNT):
-                data_part = "1" * 128                       # -1
-                left_boundary_part = "1" * 20               # -1
-                qpn_key_part = "0" * 14                     # 0
-                fo.write(data_part + left_boundary_part +
-                         qpn_key_part + "\n")
+    with open(os.path.join(out_path, f"init_bram_psn_merge_storage.bin"), "w") as fo:
+        for i in range(MAX_QP_CNT):
+            data_part = "1" * 128                       # -1
+            left_boundary_part = "1" * 20               # -1
+            qpn_key_part = "0" * 14                     # 0
+            fo.write(data_part + left_boundary_part +
+                     qpn_key_part + "\n")
 
 
 def gen_init_bram_auto_ack_meta_storage():
-    for channel_idx in range(2):
-        with open(os.path.join(out_path, f"init_bram_auto_ack_meta_storage_ch{channel_idx}.bin"), "w") as fo:
-            for i in range(MAX_QP_CNT):
-                last_entry_receive_time = "0" * 32
-                ack_msn = "0" * 16
-                has_reported = "0" * 1
 
-                fo.write(last_entry_receive_time + ack_msn +
-                         has_reported + "\n")
+    with open(os.path.join(out_path, f"init_bram_auto_ack_meta_storage.bin"), "w") as fo:
+        for i in range(MAX_QP_CNT):
+            last_entry_receive_time = "0" * 32
+            ack_msn = "0" * 16
+            has_reported = "1" * 1
+
+            fo.write(last_entry_receive_time + ack_msn +
+                     has_reported + "\n")
 
 
 def gen_init_bram_last_report_time():

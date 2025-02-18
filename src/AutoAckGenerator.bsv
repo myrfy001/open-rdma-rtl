@@ -88,11 +88,18 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
     AutoInferBram#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramUG(False, "init_bram_auto_ack_last_report_time.bin", "lastReportTimeStorage");
 
-    function AutoAckGenAtomicUpdateStorageEntry atomicUpdateFunction(AutoAckGenAtomicUpdateStorageEntry oldVal, Bool reqVal);
+    function AutoAckGenAtomicUpdateStorageEntry atomicUpdateFunction(AutoAckGenAtomicUpdateStorageEntry oldVal, Bool reqVal, Bool isReset);
         let needSendAckNow = reqVal;
-        oldVal.ackMsn = needSendAckNow ? oldVal.ackMsn + 1 : oldVal.ackMsn;
-        oldVal.lastEntryReceiveTime = curTimeReg;
-        oldVal.hasReported = reqVal;
+        if (isReset) begin
+            oldVal.ackMsn = 0;
+            oldVal.lastEntryReceiveTime = curTimeReg;
+            oldVal.hasReported = True;
+        end
+        else begin
+            oldVal.ackMsn = needSendAckNow ? oldVal.ackMsn + 1 : oldVal.ackMsn;
+            oldVal.lastEntryReceiveTime = curTimeReg;
+            oldVal.hasReported = reqVal;
+        end
         return oldVal;
     endfunction
 

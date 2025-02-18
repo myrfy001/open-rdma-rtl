@@ -935,7 +935,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         let isLast = ethernetFrameLeftByteCounterReg <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-        EthernetNapMod mod = truncate(ethernetFrameLeftByteCounterReg);
+        BusByteIdx mod = truncate(ethernetFrameLeftByteCounterReg);
 
         let payload = rdmaPayloadPipeInQ.first;
         rdmaPayloadPipeInQ.deq;

@@ -265,7 +265,7 @@ endfunction
 (* synthesize *)
 module mkAddressTranslate(AddressTranslate);
     
-    BramCache#(PTEIndex, PageTableEntry, 3) pageTableStorage <- mkBramCache;
+    BramCache#(PTEIndex, PageTableEntry, 4) pageTableStorage <- mkBramCache;
 
     QueuedServerP#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServerP("translateSrvInst");
     QueuedServerP#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServerP("mkAddressTranslate modifySrvInst");

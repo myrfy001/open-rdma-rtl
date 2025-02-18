@@ -976,7 +976,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
         DataBeatHalf payloadDataPartFromPreviousBeat = truncateLSB(prevBeatReg.data);
 
-        EthernetNapMod mod = truncate(ethernetFrameLeftByteCounterReg);
+        BusByteIdx mod = truncate(ethernetFrameLeftByteCounterReg);
 
         
         BusByteCnt byteNum = prevBeatReg.byteNum - fromInteger(valueOf(DATA_BUS_HALF_BEAT_BYTE_WIDTH));

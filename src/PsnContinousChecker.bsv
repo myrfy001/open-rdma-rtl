@@ -88,7 +88,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         Add#(szBoundary, g__, SizeOf#(PSN)),
         FShow#(tRowAddr),
         FShow#(BitmapWindowStorageEntry#(tData, tBoundary)),
-        Add#(h__, QP_INDEX_WIDTH, szRowAddr)
+        Add#(h__, QP_INDEX_WIDTH, szRowAddr),
+        Add#(szStride, i__, szData)
     );
 
     PipeInAdapterB0#(BitmapWindowStorageUpdateReq) reqPipeInQueue <- mkPipeInAdapterB0;
@@ -98,8 +99,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary))) storage = newVector;
-    storage[0] <- mkAutoInferBramQueuedOutput(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 0");
-    storage[1] <- mkAutoInferBramQueuedOutput(True, "init_bram_psn_merge_storage_ch0.bin", "mkBitmapWindowStorage 1");
+    storage[0] <- mkAutoInferBramQueuedOutput(True, "init_bram_psn_merge_storage.bin", "mkBitmapWindowStorage 0");
+    storage[1] <- mkAutoInferBramQueuedOutput(True, "init_bram_psn_merge_storage.bin", "mkBitmapWindowStorage 1");
 
 
     // Pipeline Queues
@@ -110,7 +111,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     FIFOF#(tRowAddr) resetReqPipeInQ <- mkLFIFOF;
 
-    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
+    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_EIGHT));
 
     // rule printDebugInfo0;
     //     if (!respPipeOutQueueVec[0].notFull) $display("time=%0t, ", $time, "FullQueue: mkBitmapWindowStorage respPipeOutQueueVec[0]");
@@ -129,7 +130,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
             tBoundary leftBound = unpack(truncateLSB(req.psn));
             Bit#(TLog#(szStride)) offsetInStride = truncate(req.psn);
-            tData bitmap = unpack(swapEndianBit(1 << offsetInStride));
+            Bit#(szStride) oneHotStride = 1 << offsetInStride;
+            tData bitmap = unpack(zeroExtendLSB(oneHotStride));
 
             let pipelineEntryOut = BitmapWindowStorageStageOneToTwoPipelineEntry {
                 rowAddr: rowAddr,
@@ -232,6 +234,9 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
             };
             respPipeOutQueue.enq(resp);
         end
+        else begin
+            newEntry = pipelineEntryIn.newEntry;
+        end
 
         let bramWriteBackReq = BitmapWindowStorageStageTwoToThreePipelineEntry {
             rowAddr : pipelineEntryIn.rowAddr,
@@ -319,7 +324,7 @@ interface AtomicUpdateStorage#(type tRowAddr, type tData, type tReq);
 endinterface
 
 module mkAtomicUpdateStorage#(
-        function tData updateFunc(tData oldVal, tReq reqVal),
+        function tData updateFunc(tData oldVal, tReq reqVal, Bool isReset),
         String initRamFileBaseName
     )(AtomicUpdateStorage#(tRowAddr, tData, tReq)) provisos (
         Bits#(tRowAddr, szRowAddr),
@@ -340,11 +345,11 @@ module mkAtomicUpdateStorage#(
 
 
     Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(tRowAddr, AtomicUpdateStorageEntry#(tData))) storage = newVector;
-    storage[0] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 0");
-    storage[1] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + "_ch0.bin", "mkAtomicUpdateStorage 1");
+    storage[0] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + ".bin", "mkAtomicUpdateStorage 0");
+    storage[1] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + ".bin", "mkAtomicUpdateStorage 1");
     
     
-    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
+    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_EIGHT));
 
     // Pipeline Queues
 
@@ -408,7 +413,7 @@ module mkAtomicUpdateStorage#(
         let oldEntry = newestAlreadyExistEntry;
 
         let newEntry = newestAlreadyExistEntry;
-        newEntry.data = updateFunc(newestAlreadyExistEntry.data, pipelineEntryIn.reqData);
+        newEntry.data = updateFunc(newestAlreadyExistEntry.data, pipelineEntryIn.reqData, pipelineEntryIn.isReset);
                 
         if (!pipelineEntryIn.isReset) begin
             let resp = AtomicUpdateStorageUpdateResp {
@@ -428,7 +433,7 @@ module mkAtomicUpdateStorage#(
 
         // $display("time=%0t", $time, "mkAtomicUpdateStorage 2 doMerge", 
         //         ", pipelineEntryIn=", fshow(pipelineEntryIn),
-        //         ", resp=", fshow(resp)
+        //         ", entryFromForwardCacheMaybe=", fshow(entryFromForwardCacheMaybe)
         // ); 
 
     endrule

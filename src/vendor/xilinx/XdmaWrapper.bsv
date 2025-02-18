@@ -12,6 +12,7 @@ import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import IoChannels :: *;
 import RdmaHeaders :: *;
+import StreamShifterG :: *;
 
 import RdmaUtils :: *;
 
@@ -83,9 +84,9 @@ module mkXdmaWrapper(XdmaWrapper#(DATA, XdmaAxisTkeep, XdmaAxisTuser));
 
 
     PipeInAdapterB0#(IoChannelMemoryAccessMeta)         dmaWriteMetaPipeInQueue   <- mkPipeInAdapterB0;
-    PipeInAdapterB0#(IoChannelMemoryAccessDataStream)   dmaWriteDataPipeInQueue   <- mkPipeInAdapterB0;
+    // PipeInAdapterB0#(IoChannelMemoryAccessDataStream)   dmaWriteDataPipeInQueue   <- mkPipeInAdapterB0;
     PipeInAdapterB0#(IoChannelMemoryAccessMeta)         dmaReadMetaPipeInQueue    <- mkPipeInAdapterB0;
-    FIFOF#(IoChannelMemoryAccessDataStream)             dmaReadDataPipeOutQueue   <- mkFIFOF;
+    // FIFOF#(IoChannelMemoryAccessDataStream)             dmaReadDataPipeOutQueue   <- mkFIFOF;
 
     Wire#(Bool) h2cDescBypRdyWire <- mkBypassWire;
     Reg#(Bool) h2cNextBeatIsFirstReg <- mkReg(True);
@@ -98,17 +99,27 @@ module mkXdmaWrapper(XdmaWrapper#(DATA, XdmaAxisTkeep, XdmaAxisTuser));
     Wire#(IoChannelMemoryAccessMeta) c2hMetaWire <- mkDWire(unpack(0));
     Wire#(IoChannelMemoryAccessMeta) h2cMetaWire <- mkDWire(unpack(0));
 
+    UniDirStreamShifter#(DATA) rightShifter    <- mkLsbRightStreamRightShifterG;
+    UniDirStreamShifter#(DATA) leftShifter     <- mkLsbRightStreamLeftShifterG;
+
+    let rightShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(rightShifter.offsetPipeIn, 64);
+    let leftShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(leftShifter.offsetPipeIn, 64);
+    // let rightShifterStreamPipeInConverter <- mkPipeInB0ToPipeIn(rightShifter.streamPipeIn, 1);
+    let leftShifterStreamPipeInConverter <- mkPipeInB0ToPipeIn(leftShifter.streamPipeIn, 1);
+
     rule forwardH2cDesc;
         h2cMetaWire <= dmaReadMetaPipeInQueue.first;
         if (h2cDescHandshakeWillSuccess) begin
             dmaReadMetaPipeInQueue.deq;
+            ByteIdxInDword addrOffsetInDword = truncate(dmaReadMetaPipeInQueue.first.addr);
+            leftShifterOffsetPipeInConverter.enq(zeroExtend(addrOffsetInDword));
         end
     endrule
 
     rule forawrdH2cData;
         let newData = xdmaH2cStFifo.first;
         xdmaH2cStFifo.deq;
-        dmaReadDataPipeOutQueue.enq(IoChannelMemoryAccessDataStream{
+        leftShifterStreamPipeInConverter.enq(IoChannelMemoryAccessDataStream{
             data: unpack(pack(newData.axisData)),
             startByteIdx: 0,
             byteNum: newData.axisLast ? unpack(pack(countZerosLSB(~newData.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
@@ -125,12 +136,14 @@ module mkXdmaWrapper(XdmaWrapper#(DATA, XdmaAxisTkeep, XdmaAxisTuser));
         c2hMetaWire <= dmaWriteMetaPipeInQueue.first;
         if (c2hDescHandshakeWillSuccess) begin
             dmaWriteMetaPipeInQueue.deq;
+            ByteIdxInDword addrOffsetInDword = truncate(dmaWriteMetaPipeInQueue.first.addr);
+            rightShifterOffsetPipeInConverter.enq(zeroExtend(addrOffsetInDword));
         end
     endrule
 
     rule forwardC2hData;
-        dmaWriteDataPipeInQueue.deq;
-        let ds = dmaWriteDataPipeInQueue.first;
+        rightShifter.streamPipeOut.deq;
+        let ds = rightShifter.streamPipeOut.first;
         xdmaC2hStFifo.enq(
             AxiStream {
                 axisData: unpack(pack(ds.data)),
@@ -145,12 +158,12 @@ module mkXdmaWrapper(XdmaWrapper#(DATA, XdmaAxisTkeep, XdmaAxisTuser));
     interface DtldStreamBiDirSlavePipesB0In dmaSlavePipeIfc;
         interface DtldStreamSlaveWritePipesB0In writePipeIfc;
             interface  writeMetaPipeIn  = toPipeInB0(dmaWriteMetaPipeInQueue);
-            interface  writeDataPipeIn  = toPipeInB0(dmaWriteDataPipeInQueue);
+            interface  writeDataPipeIn  = rightShifter.streamPipeIn;
         endinterface
 
         interface DtldStreamSlaveReadPipesB0In readPipeIfc;
             interface  readMetaPipeIn  = toPipeInB0(dmaReadMetaPipeInQueue);
-            interface  readDataPipeOut = toPipeOut(dmaReadDataPipeOutQueue);
+            interface  readDataPipeOut = leftShifter.streamPipeOut;
         endinterface
     endinterface
 
