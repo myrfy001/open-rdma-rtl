@@ -229,8 +229,6 @@ module bluerdma_top#(
     wire            gt_ctl_rx_rsfec_enable_correction;
     wire            gt_ctl_rx_rsfec_enable_indication;
 
-    wire    global_soft_reset;
-
     // CMAC CTRL STATE
     wire [3:0]      cmac_ctrl_tx_state;
     wire [3:0]      cmac_ctrl_rx_state;
@@ -253,8 +251,6 @@ module bluerdma_top#(
 
       .sys_clk         ( sys_clk ),
       .sys_clk_gt      ( sys_clk_gt),
-
-      .dma_bridge_resetn(global_soft_reset),
       
       // Tx
       .pci_exp_txn     ( pci_exp_txn ),

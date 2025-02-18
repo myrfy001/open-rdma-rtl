@@ -15,6 +15,8 @@ set current_time [clock format [clock seconds] -format "%Y-%m-%d-%H-%M-%S"]
 proc runGenerateIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
     global device
 
+    set_part $device
+
     set sdc_snapshot_dir "$vivado_work_dir/sdc_snapshot_dir"
     set dir_ips "$vivado_backend_dir/ips"
 
@@ -63,7 +65,7 @@ proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype 
 }
 
 
-proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+proc createSourceSnapshot {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
     global dir_ip_gen part device
 
 
@@ -79,6 +81,17 @@ proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir
 	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
 	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
 	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "TEXT_FILE" $bram_init_file_dir_list]
+}
+
+proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+    global part device
+
+    set dir_ip_gen "$vivado_backend_dir/ip_generated"
+
+    set verilog_snapshot_dir "$vivado_work_dir/verilog_snapshot_dir"
+	set sdc_snapshot_dir "$vivado_work_dir/sdc_snapshot_dir"
+
+    read_ip [glob $dir_ip_gen/**/*.xci]
 
     read_verilog [ glob $verilog_snapshot_dir/*.v ]
     add_files -norecurse [glob $verilog_snapshot_dir/*.bin]
@@ -151,11 +164,14 @@ proc runRoute {args} {
 
 }
 
-createProject $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+createSourceSnapshot $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
 # runGenerateIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
-runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+# runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+
+createProject $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
 
 runSynthDesign
+
 
 runPlacement -open_checkpoint -false -directive ExtraNetDelay_high
 runRoute -open_checkpoint -false

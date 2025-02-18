@@ -14,7 +14,7 @@ set properties [list \
   CONFIG.pl_link_cap_max_link_width {X16} \
   CONFIG.xdma_axi_intf_mm {AXI_Stream} \
   CONFIG.xdma_sts_ports {true} \
-  CONFIG.soft_reset_en {true} \
+  CONFIG.soft_reset_en {false} \
 ]
 
 create_ip -name xdma -vendor xilinx.com -library ip -module_name xdma_0 -dir $dir_ip_gen -force
