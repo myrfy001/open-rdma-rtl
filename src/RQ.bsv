@@ -275,16 +275,29 @@ module mkRQ(RQ);
         let isFirstPacket       = isFirstRdmaOpCode(bth.opcode);
 
 
+        let packetStatus = RdmaRecvPacketStatusNormal;
+        
         if (isNeedQueryMrTable) begin
             let mrTableQueryReq = MrTableQueryReq{
                 idx: rkey2IndexMR(reth.rkey)
             };
             mrTableQueryCltInst.putReq(mrTableQueryReq);
+
+            if (getMrRawIndexPartFromRkey(reth.rkey) >= fromInteger(valueOf(MAX_MR))) begin
+                packetStatus = RdmaRecvPacketStatusMrIdxOverflow;
+            end
         end
+
+        
+        if (getQpnRawIndexPart(bth.dqpn) >= fromInteger(valueOf(MAX_QP))) begin
+            packetStatus = RdmaRecvPacketStatusQpIdxOverflow;
+        end
+
+        
 
         let pipelineEntryOut = CheckQpcAndMrTablePipelineEntry{
             rdmaPacketMeta      : rdmaPacketMeta,
-            packetStatus        : RdmaRecvPacketStatusNormal,
+            packetStatus        : packetStatus,
             isNeedQueryMrTable  : isNeedQueryMrTable,
             isZeroPayload       : isZeroPayload,
             isFirstPacket       : isFirstPacket,
@@ -321,7 +334,7 @@ module mkRQ(RQ);
         let isReadReq            = isReadReqRdmaOpCode(bth.opcode);
         let isAtomicReq          = isAtomicReqRdmaOpCode(bth.opcode);
         let isReadResp           = isReadRespRdmaOpCode(bth.opcode);
-        
+
         Bool                            isQpKeyCheckPass            = False;
         Bool                            isQpAccCheckPass            = False; 
         Bool                            isMrKeyCheckPass            = False;
@@ -444,17 +457,19 @@ module mkRQ(RQ);
             end
         end
 
-        if (!isQpKeyCheckPass) begin
-            packetStatus = RdmaRecvPacketStatusInvalidQpContext;
-        end
-        else if (!isQpAccCheckPass) begin
-            packetStatus = RdmaRecvPacketStatusInvalidQpAccessFlag;
-        end
-        else if (!isMrKeyCheckPass) begin
-            packetStatus = RdmaRecvPacketStatusInvalidMrKey;
-        end
-        else if (!isMrAccCheckPass) begin
-            packetStatus = RdmaRecvPacketStatusInvalidMrAccessFlag;
+        if (isRecvPacketStatusNormal(packetStatus)) begin
+            if (!isQpKeyCheckPass) begin
+                packetStatus = RdmaRecvPacketStatusInvalidQpContext;
+            end
+            else if (!isQpAccCheckPass) begin
+                packetStatus = RdmaRecvPacketStatusInvalidQpAccessFlag;
+            end
+            else if (!isMrKeyCheckPass) begin
+                packetStatus = RdmaRecvPacketStatusInvalidMrKey;
+            end
+            else if (!isMrAccCheckPass) begin
+                packetStatus = RdmaRecvPacketStatusInvalidMrAccessFlag;
+            end
         end
 
         let pipelineEntryOut = CheckMrTableStep2PipelineEntry{

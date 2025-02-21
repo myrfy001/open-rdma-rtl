@@ -4,7 +4,7 @@ from collections import deque, OrderedDict
 from abc import ABC
 import logging
 import math
-
+from .hw_consts import MEM_REGION_PAGE_SIZE, LR_KEY_IDX_PART_WIDTH, LR_KEY_KEY_PART_WIDTH, QPN_IDX_PART_WIDTH, QPN_KEY_PART_WIDTH
 import asyncio
 
 import cocotb
@@ -385,14 +385,10 @@ def BluespecMaybe(inner_type):
 #####################################################
 #####################################################
 #####################################################
-BLUERDMA_MAX_QP = 512
-BLUERDMA_QPN_WIDTH = 24
-BLUERDMA_QP_INDEX_WIDTH = int(math.log(BLUERDMA_MAX_QP, 2))
-BLUERDMA_QPN_KEY_PART_WIDTH = BLUERDMA_QPN_WIDTH - BLUERDMA_QP_INDEX_WIDTH
 
 
 def get_qpn(qp_index, qp_key):
-    return (qp_index << BLUERDMA_QPN_KEY_PART_WIDTH) | qp_key
+    return (qp_index << QPN_KEY_PART_WIDTH) | qp_key
 
 
 class BlueRdmaData256(BluespecBits):
@@ -613,7 +609,7 @@ class BlueRdmaOooWindowBitmapStorageChannelIdx(BluespecBits):
 
 
 class BlueRdmaIndexQP(BluespecBits):
-    _width = BLUERDMA_QP_INDEX_WIDTH
+    _width = QPN_IDX_PART_WIDTH
 
 
 class BlueRdmaBitmapWindowStorageEntry(BluespecStruct):

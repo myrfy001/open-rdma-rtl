@@ -33,8 +33,24 @@ endfunction
 
 
 // suppose LKey == RKey
-function IndexMR   lkey2IndexMR(LKEY lkey)   = unpack(truncateLSB(lkey));
-function IndexMR   rkey2IndexMR(RKEY rkey)   = unpack(truncateLSB(rkey));
+function IndexMR   lkey2IndexMR(LKEY lkey);
+    MrRawIndexPart indexPart = truncateLSB(lkey);
+    return unpack(truncate(indexPart));
+endfunction
+
+function IndexMR   rkey2IndexMR(RKEY rkey);
+    MrRawIndexPart indexPart = truncateLSB(rkey);
+    return unpack(truncate(indexPart));
+endfunction
+
+function MrRawIndexPart getMrRawIndexPartFromLkey(LKEY lkey);
+    return unpack(truncateLSB(lkey));
+endfunction
+
+function MrRawIndexPart getMrRawIndexPartFromRkey(RKEY rkey);
+    return unpack(truncateLSB(rkey));
+endfunction
+
 function KeyPartMR lkey2KeyPartMR(LKEY lkey) = unpack(truncate(lkey));
 function KeyPartMR rkey2KeyPartMR(RKEY rkey) = unpack(truncate(rkey));
 

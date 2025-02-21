@@ -112,9 +112,6 @@ typedef TExp#(14) TLB_CACHE_SIZE; // TLB cache size 16K
 typedef TLog#(TLB_CACHE_SIZE) TLB_CACHE_INDEX_WIDTH; // 14
 typedef TSub#(TSub#(ADDR_WIDTH, TLB_CACHE_INDEX_WIDTH), PAGE_OFFSET_WIDTH) TLB_CACHE_TAG_WIDTH; // 64-14-21=29
 
-typedef TLog#(MAX_MR) MR_INDEX_WIDTH;
-typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
-
 // Derived types
 typedef Bit#(DATA_BUS_WIDTH)      DATA;
 
@@ -325,19 +322,27 @@ instance Flags#(QpAttrMaskFlag);
 endinstance
 
 
-typedef TLog#(MAX_QP) QP_INDEX_WIDTH;
-typedef TSub#(QPN_WIDTH, QP_INDEX_WIDTH) QPN_KEY_PART_WIDTH;
+typedef 8 QPN_KEY_PART_WIDTH;
+typedef TLog#(MAX_QP) QP_INDEX_WIDTH_SUPPORTED;
+typedef TSub#(QPN_WIDTH, QPN_KEY_PART_WIDTH) QP_INDEX_PART_WIDTH;
 
-typedef Bit#(QP_INDEX_WIDTH)     IndexQP;
+typedef Bit#(QP_INDEX_WIDTH_SUPPORTED)     IndexQP;
 typedef Bit#(QPN_KEY_PART_WIDTH) KeyQP;
+typedef Bit#(QP_INDEX_PART_WIDTH) QpnRawIndexPart;
 
 
-function IndexQP getIndexQP(QPN qpn) = unpack(truncateLSB(qpn));
 function KeyQP   getKeyQP  (QPN qpn) = unpack(truncate(qpn));
+function IndexQP getIndexQP(QPN qpn);
+    QpnRawIndexPart indexPart = unpack(truncateLSB(qpn));
+    return unpack(truncate(indexPart));
+endfunction 
 
 function QPN genQPN(IndexQP qpIndex, KeyQP qpKey);
-    return { pack(qpIndex), pack(qpKey) };
+    return zeroExtend({ pack(qpIndex), pack(qpKey) });
 endfunction
+
+function QpnRawIndexPart getQpnRawIndexPart(QPN qpn) = unpack(truncateLSB(qpn));
+
 
 
 // WorkReq related
@@ -375,16 +380,15 @@ instance Flags#(WorkReqSendFlag);
 endinstance
 
 
-// PD Related
-typedef TLog#(MAX_PD) PD_INDEX_WIDTH;
-typedef TSub#(PD_HANDLE_WIDTH, PD_INDEX_WIDTH) PD_KEY_WIDTH;
-
-typedef Bit#(PD_KEY_WIDTH)    KeyPD;
-typedef UInt#(PD_INDEX_WIDTH) IndexPD;
-
 // MR related
-typedef UInt#(MR_INDEX_WIDTH) IndexMR;
+typedef 8 MR_KEY_PART_WIDTH;
+
+typedef TLog#(MAX_MR) MR_INDEX_SUPPORTED_WIDTH;
+typedef TSub#(KEY_WIDTH, MR_KEY_PART_WIDTH) MR_INDEX_PART_WIDTH;
+
+typedef UInt#(MR_INDEX_SUPPORTED_WIDTH) IndexMR;
 typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
+typedef Bit#(MR_INDEX_PART_WIDTH) MrRawIndexPart;
 
 
 // QP Context Related
@@ -402,7 +406,7 @@ typedef struct {
 } WriteReqQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
-    KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH) bits = 24-11 = 13 bits
+    KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH_SUPPORTED) bits = 24-11 = 13 bits
     TypeQP                          qpType;             // 4 bits
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
     PMTU                            pmtu;               // 3 bits
@@ -462,6 +466,8 @@ typedef enum {
     RdmaRecvPacketStatusInvalidHeader          = 133, // 128 +   5
     RdmaRecvPacketStatusInvalidQpContext       = 134, // 128 +   6
     RdmaRecvPacketStatusCorruptPktLength       = 135, // 128 +   7
+    RdmaRecvPacketStatusQpIdxOverflow          = 136, // 128 +   8
+    RdmaRecvPacketStatusMrIdxOverflow          = 137, // 128 +   9
     RdmaRecvPacketStatusUnknown                = 255  // 128 + 127
 } RdmaRecvPacketStatus deriving(Bits, Eq, FShow);
 
