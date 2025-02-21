@@ -609,10 +609,6 @@ module mkPacketGen(PacketGen);
         
             isFirstPacket = isFirstPacket && packetInfo.isFirst;
             isLastPacket = isLastPacket && packetInfo.isLast;
-            
-            if (packetInfo.isLast) begin
-                genPacketHeaderStep1PipelineQ.deq;
-            end
 
             let packetToBeatChunkReq = AddressChunkReq{
                 startAddr: packetInfo.startAddr,
@@ -642,6 +638,10 @@ module mkPacketGen(PacketGen);
                 $format("wqe=", fshow(wqe))
             );
             psn = wqe.psn;
+        end
+
+        if ((hasPayload && packetInfo.isLast) || !hasPayload) begin
+            genPacketHeaderStep1PipelineQ.deq;
         end
 
         let pipelineEntryOut = GenPacketHeaderStep2PipelineEntry{

@@ -111,7 +111,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     FIFOF#(tRowAddr) resetReqPipeInQ <- mkLFIFOF;
 
-    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_EIGHT));
+    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
 
     // rule printDebugInfo0;
     //     if (!respPipeOutQueueVec[0].notFull) $display("time=%0t, ", $time, "FullQueue: mkBitmapWindowStorage respPipeOutQueueVec[0]");
@@ -187,14 +187,20 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
         let oldEntry = newestAlreadyExistEntry;
 
-        tBoundary boundaryDelta = pipelineEntryIn.newEntry.leftBound - newestAlreadyExistEntry.leftBound;
-        tBoundary boundaryDeltaAbs = getAbsValue(boundaryDelta);
+        tBoundary boundaryDelta     = pipelineEntryIn.newEntry.leftBound - newestAlreadyExistEntry.leftBound;
+        tBoundary boundaryDeltaNeg  = newestAlreadyExistEntry.leftBound - pipelineEntryIn.newEntry.leftBound;
+
+        tBoundary boundaryDeltaAbs = msb(boundaryDelta) == 0 ? boundaryDelta : boundaryDeltaNeg;
         let isShiftWindow = boundaryDelta > 0;
 
         let newEntry = pipelineEntryIn.newEntry;
         tData windowShiftedOutData = -1;
 
-        let isShiftOutOfBoundary = boundaryDeltaAbs > fromInteger(valueOf(TDiv#(szData, szStride)));
+        let isShiftOutOfBoundary = msb(boundaryDelta) == 0 ? ( 
+                boundaryDelta > fromInteger(valueOf(TDiv#(szData, szStride)))
+            ) : (
+                boundaryDeltaNeg > fromInteger(valueOf(TDiv#(szData, szStride)))
+            );
 
         if (isShiftWindow) begin
             newestAlreadyExistEntry.leftBound = newEntry.leftBound;
@@ -349,7 +355,7 @@ module mkAtomicUpdateStorage#(
     storage[1] <- mkAutoInferBramQueuedOutput(True, initRamFileBaseName + ".bin", "mkAtomicUpdateStorage 1");
     
     
-    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_EIGHT));
+    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
 
     // Pipeline Queues
 
