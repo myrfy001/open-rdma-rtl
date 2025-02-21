@@ -585,7 +585,8 @@ module mkPacketGen(PacketGen);
 
         // if the message doesn't have payload, then it is always a "Only" request
         Bool isFirstPacket = wqe.isFirst;
-        Bool isLastPacket = wqe.isLast;
+        Bool isLastPacket  = wqe.isLast;
+        Bool isReadReq     = wqe.opcode == IBV_WR_RDMA_READ;
 
         let psn = psnReg;
 
@@ -638,6 +639,10 @@ module mkPacketGen(PacketGen);
                 $format("wqe=", fshow(wqe))
             );
             psn = wqe.psn;
+            if (isReadReq) begin
+                remoteAddr = wqe.raddr;
+                dlen = wqe.totalLen;
+            end
         end
 
         if ((hasPayload && packetInfo.isLast) || !hasPayload) begin
