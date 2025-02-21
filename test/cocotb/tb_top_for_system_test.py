@@ -16,10 +16,12 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
-from test.cocotb.test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
+from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
 
 
-from test_framework.common import gen_rtl_file_list, SimplePcieBehaviorModel, SimpleEthBehaviorModel, copy_mem_file_to_sim_build_dir
+from test_framework.common import gen_rtl_file_list, copy_mem_file_to_sim_build_dir
+from test_framework.eth_bfm import SimpleEthBehaviorModel
+from test_framework.pcie_bfm import SimplePcieBehaviorModel
 from scapy.layers.inet import IP, UDP
 from scapy.layers.l2 import Ether
 

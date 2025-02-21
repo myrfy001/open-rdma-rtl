@@ -16,10 +16,12 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
-from test.cocotb.test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator, EthPacketRpc
+from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator, EthPacketRpc
 
 
-from test_framework.common import gen_rtl_file_list, SimplePcieBehaviorModel, SimpleEthBehaviorModel, copy_mem_file_to_sim_build_dir
+from test_framework.common import gen_rtl_file_list, copy_mem_file_to_sim_build_dir
+from test_framework.eth_bfm import SimpleEthBehaviorModel
+from test_framework.pcie_bfm import SimplePcieBehaviorModel
 from scapy.layers.inet import IP, UDP
 from scapy.layers.l2 import Ether
 
@@ -51,33 +53,50 @@ class TB(object):
             "0.0.0.0", 7700 + int(self.inst_id), self._csr_write_cb, self._csr_read_cb)
         self.rpc_server.run()
 
-        self.pcie_bfm = SimplePcieBehaviorModel(
-            dut,
-            ["dmaMasterPipeIfcVec_0",
-             "dmaMasterPipeIfcVec_1",
-             "dmaMasterPipeIfcVec_2",
-             "dmaMasterPipeIfcVec_3"],
-            [
-                "dmaSlavePipeIfc"
-            ],
-            self.shared_mem.buf
-        )
+        is_test_100g = True
+        if is_test_100g:
+            channel_cnt = 1
+            self.pcie_bfm = SimplePcieBehaviorModel(
+                dut,
+                ["dmaMasterPipeIfc"],
+                ["dmaSlavePipeIfc"],
+                self.shared_mem.buf
+            )
 
-        self.eth_bfm = SimpleEthBehaviorModel(
-            dut,
-            [
-                "qpEthDataStreamIfcVec_0_dataPipeOut",
-                "qpEthDataStreamIfcVec_1_dataPipeOut",
-                "qpEthDataStreamIfcVec_2_dataPipeOut",
-                "qpEthDataStreamIfcVec_3_dataPipeOut",
-            ],
-            [
-                "qpEthDataStreamIfcVec_0_dataPipeIn",
-                "qpEthDataStreamIfcVec_1_dataPipeIn",
-                "qpEthDataStreamIfcVec_2_dataPipeIn",
-                "qpEthDataStreamIfcVec_3_dataPipeIn",
-            ],
-        )
+            self.eth_bfm = SimpleEthBehaviorModel(
+                dut,
+                ["qpEthDataStreamIfc_dataPipeOut"],
+                ["qpEthDataStreamIfc_dataPipeIn"],
+            )
+        else:
+            channel_cnt = 4
+            self.pcie_bfm = SimplePcieBehaviorModel(
+                dut,
+                ["dmaMasterPipeIfcVec_0",
+                 "dmaMasterPipeIfcVec_1",
+                 "dmaMasterPipeIfcVec_2",
+                 "dmaMasterPipeIfcVec_3"],
+                [
+                    "dmaSlavePipeIfc"
+                ],
+                self.shared_mem.buf
+            )
+
+            self.eth_bfm = SimpleEthBehaviorModel(
+                dut,
+                [
+                    "qpEthDataStreamIfcVec_0_dataPipeOut",
+                    "qpEthDataStreamIfcVec_1_dataPipeOut",
+                    "qpEthDataStreamIfcVec_2_dataPipeOut",
+                    "qpEthDataStreamIfcVec_3_dataPipeOut",
+                ],
+                [
+                    "qpEthDataStreamIfcVec_0_dataPipeIn",
+                    "qpEthDataStreamIfcVec_1_dataPipeIn",
+                    "qpEthDataStreamIfcVec_2_dataPipeIn",
+                    "qpEthDataStreamIfcVec_3_dataPipeIn",
+                ],
+            )
 
         cocotb.start_soon(self._forward_csr_write_task())
         cocotb.start_soon(self._forward_csr_read_req_task())
