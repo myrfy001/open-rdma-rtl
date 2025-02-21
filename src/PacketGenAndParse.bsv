@@ -300,7 +300,7 @@ function ActionValue#(Maybe#(RdmaExtendHeaderBuffer)) genRdmaExtendHeader(
                 IBV_WR_SEND: begin
                     return case (wqe.qpType)
                         IBV_QPT_RC,
-                        IBV_QPT_UC: tagged Valid buildRdmaExtendHeaderBuffer(1'b0);
+                        IBV_QPT_UC: tagged Valid buildRdmaExtendHeaderBuffer({ pack((reth)) });
                         IBV_QPT_UD: tagged Valid buildRdmaExtendHeaderBuffer({ pack((deth)) });
                         IBV_QPT_XRC_SEND: tagged Valid buildRdmaExtendHeaderBuffer({ pack((xrceth)) });
                         default: tagged Invalid;
@@ -319,8 +319,8 @@ function ActionValue#(Maybe#(RdmaExtendHeaderBuffer)) genRdmaExtendHeader(
                         IBV_QPT_RC,
                         IBV_QPT_UC: tagged Valid (
                             isLast ?
-                                buildRdmaExtendHeaderBuffer({ pack((immDt)) }) :
-                                buildRdmaExtendHeaderBuffer(1'b0)
+                                buildRdmaExtendHeaderBuffer({ pack((reth)), pack((immDt))}) :
+                                buildRdmaExtendHeaderBuffer({ pack((reth))})
                         );
                         // UD always has only pkt, so isLast always True
                         IBV_QPT_UD: tagged Valid buildRdmaExtendHeaderBuffer({ pack((deth)), pack((immDt)) });
@@ -336,8 +336,8 @@ function ActionValue#(Maybe#(RdmaExtendHeaderBuffer)) genRdmaExtendHeader(
                     return case (wqe.qpType)
                         IBV_QPT_RC: tagged Valid (
                             isLast ?
-                                buildRdmaExtendHeaderBuffer({ pack((ieth)) }) :
-                                buildRdmaExtendHeaderBuffer(1'b0)
+                                buildRdmaExtendHeaderBuffer({ pack((reth)), pack((ieth)) }) :
+                                buildRdmaExtendHeaderBuffer({ pack((reth)) })
                         );
                         IBV_QPT_XRC_SEND: tagged Valid (
                             isLast ?
