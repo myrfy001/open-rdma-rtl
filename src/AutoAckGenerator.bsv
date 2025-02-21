@@ -338,6 +338,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
         end
         else if (pollingTimeoutDescQueue.notEmpty) begin  
             let desc = pollingTimeoutDescQueue.first;
+            pollingTimeoutDescQueue.deq;
             metaReportDescPipeOutQueue.enq(desc);
             // $display(
             //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
