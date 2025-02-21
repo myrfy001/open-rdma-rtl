@@ -276,7 +276,7 @@ module mkRQ(RQ);
 
 
         let packetStatus = RdmaRecvPacketStatusNormal;
-        
+
         if (isNeedQueryMrTable) begin
             let mrTableQueryReq = MrTableQueryReq{
                 idx: rkey2IndexMR(reth.rkey)
@@ -756,7 +756,9 @@ module mkRQ(RQ);
             case (opcode)
                 fromInteger(valueOf(RC_SEND_FIRST)),
                 fromInteger(valueOf(RC_SEND_LAST)),
+                fromInteger(valueOf(RC_SEND_LAST_WITH_IMMEDIATE)),
                 fromInteger(valueOf(RC_SEND_ONLY)),
+                fromInteger(valueOf(RC_SEND_ONLY_WITH_IMMEDIATE)),
                 fromInteger(valueOf(RC_RDMA_WRITE_FIRST)),
                 fromInteger(valueOf(RC_RDMA_WRITE_LAST)),
                 fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)),
@@ -871,28 +873,31 @@ module mkRQ(RQ);
 
         if (!decodeSuccess) begin
             $display("Warn: Received Not Supported Packet, Will not report to software.");
-        end
-        let vecToEnq = vec(fromMaybe(?, vecToEnqMaybe[0]), fromMaybe(?, vecToEnqMaybe[1]));
-
-        // Becareful of the useless guard of MIMO when processing more than one element.
-        if (isValid(vecToEnqMaybe[0]) && isValid(vecToEnqMaybe[1])) begin
-            if (metaReportMimoQueue.enqReadyN(2)) begin
-                metaReportMimoQueue.enq(2, vecToEnq);
-                handleGenMetaReportQueueDescPipeQ.deq;
-            end
-        end
-        else if (isValid(vecToEnqMaybe[0])) begin
-            if (metaReportMimoQueue.enqReadyN(1)) begin
-                metaReportMimoQueue.enq(1, vecToEnq);
-                handleGenMetaReportQueueDescPipeQ.deq;
-            end
+            handleGenMetaReportQueueDescPipeQ.deq;
         end
         else begin
-            if (noNeedToGenDesc) begin
-                handleGenMetaReportQueueDescPipeQ.deq;
+            let vecToEnq = vec(fromMaybe(?, vecToEnqMaybe[0]), fromMaybe(?, vecToEnqMaybe[1]));
+
+            // Becareful of the useless guard of MIMO when processing more than one element.
+            if (isValid(vecToEnqMaybe[0]) && isValid(vecToEnqMaybe[1])) begin
+                if (metaReportMimoQueue.enqReadyN(2)) begin
+                    metaReportMimoQueue.enq(2, vecToEnq);
+                    handleGenMetaReportQueueDescPipeQ.deq;
+                end
+            end
+            else if (isValid(vecToEnqMaybe[0])) begin
+                if (metaReportMimoQueue.enqReadyN(1)) begin
+                    metaReportMimoQueue.enq(1, vecToEnq);
+                    handleGenMetaReportQueueDescPipeQ.deq;
+                end
             end
             else begin
-                // metaReportMimoQueue doesn't have enough space, so nothing to do, and no need to deq;
+                if (noNeedToGenDesc) begin
+                    handleGenMetaReportQueueDescPipeQ.deq;
+                end
+                else begin
+                    // metaReportMimoQueue doesn't have enough space, so nothing to do, and no need to deq;
+                end
             end
         end
 
