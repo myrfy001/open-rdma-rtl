@@ -82,6 +82,9 @@ module mkCsrNode#(
                         end
                     end
                     tagged CsrNodeResultNotMatched: begin
+                        selfRespQueue.enq(unpack('hAAAAAAAA));
+                        let isSelfResp = True;
+                        keepOrderQueue.enq(tuple2(isSelfResp, ?));
                         immFail(
                             "CSR routing found an unknown address",
                             $format("req=", fshow(req))

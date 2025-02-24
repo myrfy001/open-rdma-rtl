@@ -37,6 +37,10 @@ proc runGenerateIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir
 }
 
 proc runSynthIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+    global device
+
+    set_part $device
+
     set sdc_snapshot_dir "$vivado_work_dir/sdc_snapshot_dir"
     set dir_ip_gen "$vivado_backend_dir/ip_generated"
 
@@ -85,6 +89,8 @@ proc createSourceSnapshot {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_f
 
 proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
     global part device
+    set_part $device
+    set_param general.maxthreads 24
 
     set dir_ip_gen "$vivado_backend_dir/ip_generated"
 
@@ -98,15 +104,16 @@ proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir
 
     read_xdc [ glob $sdc_snapshot_dir/*.sdc ]
 
-	set_param general.maxthreads 24
-	
-	set_part $device
 }
 
 
 proc runSynthDesign {args} {
 	global vivado_work_dir top_module
 	synth_design -top $top_module -flatten_hierarchy none
+
+    source batch_insert_ila.tcl
+    batch_insert_ila 256
+
 	write_checkpoint -force $vivado_work_dir/post_synth_design.dcp
     write_xdc -force -exclude_physical $vivado_work_dir/post_synth.xdc
 }
@@ -149,19 +156,32 @@ proc runRoute {args} {
                 phys_opt_design
             }
             route_design
-            if {[get_property SLACK [get_timing_paths ]] >= 0} {
+            if {[get_property SLACK [get_timing_paths ]] >= -0.02} {
                 break; # Stop if timing closure
             }
         }
     }
 
-    # runPPO 4 1; # num_iters=4, enable_phys_opt=1
+    runPPO 10 1; # num_iters=4, enable_phys_opt=1
 
     write_checkpoint -force $vivado_work_dir/post_route.dcp
     write_xdc -force -exclude_physical $vivado_work_dir/post_route.xdc
 
     write_verilog -force $vivado_work_dir/post_impl_netlist.v -mode timesim -sdf_anno true
 
+}
+
+proc runWriteBitStream {args} {
+    global vivado_work_dir
+
+    if {[dict get $args -open_checkpoint] == true} {
+        open_checkpoint $vivado_work_dir/post_route.dcp
+    }
+
+    set_property CONFIG_MODE SPIx4 [current_design]
+    set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
+
+    write_bitstream -force $vivado_work_dir/top.bit
 }
 
 createSourceSnapshot $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
