@@ -147,6 +147,18 @@ module mkAutoAckGenerator(AutoAckGenerator);
         curTimeReg <= curTimeReg + 1;
     endrule
 
+    Reg#(Bool) bramInitedReg <- mkReg(False);
+    Reg#(IndexQP) bramInitPtrReg <- mkReg(0);
+
+    rule bramInit if (!bramInitedReg);
+        if (bramInitPtrReg == maxBound) begin
+            bramInitedReg <= True;
+        end
+        
+        lastReportTimeStorage.write(bramInitPtrReg, 0);
+        bramInitPtrReg <= bramInitPtrReg + 1;
+    endrule
+
     rule forwardInputReqToPsnBitMapStorage;
         let req = reqPipeInQueue.first;
         reqPipeInQueue.deq;
@@ -347,7 +359,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
         end
     endrule
 
-    rule sendPollingReq if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateSendReadReq);
+    rule sendPollingReq if (bramInitedReg && backgroundPollingStateReg == AutoAckGenBackgroundPollingStateSendReadReq);
         bitmapStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         autoAckMetaAtomicUpdateStorage.readOnlyReqPipeIn.enq(pollingQpIdxReg);
         lastReportTimeStorage.putReadReq(pollingQpIdxReg);
@@ -359,7 +371,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
         // );
     endrule
 
-    rule getPollingResp if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateGetReadResp);
+    rule getPollingResp if (bramInitedReg && backgroundPollingStateReg == AutoAckGenBackgroundPollingStateGetReadResp);
         let bitmapInfo = bitmapStorage.readOnlyRespPipeOut.first;
         let ackMeta = autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.first;
         let lastPollInfo <- lastReportTimeStorage.getReadResp;
@@ -378,7 +390,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
         // );
     endrule
 
-    rule handlePollingResult if (backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);
+    rule handlePollingResult if (bramInitedReg && backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);
         let {bitmapInfo, ackMeta, lastPollInfo, pollingQpIdx} = pollingQueryRespPipelineReg;
         if (!ackMeta.hasReported) begin
             if (lastPollInfo - ackMeta.lastEntryReceiveTime > fromInteger(valueOf(AUTO_ACK_POLLING_TIMEOUT_TICKS))) begin

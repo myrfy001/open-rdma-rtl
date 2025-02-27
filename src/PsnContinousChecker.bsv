@@ -118,9 +118,27 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     //     if (!respPipeOutQueueVec[1].notFull) $display("time=%0t, ", $time, "FullQueue: mkBitmapWindowStorage respPipeOutQueueVec[1]");
     // endrule
 
+    Reg#(Bool) bramInitedReg <- mkReg(False);
+    Reg#(tRowAddr) bramInitPtrReg <- mkReg(0);
+
+    let resetValue = BitmapWindowStorageEntry{
+        leftBound: -1,
+        data: -1,
+        qpnKeyPart: 0
+    };
+
+    rule bramInit if (!bramInitedReg);
+        if (bramInitPtrReg == maxBound) begin
+            bramInitedReg <= True;
+        end
+        storage[0].write(bramInitPtrReg, resetValue);
+        storage[1].write(bramInitPtrReg, resetValue);
+        bramInitPtrReg <= unpack(pack(bramInitPtrReg) + 1);
+    endrule
+
 
     // Merge Pipeline Stage One
-    rule sendBramQueryReqAndGenOneHotBitmap;
+    rule sendBramQueryReqAndGenOneHotBitmap if (bramInitedReg);
         if (reqPipeInQueue.notEmpty) begin
             let req = reqPipeInQueue.first;
             reqPipeInQueue.deq;
@@ -146,11 +164,6 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         end
         else if (resetReqPipeInQ.notEmpty) begin
             resetReqPipeInQ.deq;
-            let resetValue = BitmapWindowStorageEntry{
-                leftBound: -1,
-                data: -1,
-                qpnKeyPart: 0
-            };
             let pipelineEntryOut = BitmapWindowStorageStageOneToTwoPipelineEntry {
                 rowAddr: resetReqPipeInQ.first,
                 newEntry: resetValue,
@@ -167,7 +180,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     endrule
 
     // Merge Pipeline Stage Two
-    rule getBramQueryRespAndMergeThem;
+    rule getBramQueryRespAndMergeThem if (bramInitedReg);
 
         let pipelineEntryIn = stageOneToTwoPipelineQueue.first;
         stageOneToTwoPipelineQueue.deq;
@@ -253,7 +266,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     endrule
 
     // Merge Pipeline Stage Three
-    rule doBramWriteBack;
+    rule doBramWriteBack if (bramInitedReg);
         let writeBackReq = stageTwoToThreePipelineQueue.first;
         stageTwoToThreePipelineQueue.deq;
 
@@ -265,14 +278,14 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         // );
     endrule
 
-    rule handleReadOnlyReq;
+    rule handleReadOnlyReq if (bramInitedReg);
         let addr = readOnlyReqPipeInQueue.first;
         readOnlyReqPipeInQueue.deq;
         storage[1].putReadReq(addr);
         readOnlyRespPipelineQueue.enq(unpack(0));
     endrule
 
-    rule handleReadOnlyResp;
+    rule handleReadOnlyResp if (bramInitedReg);
         readOnlyRespPipelineQueue.deq;
         let resp = storage[1].readRespPipeOut.first;
         storage[1].readRespPipeOut.deq;
@@ -366,8 +379,23 @@ module mkAtomicUpdateStorage#(
 
     FIFOF#(tRowAddr) resetReqPipeInQ <- mkLFIFOF;
 
+
+    Reg#(Bool) bramInitedReg <- mkReg(False);
+    Reg#(tRowAddr) bramInitPtrReg <- mkReg(0);
+
+    let resetValue = unpack(0);
+
+    rule bramInit if (!bramInitedReg);
+        if (bramInitPtrReg == maxBound) begin
+            bramInitedReg <= True;
+        end
+        storage[0].write(bramInitPtrReg, resetValue);
+        storage[1].write(bramInitPtrReg, resetValue);
+        bramInitPtrReg <= unpack(pack(bramInitPtrReg) + 1);
+    endrule
+
     // Merge Pipeline Stage One
-    rule sendBramQueryReq;
+    rule sendBramQueryReq if (bramInitedReg);
         
         if (reqPipeInQueue.notEmpty) begin
             let pipelineEntryIn = reqPipeInQueue.first;
@@ -388,7 +416,6 @@ module mkAtomicUpdateStorage#(
         end
         else if (resetReqPipeInQ.notEmpty) begin
             resetReqPipeInQ.deq;
-            let resetValue = 0;
             let pipelineEntryOut = AtomicUpdateStorageStageOneToTwoPipelineEntry {
                 rowAddr: resetReqPipeInQ.first,
                 reqData: unpack(resetValue),
@@ -399,7 +426,7 @@ module mkAtomicUpdateStorage#(
     endrule
 
     // Merge Pipeline Stage Two
-    rule getBramQueryRespAndMergeThem;
+    rule getBramQueryRespAndMergeThem if (bramInitedReg);
 
         let pipelineEntryIn = stageOneToTwoPipelineQueue.first;
         stageOneToTwoPipelineQueue.deq;
@@ -445,7 +472,7 @@ module mkAtomicUpdateStorage#(
     endrule
 
     // Merge Pipeline Stage Three
-    rule doBramWriteBack;
+    rule doBramWriteBack if (bramInitedReg);
 
         let writeBackReq = stageTwoToThreePipelineQueue.first;
         stageTwoToThreePipelineQueue.deq;
@@ -459,14 +486,14 @@ module mkAtomicUpdateStorage#(
     endrule
 
     
-    rule handleReadOnlyReq;
+    rule handleReadOnlyReq if (bramInitedReg);
         let addr = readOnlyReqPipeInQueue.first;
         readOnlyReqPipeInQueue.deq;
         storage[1].putReadReq(addr);
         readOnlyRespPipelineQueue.enq(unpack(0));
     endrule
 
-    rule handleReadOnlyResp;
+    rule handleReadOnlyResp if (bramInitedReg);
         readOnlyRespPipelineQueue.deq;
         let resp = storage[1].readRespPipeOut.first;
         storage[1].readRespPipeOut.deq;

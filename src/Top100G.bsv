@@ -4,6 +4,7 @@ import ClientServer :: *;
 import GetPut :: *;
 import Vector :: *;
 import Clocks :: *;
+import Probe :: *;
 
 import ConnectableF :: *;
 import RdmaUtils :: *;
@@ -138,33 +139,45 @@ module mkBsvTopOnlyHardIp#(
     let xilinxXdmaStreamCtrl <- mkXdmaWrapper;
     let xilinxXdmaAxiLiteCtrl <- mkXdmaAxiLiteBridgeWrapper;
 
-    rule forwardEthRxStream;
-        let axiDs = axiStream512RxSyncFifo.first;
-        axiStream512RxSyncFifo.deq;
+    Probe#(IoChannelEthDataStream) ethTxDataProbe <- mkProbe;
+    Probe#(IoChannelEthDataStream) ethRxDataProbe <- mkProbe;
 
-        let ds = IoChannelEthDataStream {
-            data: axiDs.axisData,
-            startByteIdx: 0,
-            byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
-            isFirst: isEthRxForwardFirstBeatReg,
-            isLast: axiDs.axisLast
-        };
-        ethRxDataPipeOutQueue.enq(ds);
-        isEthRxForwardFirstBeatReg <= axiDs.axisLast;
-    endrule
+    // rule forwardEthRxStream;
+    //     let axiDs = axiStream512RxSyncFifo.first;
+    //     axiStream512RxSyncFifo.deq;
 
-    rule forwardEthTxStream;
-        let ds = ethTxDataPipeInQueue.first;
+    //     let ds = IoChannelEthDataStream {
+    //         data: axiDs.axisData,
+    //         startByteIdx: 0,
+    //         byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
+    //         isFirst: isEthRxForwardFirstBeatReg,
+    //         isLast: axiDs.axisLast
+    //     };
+    //     ethRxDataPipeOutQueue.enq(ds);
+    //     isEthRxForwardFirstBeatReg <= axiDs.axisLast;
+    //     ethRxDataProbe <= ds;
+    // endrule
+
+    // rule forwardEthTxStream;
+    //     let ds = ethTxDataPipeInQueue.first;
+    //     ethTxDataPipeInQueue.deq;
+
+    //     let axiDs = AxiStream {
+    //         axisData: ds.data,
+    //         axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
+    //         axisLast: ds.isLast,
+    //         axisUser: 0
+    //     };
+    //     axiStream512TxSyncFifo.enq(axiDs);
+    //     ethTxDataProbe <= ethTxDataPipeInQueue.first;
+    // endrule
+
+    
+
+    rule loopbackForTest;
+        ethRxDataPipeOutQueue.enq(ethTxDataPipeInQueue.first);
         ethTxDataPipeInQueue.deq;
-
-        let axiDs = AxiStream {
-            axisData: ds.data,
-            axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
-            axisLast: ds.isLast,
-            axisUser: 0
-        };
-        axiStream512TxSyncFifo.enq(axiDs);
-
+        ethTxDataProbe <= ethTxDataPipeInQueue.first;
     endrule
 
     interface cmacController = xilinxCmacCtrl;

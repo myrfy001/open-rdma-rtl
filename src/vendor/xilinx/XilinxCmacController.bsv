@@ -141,6 +141,10 @@ module mkXilinxCmacTxController#(
     Reg#(Bool) isTxPauseReqBusy <- mkReg(False);
     Reg#(Bit#(CMAC_TX_PAUSE_REQ_COUNT_WIDTH)) txPauseReqCounter <- mkReg(0);
 
+    // Timing Fix FIFOs
+    FIFOF#(CmacAxiStream) userAxiStreamInTimingFixQueue <- mkFIFOF;
+    mkConnection(userAxiStreamIn, toPipeIn(userAxiStreamInTimingFixQueue));
+
     rule stateIdle if (txStateReg == TX_STATE_IDLE);
         ctlTxEnableReg <= False;
         ctlTxTestPatternReg <= False;
@@ -197,8 +201,8 @@ module mkXilinxCmacTxController#(
     endrule
 
     rule stateAxisEnable if (txStateReg == TX_STATE_AXIS_ENABLE);
-        let axiStream = userAxiStreamIn.first;
-        userAxiStreamIn.deq;
+        let axiStream = userAxiStreamInTimingFixQueue.first;
+        userAxiStreamInTimingFixQueue.deq;
         interAxiStreamBuf.enq(axiStream);
         if (axiStream.axisLast) begin
             packetReadyInfoBuf.enq(axiStream.axisLast);
@@ -450,6 +454,10 @@ module mkXilinxCmacRxController#(
     
     Reg#(CmacRxControllerState) rxStateReg <- mkReg(RX_STATE_IDLE);
 
+    // Timing Fix FIFOs
+    FIFOF#(CmacAxiStream) userAxiStreamOutTimingFixQueue <- mkFIFOF;
+    mkConnection(toPipeOut(userAxiStreamOutTimingFixQueue), userAxiStreamOut);
+
     rule stateIdle if (rxStateReg == RX_STATE_IDLE);
         ctlRxEnableReg <= False;
         ctlRxForceResyncReg <= False;
@@ -577,7 +585,7 @@ module mkXilinxCmacRxController#(
         userFlowCtrlReqVecOut.enq(flowCtrlReqVec);
     endrule
 
-    mkConnection(userAxiStreamOut, toPipeOut(rxAxiStreamOutBuf));
+    mkConnection(toPipeIn(userAxiStreamOutTimingFixQueue), toPipeOut(rxAxiStreamOutBuf));
     method Bool ctlRxEnable = ctlRxEnableReg;
     method Bool ctlRxForceResync = ctlRxForceResyncReg;
     method Bool ctlRxTestPattern = ctlRxTestPatternReg;

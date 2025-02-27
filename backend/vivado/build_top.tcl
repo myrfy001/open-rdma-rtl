@@ -114,6 +114,8 @@ proc runSynthDesign {args} {
     source batch_insert_ila.tcl
     batch_insert_ila 256
 
+    file copy -force "debug_nets.ltx" $vivado_work_dir/debug_nets.ltx
+
 	write_checkpoint -force $vivado_work_dir/post_synth_design.dcp
     write_xdc -force -exclude_physical $vivado_work_dir/post_synth.xdc
 }
@@ -137,7 +139,7 @@ proc runPlacement {args} {
 
     file mkdir $vivado_work_dir/${current_time}_${directive}
     write_checkpoint -force $vivado_work_dir/${current_time}_${directive}/post_place.dcp
-    write_xdc -force -exclude_physical $vivado_work_dir/${current_time}_${directive}/post_place.
+    write_xdc -force -exclude_physical $vivado_work_dir/${current_time}_${directive}/post_place.xdc
 }
 
 proc runRoute {args} {
@@ -162,6 +164,7 @@ proc runRoute {args} {
         }
     }
 
+    write_checkpoint -force $vivado_work_dir/post_route.dcp
     runPPO 10 1; # num_iters=4, enable_phys_opt=1
 
     write_checkpoint -force $vivado_work_dir/post_route.dcp
@@ -195,3 +198,5 @@ runSynthDesign
 
 runPlacement -open_checkpoint -false -directive ExtraNetDelay_high
 runRoute -open_checkpoint -false
+
+runWriteBitStream -open_checkpoint -false

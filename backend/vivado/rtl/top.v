@@ -22,25 +22,29 @@ module bluerdma_top#(
 
 
     // CMAC
-    // input qsfp1_ref_clk_p,
-    // input qsfp1_ref_clk_n,
+    input qsfp1_ref_clk_p,
+    input qsfp1_ref_clk_n,
 
-    input qsfp2_ref_clk_p,
-    input qsfp2_ref_clk_n,
+    // input qsfp2_ref_clk_p,
+    // input qsfp2_ref_clk_n,
 
-    // input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxn_in,
-    // input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxp_in,
-    // output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txn_out,
-    // output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txp_out
+    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxn_in,
+    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxp_in,
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txn_out,
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txp_out,
 
-    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxn_in,
-    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxp_in,
-    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txn_out,
-    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out,
+    // input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxn_in,
+    // input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxp_in,
+    // output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txn_out,
+    // output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out,
 
-    input qsfp2_fault_in,
-    output qsfp2_lpmode_out,
-    output qsfp2_resetl_out
+    input qsfp1_fault_in,
+    output qsfp1_lpmode_out,
+    output qsfp1_resetl_out
+
+    // input qsfp2_fault_in,
+    // output qsfp2_lpmode_out,
+    // output qsfp2_resetl_out
 );
 
   localparam AXIL_ADDR_WIDTH = 20;
@@ -74,10 +78,10 @@ module bluerdma_top#(
 
 //////////////////////////////////////////////////  LITE
    //-- AXI Master Write Address Channel
-    wire [AXIL_ADDR_WIDTH-1 : 0] m_axil_awaddr;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire [AXIL_ADDR_WIDTH-1 : 0] m_axil_awaddr;
     wire [2:0]  m_axil_awprot;
-    wire 	m_axil_awvalid;
-    wire 	m_axil_awready;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire 	m_axil_awvalid;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire 	m_axil_awready;
 
     //-- AXI Master Write Data Channel
     wire [31:0] m_axil_wdata;
@@ -88,10 +92,10 @@ module bluerdma_top#(
     wire 	m_axil_bvalid;
     wire 	m_axil_bready;
     //-- AXI Master Read Address Channel
-    wire [AXIL_ADDR_WIDTH-1:0] m_axil_araddr;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire [AXIL_ADDR_WIDTH-1:0] m_axil_araddr;
     wire [2:0]  m_axil_arprot;
-    wire 	m_axil_arvalid;
-    wire 	m_axil_arready;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire 	m_axil_arvalid;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire 	m_axil_arready;
     //-- AXI Master Read Data Channel
     wire [31:0] m_axil_rdata;
     wire [1:0]  m_axil_rresp;
@@ -103,7 +107,7 @@ module bluerdma_top#(
     // wire          msi_enable;
 
     // AXI streaming ports
-    wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
     wire 			m_axis_h2c_tlast_0;
     (*mark_debug, mark_debug_clock="user_clk_250" *) wire 			m_axis_h2c_tvalid_0;
     (*mark_debug, mark_debug_clock="user_clk_250" *) wire 			m_axis_h2c_tready_0;
@@ -134,14 +138,14 @@ module bluerdma_top#(
 // Descriptor Bypass Control Logic
   (*mark_debug, mark_debug_clock="user_clk_250" *) wire c2h_dsc_byp_ready_0;
   wire [63 : 0] c2h_dsc_byp_src_addr_0;
-  wire [63 : 0] c2h_dsc_byp_dst_addr_0;
-  wire [27 : 0] c2h_dsc_byp_len_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [63 : 0] c2h_dsc_byp_dst_addr_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [27 : 0] c2h_dsc_byp_len_0;
   wire [4 : 0] c2h_dsc_byp_ctl_0;
   (*mark_debug, mark_debug_clock="user_clk_250" *) wire c2h_dsc_byp_load_0;
   (*mark_debug, mark_debug_clock="user_clk_250" *) wire h2c_dsc_byp_ready_0;
-  wire [63 : 0] h2c_dsc_byp_src_addr_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [63 : 0] h2c_dsc_byp_src_addr_0;
   wire [63 : 0] h2c_dsc_byp_dst_addr_0;
-  wire [27 : 0] h2c_dsc_byp_len_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [27 : 0] h2c_dsc_byp_len_0;
   wire [4 : 0] h2c_dsc_byp_ctl_0;
   (*mark_debug, mark_debug_clock="user_clk_250" *) wire h2c_dsc_byp_load_0;
 
@@ -194,10 +198,10 @@ module bluerdma_top#(
     wire [8:0]      gt_ctl_rx_pause_ack;
     wire [8:0]      gt_ctl_rx_pause_enable;
 
-    wire            gt_tx_axis_tready;
-    wire            gt_tx_axis_tvalid;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tready;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tvalid;
     wire            gt_tx_axis_tlast;
-    wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_tx_axis_tdata;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_tx_axis_tdata;
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_tx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_tx_axis_tuser;
 
@@ -241,9 +245,11 @@ module bluerdma_top#(
       qsfp_reset_flag_reg <= !qsfp_reset_flag_reg;
     end
 
-    assign qsfp2_lpmode_out = 1'b0;
-    // assign qsfp2_resetl_out = qsfp_reset_flag_reg ? 1'b1 : user_resetn;
-    assign qsfp2_resetl_out = 1'b1;
+    assign qsfp1_lpmode_out = 1'b0;
+    assign qsfp1_resetl_out = 1'b1;
+
+    // assign qsfp2_lpmode_out = 1'b0;
+    // assign qsfp2_resetl_out = 1'b1;
 
     xdma_0 xdma_0_i
      (
@@ -516,17 +522,25 @@ module bluerdma_top#(
 
 
   cmac_usplus_0 cmac_inst(
-        .gt_rxp_in                            (qsfp2_rxp_in  ),
-        .gt_rxn_in                            (qsfp2_rxn_in  ),
-        .gt_txp_out                           (qsfp2_txp_out ),
-        .gt_txn_out                           (qsfp2_txn_out ),
+        .gt_rxp_in                            (qsfp1_rxp_in  ),
+        .gt_rxn_in                            (qsfp1_rxn_in  ),
+        .gt_txp_out                           (qsfp1_txp_out ),
+        .gt_txn_out                           (qsfp1_txn_out ),
+
+        // .gt_rxp_in                            (qsfp2_rxp_in  ),
+        // .gt_rxn_in                            (qsfp2_rxn_in  ),
+        // .gt_txp_out                           (qsfp2_txp_out ),
+        // .gt_txn_out                           (qsfp2_txn_out ),
+
         .gt_loopback_in                       (gt_loopback_in),
         
         .gtwiz_reset_tx_datapath              (gtwiz_reset_tx_datapath),
         .gtwiz_reset_rx_datapath              (gtwiz_reset_rx_datapath),
         .sys_reset                            (cmac_sys_reset),
-        .gt_ref_clk_p                         (qsfp2_ref_clk_p),
-        .gt_ref_clk_n                         (qsfp2_ref_clk_n),
+        .gt_ref_clk_p                         (qsfp1_ref_clk_p),
+        .gt_ref_clk_n                         (qsfp1_ref_clk_n),
+        // .gt_ref_clk_p                         (qsfp2_ref_clk_p),
+        // .gt_ref_clk_n                         (qsfp2_ref_clk_n),
         .init_clk                             (user_clk_250),
 
         .gt_txusrclk2                         (gt_txusrclk2),

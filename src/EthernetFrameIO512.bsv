@@ -90,6 +90,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     Reg#(Dword) metricsDiscardPacketCntReg      <- mkReg(0);
     Reg#(Dword) metricsSimpleNicPacketCntReg    <- mkReg(0);
     Reg#(Dword) metricsRdmaPacketCntReg         <- mkReg(0);
+    Reg#(Dword) metricsNetworkNotReadyCntReg    <- mkReg(0);
 
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
@@ -147,6 +148,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
             waitingForRouteQ.enq(ds);
         end
         else begin
+            metricsNetworkNotReadyCntReg <= metricsNetworkNotReadyCntReg + 1;
             $display(
                 "time=%0t:", $time, toRed(" mkInputPacketClassifier discardPacketWhenNetworkSettingsNotReady >>>>> DISCARD PACKET <<<<< since network settings not set"),
                 toBlue(", ds="), fshow(ds)
