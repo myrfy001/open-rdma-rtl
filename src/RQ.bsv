@@ -183,6 +183,15 @@ module mkRQ(RQ);
     Reg#(Dword) metricsCorruptPktLengthCntReg       <- mkReg(0);
     Reg#(Dword) metricsUnknownErrorCntReg           <- mkReg(0);
 
+    Reg#(Bit#(4)) metricsDebugCounter0Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter1Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter2Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter3Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter4Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter5Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter6Reg           <- mkReg(0);
+    Reg#(Bit#(4)) metricsDebugCounter7Reg           <- mkReg(0);
+
 
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
@@ -225,6 +234,18 @@ module mkRQ(RQ);
                     end
                     fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_PACKET_VERIFY_UNKNOWN_ERR_CNT)): begin
                         return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsUnknownErrorCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_RQ_DEBUG_COUNTER_1)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack({
+                            metricsDebugCounter7Reg,
+                            metricsDebugCounter6Reg,
+                            metricsDebugCounter5Reg,
+                            metricsDebugCounter4Reg,
+                            metricsDebugCounter3Reg,
+                            metricsDebugCounter2Reg,
+                            metricsDebugCounter1Reg,
+                            metricsDebugCounter0Reg
+                        })};
                     end
                     default: begin
                         return tagged CsrNodeResultNotMatched;
@@ -314,6 +335,7 @@ module mkRQ(RQ);
             toBlue(", reth="), fshow(reth)
         );
         checkFullyPipeline(rdmaPacketMeta.fpDebugTime, 1, 2000, "mkRQ sendQpcQueryReqAndSomeSimpleParse");
+        metricsDebugCounter0Reg <= metricsDebugCounter0Reg + 1;
     endrule
 
     rule checkQpcAndMrTable;
@@ -496,6 +518,7 @@ module mkRQ(RQ);
         // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
         // For MR Table, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
         checkFullyPipeline(pipelineEntryIn.fpDebugTime, 11, 2000, "mkRQ checkQpcAndMrTable");
+        metricsDebugCounter1Reg <= metricsDebugCounter1Reg + 1;
     endrule
     
 
@@ -529,6 +552,7 @@ module mkRQ(RQ);
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
         checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ checkMrTableStep2");
+        metricsDebugCounter2Reg <= metricsDebugCounter2Reg + 1;
     endrule
 
     rule checkMrTableStep3;
@@ -599,6 +623,7 @@ module mkRQ(RQ);
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
         checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ checkMrTableStep3");
+        metricsDebugCounter3Reg <= metricsDebugCounter3Reg + 1;
     endrule
 
 
@@ -671,6 +696,7 @@ module mkRQ(RQ);
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
         checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ issuePayloadConReqOrDiscard");
+        metricsDebugCounter4Reg <= metricsDebugCounter4Reg + 1;
     endrule
 
     rule handleConResp;
@@ -723,6 +749,7 @@ module mkRQ(RQ);
         $display(
             "time=%0t:", $time, toGreen(" mkRQ handleConResp")
         );
+        metricsDebugCounter5Reg <= metricsDebugCounter5Reg + 1;
     endrule
    
 
@@ -906,6 +933,7 @@ module mkRQ(RQ);
         //     "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc"),
         //     toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
         // );
+        metricsDebugCounter6Reg <= metricsDebugCounter6Reg + 1;
     endrule
 
     rule forwardMetaReportDescToOutput;
@@ -941,6 +969,7 @@ module mkRQ(RQ);
             isDiscard ? toRed(" Discard!") : " keeped",
             toBlue(", ds="), fshow(ds)
         );
+        metricsDebugCounter7Reg <= metricsDebugCounter7Reg + 1;
     endrule
 
     interface csrUpStreamPort           = csrNode.upStreamPort;

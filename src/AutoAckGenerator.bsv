@@ -55,7 +55,7 @@ typedef enum {
     AutoAckGenBackgroundPollingStateHandleResp = 2
 }  AutoAckGenBackgroundPollingState deriving(Bits, Eq, FShow);
 
-typedef 10000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
+typedef 250000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
 
 interface AutoAckGenerator;
     interface PipeInB0#(AutoAckGeneratorReq) reqPipeIn;
@@ -86,13 +86,13 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Reg#(Dword) curTimeReg <- mkReg(0);
     Reg#(IndexQP) pollingQpIdxReg <- mkReg(0);
 
-    AutoInferBram#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramUG(False, "init_bram_auto_ack_last_report_time.bin", "lastReportTimeStorage");
+    AutoInferBramQueuedOutput#(IndexQP, Dword) lastReportTimeStorage <- mkAutoInferBramQueuedOutput(False, "init_bram_auto_ack_last_report_time.bin", "lastReportTimeStorage");
 
     function AutoAckGenAtomicUpdateStorageEntry atomicUpdateFunction(AutoAckGenAtomicUpdateStorageEntry oldVal, Bool reqVal, Bool isReset);
         let needSendAckNow = reqVal;
         if (isReset) begin
             oldVal.ackMsn = 0;
-            oldVal.lastEntryReceiveTime = curTimeReg;
+            oldVal.lastEntryReceiveTime = 0;
             oldVal.hasReported = True;
         end
         else begin
@@ -374,7 +374,8 @@ module mkAutoAckGenerator(AutoAckGenerator);
     rule getPollingResp if (bramInitedReg && backgroundPollingStateReg == AutoAckGenBackgroundPollingStateGetReadResp);
         let bitmapInfo = bitmapStorage.readOnlyRespPipeOut.first;
         let ackMeta = autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.first;
-        let lastPollInfo <- lastReportTimeStorage.getReadResp;
+        let lastPollInfo = lastReportTimeStorage.readRespPipeOut.first;
+        lastReportTimeStorage.readRespPipeOut.deq;
         bitmapStorage.readOnlyRespPipeOut.deq;
         autoAckMetaAtomicUpdateStorage.readOnlyRespPipeOut.deq;
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateHandleResp;
@@ -393,7 +394,21 @@ module mkAutoAckGenerator(AutoAckGenerator);
     rule handlePollingResult if (bramInitedReg && backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);
         let {bitmapInfo, ackMeta, lastPollInfo, pollingQpIdx} = pollingQueryRespPipelineReg;
         if (!ackMeta.hasReported) begin
-            if (lastPollInfo - ackMeta.lastEntryReceiveTime > fromInteger(valueOf(AUTO_ACK_POLLING_TIMEOUT_TICKS))) begin
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
+            //     toBlue(", pollingQueryRespPipelineReg="), fshow(pollingQueryRespPipelineReg)
+            // );
+
+
+            let lastReportTimeTriggeredByPolling = lastPollInfo;
+            // we can't modify the value stored in ackMeta (The storage BRAM can't be write from two different place), so we need another gate to control whether to send ack or not.
+            // the following condition covers the following two case:
+            //   * the ack was send because the packet's BTH required. In this case, ackMeta.hasReported should be True, and the two time are set to be equal.
+            //   * the ack was send by polling, after polling send an ack, the two time are set to be equal.
+            let lastRecvPacketHasBeenReported = lastReportTimeTriggeredByPolling == ackMeta.lastEntryReceiveTime;
+            let lastRecvPacketIsOldEnough = curTimeReg - ackMeta.lastEntryReceiveTime > fromInteger(valueOf(AUTO_ACK_POLLING_TIMEOUT_TICKS));
+
+            if ((!lastRecvPacketHasBeenReported) && lastRecvPacketIsOldEnough) begin
                 let commonHeader = RingbufDescCommonHead {
                     valid           : True,
                     hasNextFrag     : False,
@@ -418,16 +433,22 @@ module mkAutoAckGenerator(AutoAckGenerator);
                     commonHeader    : commonHeader
                 };
                 pollingTimeoutDescQueue.enq(pack(desc0));
-                lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
+                lastReportTimeStorage.write(pollingQpIdx, ackMeta.lastEntryReceiveTime);
 
                 // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
-                //     toBlue(", desc="), fshow(desc0)
+                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult new report"),
+                //     toBlue(", pollingQpIdx="), fshow(pollingQpIdx),
+                //     toBlue(", ackMeta="), fshow(ackMeta)
                 // );
             end
         end
         else begin
-            lastReportTimeStorage.write(pollingQpIdxReg, ackMeta.lastEntryReceiveTime);
+            lastReportTimeStorage.write(pollingQpIdx, ackMeta.lastEntryReceiveTime);
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult already reported"),
+            //     toBlue(", pollingQpIdx="), fshow(pollingQpIdx),
+            //     toBlue(", ackMeta="), fshow(ackMeta)
+            // );
         end
         backgroundPollingStateReg <= AutoAckGenBackgroundPollingStateSendReadReq;
     endrule

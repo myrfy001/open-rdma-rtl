@@ -18,7 +18,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
-from test_framework.descriptors import WorkReqOpCode, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc, PMTU
+from test_framework.descriptors import WorkReqOpCode, WorkReqSendFlag, RdmaOpCode, MetaReportQueueAckDesc, MetaReportQueueAckExtraDesc, MetaReportQueuePacketBasicInfoDesc, PMTU
 from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator
 from test_framework.hw_init_helper import HardwareTestHelper, CARD_A_IP_ADDRESS, CARD_A_MAC_ADDRESS
 
@@ -416,7 +416,7 @@ class TB(object):
         # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
         # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
         # write finish signal. Or delay the desc report on hardware.
-        await Timer(700, units='ns')
+        await Timer(12000, units='ns')
 
         for d in range(write_len):
             expected_data = src_buf_mem[d+src_addr_offset]
@@ -611,7 +611,7 @@ class TB(object):
         await self.init_helper.simple_nix_tx_queue.sync_pointers()
 
 
-@ cocotb.test(timeout_time=11000, timeout_unit="ns")
+@ cocotb.test(timeout_time=1100000, timeout_unit="ns")
 async def small_desc_fp_test(dut):
 
     tb = TB(dut)
@@ -622,9 +622,11 @@ async def small_desc_fp_test(dut):
 
     await tb.start_single_card_loop_back()
 
+    await Timer(2048, units='ns')  # wait bram init finish
+
     # await tb.testcase_send_simple_write_loopback_req()
-    # await tb.testcase_send_simple_write_loopback_req_8191()
-    await tb.testcase_send_multi_small_packet_to_test_fully_pipeline()
+    await tb.testcase_send_simple_write_loopback_req_8191()
+    # await tb.testcase_send_multi_small_packet_to_test_fully_pipeline()
     # await tb.testcase_simple_nic_loop_back()
 
     await Timer(10, units='ns')

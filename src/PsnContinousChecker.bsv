@@ -134,6 +134,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
         storage[0].write(bramInitPtrReg, resetValue);
         storage[1].write(bramInitPtrReg, resetValue);
         bramInitPtrReg <= unpack(pack(bramInitPtrReg) + 1);
+
+        // $display("time=%0t", $time, "mkBitmapWindowStorage bramInit");
     endrule
 
 
@@ -161,6 +163,10 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                 isReset: False
             };
             stageOneToTwoPipelineQueue.enq(pipelineEntryOut);
+
+            // $display("time=%0t", $time, "mkBitmapWindowStorage 1 sendBramQueryReq", 
+            //         ", req=", fshow(req)
+            // );
         end
         else if (resetReqPipeInQ.notEmpty) begin
             resetReqPipeInQ.deq;
@@ -172,9 +178,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
             stageOneToTwoPipelineQueue.enq(pipelineEntryOut);
         end
         
-        // $display("time=%0t", $time, "mkBitmapWindowStorage 1 sendBramQueryReq", 
-        //         ", pipelineEntryIn=", fshow(pipelineEntryIn)
-        // );
+        
   
 
     endrule
@@ -383,7 +387,9 @@ module mkAtomicUpdateStorage#(
     Reg#(Bool) bramInitedReg <- mkReg(False);
     Reg#(tRowAddr) bramInitPtrReg <- mkReg(0);
 
-    let resetValue = unpack(0);
+    let resetValue = AtomicUpdateStorageEntry {
+        data: updateFunc(?, ?, True)
+    };
 
     rule bramInit if (!bramInitedReg);
         if (bramInitPtrReg == maxBound) begin
@@ -418,7 +424,7 @@ module mkAtomicUpdateStorage#(
             resetReqPipeInQ.deq;
             let pipelineEntryOut = AtomicUpdateStorageStageOneToTwoPipelineEntry {
                 rowAddr: resetReqPipeInQ.first,
-                reqData: unpack(resetValue),
+                reqData: unpack(0),
                 isReset: True
             };
             stageOneToTwoPipelineQueue.enq(pipelineEntryOut);

@@ -808,7 +808,11 @@ module mkAutoInferBramUG#(Bool bypassWriteData, String initFile, String debugNam
 
     Wire#(tAddr) readAddrWire <- mkDWire (unpack(0));
 
-    Count#(Bit#(2)) illegalReadMonitorCounter <- mkCount(0);
+    Count#(Bit#(8)) illegalReadMonitorCounter <- mkCount(0);
+
+    rule incrGuard;
+        illegalReadMonitorCounter.incr(1);
+    endrule
     
     rule forwardReadAddr;
         storage.sendReadAddr(readAddrWire);
@@ -823,16 +827,15 @@ module mkAutoInferBramUG#(Bool bypassWriteData, String initFile, String debugNam
         //     ", addr=", fshow(addr)
         // );
         readAddrWire <= addr;
-        illegalReadMonitorCounter.incr(1);
+        illegalReadMonitorCounter.update(0);
     endmethod
 
     method ActionValue#(tData) getReadResp;
         immAssert(
             illegalReadMonitorCounter == 1,
-            "mkAutoInferBramUG, illegal read, illegalReadMonitorCounter must be 1, 0 means read not ready, and greater than 0 means some data is lost due to not read timely.",
+            "mkAutoInferBramUG, illegal read, illegalReadMonitorCounter must be 1, 0 means read not ready, and greater than 1 means some data is lost due to not read timely.",
             $format("debugName=", fshow(debugName), ", illegalReadMonitorCounter=", fshow(illegalReadMonitorCounter))
         );
-        illegalReadMonitorCounter.decr(1);
 
         // $display("time=%0t", $time, "getReadResp", 
         //     ", tReg=", fshow(tReg)
