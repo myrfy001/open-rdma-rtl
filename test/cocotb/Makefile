@@ -54,11 +54,8 @@ VLOG_FILE = $(TB_DIR)/$(TOP_FILE)
 DATE = $(shell date "+%Y%m%d")
 LOG_FILE = $(TB_DIR)/log/$(DATE)_$(TOP_MODULE).log
 
-gen_bram_hex:
-	cd $(BACKEND_DIR) && python3 ../scripts/gen_bram_init_file.py $(GENERATED_VSRC_DIR)
 
-
-verilog: gen_bram_hex
+verilog:
 	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} BSV_TOP_MODULE=${TOP_MODULE} IS_COMPILE_FOR_SIM=True verilog
 
 prepare:

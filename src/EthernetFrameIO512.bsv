@@ -112,6 +112,9 @@ module mkInputPacketClassifier(InputPacketClassifier);
                     fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_RDMA_PACKET_CNT)): begin
                         return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsRdmaPacketCntReg};
                     end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_NOT_READY_PACKET_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsNetworkNotReadyCntReg};
+                    end
                     default: begin
                         return tagged CsrNodeResultNotMatched;
                     end

@@ -157,11 +157,8 @@ ifdef IS_COMPILE_FOR_SIM
 	MISCFLAGS += -D IS_COMPILE_FOR_SIM
 endif
 
-gen_bram_hex:
-	mkdir -p $(BUILDDIR)	
-	python3 ../scripts/gen_bram_init_file.py $(BUILDDIR)
 
-compile: gen_bram_hex
+compile:
 	mkdir -p $(BUILDDIR)
 	# rm $(BUILDDIR)/FullyPipelineChecker.bo 
 	bsc -elab -verilog -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)

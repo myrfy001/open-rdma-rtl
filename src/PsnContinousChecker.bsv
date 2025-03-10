@@ -99,8 +99,8 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
     FIFOF#(BitmapWindowStorageEntry#(tData, tBoundary))     readOnlyRespPipeOutQueue <- mkFIFOF;
 
     Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary))) storage = newVector;
-    storage[0] <- mkAutoInferBramQueuedOutput(False, "init_bram_psn_merge_storage.bin", "mkBitmapWindowStorage 0");
-    storage[1] <- mkAutoInferBramQueuedOutput(False, "init_bram_psn_merge_storage.bin", "mkBitmapWindowStorage 1");
+    storage[0] <- mkAutoInferBramQueuedOutput(False, "", "mkBitmapWindowStorage 0");
+    storage[1] <- mkAutoInferBramQueuedOutput(False, "", "mkBitmapWindowStorage 1");
 
 
     // Pipeline Queues
@@ -368,8 +368,8 @@ module mkAtomicUpdateStorage#(
 
 
     Vector#(NUMERIC_TYPE_TWO, AutoInferBramQueuedOutput#(tRowAddr, AtomicUpdateStorageEntry#(tData))) storage = newVector;
-    storage[0] <- mkAutoInferBramQueuedOutput(False, initRamFileBaseName + ".bin", "mkAtomicUpdateStorage 0");
-    storage[1] <- mkAutoInferBramQueuedOutput(False, initRamFileBaseName + ".bin", "mkAtomicUpdateStorage 1");
+    storage[0] <- mkAutoInferBramQueuedOutput(False, "", "mkAtomicUpdateStorage 0");
+    storage[1] <- mkAutoInferBramQueuedOutput(False, "", "mkAtomicUpdateStorage 1");
     
     
     PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, AtomicUpdateStorageEntry#(tData)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));

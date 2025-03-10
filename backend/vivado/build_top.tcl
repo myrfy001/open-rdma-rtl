@@ -152,6 +152,7 @@ proc runRoute {args} {
     route_design
 
     proc runPPO { {num_iters 1} {enable_phys_opt 1} } {
+        global vivado_work_dir
         for {set idx 0} {$idx < $num_iters} {incr idx} {
             place_design -post_place_opt; # Better to run after route
             if {$enable_phys_opt != 0} {
@@ -161,6 +162,8 @@ proc runRoute {args} {
             if {[get_property SLACK [get_timing_paths ]] >= -0.02} {
                 break; # Stop if timing closure
             }
+
+            write_checkpoint -force $vivado_work_dir/post_route_$idx.dcp
         }
     }
 

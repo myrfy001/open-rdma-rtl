@@ -213,9 +213,11 @@ interface TopLevelDmaChannelMux;
     interface IoChannelMemorySlavePipeB0In pgtUpdateDmaSlavePipe;
 endinterface
 
+
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
     IoChannelSixChannelDmaMux         muxInst <- mkDtldStreamArbiterSlave(256, True);
+
 
     rule discardUselessPipeOutSignal;
         if (muxInst.writeSourceChannelIdPipeOut.notEmpty) begin
@@ -226,8 +228,10 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
         end
     endrule
 
+
     // upstream port
     interface dmaMasterPipeIfc = muxInst.masterIfc;
+
 
     // downstream port
     interface qpRingbufDmaSlavePipeIfc          = muxInst.slaveIfcVec[0];
@@ -238,11 +242,13 @@ module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
     interface simpleNicPacketDmaSlavePipeIfc    = muxInst.slaveIfcVec[5]; 
 endmodule
 
+
 interface BsvTopWithoutHardIpInstance;
     interface IoChannelMemorySlavePipe dmaSlavePipeIfc;
     interface IoChannelMemoryMasterPipeB0In   dmaMasterPipeIfc;
     interface IoChannelBiDirStreamNoMetaPipeB0In  qpEthDataStreamIfc;
 endinterface
+
 
 
 (* synthesize *)
