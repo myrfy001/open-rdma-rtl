@@ -19,7 +19,6 @@ RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
 QUARTUS_SDC_DIRS ?= $(QUARTUS_BACKEND_DIR)/sdc/*.sdc
 VIVADO_SDC_DIRS ?= $(VIVADO_BACKEND_DIR)/sdc/*.sdc
 
-BRAM_INIT_FILE_DIRS ?= $(BACKENDDIR)/$(BUILDDIR)/*.bin
 			
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
@@ -143,7 +142,6 @@ export VIVADO_WORKDIR
 export VIVADO_BACKEND_DIR
 export VIVADO_SDC_DIRS
 export VIVADO_PART
-export BRAM_INIT_FILE_DIRS
 export PROJ_NAME = $(BSV_TOP_MODULE)
 export REV_NAME = rev1
 export TOP

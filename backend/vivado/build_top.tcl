@@ -5,14 +5,13 @@ set top_module 				$::env(TOP)
 
 set rtl_dirs 				$::env(RTL_DIRS)
 set sdc_dirs 				$::env(VIVADO_SDC_DIRS)
-set bram_init_file_dirs		$::env(BRAM_INIT_FILE_DIRS)
 
 set part $::env(VIVADO_PART)
 set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
 
 set current_time [clock format [clock seconds] -format "%Y-%m-%d-%H-%M-%S"]
 
-proc runGenerateIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+proc runGenerateIP {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir} {
     global device
 
     set_part $device
@@ -36,7 +35,7 @@ proc runGenerateIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir
 
 }
 
-proc runSynthIP {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+proc runSynthIP {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir} {
     global device
 
     set_part $device
@@ -69,7 +68,7 @@ proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype 
 }
 
 
-proc createSourceSnapshot {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+proc createSourceSnapshot {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir} {
     global dir_ip_gen part device
 
 
@@ -84,10 +83,9 @@ proc createSourceSnapshot {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_f
 	# add our own files (especially sdc files) last, so all the signals provided by other IP will be available.
 	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dir_list]
 	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dir_list]
-	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "TEXT_FILE" $bram_init_file_dir_list]
 }
 
-proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir_list vivado_backend_dir} {
+proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir} {
     global part device
     set_part $device
     set_param general.maxthreads 24
@@ -100,7 +98,6 @@ proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list bram_init_file_dir
     read_ip [glob $dir_ip_gen/**/*.xci]
 
     read_verilog [ glob $verilog_snapshot_dir/*.v ]
-    add_files -norecurse [glob $verilog_snapshot_dir/*.bin]
 
     read_xdc [ glob $sdc_snapshot_dir/*.sdc ]
 
@@ -190,11 +187,11 @@ proc runWriteBitStream {args} {
     write_bitstream -force $vivado_work_dir/top.bit
 }
 
-createSourceSnapshot $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
-# runGenerateIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
-# runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+createSourceSnapshot $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
+runGenerateIP $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
+runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
 
-createProject $vivado_work_dir $rtl_dirs $sdc_dirs $bram_init_file_dirs $vivado_backend_dir
+createProject $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
 
 runSynthDesign
 

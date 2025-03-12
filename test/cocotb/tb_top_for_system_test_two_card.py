@@ -142,7 +142,7 @@ class TB(object):
     def _csr_read_cb(self, addr):
         with self.csr_read_lock:
             self.csr_read_req_queue.put_nowait(addr)
-            while self.csr_read_resp_queue.empty:
+            while self.csr_read_resp_queue.empty():
                 time.sleep(0)
             return self.csr_read_req_queue.get_nowait()
 
