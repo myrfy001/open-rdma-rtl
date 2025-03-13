@@ -101,8 +101,9 @@ module mkPayloadGen(PayloadGen);
 
     PipeInAdapterB0#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapterB0;
 
-    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ   <- mkSizedFIFOF(256);  // Since DMA port is shared by multi module (e.g., WQE desc fetch), we may queue up here. 
-    // FIFOF#(IoChannelMemoryAccessDataStream)  dmaReadRespPipeInQ   <- mkSizedFIFOF(2);
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ         <- mkSizedFIFOF(256 - 8);  // Since DMA port is shared by multi module (e.g., WQE desc fetch), we may queue up here. 
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutGuardQ    <- mkSizedFIFOF(8);        // if dmaReadReqPipeOutQ is Full, then stop address translate to avoid address translate blocking. the inflight request will land in this queue.
+    mkConnection(toPipeOut(dmaReadReqPipeOutGuardQ), toPipeIn(dmaReadReqPipeOutQ));
 
 
     QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug("mkPayloadGen addrTranslateCltInst", False);
@@ -158,7 +159,7 @@ module mkPayloadGen(PayloadGen);
         );
     endrule
 
-    rule getBurstChunRespAndIssueAddrTranslateReq;
+    rule getBurstChunRespAndIssueAddrTranslateReq if (dmaReadReqPipeOutQ.notFull);
         let curFpDebugTime <- getSimulationTime;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
@@ -194,7 +195,7 @@ module mkPayloadGen(PayloadGen);
             addr: translatedAddr,
             totalLen: len
         };
-        dmaReadReqPipeOutQ.enq(readReq);
+        dmaReadReqPipeOutGuardQ.enq(readReq);
         dsConcatorIsLastStreamFlagPipeInConverter.enq(isLast);
 
         $display(
@@ -248,6 +249,8 @@ module mkPayloadCon(PayloadCon);
     rule printDebugInfo;
         if (!conRespPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadCon conRespPipeOutQ");
         if (!issueDmaWritePipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadCon issueDmaWritePipelineQ");
+        if (!dmaWriteReqAddrPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadCon dmaWriteReqAddrPipeOutQ");
+        if (!dmaWriteReqDataPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadCon dmaWriteReqDataPipeOutQ");
     endrule
 
     
