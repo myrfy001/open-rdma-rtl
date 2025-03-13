@@ -418,3 +418,124 @@ module mkServerToClientArbitP#(
     interface srvIfcVec = srvIfcVecInst;
     interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeInB0(cltSideRespQueue));
 endmodule
+
+
+
+
+
+
+
+// channel 0 has highest priority, and last channel has lowest priority.
+interface ServerToClientArbitFixPriorityP#(numeric type channelCnt, type tReq, type tResp);
+    interface Vector#(channelCnt, ServerP#(tReq, tResp))        srvIfcVec;
+    interface ClientP#(tReq, tResp)                             cltIfc;
+endinterface
+
+
+module mkServerToClientArbitFixPriorityP#(
+        String name,
+        Integer depth, 
+        Bool needReadResp,
+        function Bool isReqFinished(tReq request),
+        function Bool isRespFinished(tResp response)
+    )(ServerToClientArbitFixPriorityP#(channelCnt, tReq, tResp)) provisos (
+        Bits#(tReq, szReq),
+        Bits#(tResp, szResp),
+        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx),
+        FShow#(tReq),
+        FShow#(tResp)
+    );
+
+    Vector#(channelCnt, ServerP#(tReq, tResp))     srvIfcVecInst = newVector;
+
+    Vector#(channelCnt, PipeInAdapterB0#(tReq))                         srvSideReqQueueVec      <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, FIFOF#(tResp))                                   srvSideRespQueueVec     <- replicateM(mkFIFOF);
+
+    FIFOF#(tReq)                           cltSideReqQueue   <-  mkFIFOF;
+    PipeInAdapterB0#(tResp)                 cltSideRespQueue  <-  mkPipeInAdapterB0;
+
+    Reg#(Bool) isReqFirstBeatReg <- mkReg(True);
+    Reg#(tChannelIdx) curReqChannelIdxReg <- mkRegU;
+    FIFOF#(tChannelIdx) respKeepOrderQueue  <- mkSizedFIFOF(depth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
+
+    // rule debug;
+    //     $display(
+    //         "time=%0t, ", $time, "DEBUG", 
+    //         ", isWriteFirstBeatReg=", fshow(isWriteFirstBeatReg),
+    //         ", masterSideQueueWm.notFull=", fshow(masterSideQueueWm.notFull),
+    //         ", masterSideQueueWd.notFull=", fshow(masterSideQueueWd.notFull),
+    //         ", writeSourceChannelIdPipeOutQueue.notFull=", fshow(writeSourceChannelIdPipeOutQueue.notFull)
+    //     );
+    // endrule
+
+
+    rule recvReqArbitResult if (isReqFirstBeatReg);
+        Maybe#(tReq) reqMaybe = tagged Invalid;
+        tChannelIdx curChannelIdx = 0;
+        for (Integer channelIdx = valueOf(channelCnt) - 1; channelIdx >= 0 ; channelIdx = channelIdx - 1) begin
+            if (srvSideReqQueueVec[channelIdx].notEmpty) begin
+                reqMaybe = tagged Valid srvSideReqQueueVec[channelIdx].first;
+                srvSideReqQueueVec[channelIdx].deq;
+                curChannelIdx = fromInteger(channelIdx);
+            end
+        end
+
+        if (reqMaybe matches tagged Valid .req) begin
+            cltSideReqQueue.enq(req);
+            isReqFirstBeatReg <= isReqFinished(req);
+            curReqChannelIdxReg <= curChannelIdx;
+            if (needReadResp) begin
+                respKeepOrderQueue.enq(curChannelIdx);
+            end
+            $display(
+                "time=%0t:", $time, toGreen(" mkServerToClientArbitFixPriorityP forward request first beat"),
+                toBlue(", req="), fshow(req)
+            );
+        end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkServerToClientArbitFixPriorityP recvReqArbitResult"),
+        //     toBlue(", wmMaybe="), fshow(wmMaybe),
+        //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+        // );
+    endrule
+
+    rule forwardMoreReqBeat if (!isReqFirstBeatReg);
+        let req  = srvSideReqQueueVec[curReqChannelIdxReg].first;
+        srvSideReqQueueVec[curReqChannelIdxReg].deq;
+        cltSideReqQueue.enq(req);
+        isReqFirstBeatReg <= isReqFinished(req);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkServerToClientArbitFixPriorityP forward request more beat"),
+            toBlue(", req="), fshow(req)
+        );
+    endrule
+
+
+    if (needReadResp) begin
+        rule forwardReadResp;
+            let resp = cltSideRespQueue.first;
+            cltSideRespQueue.deq;
+
+            let channelIdx = respKeepOrderQueue.first;
+            srvSideRespQueueVec[channelIdx].enq(resp);
+
+            if (isRespFinished(resp)) begin
+                respKeepOrderQueue.deq;
+            end
+            $display(
+                "time=%0t:", $time, toGreen(" mkServerToClientArbitFixPriorityP forwardReadResp"),
+                toBlue(", channelIdx="), fshow(channelIdx),
+                toBlue(", resp="), fshow(resp)
+            );
+        endrule
+    end
+
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+        srvIfcVecInst[channelIdx] = toGPServerP(toPipeInB0(srvSideReqQueueVec[channelIdx]), toPipeOut(srvSideRespQueueVec[channelIdx]));
+    end
+
+    interface srvIfcVec = srvIfcVecInst;
+    interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeInB0(cltSideRespQueue));
+endmodule

@@ -101,8 +101,8 @@ module mkPayloadGen(PayloadGen);
 
     PipeInAdapterB0#(PayloadGenReq) genReqPipeInQ <- mkPipeInAdapterB0;
 
-    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ         <- mkSizedFIFOF(256 - 8);  // Since DMA port is shared by multi module (e.g., WQE desc fetch), we may queue up here. 
-    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutGuardQ    <- mkSizedFIFOF(8);        // if dmaReadReqPipeOutQ is Full, then stop address translate to avoid address translate blocking. the inflight request will land in this queue.
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutQ         <- mkSizedFIFOF(256 - 16);  // Since DMA port is shared by multi module (e.g., WQE desc fetch), we may queue up here. 
+    FIFOF#(IoChannelMemoryAccessMeta)        dmaReadReqPipeOutGuardQ    <- mkSizedFIFOF(16);        // if dmaReadReqPipeOutQ is Full, then stop address translate to avoid address translate blocking. the inflight request will land in this queue.
     mkConnection(toPipeOut(dmaReadReqPipeOutGuardQ), toPipeIn(dmaReadReqPipeOutQ));
 
 
@@ -127,13 +127,18 @@ module mkPayloadGen(PayloadGen);
 
     // Pipeline FIFOs
     FIFOF#(Tuple3#(PTEIndex, ADDR, SimulationTime)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkSizedFIFOF(2);
-    FIFOF#(Tuple3#(Length, Bool, SimulationTime)) issueDmaReadPipelineQ <- mkSizedFIFOF(10);
+    FIFOF#(Tuple3#(Length, Bool, SimulationTime)) issueDmaReadPipelineQ <- mkSizedFIFOF(16);
 
 
-    let dsConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 256);   // PCIe has max outstanding read req limit (PCIe tag).
+    let             dsConcatorIsLastStreamFlagPipeInConverter              <- mkPipeInB0ToPipeIn(dsConcator.isLastStreamFlagPipeIn, 256 - 16);   // PCIe has max outstanding read req limit (PCIe tag).
+    FIFOF#(Bool)    dsConcatorIsLastStreamFlagPipeInConverterGuardQueue    <- mkSizedFIFOF(16); 
+    
+    mkConnection(toPipeOut(dsConcatorIsLastStreamFlagPipeInConverterGuardQueue), dsConcatorIsLastStreamFlagPipeInConverter);
 
     rule printDebugInfo;
-        if (!dmaReadReqPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ dmaReadReqPipeOutQ");
+        if (!dmaReadReqPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadGen dmaReadReqPipeOutQ");
+        if (!dsConcatorIsLastStreamFlagPipeInConverter.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadGen dsConcatorIsLastStreamFlagPipeInConverter");
+        
     endrule
 
 
@@ -159,7 +164,7 @@ module mkPayloadGen(PayloadGen);
         );
     endrule
 
-    rule getBurstChunRespAndIssueAddrTranslateReq if (dmaReadReqPipeOutQ.notFull);
+    rule getBurstChunRespAndIssueAddrTranslateReq if (dmaReadReqPipeOutQ.notFull && dsConcatorIsLastStreamFlagPipeInConverter.notFull);
         let curFpDebugTime <- getSimulationTime;
         let burstAddrBoundry = rawReqToBurstChunker.responsePipeOut.first;
         rawReqToBurstChunker.responsePipeOut.deq;
@@ -196,7 +201,7 @@ module mkPayloadGen(PayloadGen);
             totalLen: len
         };
         dmaReadReqPipeOutGuardQ.enq(readReq);
-        dsConcatorIsLastStreamFlagPipeInConverter.enq(isLast);
+        dsConcatorIsLastStreamFlagPipeInConverterGuardQueue.enq(isLast);
 
         $display(
             "time=%0t:", $time, toGreen(" mkPayloadGen issueDmaRead"),

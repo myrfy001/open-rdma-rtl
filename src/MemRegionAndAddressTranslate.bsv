@@ -153,7 +153,7 @@ module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
     // For in RQ path, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
     // For in SQ path, each WQE taks 2 beat, then the arbiter's keep order queue depth should be at least 5
     // so, we use depth 5 here.
-    let arbiter <- mkServerToClientArbitP(
+    let arbiter <- mkServerToClientArbitFixPriorityP(
         "MemRegionTableTwoWayQuery",
         5,
         True,
@@ -345,7 +345,7 @@ module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
     // For RQ, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
     // For SQ, WQE takes 2 beats, then the arbiter's keep order queue depth should be at least 5
     // so we use depth 5 here.
-    let arbiter <- mkServerToClientArbitP(
+    let arbiter <- mkServerToClientArbitFixPriorityP(
         "AddressTranslateTwoWayQuery",
         5,
         True,

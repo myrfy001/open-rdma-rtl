@@ -723,11 +723,14 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     // QPContext, MR Table and PGT
     mkConnection(rq.qpcQueryClt, qpContext.querySrv);
 
-    mkConnection(sq.mrTableQueryClt, mrTable.querySrvVec[0]);
-    mkConnection(rq.mrTableQueryClt, mrTable.querySrvVec[1]);
+    // query server channel 0 has higher priority
+    mkConnection(rq.mrTableQueryClt, mrTable.querySrvVec[0]);
+    mkConnection(sq.mrTableQueryClt, mrTable.querySrvVec[1]);
 
-    mkConnection(payloadGenAndCon.genAddrTranslateClt, addrTranslator.querySrvVec[0]);
-    mkConnection(payloadGenAndCon.conAddrTranslateClt, addrTranslator.querySrvVec[1]);
+    // query server channel 0 has higher priority
+    mkConnection(payloadGenAndCon.conAddrTranslateClt, addrTranslator.querySrvVec[0]);
+    mkConnection(payloadGenAndCon.genAddrTranslateClt, addrTranslator.querySrvVec[1]);
+    
 
     // Simple Nic Packet input
     mkConnection(rq.otherRawPacketPipeOut, simpleNic.rawEthernetPacketPipeIn);

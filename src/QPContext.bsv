@@ -95,7 +95,7 @@ module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
     QpContext qpContext <- mkQpContext;
     // QPC Table need 10 beat for worst case to generate resp.
     // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
-    let arbiter <- mkServerToClientArbitP(
+    let arbiter <- mkServerToClientArbitFixPriorityP(
         "QpContextTwoWayQuery",
         4,
         True,
