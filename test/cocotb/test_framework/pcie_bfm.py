@@ -24,7 +24,7 @@ else:
 
 
 class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=30):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=30, write_meta_to_data_delay_ns=30):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -34,6 +34,7 @@ class SimplePcieBehaviorModel(object):
         self.resetn = dut.RST_N
 
         self.read_delay_time_ns = read_delay_time_ns
+        self.write_meta_to_data_delay_ns = write_meta_to_data_delay_ns
 
         self.requester_write_meta_pipes = []
         self.requester_write_data_pipes = []
@@ -77,10 +78,16 @@ class SimplePcieBehaviorModel(object):
         self.completer_inflight_read_resps = [
             [] for _ in range(self.completer_channel_cnt)]
 
+        self.pending_write_metas = [
+            [] for _ in range(self.completer_channel_cnt)]
+
         self.mem = mem or [0] * (1 << 25)
 
         for channel_idx in range(self.requester_channel_cnt):
-            cocotb.start_soon(self._handle_requester_write_req(channel_idx))
+            cocotb.start_soon(
+                self._handle_requester_write_req_meta(channel_idx))
+            cocotb.start_soon(
+                self._handle_requester_write_req_data(channel_idx))
             cocotb.start_soon(self._handle_requester_read_req(channel_idx))
             cocotb.start_soon(
                 self._forward_delayed_requester_read_resp(channel_idx))
@@ -88,51 +95,70 @@ class SimplePcieBehaviorModel(object):
         for channel_idx in range(self.completer_channel_cnt):
             cocotb.start_soon(self._handle_completer_read_resp(channel_idx))
 
-    async def _handle_requester_write_req(self, channel_idx):
+    async def _handle_requester_write_req_meta(self, channel_idx):
         # loop to handle each request
         while True:
+            cur_time = cocotb.utils.get_sim_time("ns")
             if await self.requester_write_meta_pipes[channel_idx].not_empty():
                 write_meta_raw = await self.requester_write_meta_pipes[channel_idx].first()
                 await self.requester_write_meta_pipes[channel_idx].deq()
                 write_meta = BlueRdmaDtldStreamMemAccessMeta.unpack(
                     write_meta_raw)
-
                 cur_write_addr = write_meta.addr()
-                total_len = 0
 
+                self.pending_write_metas[channel_idx].append(
+                    (cur_time, write_meta))
                 self.log.info(
-                    f"cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
-                # loop to handle each beat in a request
-                while True:
-                    if await self.requester_write_data_pipes[channel_idx].not_empty():
-                        write_data_raw = await self.requester_write_data_pipes[channel_idx].first()
-                        await self.requester_write_data_pipes[channel_idx].deq()
-                        write_data = BlueRdmaDataStream.unpack(
-                            write_data_raw)
+                    f"put write request to delay queue cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
 
-                        data = write_data.data()
-                        if (write_data.is_first()):
-                            data >>= (write_data.start_byte_index() * 8)
+            await RisingEdge(self.clock)  # wait for next write req
 
-                        old_write_addr = cur_write_addr
-                        # since pcie stream is aligned to 4 byte, each beat's first 3 byte may be invalid
-                        skip_byte_cnt = cur_write_addr % 4
-                        for byte_idx in range(write_data.byte_num()):
-                            if byte_idx >= skip_byte_cnt:
-                                self.mem[cur_write_addr] = data & 0xff
-                                cur_write_addr += 1
-                            data >>= 8
+    async def _handle_requester_write_req_data(self, channel_idx):
+        # loop to handle each request
+        while True:
+            cur_time = cocotb.utils.get_sim_time("ns")
+            if len(self.pending_write_metas[channel_idx]) != 0:
+                enq_time, write_meta = self.pending_write_metas[channel_idx][0]
+                if cur_time - enq_time >= self.write_meta_to_data_delay_ns:
 
-                        total_len += (write_data.byte_num() - skip_byte_cnt)
-                        self.log.info(
-                            f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
+                    self.pending_write_metas[channel_idx].pop(0)
+                    cur_write_addr = write_meta.addr()
+                    total_len = 0
 
-                        if (write_data.is_last()):
-                            print(
-                                f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, {total_len}, {write_meta.total_len()}")
-                            assert total_len == write_meta.total_len()
-                            break
-                    await RisingEdge(self.clock)  # wait for next beat
+                    self.log.info(
+                        f"get write request from delay queue cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
+                    # loop to handle each beat in a request
+                    while True:
+                        if await self.requester_write_data_pipes[channel_idx].not_empty():
+                            write_data_raw = await self.requester_write_data_pipes[channel_idx].first()
+                            await self.requester_write_data_pipes[channel_idx].deq()
+                            write_data = BlueRdmaDataStream.unpack(
+                                write_data_raw)
+
+                            data = write_data.data()
+                            if (write_data.is_first()):
+                                data >>= (write_data.start_byte_index() * 8)
+
+                            old_write_addr = cur_write_addr
+                            # since pcie stream is aligned to 4 byte, each beat's first 3 byte may be invalid
+                            skip_byte_cnt = cur_write_addr % 4
+                            for byte_idx in range(write_data.byte_num()):
+                                if byte_idx >= skip_byte_cnt:
+                                    self.mem[cur_write_addr] = data & 0xff
+                                    cur_write_addr += 1
+                                data >>= 8
+
+                            total_len += (write_data.byte_num() -
+                                          skip_byte_cnt)
+                            self.log.info(
+                                f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
+
+                            if (write_data.is_last()):
+                                print(
+                                    f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, {total_len}, {write_meta.total_len()}")
+                                assert total_len == write_meta.total_len()
+                                break
+                        await RisingEdge(self.clock)  # wait for next beat
 
             await RisingEdge(self.clock)  # wait for next write req
 
