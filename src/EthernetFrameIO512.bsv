@@ -85,6 +85,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
     FIFOF#(Tuple3#(DataStream, Bool, SimulationTime)) ethRawPacketForHandleQ <- mkLFIFOF;
 
+    let fpChecker <- mkStreamFullyPipelineChecker(DebugConf{name: "mkInputPacketClassifier", enableDebug: True});
+
 
     // Metrics Regs
     Reg#(Dword) metricsDiscardPacketCntReg      <- mkReg(0);
@@ -145,10 +147,12 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
             ethRawPacketForHandleQ.enq(tuple3(ds, macUnicastMatch, curFpDebugTime));
             waitingForRouteQ.enq(ds);
+            let _ <- fpChecker.putStreamBeatInfo(ds.isFirst, ds.isLast);
         end
         else if (canAcceptRawInputPacketReg) begin
             ethRawPacketForHandleQ.enq(tuple3(ds, macUnicastMatch, curFpDebugTime));
             waitingForRouteQ.enq(ds);
+            let _ <- fpChecker.putStreamBeatInfo(ds.isFirst, ds.isLast);
         end
         else begin
             metricsNetworkNotReadyCntReg <= metricsNetworkNotReadyCntReg + 1;
@@ -251,7 +255,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleFirstBeatStage");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier handleFirstBeatStage", enableDebug: True});
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);
@@ -272,7 +276,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleMoreBeatStage"),
         //     toBlue(", ds="), fshow(ds)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleMoreBeatStage");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier handleMoreBeatStage", enableDebug: True});
     endrule
 
     rule dispatchStream;
@@ -311,7 +315,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
             ethPacketMetaQ.deq;
         end
         if (ds.isFirst) begin
-            checkFullyPipeline(ethPktMeta.fpDebugTime, 1, 2000, "mkInputPacketClassifier dispatchStream");
+            checkFullyPipeline(ethPktMeta.fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier dispatchStream", enableDebug: True});
         end
     endrule
 
@@ -401,10 +405,10 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         fpDebugTimeReg <= curFpDebugTime;
 
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleFirstBeat"),
-        //     toBlue(", ds="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleFirstBeat"),
+            toBlue(", ds="), fshow(ds)
+        );
     endrule
 
     
@@ -459,13 +463,13 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
 
         stateReg <= ds.isLast ? RdmaMetaAndPayloadExtractorStateHandleFirstBeat : RdmaMetaAndPayloadExtractorStateHandleMoreBeat;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleSecondBeat"),
-        //     toBlue(", ds="), fshow(ds),
-        //     toBlue(", payload(with useless lower bits)="), rdmaMeta.hasPayload ? fshow(ds) : $format("No Payload"),
-        //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
-        // );
-        checkFullyPipeline(fpDebugTimeReg, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleSecondBeat");
+        $display(
+            "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleSecondBeat"),
+            toBlue(", ds="), fshow(ds),
+            toBlue(", payload(with useless lower bits)="), rdmaMeta.hasPayload ? fshow(ds) : $format("No Payload"),
+            toBlue(", rdmaMeta="), fshow(rdmaMeta)
+        );
+        checkFullyPipeline(fpDebugTimeReg, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleSecondBeat", enableDebug: True});
     endrule
 
 
@@ -525,12 +529,12 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         prevBeatReg <= ds;
         payloadStreamOutputIsFirstReg <= isLast;
         
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleMoreBeat"),
-        //     toBlue(", ds="), fshow(ds),
-        //     toBlue(", outDs="), fshow(outDs)
-        // );
-        checkFullyPipeline(fpDebugTimeReg, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleMoreBeat");
+        $display(
+            "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleMoreBeat"),
+            toBlue(", ds="), fshow(ds),
+            toBlue(", outDs="), fshow(outDs)
+        );
+        checkFullyPipeline(fpDebugTimeReg, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleMoreBeat", enableDebug: True} );
     endrule
 
 
@@ -561,11 +565,11 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         beatCntReg <= 1;
         payloadStreamOutputIsFirstReg <= True;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleExtraLastBeat"),
-        //     toBlue(", outDs="), fshow(outDs)
-        // );
-        checkFullyPipeline(fpDebugTimeReg, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleExtraLastBeat");
+        $display(
+            "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleExtraLastBeat"),
+            toBlue(", outDs="), fshow(outDs)
+        );
+        checkFullyPipeline(fpDebugTimeReg, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleExtraLastBeat", enableDebug: True});
     endrule
 
     interface ethPipeIn                     = toPipeInB0(ethPipeInQ);
@@ -599,6 +603,9 @@ module mkIpHdrCheckSumStream#(
         Vector#(IP_HDR_WORD_WIDTH, Word) ipHdrVec = unpack(pack(ipHeader));
         let ipHdrVecReducedBy2 = mapPairs(add, pass, ipHdrVec);
         firstStageOutBuf.enq(ipHdrVecReducedBy2);
+        $display(
+            "time=%0t:", $time, toGreen(" mkIpHdrCheckSumStream firstStageAdder")
+        );
     endrule
 
     rule secondStageAdder;
@@ -607,6 +614,9 @@ module mkIpHdrCheckSumStream#(
         let firstStageOutReducedBy2 = mapPairs(add, pass, firstStageOutVec);
         let firstStageOutReducedBy4 = mapPairs(add, pass, firstStageOutReducedBy2);
         secondStageOutBuf.enq(firstStageOutReducedBy4);
+        $display(
+            "time=%0t:", $time, toGreen(" mkIpHdrCheckSumStream secondStageAdder")
+        );
     endrule
 
     rule lastStageAdder;
@@ -620,6 +630,9 @@ module mkIpHdrCheckSumStream#(
         IpCheckSum remainder = truncate(sum);
         IpCheckSum checkSum = ~(remainder + zeroExtend(overFlow));
         ipCheckSumOutBuf.enq(checkSum);
+        $display(
+            "time=%0t:", $time, toGreen(" mkIpHdrCheckSumStream lastStageAdder")
+        );
     endrule
 
     return toPipeOut(ipCheckSumOutBuf);
@@ -698,7 +711,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     PipeInAdapterB0#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeInQ <- mkPipeInAdapterB0;
     PipeInAdapterB0#(RdmaSendPacketMeta) rdmaPacketMetaPipeInQ <- mkPipeInAdapterB0;
     PipeInAdapterB0#(DataStream) rdmaPayloadPipeInQ <- mkPipeInAdapterB0;
-    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
+    FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOFWithFullAssert(DebugConf{name: "mkEthernetPacketGenerator ethernetPacketPipeOutQ", enableDebug: True});
 
     FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
 
@@ -722,6 +735,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
     Reg#(DataStream) prevBeatReg <- mkRegU;
 
+    let fpChecker <- mkStreamFullyPipelineChecker(DebugConf{name: "mkEthernetPacketGenerator", enableDebug: True});
 
     rule prepareIpHeader;
         let curFpDebugTime <- getSimulationTime;
@@ -758,6 +772,18 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         );
     endrule
+
+
+    // rule debugFirstBeatFire;
+    //     if (statusReg == EthernetPacketGeneratorStateGenFirstBeat && (!ipHdrCheckSumStreamPipeOut.notEmpty || !rdmaPacketMetaPipeInQ.notEmpty || ipHeaderChecksumCalcPipelineQ.notEmpty)) begin
+    //         $display(
+    //             "time=%0t:", $time, toRed(" mkEthernetPacketGenerator debugFirstBeatFire"),
+    //             toRed(", ipHdrCheckSumStreamPipeOut.notEmpty="), fshow(ipHdrCheckSumStreamPipeOut.notEmpty),
+    //             toRed(", rdmaPacketMetaPipeInQ.notEmpty="), fshow(rdmaPacketMetaPipeInQ.notEmpty),
+    //             toRed(", ipHeaderChecksumCalcPipelineQ.notEmpty="), fshow(ipHeaderChecksumCalcPipelineQ.notEmpty)
+    //         );
+    //     end
+    // endrule
 
     rule genFirstBeat if (statusReg == EthernetPacketGeneratorStateGenFirstBeat);
         let curFpDebugTime <- getSimulationTime;
@@ -817,6 +843,10 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", pipelineEntry.totalEthernetFrameLen="), fshow(pipelineEntry.totalEthernetFrameLen),
             toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         );
+
+        // No need to check fully-pipeline here, since first beat is generated without payload, so it can be very fast, and second need payload, will delay a lot
+        // checkFullyPipeline(firstBeatToSecondBeatPipelineReg.fpDebugTime, 2, 2000, "mkEthernetPacketGenerator genSecondBeat");
+        // let _ <- fpChecker.putStreamBeatInfo(outBeat.isFirst, outBeat.isLast);
     endrule
 
 
@@ -894,6 +924,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             statusReg <= EthernetPacketGeneratorStateGenFirstBeat;
         end
         ethernetPacketPipeOutQ.enq(outBeat);
+        
 
         let outPipelineEntry = PacketGeneratorSecondBeatToMoreBeatPipelineEntry{
             fpDebugTime     : curFpDebugTime
@@ -907,7 +938,15 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
             toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         );
-        checkFullyPipeline(firstBeatToSecondBeatPipelineReg.fpDebugTime, 1, 2000, "mkEthernetPacketGenerator genSecondBeat");
+
+        
+        dataOutputFullyPipelineCheckTimeReg <= curFpDebugTime; // needed for genMoreBeat's check
+
+        // No need to check fully-pipeline here, since first beat is generated without payload, so it can be very fast, and second need payload, will delay a lot
+        // checkFullyPipeline(firstBeatToSecondBeatPipelineReg.fpDebugTime, 2, 2000, "mkEthernetPacketGenerator genSecondBeat");
+
+        // But from the second beat to last beat, it should be continous
+        let _ <- fpChecker.putStreamBeatInfo(True, outBeat.isLast);
     endrule
 
     rule genMoreBeat if (statusReg == EthernetPacketGeneratorStateGenMoreBeat);
@@ -954,9 +993,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         prevBeatReg <= payloadDs;
         ethernetFrameLeftByteCounterReg <= ethernetFrameLeftByteCounterReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
-        if (!payloadDs.isLast) begin
-            dataOutputFullyPipelineCheckTimeReg <= curFpDebugTime;
-        end
+        dataOutputFullyPipelineCheckTimeReg <= curFpDebugTime;
 
         $display(
             "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genMoreBeat"),
@@ -964,8 +1001,9 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg)
         );
         if (!payloadDs.isFirst) begin
-            checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, "mkEthernetPacketGenerator genMoreBeat");
+            checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, DebugConf{name: "mkEthernetPacketGenerator genMoreBeat", enableDebug: True});
         end
+        let _ <- fpChecker.putStreamBeatInfo(outBeat.isFirst, outBeat.isLast);
     endrule
 
     rule genExtraLastBeat if (statusReg == EthernetPacketGeneratorStateGenExtraLastBeat);
@@ -1016,7 +1054,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", outBeat="), fshow(outBeat),
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg)
         );
-        checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, "mkEthernetPacketGenerator genExtraLastBeat");
+        checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, DebugConf{name: "mkEthernetPacketGenerator genExtraLastBeat", enableDebug: True});
+        let _ <- fpChecker.putStreamBeatInfo(outBeat.isFirst, outBeat.isLast);
     endrule
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);

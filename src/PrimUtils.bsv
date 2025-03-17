@@ -13,6 +13,7 @@ import Cntrs :: * ;
 import Connectable :: *;
 import ConnectableF :: *;
 import BasicDataTypes :: *;
+import FullyPipelineChecker :: *;
 
 function Bool isZero(Bit#(nSz) bits); // provisos(Add#(1, anysize, nSz));
     Bool ret = unpack(|bits);
@@ -247,12 +248,11 @@ endinterface
 
 
 module mkSizedQueuedClientP#(
-        String name, 
         Integer reqDepth, 
         Integer respDepth, 
         QueuedClientServerQueueType reqType,
         QueuedClientServerQueueType respType,
-        Bool enableDebug,
+        DebugConf dbgConf,
         Clock srcClk,
         Clock dstClk,
         Reset srcRst,
@@ -269,16 +269,16 @@ module mkSizedQueuedClientP#(
 
     let respQueuePipeInB0 <- mkFifofToPipeInB0(respQ);
 
-    rule debug if (enableDebug);
+    rule debug if (dbgConf.enableDebug);
         if (!reqQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " reqQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " reqQ");
         end
         if (!respQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " respQ");
         end
 
         if (!respQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkQueuedClient ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " respQ");
         end
     endrule
 
@@ -286,9 +286,9 @@ module mkSizedQueuedClientP#(
 
     method Action putReq(t_req req);
         reqQ.enq(req);
-        if (enableDebug) begin
+        if (dbgConf.enableDebug) begin
             $display(
-                "time=%0t: ", $time, "mkQueuedClient [", fshow(name) , "] put req:",
+                "time=%0t: ", $time, "mkQueuedClient [", fshow(dbgConf.name) , "] put req:",
                 ", req=", fshow(req)
             );
         end
@@ -299,9 +299,9 @@ module mkSizedQueuedClientP#(
     method ActionValue#(t_resp) getResp();
         respQ.deq;
 
-        if (enableDebug) begin
+        if (dbgConf.enableDebug) begin
             $display(
-                "time=%0t: ", $time, "mkQueuedClient [", fshow(name) , "] get resp:",
+                "time=%0t: ", $time, "mkQueuedClient [", fshow(dbgConf.name) , "] get resp:",
                 ", resp=", fshow(respQ.first)
             );
         end
@@ -312,7 +312,7 @@ module mkSizedQueuedClientP#(
     method Bool hasResp = respQ.notEmpty;
 endmodule
 
-module mkQueuedClientPWithDebug#(String name, Bool enableDebug)(QueuedClientP#(t_req, t_resp)) provisos (
+module mkQueuedClientPWithDebug#(DebugConf dbgConf)(QueuedClientP#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp),
     FShow#(t_req),
@@ -320,17 +320,17 @@ module mkQueuedClientPWithDebug#(String name, Bool enableDebug)(QueuedClientP#(t
 );
     let curClk <- exposeCurrentClock;
     let curRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedClientP(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, enableDebug, curClk, curClk, curRst, curRst);
+    let t <- mkSizedQueuedClientP(2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, dbgConf, curClk, curClk, curRst, curRst);
     return t;
 endmodule
 
-module mkQueuedClientP#(String name)(QueuedClientP#(t_req, t_resp)) provisos (
+module mkQueuedClientP#(DebugConf dbgConf)(QueuedClientP#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp),
     FShow#(t_req),
     FShow#(t_resp)
 );
-    let t <- mkQueuedClientPWithDebug(name, False);
+    let t <- mkQueuedClientPWithDebug(dbgConf);
     return t;
 endmodule
 
@@ -361,11 +361,12 @@ interface QueuedServerP#(type t_req, type t_resp);
     method Bool canPutResp;
 endinterface
 
-module mkSizedQueuedServerP#(String name, 
+module mkSizedQueuedServerP#(
         Integer reqDepth,
         Integer respDepth, 
         QueuedClientServerQueueType reqType, 
         QueuedClientServerQueueType respType,
+        DebugConf dbgConf,
         Clock srcClk,
         Clock dstClk,
         Reset srcRst,
@@ -384,10 +385,10 @@ module mkSizedQueuedServerP#(String name,
 
     rule debug;
         if (!reqQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(name) , " reqQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(dbgConf.name) , " reqQ");
         end
         if (!respQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(dbgConf.name) , " respQ");
         end
     endrule
 
@@ -401,7 +402,7 @@ module mkSizedQueuedServerP#(String name,
 
     method ActionValue#(t_req) getReq();
         reqQ.deq;
-        // $display("time=%0t: ", $time, "mkQueuedServer get req [", fshow(name) , "] req=", fshow(reqQ.first));
+        // $display("time=%0t: ", $time, "mkQueuedServer get req [", fshow(dbgConf.name) , "] req=", fshow(reqQ.first));
         return reqQ.first;
     endmethod
 
@@ -410,7 +411,7 @@ module mkSizedQueuedServerP#(String name,
 endmodule
 
 
-module mkQueuedServerP#(String name)(QueuedServerP#(t_req, t_resp)) provisos (
+module mkQueuedServerP#(DebugConf dbgConf)(QueuedServerP#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp),
     FShow#(t_req),
@@ -418,7 +419,7 @@ module mkQueuedServerP#(String name)(QueuedServerP#(t_req, t_resp)) provisos (
 );
     let curClk <- exposeCurrentClock;
     let curRst <- exposeCurrentReset;
-    let t <- mkSizedQueuedServerP(name, 2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, curClk, curClk, curRst, curRst);
+    let t <- mkSizedQueuedServerP(2, 2, QueuedClientServerQueueTypeNormal, QueuedClientServerQueueTypeNormal, dbgConf, curClk, curClk, curRst, curRst);
     return t;
 endmodule
 
@@ -1015,3 +1016,7 @@ endmodule
 //     end
 //     // TODO: not finished
 // endfunction
+
+function DebugConf concatDebugName(DebugConf dbgConf, String name);
+    return DebugConf{name: dbgConf.name + " " + name, enableDebug: dbgConf.enableDebug};
+endfunction

@@ -315,12 +315,12 @@ class TB(object):
         await self.init_helper.start_meta_report_queue_collector()
 
         src_buf_mem_addr, src_buf_mem = self.init_helper.alloc_physical_memory(
-            65536, 4096)
-        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 65536)
+            65536*4, 4096)
+        src_mr_key = await self.init_helper.reg_mr(src_buf_mem_addr, 65536 * 4)
 
         dst_buf_mem_addr, dst_buf_mem = self.init_helper.alloc_physical_memory(
-            65536, 4096)
-        dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 65536)
+            65536*4, 4096)
+        dst_mr_key = await self.init_helper.reg_mr(dst_buf_mem_addr, 65536 * 4)
 
         self.log.info(
             f"addr before random: src_buf_mem_addr={hex(src_buf_mem_addr)}, dst_buf_mem_addr={hex(dst_buf_mem_addr)}")
@@ -329,9 +329,9 @@ class TB(object):
         dst_addr_offset = random.randint(0, 15)
         write_src_addr = src_buf_mem_addr + src_addr_offset
         write_dst_addr = dst_buf_mem_addr + dst_addr_offset
-        write_len = 8192 + 1024 - 1
+        write_len = 65536 * 2
 
-        for d in range(65536):
+        for d in range(65536*4):
             src_buf_mem[d] = d % 256
             dst_buf_mem[d] = 0xFF
 
@@ -416,7 +416,7 @@ class TB(object):
         # currently, we think the driver handle the descriptor need some time, when the software is notified by the driver, the payload
         # should already been written to memory. If this is not the real case, then we must modify the hardware to provide addtional
         # write finish signal. Or delay the desc report on hardware.
-        await Timer(12000, units='ns')
+        await Timer(8000, units='ns')
 
         for d in range(write_len):
             expected_data = src_buf_mem[d+src_addr_offset]
@@ -427,7 +427,7 @@ class TB(object):
             assert expected_data == got_data  # should be modified
         for d in range(dst_addr_offset):
             assert dst_buf_mem[d] == 0xFF  # should not be modified
-        for d in range(dst_addr_offset+write_len, 65536):
+        for d in range(dst_addr_offset+write_len, 65536*4):
             assert dst_buf_mem[d] == 0xFF  # should not be modified
 
         # # check meta report desc for ACK packet generated at recv side

@@ -35,6 +35,7 @@ import CnpPacketGen :: *;
 
 import Settings :: *;
 import Utils4Test :: *;
+import FullyPipelineChecker :: *;
 
 import SQ :: *;
 import RQ :: *;
@@ -216,7 +217,9 @@ endinterface
 
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
-    IoChannelSixChannelDmaMux         muxInst <- mkDtldStreamArbiterSlave(256, True);
+    // Note: the write depth of the mux should match the delay between Mux output and the DMA engine consume.
+    // For example, the Xilinx XDMA has a delay between it consumes the descriptor and begin to consume payload data.
+    IoChannelSixChannelDmaMux         muxInst <- mkDtldStreamArbiterSlave(256, 16, True, DebugConf{name: "mkTopLevelDmaChannelMux muxInst", enableDebug: False});
 
 
     rule discardUselessPipeOutSignal;

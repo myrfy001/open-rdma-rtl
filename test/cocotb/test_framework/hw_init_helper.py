@@ -143,7 +143,7 @@ class HardwareTestHelper:
         )
         await self.cmd_req_queue.sync_pointers()
         self.log.info("d------------------2")
-        resp = await self.cmd_resp_queue.deq_blocking()
+        resp = await self.cmd_resp_queue.deq_blocking_in_descriptor_valid_bit_polling_mode()
         self.log.info("d------------------3")
         self.log.info(f"cmd resp queue got desc: {resp}")
 
@@ -170,8 +170,7 @@ class HardwareTestHelper:
         )
 
         await self.cmd_req_queue.sync_pointers()
-
-        resp_raw = await self.cmd_resp_queue.deq_blocking()
+        resp_raw = await self.cmd_resp_queue.deq_blocking_in_descriptor_valid_bit_polling_mode()
         resp = CmdQueueRespDescOnlyCommonHeader.from_buffer(resp_raw)
         assert resp.cmd_queue_common_header.F_IS_SUCCESS == 1
 
@@ -221,11 +220,11 @@ class HardwareTestHelper:
 
         await self.cmd_req_queue.sync_pointers()
 
-        resp_raw = await self.cmd_resp_queue.deq_blocking()
+        resp_raw = await self.cmd_resp_queue.deq_blocking_in_descriptor_valid_bit_polling_mode()
         resp = CmdQueueRespDescOnlyCommonHeader.from_buffer(resp_raw)
         assert resp.cmd_queue_common_header.F_IS_SUCCESS == 1
 
-        resp_raw = await self.cmd_resp_queue.deq_blocking()
+        resp_raw = await self.cmd_resp_queue.deq_blocking_in_descriptor_valid_bit_polling_mode()
         resp = CmdQueueRespDescOnlyCommonHeader.from_buffer(resp_raw)
         assert resp.cmd_queue_common_header.F_IS_SUCCESS == 1
 

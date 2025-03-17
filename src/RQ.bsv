@@ -139,8 +139,8 @@ module mkRQ(RQ);
     FIFOF#(DataStream) payloadStorage <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_INPUT_DATA_STREAM_BUF));
     mkConnection(packetParser.rdmaPayloadPipeOut, toPipeIn(payloadStorage));
 
-    QueuedClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClientP("qpcQueryCltInst in RQ");
-    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientP("mrTableQueryCltInst");
+    QueuedClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryCltInst <- mkQueuedClientP(DebugConf{name: "qpcQueryCltInst in RQ", enableDebug: False});
+    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientP(DebugConf{name: "mrTableQueryCltInst", enableDebug: False});
 
     FIFOF#(PayloadConReq) conReqPipeOutQ <- mkSizedFIFOF(4);
     FIFOF#(Bool) conRespPipeInQ <- mkSizedFIFOF(4);
@@ -334,7 +334,7 @@ module mkRQ(RQ);
             toBlue(", isReqNeedDMAWrite="), fshow(isReqNeedDMAWrite),
             toBlue(", reth="), fshow(reth)
         );
-        checkFullyPipeline(rdmaPacketMeta.fpDebugTime, 1, 2000, "mkRQ sendQpcQueryReqAndSomeSimpleParse");
+        checkFullyPipeline(rdmaPacketMeta.fpDebugTime, 1, 2000, DebugConf{name: "mkRQ sendQpcQueryReqAndSomeSimpleParse", enableDebug: True});
         metricsDebugCounter0Reg <= metricsDebugCounter0Reg + 1;
     endrule
 
@@ -517,7 +517,7 @@ module mkRQ(RQ);
         // QPC and MR Table need 11 beat for worst case to generate resp.
         // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
         // For MR Table, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
-        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 11, 2000, "mkRQ checkQpcAndMrTable");
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 11, 2000, DebugConf{name: "mkRQ checkQpcAndMrTable", enableDebug: True});
         metricsDebugCounter1Reg <= metricsDebugCounter1Reg + 1;
     endrule
     
@@ -551,7 +551,7 @@ module mkRQ(RQ);
             "time=%0t:", $time, toGreen(" mkRQ checkMrTableStep2"),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
-        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ checkMrTableStep2");
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, DebugConf{name: "mkRQ checkMrTableStep2", enableDebug: True});
         metricsDebugCounter2Reg <= metricsDebugCounter2Reg + 1;
     endrule
 
@@ -622,7 +622,6 @@ module mkRQ(RQ);
             toBlue(", packetTailMeta="), fshow(packetTailMeta),
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
-        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ checkMrTableStep3");
         metricsDebugCounter3Reg <= metricsDebugCounter3Reg + 1;
     endrule
 
@@ -695,7 +694,7 @@ module mkRQ(RQ);
             discardDebugFlag ? toRed(" Discard!") : " keeped",
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut)
         );
-        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, "mkRQ issuePayloadConReqOrDiscard");
+        checkFullyPipeline(pipelineEntryIn.fpDebugTime, 1, 2000, DebugConf{name: "mkRQ issuePayloadConReqOrDiscard", enableDebug: True});
         metricsDebugCounter4Reg <= metricsDebugCounter4Reg + 1;
     endrule
 

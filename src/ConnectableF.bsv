@@ -3,7 +3,7 @@ import FIFOF :: *;
 import Clocks :: *;
 
 import Connectable :: *;
-
+import FullyPipelineChecker :: *;
 
 // re-export PAAClib's PipeOut
 export PipeOut;
@@ -272,7 +272,7 @@ endmodule
 
 
 
-module mkPipeInB0Debug#(String name)(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
+module mkPipeInB0Debug#(DebugConf dbgConf)(PipeInAdapterB0#(tData)) provisos (Bits#(tData, szData));
 
     Wire#(tData) dataWire <- mkWire;
     Wire#(Bool)  notEmptyWire <- mkWire;
@@ -300,7 +300,7 @@ module mkPipeInB0Debug#(String name)(PipeInAdapterB0#(tData)) provisos (Bits#(tD
         deqSignalWire.send;
         $display(
             "time=%0t:", $time, " mkPipeInB0Debug deq is called",
-            ", name=", fshow(name)
+            ", name=", fshow(dbgConf.name)
         );
     endmethod
 
@@ -333,18 +333,18 @@ function PipeInB0#(anytype) toPipeInB0(PipeInAdapterB0#(anytype) queue);
     return queue.pipeInIfc;
 endfunction
 
-module mkPipeInB0ToPipeInWithDebug#(PipeInB0#(tData) pipeInNr, Integer bufferDepth, Bool enableDebug, String name)(PipeIn#(tData)) provisos(Bits#(tData, szData), FShow#(tData));
+module mkPipeInB0ToPipeInWithDebug#(PipeInB0#(tData) pipeInNr, Integer bufferDepth, DebugConf dbgConf)(PipeIn#(tData)) provisos(Bits#(tData, szData), FShow#(tData));
 
     FIFOF#(tData) innerQ <- (bufferDepth == 1 ? mkLFIFOF : mkSizedFIFOF(bufferDepth));
     mkConnection(toPipeOut(innerQ), pipeInNr);
 
-    if (enableDebug) begin
+    if (dbgConf.enableDebug) begin
         rule debugA;
-            if (!innerQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPipeInB0ToPipeInWithDebug [%s]", name);
+            if (!innerQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPipeInB0ToPipeInWithDebug [%s]", dbgConf.name);
         endrule
 
         rule debugB;
-            if (!innerQ.notEmpty) $display("time=%0t, ", $time, "EmptyQueue: mkPipeInB0ToPipeInWithDebug [%s]", name);
+            if (!innerQ.notEmpty) $display("time=%0t, ", $time, "EmptyQueue: mkPipeInB0ToPipeInWithDebug [%s]", dbgConf.name);
         endrule
 
         rule debugC;
@@ -352,7 +352,7 @@ module mkPipeInB0ToPipeInWithDebug#(PipeInB0#(tData) pipeInNr, Integer bufferDep
                 // if deq handshake success, then print debug info
                 $display(
                     "time=%0t:", $time, " mkPipeInB0ToPipeInWithDebug forward",
-                    ", name=", fshow(name),
+                    ", name=", fshow(dbgConf.name),
                     ", data=", fshow(innerQ.first)
                 );
             end
@@ -364,7 +364,7 @@ endmodule
 
 module mkPipeInB0ToPipeIn#(PipeInB0#(tData) pipeInNr, Integer bufferDepth)(PipeIn#(tData)) provisos(Bits#(tData, szData), FShow#(tData));
 
-    let inst <- mkPipeInB0ToPipeInWithDebug(pipeInNr, bufferDepth, False, "");
+    let inst <- mkPipeInB0ToPipeInWithDebug(pipeInNr, bufferDepth, DebugConf{name:"", enableDebug: False});
     return inst;
 endmodule
 

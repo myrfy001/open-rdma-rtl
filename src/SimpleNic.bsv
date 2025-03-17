@@ -3,6 +3,7 @@ import FIFOF :: *;
 import ClientServer :: *;
 import GetPut :: *;
 import Vector :: *;
+import Printf :: *;
 
 import Settings :: *;
 import ConnectableF :: *;
@@ -18,6 +19,7 @@ import IoChannels :: *;
 import Ringbuf :: *;
 import Descriptors :: *;
 import EthernetTypes :: *;
+import FullyPipelineChecker :: *;
 
 
 typedef 2048    SIMPLE_NIC_SLOT_BYTE_SIZE;
@@ -69,8 +71,8 @@ module mkSimpleNic(SimpleNic);
     let rxAddrChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rxAddrChunker.requestPipeIn, 1);
     let txAddrChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(txAddrChunker.requestPipeIn, 1);
 
-    DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) txConcator <- mkDtldStreamConcator;
-    DtldStreamSplitor#(DATA, AlignBlockCntInSimpleNicSlot, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) rxSplitor <- mkDtldStreamSplitor;
+    DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) txConcator <- mkDtldStreamConcator(DebugConf{name: "mkSimpleNic txConcator", enableDebug: True});
+    DtldStreamSplitor#(DATA, AlignBlockCntInSimpleNicSlot, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) rxSplitor <- mkDtldStreamSplitor(DebugConf{name: "mkSimpleNic rxSplitor", enableDebug: True});
 
     // Pipeline FIFO
     FIFOF#(AddressChunkResp#(ADDR, Length)) forwardRxChunkedDataStreamToDmaPipelineQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));

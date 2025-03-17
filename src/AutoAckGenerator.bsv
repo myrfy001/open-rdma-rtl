@@ -25,6 +25,7 @@ import IoChannels :: *;
 import ConnectableF :: *;
 
 import PsnContinousChecker :: *;
+import FullyPipelineChecker :: *;
 
 typedef struct {
     PSN         psn;
@@ -141,7 +142,7 @@ module mkAutoAckGenerator(AutoAckGenerator);
     Reg#(AutoAckGenBackgroundPollingState) backgroundPollingStateReg <- mkReg(AutoAckGenBackgroundPollingStateSendReadReq);
 
     BitmapWindowStorage#(IndexQP, AckBitmap, PsnMergeWindowBoundary, ACK_WINDOW_STRIDE) bitmapStorage <- mkBitmapWindowStorage;
-    let bitmapStorageReqPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(bitmapStorage.reqPipeIn, 1, False, "bitmapStorageReqPipeInAdapter");
+    let bitmapStorageReqPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(bitmapStorage.reqPipeIn, 1, DebugConf{name: "bitmapStorageReqPipeInAdapter", enableDebug: False} );
     
     rule timerTask;
         curTimeReg <= curTimeReg + 1;

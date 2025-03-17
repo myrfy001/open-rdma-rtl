@@ -20,6 +20,7 @@ import ConnectableF :: *;
 import Descriptors :: *;
 
 import IoChannels :: *;
+import FullyPipelineChecker :: *;
 
 typedef ServerP#(addrType, dataType)                    BramRead#(type addrType, type dataType);
 typedef ServerP#(Tuple2#(addrType, dataType), Bool)     BramWrite#(type addrType, type dataType);
@@ -46,7 +47,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
 
     PipeInAdapterB0#(addrType)   bramReadReqQ <- mkPipeInAdapterB0;
-    FIFOF#(dataType)  bramReadRespQ <- mkLFIFOF;
+    FIFOF#(dataType)  bramReadRespQ <- mkLFIFOFWithFullAssert(DebugConf{name:"mkBramCache bramReadRespQ", enableDebug:True});
 
     PipeInAdapterB0#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkPipeInAdapterB0;
     FIFOF#(Bool)                         bramWriteRespQ <- mkLFIFOF;
@@ -97,8 +98,8 @@ endinterface
 (* synthesize *)
 module mkMemRegionTable(MemRegionTable);
     BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 1) mrTableStorage <- mkBramCache;
-    QueuedServerP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServerP("mkMemRegionTable querySrvInst");
-    QueuedServerP#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServerP("MemRegionTable modifySrvInst");
+    QueuedServerP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServerP(DebugConf{name: "mkMemRegionTable querySrvInst", enableDebug: False} );
+    QueuedServerP#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServerP(DebugConf{name: "MemRegionTable modifySrvInst", enableDebug: False});
 
 
     let mrTableStorageReadRequestAdapter <- mkPipeInB0ToPipeIn(mrTableStorage.read.request, 1);
@@ -154,11 +155,11 @@ module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
     // For in SQ path, each WQE taks 2 beat, then the arbiter's keep order queue depth should be at least 5
     // so, we use depth 5 here.
     let arbiter <- mkServerToClientArbitFixPriorityP(
-        "MemRegionTableTwoWayQuery",
         5,
         True,
         alwaysTrue,
-        alwaysTrue
+        alwaysTrue,
+        DebugConf{name: "MemRegionTableTwoWayQuery", enableDebug: False}
     );
 
     mkConnection(arbiter.cltIfc, memRegionTable.querySrv);
@@ -267,8 +268,8 @@ module mkAddressTranslate(AddressTranslate);
     
     BramCache#(PTEIndex, PageTableEntry, 4) pageTableStorage <- mkBramCache;
 
-    QueuedServerP#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServerP("translateSrvInst");
-    QueuedServerP#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServerP("mkAddressTranslate modifySrvInst");
+    QueuedServerP#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkQueuedServerP(DebugConf{name: "translateSrvInst", enableDebug: False});
+    QueuedServerP#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkQueuedServerP(DebugConf{name: "mkAddressTranslate modifySrvInst", enableDebug: False});
 
     FIFOF#(Bit#(PAGE_OFFSET_WIDTH)) offsetInputQ <- mkSizedFIFOF(10);
 
@@ -343,14 +344,14 @@ module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
 
     // PGT need 10 beat for worst case to generate resp.
     // For RQ, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
-    // For SQ, WQE takes 2 beats, then the arbiter's keep order queue depth should be at least 5
-    // so we use depth 5 here.
+    // For in SQ path, a big WQE can generate multi DMA read chunk and lead to query in every beat
+    // so we use depth 10 here.
     let arbiter <- mkServerToClientArbitFixPriorityP(
-        "AddressTranslateTwoWayQuery",
-        5,
+        10,
         True,
         alwaysTrue,
-        alwaysTrue
+        alwaysTrue,
+        DebugConf{name: "AddressTranslateTwoWayQuery", enableDebug: False}
     );
 
     mkConnection(arbiter.cltIfc, addressTranslate.translateSrv);
@@ -471,8 +472,8 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
     FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkFIFOF;
     FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkLFIFOF;
 
-    QueuedClientP#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClientP("mrModifyCltInst");
-    QueuedClientP#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkQueuedClientP("pgtModifyCltInst");
+    QueuedClientP#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClientP(DebugConf{name: "mrModifyCltInst", enableDebug: False});
+    QueuedClientP#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkQueuedClientP(DebugConf{name: "pgtModifyCltInst", enableDebug: False});
     
 
     Reg#(MrAndPgtManagerFsmState) state <- mkReg(MrAndPgtManagerFsmStateIdle);

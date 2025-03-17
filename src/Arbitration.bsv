@@ -12,16 +12,17 @@ import RdmaUtils :: *;
 
 import Arbiter :: * ;
 
+import FullyPipelineChecker :: *;
+
 
 
 
 
 
 module mkTwoWayFixedPriorityStreamMux#(
-    String name,
-    Bool enableDebug,
     Vector#(2, PipeOut#(reqType)) inVec,
-    function Bool isReqFinished(reqType request)
+    function Bool isReqFinished(reqType request),
+    DebugConf dbgConf
 )(Get#(Tuple2#(Bool, reqType))) provisos(
     FShow#(reqType), 
     Bits#(reqType, reqSz)
@@ -81,12 +82,11 @@ endmodule
 
 
 module mkClientArbiter#(
-    String name,
-    Bool enableDebug,
     Integer keepOrderQueueLen,
     Vector#(portSz, Client#(reqType, respType)) clientVec,
     function Bool isReqFinished(reqType request),
-    function Bool isRespFinished(respType response)
+    function Bool isRespFinished(respType response),
+    DebugConf dbgConf
 )(Client#(reqType, respType)) provisos(
     Bits#(reqType, reqSz),
     Bits#(respType, respSz),
@@ -129,10 +129,10 @@ module mkClientArbiter#(
         end
         
 
-        if (enableDebug) begin
+        if (dbgConf.enableDebug) begin
             $display(
                 "time=%0t: ", $time,
-                fshow(name),
+                fshow(dbgConf.name),
                 " arbitrate request, reqIdx=%0d", idx,
                 ", reqFinished=", fshow(reqFinished)
             );
@@ -143,10 +143,10 @@ module mkClientArbiter#(
 
     for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
         rule sendArbitReq;
-            if (enableDebug) begin
+            if (dbgConf.enableDebug) begin
                 $display(
                     "time=%0t: ", $time,
-                    fshow(name),
+                    fshow(dbgConf.name),
                     " arbitrate sendArbitReq debug, reqIdx=%0d", idx,
                     " canSubmitArbitReqReg = ", fshow(canSubmitArbitReqReg),
                     " clientReqFifoVec[idx].notEmpty = ", fshow(clientReqFifoVec[idx].notEmpty)
@@ -155,10 +155,10 @@ module mkClientArbiter#(
             
             if (canSubmitArbitReqReg) begin
                 arbiter.clients[idx].request;
-                if (enableDebug) begin
+                if (dbgConf.enableDebug) begin
                     $display(
                         "time=%0t: ", $time,
-                        fshow(name),
+                        fshow(dbgConf.name),
                         " arbitrate submit req, reqIdx=%0d", idx
                     );
                 end
@@ -176,10 +176,10 @@ module mkClientArbiter#(
                 grantRespKeepOrderQ.deq;
             end
 
-            if (enableDebug) begin
+            if (dbgConf.enableDebug) begin
                 $display(
                     "time=%0t: ", $time,
-                    fshow(name),
+                    fshow(dbgConf.name),
                     " dispatch response, idx=%0d", idx,
                     ", respFinished=", fshow(respFinished)
                 );
@@ -193,10 +193,10 @@ module mkClientArbiter#(
         for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
             arbiterRespVec[idx] = arbiter.clients[idx].grant;
         end
-        if (enableDebug) begin
+        if (dbgConf.enableDebug) begin
             $display(
                 "time=%0t: ", $time,
-                fshow(name),
+                fshow(dbgConf.name),
                 " arbit result=", fshow(arbiterRespVec)
             );
         end
@@ -211,19 +211,19 @@ module mkClientArbiter#(
             if (!isReqFinished(req)) begin
                 grantReqKeepOrderQ.enq(idx);
                 canSubmitArbitReqReg <= False;
-                if (enableDebug) begin
+                if (dbgConf.enableDebug) begin
                     $display(
                         "time=%0t: ", $time,
-                        fshow(name),
+                        fshow(dbgConf.name),
                         " grant new single beat request, client idx=%0d", idx
                     );
                 end
             end
             
-            if (enableDebug) begin
+            if (dbgConf.enableDebug) begin
                 $display(
                     "time=%0t: ", $time,
-                    fshow(name),
+                    fshow(dbgConf.name),
                     ", grant new request, client idx=%0d", idx, 
                     ", req=", fshow(req)
                 );
@@ -232,41 +232,41 @@ module mkClientArbiter#(
 
     endrule
 
-    rule debug if (enableDebug);
+    rule debug if (dbgConf.enableDebug);
         if (!reqQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " reqQ");
         end
         if (!respQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " respQ");
         end
 
         if (!reqQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " reqQ");
         end
         if (!respQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " respQ");
         end
 
         if (!grantReqKeepOrderQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantReqKeepOrderQ");
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " grantReqKeepOrderQ");
         end
 
         if (!grantReqKeepOrderQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantReqKeepOrderQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " grantReqKeepOrderQ");
         end
 
         if (!grantRespKeepOrderQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantRespKeepOrderQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " grantRespKeepOrderQ");
         end
 
         for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
 
             if (!clientReqFifoVec[idx].notFull) begin
-                $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
+                $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " clientReqFifoVec[%0d]", idx);
             end
 
             if (!clientReqFifoVec[idx].notEmpty) begin
-                $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
+                $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " clientReqFifoVec[%0d]", idx);
             end
             
         end
@@ -299,11 +299,11 @@ endinterface
 
 
 module mkServerToClientArbitP#(
-        String name,
         Integer depth, 
         Bool needReadResp,
         function Bool isReqFinished(tReq request),
-        function Bool isRespFinished(tResp response)
+        function Bool isRespFinished(tResp response),
+        DebugConf dbgConf
     )(ServerToClientArbitP#(channelCnt, tReq, tResp)) provisos (
         Bits#(tReq, szReq),
         Bits#(tResp, szResp),
@@ -324,7 +324,7 @@ module mkServerToClientArbitP#(
     Arbiter_IFC#(channelCnt) innerArbiter <- mkArbiter(False);
     Reg#(Bool) isReqFirstBeatReg <- mkReg(True);
     Reg#(tChannelIdx) curReqChannelIdxReg <- mkRegU;
-    FIFOF#(tChannelIdx) respKeepOrderQueue  <- mkSizedFIFOF(depth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
+    FIFOF#(tChannelIdx) respKeepOrderQueue  <- mkSizedFIFOFWithFullAssert(depth, concatDebugName (dbgConf, "mkServerToClientArbitFixPriorityP respKeepOrderQueue"));
 
     // rule debug;
     //     $display(
@@ -433,11 +433,11 @@ endinterface
 
 
 module mkServerToClientArbitFixPriorityP#(
-        String name,
         Integer depth, 
         Bool needReadResp,
         function Bool isReqFinished(tReq request),
-        function Bool isRespFinished(tResp response)
+        function Bool isRespFinished(tResp response),
+        DebugConf dbgConf
     )(ServerToClientArbitFixPriorityP#(channelCnt, tReq, tResp)) provisos (
         Bits#(tReq, szReq),
         Bits#(tResp, szResp),
@@ -456,7 +456,7 @@ module mkServerToClientArbitFixPriorityP#(
 
     Reg#(Bool) isReqFirstBeatReg <- mkReg(True);
     Reg#(tChannelIdx) curReqChannelIdxReg <- mkRegU;
-    FIFOF#(tChannelIdx) respKeepOrderQueue  <- mkSizedFIFOF(depth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
+    FIFOF#(tChannelIdx) respKeepOrderQueue  <- mkSizedFIFOFWithFullAssert(depth, concatDebugName(dbgConf, "mkServerToClientArbitFixPriorityP respKeepOrderQueue"));   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
 
     // rule debug;
     //     $display(
@@ -472,12 +472,20 @@ module mkServerToClientArbitFixPriorityP#(
     rule recvReqArbitResult if (isReqFirstBeatReg);
         Maybe#(tReq) reqMaybe = tagged Invalid;
         tChannelIdx curChannelIdx = 0;
+        
+        tChannelIdx conflictCounter = 0;
+
         for (Integer channelIdx = valueOf(channelCnt) - 1; channelIdx >= 0 ; channelIdx = channelIdx - 1) begin
             if (srvSideReqQueueVec[channelIdx].notEmpty) begin
                 reqMaybe = tagged Valid srvSideReqQueueVec[channelIdx].first;
                 srvSideReqQueueVec[channelIdx].deq;
                 curChannelIdx = fromInteger(channelIdx);
+                conflictCounter = conflictCounter + 1;
             end
+        end
+
+        if (conflictCounter > 1) begin
+            $display("mkServerToClientArbitFixPriorityP multi input ready.");
         end
 
         if (reqMaybe matches tagged Valid .req) begin

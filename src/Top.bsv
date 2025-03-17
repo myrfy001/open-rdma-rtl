@@ -153,7 +153,7 @@ endinterface
 
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelThreeChannelDmaMux)    muxVector <- replicateM(mkDtldStreamArbiterSlave(256, True));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelThreeChannelDmaMux)    muxVector <- replicateM(mkDtldStreamArbiterSlave(256, 16, True));
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)     dmaMasterPipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)      qpRingbufDmaSlavePipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)      qpDmaRequestSlaveIfcVecInst = newVector;

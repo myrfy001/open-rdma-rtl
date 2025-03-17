@@ -242,7 +242,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleFirstBeatStage");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier handleFirstBeatStage", enableDebug: True});
     endrule
 
     rule handleSecondBeatStage if (stateReg == InputPacketClassifierStateHandleSecondBeat);
@@ -319,7 +319,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", macIpUdpMeta="), fshow(macIpUdpMeta)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleSecondBeatStage");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier handleSecondBeatStage", enableDebug: True});
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);
@@ -342,7 +342,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     "time=%0t:", $time, toGreen(" mkInputPacketClassifier handleMoreBeatStage"),
         //     toBlue(", ds="), fshow(ds)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkInputPacketClassifier handleMoreBeatStage");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier handleMoreBeatStage", enableDebug: True});
     endrule
 
     rule dispatchStream;
@@ -381,7 +381,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
             ethPacketMetaQ.deq;
         end
         if (ds.isFirst) begin
-            checkFullyPipeline(ethPktMeta.fpDebugTime, 1, 2000, "mkInputPacketClassifier dispatchStream");
+            checkFullyPipeline(ethPktMeta.fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier dispatchStream", enableDebug: True});
         end
     endrule
 
@@ -526,7 +526,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         //     toBlue(", outPacketMeta="), fshow(outPacketMeta),
         //     toBlue(", payloadDs="), outputPayloadInThisBeat ? fshow(payloadDs) : $format("No Payload In This beat")
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleSecondBeat");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleSecondBeat", enableDebug: True});
     endrule
 
     rule handleThirdBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleThirdBeat);
@@ -553,7 +553,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         //     toBlue(", payloadDs="), rdmaMeta.hasPayload ? fshow(payloadDs) : $format("No Payload"),
         //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkRdmaMetaAndPayloadExtractor handleThirdBeat");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleThirdBeat", enableDebug: True});
     endrule
 
     rule handleMoreBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleMoreBeat);
@@ -887,7 +887,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
             toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         );
-        checkFullyPipeline(firstBeatToSecondBeatPipelineReg.fpDebugTime, 1, 2000, "mkEthernetPacketGenerator genSecondBeat");
+        checkFullyPipeline(firstBeatToSecondBeatPipelineReg.fpDebugTime, 1, 2000, DebugConf{name: "mkEthernetPacketGenerator genSecondBeat", enableDebug: True});
     endrule
 
     rule genThirdBeat if (statusReg == EthernetPacketGeneratorStateGenThirdBeat);
@@ -925,7 +925,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             toBlue(", ethernetFrameLeftByteCounterReg="), fshow(ethernetFrameLeftByteCounterReg),
             toBlue(", rdmaMeta="), fshow(rdmaMeta)
         );
-        checkFullyPipeline(secondBeatToThirdBeatPipelineReg.fpDebugTime, 1, 2000, "mkEthernetPacketGenerator genThirdBeat");
+        checkFullyPipeline(secondBeatToThirdBeatPipelineReg.fpDebugTime, 1, 2000, DebugConf{name: "mkEthernetPacketGenerator genThirdBeat", enableDebug: True});
     endrule
 
     
@@ -986,7 +986,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         end
 
         if (!payload.isFirst) begin
-            checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, "mkEthernetPacketGenerator genMoreBeat");
+            checkFullyPipeline(dataOutputFullyPipelineCheckTimeReg, 1, 2000, DebugConf{name: "mkEthernetPacketGenerator genMoreBeat", enableDebug: True});
         end
     endrule
 

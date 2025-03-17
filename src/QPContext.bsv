@@ -14,6 +14,7 @@ import Settings :: *;
 import PrimUtils :: *;
 
 import Arbitration :: *;
+import FullyPipelineChecker :: *;
 
 
 interface QpContext;
@@ -23,8 +24,8 @@ endinterface
 
 (* synthesize *)
 module mkQpContext(QpContext);
-    QueuedServerP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServerP("qpcQuerySrvInst");
-    QueuedServerP#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServerP("qpcUpdateSrvInst");
+    QueuedServerP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServerP(DebugConf{name: "qpcQuerySrvInst", enableDebug: False});
+    QueuedServerP#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServerP(DebugConf{name: "qpcUpdateSrvInst", enableDebug: False});
 
     AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "", "qpcEntryCommonStorage");
 
@@ -96,11 +97,11 @@ module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
     // QPC Table need 10 beat for worst case to generate resp.
     // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
     let arbiter <- mkServerToClientArbitFixPriorityP(
-        "QpContextTwoWayQuery",
         4,
         True,
         alwaysTrue,
-        alwaysTrue
+        alwaysTrue,
+        DebugConf{name: "QpContextTwoWayQuery", enableDebug: False}
     );
 
     mkConnection(arbiter.cltIfc, qpContext.querySrv);

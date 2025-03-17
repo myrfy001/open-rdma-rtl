@@ -1,4 +1,5 @@
 import Vector :: *;
+import Printf :: *;
 import Clocks :: *;
 import Settings :: *;
 import BasicDataTypes :: *;
@@ -113,7 +114,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
     PipeInAdapterB0#(Bool) mrAndPgtRespQ                                                    <- mkPipeInAdapterB0;
 
-    QueuedClientP#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClientP("mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst");
+    QueuedClientP#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClientP(DebugConf{name: "mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst", enableDebug: False});
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
 
     FIFOF#(LocalNetworkSettings) setNetworkParamPipeOutQ                                    <- mkFIFOF;

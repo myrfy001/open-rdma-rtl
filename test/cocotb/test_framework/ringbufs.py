@@ -128,7 +128,7 @@ class Ringbuf:
 
     async def deq_blocking_in_descriptor_valid_bit_polling_mode(self):
         while True:
-            resp_raw = self.try_deq_in_descriptor_valid_bit_polling_mode()
+            resp_raw = await self.try_deq_in_descriptor_valid_bit_polling_mode()
             if resp_raw is None:
                 await cocotb.triggers.Timer(2, "ns")
                 continue

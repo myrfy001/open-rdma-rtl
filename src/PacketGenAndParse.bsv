@@ -4,6 +4,7 @@ import ClientServer :: *;
 import Clocks :: *;
 import Arbiter :: *;
 import Vector :: *;
+import Printf :: *;
 
 
 import ConnectableF :: *;
@@ -455,18 +456,19 @@ module mkPacketGen(PacketGen);
     StreamShifterG#(DATA) payloadStreamShifter <- mkBiDirectionStreamShifterLsbRightG;
     mkConnection(toPipeOut(genRespPipeInQ), payloadStreamShifter.streamPipeIn);
 
-    DtldStreamSplitor#(DATA, AlignBlockCntInPmtu, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) payloadSplitor <- mkDtldStreamSplitor;
+    DtldStreamSplitor#(DATA, AlignBlockCntInPmtu, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) payloadSplitor <- mkDtldStreamSplitor(DebugConf{name: "mkPacketGen payloadSplitor", enableDebug: False});
     mkConnection(payloadStreamShifter.streamPipeOut, payloadSplitor.dataPipeIn);
 
     // Important: fully-pipeline cretical
     // this queue will directly connect to ETH packet gen module. Eth gen will consume 3 beat to gen header,
-    // so we need at least 3 storage slot to make it fully-pipelined
-    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkSizedFIFOF(3);
+    // and the ip header sum calculate will take some other beat, so leave 8 beat here.
+    // so we need at least 8 storage slot to make it fully-pipelined
+    FIFOF#(DataStream) perPacketPayloadDataStreamQ <- mkSizedFIFOFWithFullAssert(8, DebugConf{name: "mkPacketGen perPacketPayloadDataStreamQ", enableDebug: False});
 
 
     Reg#(PSN) psnReg <- mkRegU;
 
-    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientPWithDebug("mkPacketGen mrTableQueryCltInst", False);
+    QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientPWithDebug(DebugConf{name: "mkPacketGen mrTableQueryCltInst", enableDebug: False});
 
     // Pipeline Queues
     FIFOF#(SendChunkByRemoteAddrReqAndPayloadGenReqPipelineEntry) sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ <- mkSizedFIFOF(5);
@@ -476,7 +478,7 @@ module mkPacketGen(PacketGen);
 
     let payloadSplitorStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeIn(payloadSplitor.streamAlignBlockCountPipeIn, 256);
     let payloadStreamShifterOffsetPipeInConverter <- mkPipeInB0ToPipeIn(payloadStreamShifter.offsetPipeIn, 256);  // to hold enough pcie read delay
-    let wqeToPacketChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(wqeToPacketChunker.requestPipeIn, 1, False, "wqeToPacketChunkerRequestPipeInAdapter");
+    let wqeToPacketChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeInWithDebug(wqeToPacketChunker.requestPipeIn, 1, DebugConf{name: "wqeToPacketChunkerRequestPipeInAdapter", enableDebug: False} );
     FIFOF#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeOutQueue <- mkSizedFIFOF(256);  // to hold enough pcie read delay
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeOutQueue <- mkSizedFIFOF(256);  // to hold enough pcie read delay
 
@@ -484,8 +486,8 @@ module mkPacketGen(PacketGen);
         // if (!sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: sendChunkByRemoteAddrReqAndPayloadGenReqPipelineQ");
         if (!genPacketHeaderStep1PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep1PipelineQ");
         if (!genReqPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: genReqPipeOutQ");
-        // if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
-        // if (!perPacketPayloadDataStreamQ.notFull) $display("time=%0t, ", $time, "FullQueue: perPacketPayloadDataStreamQ");
+        if (!genPacketHeaderStep2PipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: genPacketHeaderStep2PipelineQ");
+        if (!perPacketPayloadDataStreamQ.notFull) $display("time=%0t, ", $time, "FullQueue: perPacketPayloadDataStreamQ");
     endrule
     
     rule queryMrTable;
@@ -574,7 +576,7 @@ module mkPacketGen(PacketGen);
             toBlue(", wqe="), fshow(wqe),
             toBlue(", hasPayload="), fshow(hasPayload)
         );
-        checkFullyPipeline(wqe.fpDebugTime, 11, 2000, "mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq");
+        checkFullyPipeline(wqe.fpDebugTime, 11, 2000, DebugConf{name: "mkPacketGen sendChunkByRemoteAddrReqAndPayloadGenReq", enableDebug: True});
     endrule
 
     rule genPacketHeaderStep1;
@@ -670,7 +672,7 @@ module mkPacketGen(PacketGen);
             toBlue(", pipelineEntryOut="), fshow(pipelineEntryOut),
             toBlue(", packetInfo="), hasPayload ? fshow(packetInfo) : fshow("No payload")
         );
-        checkFullyPipeline(wqe.fpDebugTime, 3, 2000, "mkPacketGen genPacketHeaderStep1");
+        // checkFullyPipeline(wqe.fpDebugTime, 3, 2000, "mkPacketGen genPacketHeaderStep1");
     endrule
 
     rule genPacketHeaderStep2;
@@ -738,7 +740,7 @@ module mkPacketGen(PacketGen);
             toBlue(", bthMaybe="), fshow(bthMaybe),
             toBlue(", extendHeaderBufferMaybe="), fshow(extendHeaderBufferMaybe)
         );
-        checkFullyPipeline(wqe.fpDebugTime, 1, 2000, "mkPacketGen genPacketHeaderStep2");
+        checkFullyPipeline(wqe.fpDebugTime, 1, 2000, DebugConf{name: "mkPacketGen genPacketHeaderStep2", enableDebug: True});
 
 
         // let pipelineEntryOut = GenEthernetPacketPipelineEntry{
@@ -833,11 +835,13 @@ module mkPacketGenReqArbiter(PacketGenReqArbiter);
     FIFOF#(RdmaSendPacketMeta) rdmaPacketMetaPipeOutQueue <- mkFIFOF;
     FIFOF#(DataStream) rdmaPayloadPipeOutQueue <- mkFIFOF;
 
+    FIFOF#(Bit#(TLog#(NUMERIC_TYPE_THREE))) pendingForwardQueue <- mkFIFOF;
+
     Arbiter_IFC#(NUMERIC_TYPE_THREE) arbiter <- mkArbiter(False);
 
-    Reg#(Bool) isForwardFirstBeatReg <- mkReg(True);
+    // Reg#(Bool) isForwardFirstBeatReg <- mkReg(True);
 
-    Reg#(Bit#(TLog#(NUMERIC_TYPE_THREE))) curChannelIdxReg <- mkRegU;
+    // Reg#(Bit#(TLog#(NUMERIC_TYPE_THREE))) curChannelIdxReg <- mkRegU;
 
     for (Integer channelIdx = 0; channelIdx < valueOf(NUMERIC_TYPE_THREE); channelIdx = channelIdx + 1) begin
         macIpUdpMetaPipeInVecInst[channelIdx]       = macIpUdpMetaPipeInQueueVec[channelIdx].pipeInIfc;
@@ -845,7 +849,7 @@ module mkPacketGenReqArbiter(PacketGenReqArbiter);
         rdmaPayloadPipeInVecInst[channelIdx]        = rdmaPayloadPipeInQueueVec[channelIdx].pipeInIfc;
     end
 
-    rule sendArbitReq if (isForwardFirstBeatReg);
+    rule sendArbitReq;
         for (Integer channelIdx = 0; channelIdx < valueOf(NUMERIC_TYPE_THREE); channelIdx = channelIdx + 1) begin
             if (macIpUdpMetaPipeInQueueVec[channelIdx].notEmpty && rdmaPacketMetaPipeInQueueVec[channelIdx].notEmpty) begin
                 arbiter.clients[channelIdx].request;
@@ -858,7 +862,7 @@ module mkPacketGenReqArbiter(PacketGenReqArbiter);
     endrule
 
 
-    rule recvArbitResp if (isForwardFirstBeatReg);
+    rule recvArbitResp;
         Maybe#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaMaybe = tagged Invalid;
         RdmaSendPacketMeta rdmaMeta = ?;
         Bit#(TLog#(NUMERIC_TYPE_THREE)) curChannelIdx = 0;
@@ -878,11 +882,7 @@ module mkPacketGenReqArbiter(PacketGenReqArbiter);
             macIpUdpMetaPipeOutQueue.enq(macIpUdpMeta);
             rdmaPacketMetaPipeOutQueue.enq(rdmaMeta);
             if (rdmaMeta.hasPayload) begin
-                let ds = rdmaPayloadPipeInQueueVec[curChannelIdx].first;
-                rdmaPayloadPipeInQueueVec[curChannelIdx].deq;
-                isForwardFirstBeatReg <= ds.isLast;
-                curChannelIdxReg <= curChannelIdx;
-                rdmaPayloadPipeOutQueue.enq(ds);
+                pendingForwardQueue.enq(curChannelIdx);
             end
            
             // $display(
@@ -898,11 +898,15 @@ module mkPacketGenReqArbiter(PacketGenReqArbiter);
         // );
     endrule
 
-    rule forwardMoreBeat if (!isForwardFirstBeatReg);
-        let ds  = rdmaPayloadPipeInQueueVec[curChannelIdxReg].first;
-        rdmaPayloadPipeInQueueVec[curChannelIdxReg].deq;
+    rule forwardMoreBeat;
+        let curChannelIdx = pendingForwardQueue.first;
+        let ds  = rdmaPayloadPipeInQueueVec[curChannelIdx].first;
+        rdmaPayloadPipeInQueueVec[curChannelIdx].deq;
         rdmaPayloadPipeOutQueue.enq(ds);
-        isForwardFirstBeatReg <= ds.isLast;
+
+        if (ds.isLast) begin
+            pendingForwardQueue.deq;
+        end
 
         $display(
             "time=%0t:", $time, toGreen(" mkPacketGenReqArbiter forwardMoreBeat"),

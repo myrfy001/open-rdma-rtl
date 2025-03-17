@@ -1,10 +1,12 @@
 import Vector :: *;
+import Printf :: *;
 import FIFOF :: *;
 import PrimUtils :: *;
 import Arbiter :: *;
 import Connectable :: *;
 import ConnectableF :: *;
 import BasicDataTypes :: *;
+import FullyPipelineChecker :: *;
 
 
 typedef struct {
@@ -19,6 +21,84 @@ typedef struct {
     Bool                                                        isFirst;
     Bool                                                        isLast;
 } DtldStreamData#(type tData) deriving (FShow, Bits, Eq);
+
+
+
+// instance ConnectableWithFullyPipelineCheck#(PipeOut#(DtldStreamData#(t)), PipeInB0#(DtldStreamData#(t)));
+//     module mkConnectionFpCheck#(PipeOut#(DtldStreamData#(t)) fo, PipeInB0#(DtldStreamData#(t)) fi, String name,  Bool enableFpCheck)(Empty);
+//         let fpChecker <- mkStreamFullyPipelineChecker(name);
+//         mkConnection(fo.notEmpty, fi.notEmptyIn);
+
+//         rule connect;
+//             fi.firstIn(fo.first);
+//             fpChecker.putStreamBeatInfo(fo.first.isFirst, fo.first.isLast);
+//         endrule
+
+//         rule handleDeq;
+//             if (fi.deqSignalOut) begin
+//                 fo.deq;
+//             end
+//         endrule
+//     endmodule
+// endinstance
+
+// instance ConnectableWithFullyPipelineCheck#(PipeInB0#(DtldStreamData#(t)), PipeOut#(DtldStreamData#(t)));
+//     module mkConnectionFpCheck#(PipeInB0#(DtldStreamData#(t)) fi, PipeOut#(DtldStreamData#(t)) fo, String name,  Bool enableFpCheck)(Empty);
+//         mkConnectionFpCheck(fo, fi);
+//     endmodule
+// endinstance
+
+
+// instance ConnectableWithFullyPipelineCheck#(PipeOut#(DtldStreamData#(t)), PipeIn#(DtldStreamData#(t)));
+//     module mkConnectionFpCheck#(PipeOut#(DtldStreamData#(t)) fo, PipeIn#(DtldStreamData#(t)) fi, String name, Bool enableFpCheck)(Empty);
+//         let fpChecker <- mkStreamFullyPipelineChecker(name);
+//         rule connect;
+//             fi.enq(fo.first);
+//             fo.deq;
+//             fpChecker.putStreamBeatInfo(fo.first.isFirst, fo.first.isLast);
+//         endrule
+//     endmodule
+// endinstance
+
+// instance ConnectableWithFullyPipelineCheck#(PipeIn#(DtldStreamData#(t)), PipeOut#(DtldStreamData#(t)));
+//     module mkConnectionFpCheck#(PipeIn#(DtldStreamData#(t)) fi, PipeOut#(DtldStreamData#(t)) fo, String name,  Bool enableFpCheck)(Empty);
+//         mkConnectionFpCheck(fo, fi, name, enableFpCheck);
+//     endmodule
+// endinstance
+
+
+
+
+module mkDsConnectionFpCheckB0#(PipeOut#(DtldStreamData#(t)) fo, PipeInB0#(DtldStreamData#(t)) fi, DebugConf dbgConf)(Empty);
+    let fpChecker <- mkStreamFullyPipelineChecker(dbgConf);
+    mkConnection(fo.notEmpty, fi.notEmptyIn);
+
+    rule connect;
+        fi.firstIn(fo.first);
+        let _ <- fpChecker.putStreamBeatInfo(fo.first.isFirst, fo.first.isLast);
+    endrule
+
+    rule handleDeq;
+        if (fi.deqSignalOut) begin
+            fo.deq;
+        end
+    endrule
+endmodule
+
+
+
+
+module mkDsConnectionFpCheck#(PipeOut#(DtldStreamData#(t)) fo, PipeIn#(DtldStreamData#(t)) fi, DebugConf dbgConf)(Empty);
+    let fpChecker <- mkStreamFullyPipelineChecker(dbgConf);
+    rule connect;
+        fi.enq(fo.first);
+        fo.deq;
+        let _ <- fpChecker.putStreamBeatInfo(fo.first.isFirst, fo.first.isLast);
+    endrule
+endmodule
+
+
+
 
 
 
@@ -132,6 +212,38 @@ instance Connectable#(DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen), DtldS
 endinstance
 
 
+
+
+instance ConnectableWithFullyPipelineCheck#(DtldStreamBiDirMasterPipes#(tData, tAddr, tLen), DtldStreamBiDirSlavePipes#(tData, tAddr, tLen));
+    module mkConnectionFpCheck#(
+            DtldStreamBiDirMasterPipes#(tData, tAddr, tLen) master,
+            DtldStreamBiDirSlavePipes#(tData, tAddr, tLen) slave,
+            DebugConf dbgConf
+        )(Empty);
+        mkConnection(master.writePipeIfc.writeMetaPipeOut, slave.writePipeIfc.writeMetaPipeIn);
+        mkDsConnectionFpCheck(master.writePipeIfc.writeDataPipeOut, slave.writePipeIfc.writeDataPipeIn, dbgConf);
+        mkConnection(master.readPipeIfc.readMetaPipeOut, slave.readPipeIfc.readMetaPipeIn);
+        mkDsConnectionFpCheck(slave.readPipeIfc.readDataPipeOut, master.readPipeIfc.readDataPipeIn, dbgConf);
+    endmodule
+endinstance
+
+instance ConnectableWithFullyPipelineCheck#(DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen), DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen));
+    module mkConnectionFpCheck#(
+            DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen) master,
+            DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen) slave,
+            DebugConf dbgConf
+        )(Empty);
+        mkConnection(master.writePipeIfc.writeMetaPipeOut, slave.writePipeIfc.writeMetaPipeIn);
+        mkDsConnectionFpCheckB0(master.writePipeIfc.writeDataPipeOut, slave.writePipeIfc.writeDataPipeIn, dbgConf);
+        mkConnection(master.readPipeIfc.readMetaPipeOut, slave.readPipeIfc.readMetaPipeIn);
+        mkDsConnectionFpCheckB0(slave.readPipeIfc.readDataPipeOut, master.readPipeIfc.readDataPipeIn, dbgConf);
+    endmodule
+endinstance
+
+
+
+
+
 interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAddr, type tLen);
     interface Vector#(channelCnt, DtldStreamBiDirSlavePipesB0In#(tData, tAddr, tLen))       slaveIfcVec;
     interface DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen)                           masterIfc;
@@ -140,7 +252,7 @@ interface DtldStreamArbiterSlave#(numeric type channelCnt, type tData, type tAdd
 endinterface
 
 
-module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArbiterSlave#(channelCnt, tData, tAddr, tLen)) provisos (
+module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth, Bool needReadResp, DebugConf dbgConf)(DtldStreamArbiterSlave#(channelCnt, tData, tAddr, tLen)) provisos (
         Bits#(tData, szData),
         Bits#(DtldStreamMemAccessMeta#(tAddr, tLen), szMeta),
         Alias#(Bit#(TLog#(channelCnt)), tChannelIdx),
@@ -154,12 +266,16 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
     Vector#(channelCnt, PipeInAdapterB0#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecWm     <- replicateM(mkPipeInAdapterB0);
     Vector#(channelCnt, PipeInAdapterB0#(DtldStreamData#(tData)))                           slaveSideQueueVecWd     <- replicateM(mkPipeInAdapterB0);
     Vector#(channelCnt, PipeInAdapterB0#(DtldStreamMemAccessMeta#(tAddr, tLen)))            slaveSideQueueVecRm     <- replicateM(mkPipeInAdapterB0);
-    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                                   slaveSideQueueVecRd     <- replicateM(mkFIFOF);
+    Vector#(channelCnt, FIFOF#(DtldStreamData#(tData)))                                     slaveSideQueueVecRd     = newVector;
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+        slaveSideQueueVecRd[channelIdx] <- mkFIFOFWithFullAssert(concatDebugName(dbgConf, sprintf("mkDtldStreamArbiterSlave [%s] slaveSideQueueVecRd[%0d]", dbgConf.name, channelIdx)));
+    end
 
     FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueWm   <-  mkFIFOF;
-    FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))                           masterSideQueueWd   <-  mkSizedFIFOFWithFullAssert(writeOutputBufDepth, concatDebugName(dbgConf, sprintf("mkDtldStreamArbiterSlave [%s] masterSideQueueWd", dbgConf.name)));
     FIFOF#(DtldStreamMemAccessMeta#(tAddr, tLen))            masterSideQueueRm   <-  mkFIFOF;
-    PipeInAdapterB0#(DtldStreamData#(tData))                   masterSideQueueRd   <-  mkPipeInAdapterB0;
+    PipeInAdapterB0#(DtldStreamData#(tData))                 masterSideQueueRd   <-  mkPipeInAdapterB0;
 
     FIFOF#(tChannelIdx)     writeSourceChannelIdPipeOutQueue <- mkFIFOF;
     FIFOF#(tChannelIdx)     readSourceChannelIdPipeOutQueue  <- mkFIFOF;
@@ -168,11 +284,19 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
     Arbiter_IFC#(channelCnt) writeArbiter <- mkArbiter(False);
     Arbiter_IFC#(channelCnt) readArbiter  <- mkArbiter(False);
 
-    Reg#(Bool) isWriteFirstBeatReg <- mkReg(True);
+    FIFOF#(tChannelIdx) writeKeepOrderQueue <- mkSizedFIFOF(writeOutputBufDepth);
 
-    Reg#(tChannelIdx) curWriteChannelIdxReg <- mkRegU;
+    FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkSizedFIFOF(readDepth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
 
-    FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkSizedFIFOF(depth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
+
+    // for read path, a big WQE may lead to read a lot of beat, DMA may be faster than ethernet port, leading to blocking.
+    // we only care the output of ethernet port and make sure it is continous.
+    let fpCheckerRead <- mkStreamFullyPipelineChecker(concatDebugName(dbgConf, "read"));
+    let dbgConfForContinousDsCheck = dbgConf;
+    dbgConfForContinousDsCheck.enableDebug = True; // Force check Write
+    let fpCheckerWrite <- mkStreamFullyPipelineChecker(concatDebugName(dbgConfForContinousDsCheck, "write"));
+    
+    
 
     // rule debug;
     //     $display(
@@ -185,7 +309,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
     //     );
     // endrule
 
-    rule sendWriteArbitReq if (isWriteFirstBeatReg);
+    rule sendWriteArbitReq;
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (slaveSideQueueVecWm[channelIdx].notEmpty && slaveSideQueueVecWd[channelIdx].notEmpty) begin
                 writeArbiter.clients[channelIdx].request;
@@ -197,16 +321,14 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         end
     endrule
 
-    rule recvWriteArbitResp if (isWriteFirstBeatReg);
+    rule recvWriteArbitResp;
         Maybe#(DtldStreamMemAccessMeta#(tAddr, tLen)) wmMaybe = tagged Invalid;
         DtldStreamData#(tData) wd = ?;
         tChannelIdx curChannelIdx = 0;
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (writeArbiter.clients[channelIdx].grant) begin
                 wmMaybe = tagged Valid slaveSideQueueVecWm[channelIdx].first;
-                wd      = slaveSideQueueVecWd[channelIdx].first;
                 slaveSideQueueVecWm[channelIdx].deq;
-                slaveSideQueueVecWd[channelIdx].deq;
 
                 curChannelIdx = fromInteger(channelIdx);
             end
@@ -214,9 +336,7 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
 
         if (wmMaybe matches tagged Valid .wm) begin
             masterSideQueueWm.enq(wm);
-            masterSideQueueWd.enq(wd);
-            isWriteFirstBeatReg <= wd.isLast;
-            curWriteChannelIdxReg <= curChannelIdx;
+            writeKeepOrderQueue.enq(curChannelIdx);
             writeSourceChannelIdPipeOutQueue.enq(curChannelIdx);
             // $display(
             //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forward write beat first"),
@@ -231,11 +351,16 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
         // );
     endrule
 
-    rule forwardMoreWriteBeat if (!isWriteFirstBeatReg);
-        let wd  = slaveSideQueueVecWd[curWriteChannelIdxReg].first;
-        slaveSideQueueVecWd[curWriteChannelIdxReg].deq;
+    rule forwardMoreWriteBeat;
+
+        let curWriteChannelIdx = writeKeepOrderQueue.first;
+        let wd  = slaveSideQueueVecWd[curWriteChannelIdx].first;
+        slaveSideQueueVecWd[curWriteChannelIdx].deq;
         masterSideQueueWd.enq(wd);
-        isWriteFirstBeatReg <= wd.isLast;
+        let _ <- fpCheckerWrite.putStreamBeatInfo(wd.isFirst, wd.isLast);
+        if (wd.isLast) begin
+            writeKeepOrderQueue.deq;
+        end
 
         $display(
             "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardMoreWriteBeat"),
@@ -282,11 +407,12 @@ module mkDtldStreamArbiterSlave#(Integer depth, Bool needReadResp)(DtldStreamArb
             if (rd.isLast) begin
                 readKeepOrderQueue.deq;
             end
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardReadResp"),
-            //     toBlue(", channelIdx="), fshow(channelIdx),
-            //     toBlue(", rd="), fshow(rd)
-            // );
+            let _ <- fpCheckerRead.putStreamBeatInfo(rd.isFirst, rd.isLast);
+            $display(
+                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardReadResp"),
+                toBlue(", channelIdx="), fshow(channelIdx),
+                toBlue(", rd="), fshow(rd)
+            );
         endrule
     end
 
@@ -454,7 +580,7 @@ typedef enum {
     DtldStreamConcatorStateOutputExtra
 } DtldStreamConcatorState deriving(Eq, FShow, Bits);
 
-module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) provisos(
+module mkDtldStreamConcator#(DebugConf dbgConf)(DtldStreamConcator#(tData, nLogOfByteAlign)) provisos(
         Bits#(tData, szData),
         Bitwise#(tData),
         FShow#(DtldStream::DtldStreamData#(tData)),
@@ -475,7 +601,7 @@ module mkDtldStreamConcator(DtldStreamConcator#(tData, nLogOfByteAlign)) proviso
     );
     PipeInAdapterB0#(DtldStreamData#(tData))  dataPipeInQueue                 <- mkPipeInAdapterB0;
     PipeInAdapterB0#(Bool)                    isLastStreamFlagPipeInQueue     <- mkPipeInAdapterB0;
-    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                <- mkFIFOFWithFullAssert(concatDebugName(dbgConf, "dataPipeOutQueue"));
 
     Reg#(DtldStreamConcatorState)       curStateReg                 <- mkReg(DtldStreamConcatorStateIdle);
 
@@ -724,7 +850,7 @@ typedef enum {
 
 
         
-module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLogOfByteAlign)) provisos(
+module mkDtldStreamSplitor#(DebugConf dbgConf)(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLogOfByteAlign)) provisos(
         Bits#(tData, szData),
         Bitwise#(tData),
         Bits#(tStreamAlignBlockCount, szStreamAlignBlockCount),
@@ -752,7 +878,7 @@ module mkDtldStreamSplitor(DtldStreamSplitor#(tData, tStreamAlignBlockCount, nLo
     );
     PipeInAdapterB0#(DtldStreamData#(tData))  dataPipeInQueue                     <- mkPipeInAdapterB0;
     PipeInAdapterB0#(tStreamAlignBlockCount)  streamAlignBlockCountPipeInQueue    <- mkPipeInAdapterB0;
-    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkFIFOF;
+    FIFOF#(DtldStreamData#(tData))  dataPipeOutQueue                    <- mkFIFOFWithFullAssert(concatDebugName(dbgConf, "dataPipeOutQueue "));
 
     Reg#(DtldStreamSplitorState)       curStateReg                 <- mkReg(DtldStreamSplitorStateOutput);
 

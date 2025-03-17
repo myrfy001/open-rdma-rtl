@@ -151,7 +151,7 @@ class SimplePcieBehaviorModel(object):
                             total_len += (write_data.byte_num() -
                                           skip_byte_cnt)
                             self.log.info(
-                                f"write_addr = {hex(old_write_addr)}, write_data={write_data}", )
+                                f"pcie bfm write host mem. write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
                             if (write_data.is_last()):
                                 print(
@@ -176,51 +176,52 @@ class SimplePcieBehaviorModel(object):
                 is_first = True
                 self.log.debug(
                     f"cur_read_addr={hex(cur_read_addr)}, bytes_left={hex(bytes_left)}")
+                read_req_arrive_time = cocotb.utils.get_sim_time("ns")
                 # loop to handle each beat in a request
                 while True:
-                    if await self.requester_read_data_pipes[channel_idx].not_full():
-                        data = 0
 
-                        if is_first:
-                            start_byte_index = cur_read_addr & 0x03
-                        else:
-                            start_byte_index = 0
+                    data = 0
 
-                        if bytes_left + start_byte_index <= DATA_BUS_BYTE_WIDTH:
-                            is_last = True
-                            byte_num = bytes_left
-                        else:
-                            is_last = False
-                            byte_num = DATA_BUS_BYTE_WIDTH - start_byte_index
+                    if is_first:
+                        start_byte_index = cur_read_addr & 0x03
+                    else:
+                        start_byte_index = 0
 
-                        old_read_addr = cur_read_addr
-                        for byte_idx in range(byte_num):
-                            data |= (self.mem[cur_read_addr] << (byte_idx * 8))
-                            cur_read_addr += 1
+                    if bytes_left + start_byte_index <= DATA_BUS_BYTE_WIDTH:
+                        is_last = True
+                        byte_num = bytes_left
+                    else:
+                        is_last = False
+                        byte_num = DATA_BUS_BYTE_WIDTH - start_byte_index
 
-                        if (is_first):
-                            data <<= (start_byte_index * 8)
+                    old_read_addr = cur_read_addr
+                    for byte_idx in range(byte_num):
+                        data |= (self.mem[cur_read_addr] << (byte_idx * 8))
+                        cur_read_addr += 1
 
-                        read_data = BlueRdmaDataStream(
-                            data=data.to_bytes(
-                                DATA_BUS_BYTE_WIDTH, byteorder="little"),
-                            byte_num=byte_num,
-                            start_byte_index=start_byte_index,
-                            is_first=is_first,
-                            is_last=is_last
-                        )
-                        cur_time = cocotb.utils.get_sim_time("ns")
-                        self.read_delay_queues[channel_idx].append(
-                            (read_data.pack(), cur_time, old_read_addr))
+                    if (is_first):
+                        data <<= (start_byte_index * 8)
 
-                        self.log.info(
-                            f"pcie bfm sample read data and put into delay queue addr={hex(old_read_addr)}, read_data={read_data}")
+                    read_data = BlueRdmaDataStream(
+                        data=data.to_bytes(
+                            DATA_BUS_BYTE_WIDTH, byteorder="little"),
+                        byte_num=byte_num,
+                        start_byte_index=start_byte_index,
+                        is_first=is_first,
+                        is_last=is_last
+                    )
 
-                        is_first = False
-                        bytes_left -= byte_num
+                    self.read_delay_queues[channel_idx].append(
+                        (read_data.pack(), read_req_arrive_time, old_read_addr))
 
-                        if (is_last):
-                            break
+                    self.log.info(
+                        f"pcie bfm sample read data and put into delay queue, channel={channel_idx} addr={hex(old_read_addr)}, read_data={read_data}")
+
+                    is_first = False
+                    bytes_left -= byte_num
+
+                    if (is_last):
+                        break
                     await RisingEdge(self.clock)  # wait for next beat
 
             await RisingEdge(self.clock)  # wait for next read req
@@ -228,14 +229,15 @@ class SimplePcieBehaviorModel(object):
     async def _forward_delayed_requester_read_resp(self, channel_idx):
         while True:
             if len(self.read_delay_queues[channel_idx]) > 0:
-                cur_time = cocotb.utils.get_sim_time("ns")
-                beat_to_forward, beat_read_time, old_read_addr = self.read_delay_queues[
-                    channel_idx][0]
-                if cur_time - beat_read_time >= self.read_delay_time_ns:
-                    self.read_delay_queues[channel_idx].popleft()
-                    await self.requester_read_data_pipes[channel_idx].enq(beat_to_forward)
-                    self.log.info(
-                        f"pcie bfm read addr={hex(old_read_addr)}")
+                if await self.requester_read_data_pipes[channel_idx].not_full():
+                    cur_time = cocotb.utils.get_sim_time("ns")
+                    beat_to_forward, beat_read_time, old_read_addr = self.read_delay_queues[
+                        channel_idx][0]
+                    if cur_time - beat_read_time >= self.read_delay_time_ns:
+                        self.read_delay_queues[channel_idx].popleft()
+                        await self.requester_read_data_pipes[channel_idx].enq(beat_to_forward)
+                        self.log.info(
+                            f"pcie bfm read, put delayed read beat, channel={channel_idx} addr={hex(old_read_addr)}")
             await RisingEdge(self.clock)  # wait for next read req
 
     async def _handle_completer_read_resp(self, channel_idx):

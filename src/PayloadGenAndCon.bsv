@@ -106,11 +106,11 @@ module mkPayloadGen(PayloadGen);
     mkConnection(toPipeOut(dmaReadReqPipeOutGuardQ), toPipeIn(dmaReadReqPipeOutQ));
 
 
-    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug("mkPayloadGen addrTranslateCltInst", False);
+    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug(DebugConf{name: "mkPayloadGen addrTranslateCltInst", enableDebug: False});
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
     let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 
-    DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator;
+    DtldStreamConcator#(DATA, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsConcator <- mkDtldStreamConcator(DebugConf{name: "mkPayloadGen dsConcator", enableDebug: False});
     // mkConnection(toPipeOut(dmaReadRespPipeInQ), dsConcator.dataPipeIn);
 
     // rule forwardReadRespToConcator;
@@ -187,7 +187,6 @@ module mkPayloadGen(PayloadGen);
             toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry),
             toBlue(", addrTranslateReq="), fshow(addrTranslateReq)
         );
-        checkFullyPipeline(fpDebugTime, 3, 2000, "mkPayloadGen getBurstChunRespAndIssueAddrTranslateReq");
     endrule
 
     rule issueDmaRead;
@@ -209,7 +208,6 @@ module mkPayloadGen(PayloadGen);
             toBlue(", len="), fshow(len),
             toBlue(", isLast="), fshow(isLast)
         );
-        checkFullyPipeline(fpDebugTime, 11, 2000, "mkPayloadGen issueDmaRead");
     endrule
 
     // let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadRespPipeInQ);
@@ -233,22 +231,22 @@ module mkPayloadCon(PayloadCon);
     PipeInAdapterB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkPipeInAdapterB0;
     FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;  // TODO: maybe need to be sized fifo
 
-    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF));
-    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOF(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF));
+    FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqAddrPipeOutQ", enableDebug: False});
+    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqDataPipeOutQ", enableDebug: False});
 
 
-    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug("mkPayloadCon addrTranslateCltInst", False);
+    QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug(DebugConf{name: "mkPayloadCon addrTranslateCltInst", enableDebug: False});
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rawReqToBurstChunker <- mkAddressChunker;
     let rawReqToBurstChunkerRequestPipeInAdapter <- mkPipeInB0ToPipeIn(rawReqToBurstChunker.requestPipeIn, 1);
 
-    DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor;
+    DtldStreamSplitor#(DATA, AlignBlockCntInPayloadConAndGenBurst, LOG_OF_DATA_STREAM_ALIGN_BLOCK_SIZE) dsSpliter <- mkDtldStreamSplitor(DebugConf{name: "mkPayloadCon dsSpliter", enableDebug: False});
 
     FIFOF#(Tuple3#(PTEIndex, ADDR, SimulationTime)) getBurstChunRespAndIssueAddrTranslateReqPipelineQ <- mkSizedFIFOF(2);  // Pipeline Fifo for forked path, so at least 2
     FIFOF#(Tuple2#(Length, SimulationTime)) issueDmaWritePipelineQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple3#(Length, Length, SimulationTime)) streamSplitorMetaCalcPipelineQ <- mkLFIFOF;
 
-    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeInWithDebug(dsSpliter.streamAlignBlockCountPipeIn, 1, False, "dsSpliterStreamAlignBlockCountPipeInConverter");
-    let dsSpliterDataPipeInConverter <- mkPipeInB0ToPipeInWithDebug(dsSpliter.dataPipeIn, 2, False, "dsSpliterDataPipeInConverter");
+    let dsSpliterStreamAlignBlockCountPipeInConverter <- mkPipeInB0ToPipeInWithDebug(dsSpliter.streamAlignBlockCountPipeIn, 1, DebugConf{name: "dsSpliterStreamAlignBlockCountPipeInConverter", enableDebug: False} );
+    let dsSpliterDataPipeInConverter <- mkPipeInB0ToPipeInWithDebug(dsSpliter.dataPipeIn, 2,DebugConf{name: "dsSpliterDataPipeInConverter", enableDebug: False} );
 
 
     rule printDebugInfo;
@@ -278,7 +276,7 @@ module mkPayloadCon(PayloadCon);
             toBlue(", req="), fshow(req),
             toBlue(", chunkReq="), fshow(chunkReq)
         );
-        checkFullyPipeline(req.fpDebugTime, 1, 2000, "mkPayloadCon handleInReq");
+        checkFullyPipeline(req.fpDebugTime, 1, 2000, DebugConf{name: "mkPayloadCon handleInReq", enableDebug: True});
     endrule
 
     rule getBurstChunRespAndIssueAddrTranslateReq;
@@ -305,7 +303,7 @@ module mkPayloadCon(PayloadCon);
             toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
         );
         if (burstAddrBoundry.isFirst) begin
-            checkFullyPipeline(fpDebugTime, 3, 2000, "mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq");
+            checkFullyPipeline(fpDebugTime, 3, 2000, DebugConf{name: "mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq", enableDebug: True});
         end
     endrule
 
@@ -332,7 +330,7 @@ module mkPayloadCon(PayloadCon);
             toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
             toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc)
         );
-        checkFullyPipeline(fpDebugTime, 10, 2000, "mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite");
+        checkFullyPipeline(fpDebugTime, 10, 2000, DebugConf{name: "mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite", enableDebug: True});
     endrule
 
     rule calcStreamSpliterMeta;
@@ -353,7 +351,7 @@ module mkPayloadCon(PayloadCon);
             toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc),
             toBlue(", alignBlockCntForStreamSplit="), fshow(alignBlockCntForStreamSplit)
         );
-        checkFullyPipeline(fpDebugTime, 1, 2000, "mkPayloadCon calcStreamSpliterMeta");
+        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkPayloadCon calcStreamSpliterMeta", enableDebug: True});
     endrule
 
     rule forwardConsumedFinishedSignal;
