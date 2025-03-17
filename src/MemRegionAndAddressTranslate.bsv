@@ -159,7 +159,7 @@ module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
         True,
         alwaysTrue,
         alwaysTrue,
-        DebugConf{name: "MemRegionTableTwoWayQuery", enableDebug: False}
+        DebugConf{name: "MemRegionTableTwoWayQuery", enableDebug: True}
     );
 
     mkConnection(arbiter.cltIfc, memRegionTable.querySrv);
@@ -351,7 +351,7 @@ module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
         True,
         alwaysTrue,
         alwaysTrue,
-        DebugConf{name: "AddressTranslateTwoWayQuery", enableDebug: False}
+        DebugConf{name: "AddressTranslateTwoWayQuery", enableDebug: True}
     );
 
     mkConnection(arbiter.cltIfc, addressTranslate.translateSrv);

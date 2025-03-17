@@ -255,7 +255,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
         //     toBlue(", ds="), fshow(ds),
         //     toBlue(", outPipelineEntry="), fshow(outPipelineEntry)
         // );
-        checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkInputPacketClassifier handleFirstBeatStage", enableDebug: True});
+
     endrule
 
     rule handleMoreBeatStage if (stateReg == InputPacketClassifierStateHandleMoreBeat);

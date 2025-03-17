@@ -174,8 +174,8 @@ class SimplePcieBehaviorModel(object):
                 cur_read_addr = read_meta.addr()
                 bytes_left = read_meta.total_len()
                 is_first = True
-                self.log.debug(
-                    f"cur_read_addr={hex(cur_read_addr)}, bytes_left={hex(bytes_left)}")
+                self.log.info(
+                    f"pcie bfm got read request: cur_read_addr={hex(cur_read_addr)}, bytes_left={hex(bytes_left)}")
                 read_req_arrive_time = cocotb.utils.get_sim_time("ns")
                 # loop to handle each beat in a request
                 while True:

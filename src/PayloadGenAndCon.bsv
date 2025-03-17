@@ -138,6 +138,7 @@ module mkPayloadGen(PayloadGen);
     rule printDebugInfo;
         if (!dmaReadReqPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadGen dmaReadReqPipeOutQ");
         if (!dsConcatorIsLastStreamFlagPipeInConverter.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadGen dsConcatorIsLastStreamFlagPipeInConverter");
+        if (!issueDmaReadPipelineQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkPayloadGen issueDmaReadPipelineQ");
         
     endrule
 
@@ -163,6 +164,7 @@ module mkPayloadGen(PayloadGen);
             toBlue(", chunkReq="), fshow(chunkReq)
         );
     endrule
+
 
     rule getBurstChunRespAndIssueAddrTranslateReq if (dmaReadReqPipeOutQ.notFull && dsConcatorIsLastStreamFlagPipeInConverter.notFull);
         let curFpDebugTime <- getSimulationTime;
@@ -232,7 +234,7 @@ module mkPayloadCon(PayloadCon);
     FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;  // TODO: maybe need to be sized fifo
 
     FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqAddrPipeOutQ", enableDebug: False});
-    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqDataPipeOutQ", enableDebug: False});
+    FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqDataPipeOutQ", enableDebug: True});
 
 
     QueuedClientP#(PgtAddrTranslateReq, ADDR) addrTranslateCltInst <- mkQueuedClientPWithDebug(DebugConf{name: "mkPayloadCon addrTranslateCltInst", enableDebug: False});

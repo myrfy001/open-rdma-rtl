@@ -240,16 +240,16 @@ module mkClientArbiter#(
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " respQ");
         end
 
-        if (!reqQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " reqQ");
-        end
-        if (!respQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " respQ");
-        end
+        // if (!reqQ.notEmpty) begin
+        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " reqQ");
+        // end
+        // if (!respQ.notEmpty) begin
+        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " respQ");
+        // end
 
-        if (!grantReqKeepOrderQ.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " grantReqKeepOrderQ");
-        end
+        // if (!grantReqKeepOrderQ.notEmpty) begin
+        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " grantReqKeepOrderQ");
+        // end
 
         if (!grantReqKeepOrderQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " grantReqKeepOrderQ");
@@ -265,9 +265,9 @@ module mkClientArbiter#(
                 $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " clientReqFifoVec[%0d]", idx);
             end
 
-            if (!clientReqFifoVec[idx].notEmpty) begin
-                $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " clientReqFifoVec[%0d]", idx);
-            end
+            // if (!clientReqFifoVec[idx].notEmpty) begin
+            //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(dbgConf.name) , " clientReqFifoVec[%0d]", idx);
+            // end
             
         end
     endrule
@@ -473,12 +473,11 @@ module mkServerToClientArbitFixPriorityP#(
         Maybe#(tReq) reqMaybe = tagged Invalid;
         tChannelIdx curChannelIdx = 0;
         
-        tChannelIdx conflictCounter = 0;
+        Bit#(TAdd#(1, TLog#(channelCnt))) conflictCounter = 0;
 
         for (Integer channelIdx = valueOf(channelCnt) - 1; channelIdx >= 0 ; channelIdx = channelIdx - 1) begin
             if (srvSideReqQueueVec[channelIdx].notEmpty) begin
                 reqMaybe = tagged Valid srvSideReqQueueVec[channelIdx].first;
-                srvSideReqQueueVec[channelIdx].deq;
                 curChannelIdx = fromInteger(channelIdx);
                 conflictCounter = conflictCounter + 1;
             end
@@ -492,6 +491,7 @@ module mkServerToClientArbitFixPriorityP#(
             cltSideReqQueue.enq(req);
             isReqFirstBeatReg <= isReqFinished(req);
             curReqChannelIdxReg <= curChannelIdx;
+            srvSideReqQueueVec[curChannelIdx].deq;
             if (needReadResp) begin
                 respKeepOrderQueue.enq(curChannelIdx);
             end

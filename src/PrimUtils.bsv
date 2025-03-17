@@ -277,6 +277,10 @@ module mkSizedQueuedClientP#(
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " respQ");
         end
 
+        if (!reqQ.notEmpty) begin
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " reqQ");
+        end
+
         if (!respQ.notEmpty) begin
             $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " respQ");
         end
