@@ -116,7 +116,7 @@ module mkSimpleNic(SimpleNic);
         rxAddrChunkerRequestPipeInAdapter.enq(AddressChunkReq{
             startAddr: writeAddr,
             len: zeroExtend(totalLen),
-            chunk: fromInteger(valueOf(TLog#(PCIE_NAP_MAX_BYTE_IN_BURST)))
+            chunk: fromInteger(valueOf(TLog#(PCIE_MAX_BYTE_IN_BURST)))
         });
         rxDescMetaPipelineQ.enq(tuple2(curSlotIdxReg, totalLen));
     endrule
@@ -178,7 +178,7 @@ module mkSimpleNic(SimpleNic);
         let chunkReq = AddressChunkReq {
             startAddr: desc.addr,
             len: desc.len,
-            chunk: fromInteger(valueOf(TLog#(PCIE_NAP_MAX_BYTE_IN_BURST)))
+            chunk: fromInteger(valueOf(TLog#(PCIE_MAX_BYTE_IN_BURST)))
         };
         txAddrChunkerRequestPipeInAdapter.enq(chunkReq);
 

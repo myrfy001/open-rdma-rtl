@@ -458,10 +458,10 @@ typedef enum {
 typedef 64 PGT_SECOND_STAGE_ENTRY_BIT_WIDTH_PADDED;
 typedef TDiv#(PGT_SECOND_STAGE_ENTRY_BIT_WIDTH_PADDED, BYTE_WIDTH) PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED;
 
-typedef TDiv#(PCIE_NAP_MAX_BYTE_IN_BURST, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED) PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST;
+typedef TDiv#(PCIE_MAX_BYTE_IN_BURST, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED) PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST;
 typedef Bit#(TLog#(PGT_SECOND_STAGE_ENTRY_MAX_CNT_IN_DMA_BURST)) ZeroBasedPgtSecondStageEntryCnt;
 
-typedef Bit#(TLog#(TDiv#(PCIE_NAP_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED))) ZeroBasedPgtEntryCntInDmaBeat;
+typedef Bit#(TLog#(TDiv#(PCIE_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED))) ZeroBasedPgtEntryCntInDmaBeat;
 
 (* synthesize *)
 module mkMrAndPgtUpdater(MrAndPgtUpdater);
@@ -523,9 +523,9 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
                 Length dmaReadLengthInByte = (zeroExtend(desc.zeroBasedEntryCount) + 1) << valueOf(TLog#(PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_PADDED)); 
                 immAssertAddressAndLengthNotCross4kBoundary(desc.dmaAddr, dmaReadLengthInByte, "PGT table update dma request");
                 immAssert(
-                    dmaReadLengthInByte <= fromInteger(valueOf(PCIE_NAP_MAX_BYTE_IN_BURST)),
+                    dmaReadLengthInByte <= fromInteger(valueOf(PCIE_MAX_BYTE_IN_BURST)),
                     "PGT update dma request length exceed max PCIe read burst",
-                    $format("dmaReadLengthInByte=", fshow(dmaReadLengthInByte), ", maxburst='h%x", valueOf(PCIE_NAP_MAX_BYTE_IN_BURST))
+                    $format("dmaReadLengthInByte=", fshow(dmaReadLengthInByte), ", maxburst='h%x", valueOf(PCIE_MAX_BYTE_IN_BURST))
                 );
 
                 dmaReadReqQ.enq(PgtUpdateDmaReadReq{

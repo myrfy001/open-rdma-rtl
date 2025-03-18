@@ -328,13 +328,12 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (writeArbiter.clients[channelIdx].grant) begin
                 wmMaybe = tagged Valid slaveSideQueueVecWm[channelIdx].first;
-                slaveSideQueueVecWm[channelIdx].deq;
-
                 curChannelIdx = fromInteger(channelIdx);
             end
         end
 
         if (wmMaybe matches tagged Valid .wm) begin
+            slaveSideQueueVecWm[curChannelIdx].deq;
             masterSideQueueWm.enq(wm);
             writeKeepOrderQueue.enq(curChannelIdx);
             writeSourceChannelIdPipeOutQueue.enq(curChannelIdx);

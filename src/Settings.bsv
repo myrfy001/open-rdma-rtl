@@ -10,7 +10,7 @@ typedef TMul#(2, MAX_QP_WR) MAX_PENDING_WORK_COMP_NUM;
 // Must be power of 2
 
 typedef 512 DATA_BUS_WIDTH;
-typedef 512 IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE;  // Important: must be suitable for the selected PCIe IO implementation
+
 
 
 typedef TExp#(31)           MAX_MR_SIZE;   // 2GB
@@ -32,9 +32,9 @@ typedef 0 MAX_INLINE_DATA; // No inline data
 
 typedef TExp#(17)   MAX_PTE_ENTRY_CNT; // Max cover 256GB
 
-typedef 16  PCIE_NAP_MAX_BURST_LEN;
-typedef 32  PCIE_NAP_BYTE_PER_BEAT;
-typedef TMul#(PCIE_NAP_MAX_BURST_LEN, PCIE_NAP_BYTE_PER_BEAT) PCIE_NAP_MAX_BYTE_IN_BURST;
+typedef 64  PCIE_MAX_BEAT_CNT_IN_BURST;  // Important: must be suitable for the selected PCIe IO implementation
+typedef 64  PCIE_BYTE_PER_BEAT;          // Important: must be suitable for the selected PCIe IO implementation
+typedef TMul#(PCIE_MAX_BEAT_CNT_IN_BURST, PCIE_BYTE_PER_BEAT) PCIE_MAX_BYTE_IN_BURST;
 
 typedef 3 MIN_RDMA_MESSAGE_BEAT_COUNT;
 typedef 512 MAX_PAYLOAD_STORAGE_CAPACITY_PER_RQ;

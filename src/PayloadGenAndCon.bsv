@@ -35,7 +35,7 @@ typedef struct {
     SimulationTime  fpDebugTime;
 } PayloadConReq deriving(Bits, FShow);
 
-typedef IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE                          PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE;
+typedef PCIE_MAX_BYTE_IN_BURST                                          PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE;
 typedef TAdd#(1, TDiv#(MAX_PMTU, PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE))   PAYLOAD_CON_AND_GEN_MAX_BURST_CNT_PER_REQUEST;
 
 typedef TDiv#(PAYLOAD_CON_AND_GEN_MAX_BURST_SIZE, BYTE_CNT_PER_DWOED)   PAYLOAD_CON_AND_GEN_MAX_DWORD_CNT_PER_BURST;
@@ -151,7 +151,7 @@ module mkPayloadGen(PayloadGen);
         let chunkReq = AddressChunkReq{
             startAddr: req.addr,
             len: req.len,
-            chunk: fromInteger(valueOf(TLog#(IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE)))
+            chunk: fromInteger(valueOf(TLog#(PCIE_MAX_BYTE_IN_BURST)))
         };
 
         rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
@@ -267,7 +267,7 @@ module mkPayloadCon(PayloadCon);
         let chunkReq = AddressChunkReq{
             startAddr: req.addr,
             len: req.len,
-            chunk: fromInteger(valueOf(TLog#(IO_CHANNEL_PCIE_MAX_REQ_LENGTH_IN_BYTE)))
+            chunk: fromInteger(valueOf(TLog#(PCIE_MAX_BYTE_IN_BURST)))
         };
 
         rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
@@ -389,7 +389,6 @@ module mkPayloadCon(PayloadCon);
 
     interface IoChannelMemoryWriteMasterPipe dmaWriteMasterPipe;
         interface writeMetaPipeOut = toPipeOut(dmaWriteReqAddrPipeOutQ);
-        // interface writeDataPipeOut = dsSpliter.dataPipeOut;
         interface writeDataPipeOut = toPipeOut(dmaWriteReqDataPipeOutQ);
     endinterface
 
