@@ -534,6 +534,7 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
                 });
                 curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
                 zeroBasedPgtEntryTotalCntReg <= truncate(desc.zeroBasedEntryCount);
+                pgtUpdateRespCounter <= 0;
                 state <= MrAndPgtManagerFsmStateHandlePGTUpdate;
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc));
             end
