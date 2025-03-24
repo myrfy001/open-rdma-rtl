@@ -111,7 +111,7 @@ module mkStreamFullyPipelineChecker#(DebugConf dbgConf)(StreamFullyPipelineCheck
             if (isFirst && !isLast) begin // for first beat
                 // nothing to do for first beat
             end
-            else if ((isFirst && !isLast) || (!isFirst && !isLast)) begin  // for middle and last beat
+            else if ((!isFirst && isLast) || (!isFirst && !isLast)) begin  // for middle and last beat
                 if (curBeatCounterReg - lastBeatTimeReg != 1) begin
                     immAssertForFpCheck(
                         False,
