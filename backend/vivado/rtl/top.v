@@ -107,7 +107,7 @@ module bluerdma_top#(
     // wire          msi_enable;
 
     // AXI streaming ports
-    (*mark_debug, mark_debug_clock="user_clk_250" *) wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
+    wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
     wire 			m_axis_h2c_tlast_0;
     (*mark_debug, mark_debug_clock="user_clk_250" *) wire 			m_axis_h2c_tvalid_0;
     (*mark_debug, mark_debug_clock="user_clk_250" *) wire 			m_axis_h2c_tready_0;
@@ -157,10 +157,10 @@ module bluerdma_top#(
     wire            gt_usr_tx_reset;
     wire            gt_usr_rx_reset;
 
-    wire            gt_rx_axis_tvalid;
-    wire            gt_rx_axis_tready;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_rx_axis_tvalid;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_rx_axis_tready;
     wire            gt_rx_axis_tlast;
-    wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_rx_axis_tdata;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_rx_axis_tdata;
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_rx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_rx_axis_tuser;
 
@@ -205,8 +205,8 @@ module bluerdma_top#(
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_tx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_tx_axis_tuser;
 
-    wire            gt_tx_ovfout;
-    wire            gt_tx_unfout;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_tx_ovfout;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_tx_unfout;
     wire            gt_ctl_tx_enable;
     wire            gt_ctl_tx_test_pattern;
     wire            gt_ctl_tx_send_idle;
@@ -234,8 +234,8 @@ module bluerdma_top#(
     wire            gt_ctl_rx_rsfec_enable_indication;
 
     // CMAC CTRL STATE
-    wire [3:0]      cmac_ctrl_tx_state;
-    wire [3:0]      cmac_ctrl_rx_state;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire [3:0]      cmac_ctrl_tx_state;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire [3:0]      cmac_ctrl_rx_state;
     wire            is_cmac_rx_aligned;
 
 

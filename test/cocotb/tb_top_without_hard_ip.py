@@ -327,6 +327,7 @@ class TB(object):
 
         src_addr_offset = random.randint(0, 15)
         dst_addr_offset = random.randint(0, 15)
+
         write_src_addr = src_buf_mem_addr + src_addr_offset
         write_dst_addr = dst_buf_mem_addr + dst_addr_offset
         write_len = 65536 * 2
@@ -387,7 +388,8 @@ class TB(object):
             msn=msn,
             psn=psn,
             imm_data=imm_data,
-            pmtu=pmtu
+            pmtu=pmtu,
+            send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED | WorkReqSendFlag.IBV_SEND_SOLICITED
         )
         await self.init_helper.send_queues[0].sync_pointers()
 
