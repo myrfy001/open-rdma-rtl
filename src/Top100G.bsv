@@ -41,7 +41,13 @@ import SQ :: *;
 import RQ :: *;
 
 import XilinxCmacController :: *;
-import XdmaWrapper :: *;
+`ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
+    import XdmaWrapper :: *;
+`elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
+    import XilBdmaPcieTypes :: *;
+    import XilBdmaDmaTypes :: *;
+    import XilBDmacWrapper :: *;
+`endif
 
 typedef 16 CMAC_SYNC_BRAM_BUF_DEPTH;
 typedef 2 CMAC_CDC_SYNC_STAGE;
@@ -52,8 +58,14 @@ interface BsvTop;
     // Interface with CMAC IP
     (* prefix = "" *)
     interface XilinxCmacController cmacController;
-    interface RawAxi4LiteSlave#(ADDR, XdmaAxiLiteData, XdmaAxiLiteStrb) cntrlAxil;
-    interface XdmaChannel#(DATA, XdmaAxisTkeep, XdmaAxisTuser) xdmaChannel;
+    `ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
+        interface RawAxi4LiteSlave#(ADDR, XdmaAxiLiteData, XdmaAxiLiteStrb) cntrlAxil;
+        interface XdmaChannel#(DATA, XdmaAxisTkeep, XdmaAxisTuser) xdmaChannel;
+    `elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
+        (* prefix = "" *)       interface   RawXilinxPcieIp         rawPcie;
+        (* prefix = "" *)       method      TlpSizeCfg              tlpSizeDebugPort;
+        (* prefix = "" *)       method      Bool                    sys_reset;
+    `endif
 endinterface
 
 (* synthesize *)
@@ -63,10 +75,15 @@ module mkBsvTop(
         (* reset = "cmac_tx_resetn" *) Reset cmacTxReset,
     BsvTop ifc);
 
-    BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(cmacRxTxClk, cmacRxReset, cmacTxReset);
+    `ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
+        BsvTopOnlyHardIpWithXDMA                bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIpWithXDMA(cmacRxTxClk, cmacRxReset, cmacTxReset);
+    `elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
+        BsvTopOnlyHardIpWithXilBDMA             bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIpWithXilBDMA(cmacRxTxClk, cmacRxReset, cmacTxReset);
+    `endif
+
     BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
 
-    mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfc, bsvTopOnlyHardIp.dmaSlavePipeIfc);
+    mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.dmaSlavePipeIfcVec);
     mkConnection(bsvTopOnlyHardIp.dmaMasterPipeIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
 
     mkConnection(bsvTopOnlyHardIp.macStreamBiDirPipe.dataPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfc.dataPipeIn);
@@ -75,126 +92,249 @@ module mkBsvTop(
 
 
     interface cmacController = bsvTopOnlyHardIp.cmacController;
-    interface cntrlAxil = bsvTopOnlyHardIp.cntrlAxil;
-    interface xdmaChannel = bsvTopOnlyHardIp.xdmaChannel;
+    `ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
+        interface cntrlAxil = bsvTopOnlyHardIp.cntrlAxil;
+        interface xdmaChannel = bsvTopOnlyHardIp.xdmaChannel;
+    `elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
+        interface  rawPcie          = bsvTopOnlyHardIp.rawPcie;
+        method     tlpSizeDebugPort = bsvTopOnlyHardIp.tlpSizeDebugPort;
+        method     sys_reset        = bsvTopOnlyHardIp.sys_reset;
+    `endif
 endmodule
 
 
 
+`ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
+    interface BsvTopOnlyHardIpWithXDMA;
+        // to verilog side ===================================================
 
-interface BsvTopOnlyHardIp;
-    // to verilog side ===================================================
+        // Interface with Hard IP
+        (* prefix = "" *)
+        interface XilinxCmacController cmacController;
+        interface RawAxi4LiteSlave#(ADDR, XdmaAxiLiteData, XdmaAxiLiteStrb) cntrlAxil;
+        interface XdmaChannel#(DATA, XdmaAxisTkeep, XdmaAxisTuser) xdmaChannel;
 
-    // Interface with Hard IP
-    (* prefix = "" *)
-    interface XilinxCmacController cmacController;
-    interface RawAxi4LiteSlave#(ADDR, XdmaAxiLiteData, XdmaAxiLiteStrb) cntrlAxil;
-    interface XdmaChannel#(DATA, XdmaAxisTkeep, XdmaAxisTuser) xdmaChannel;
+        // to bsv side =======================================================
 
-    // to bsv side =======================================================
+        interface Vector#(NUMERIC_TYPE_TWO, IoChannelMemorySlavePipeB0In)   dmaSlavePipeIfcVec;
+        interface IoChannelMemoryMasterPipe                                 dmaMasterPipeIfc;
 
-    interface IoChannelMemorySlavePipeB0In                  dmaSlavePipeIfc;
-    interface IoChannelMemoryMasterPipe                     dmaMasterPipeIfc;
-
-    interface IoChannelBiDirStreamNoMetaPipeB0In            macStreamBiDirPipe;
-    
-endinterface
-
-(* synthesize *)
-module mkBsvTopOnlyHardIp#(
-        Clock cmacRxTxClk,
-        Reset cmacRxReset,
-        Reset cmacTxReset
-    )(BsvTopOnlyHardIp);
-
-
-    SyncFIFOIfc#(CmacAxiStream) axiStream512TxSyncFifo <- mkSyncFIFOFromCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk);
-    SyncFIFOIfc#(CmacAxiStream) axiStream512RxSyncFifo <- mkSyncFIFOToCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk, cmacRxReset);
-
-    Bool isEnableRsFec = True;
-    Bool isEnableFlowControl = False;
-    Bool isCmacTxWaitRxAligned = True;
-
-    FIFOF#(FlowControlReqVec) dummyTxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacTxReset);
-    FIFOF#(FlowControlReqVec) dummyRxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxReset);
-
-    let xilinxCmacCtrl <- mkXilinxCmacController(
-        isEnableRsFec,
-        isEnableFlowControl,
-        isCmacTxWaitRxAligned,
-        toPipeOutSync(axiStream512TxSyncFifo),
-        toPipeInSync(axiStream512RxSyncFifo),
-        toPipeOut(dummyTxFlowCtrlReqVecQueue),
-        toPipeIn(dummyRxFlowCtrlReqVecQueue),
-        cmacRxReset,
-        cmacTxReset,
-        clocked_by cmacRxTxClk
-    );
-
-    
-    PipeInAdapterB0#(IoChannelEthDataStream) ethTxDataPipeInQueue <- mkPipeInAdapterB0;
-    FIFOF#(IoChannelEthDataStream) ethRxDataPipeOutQueue <- mkFIFOF;
-
-    Reg#(Bool) isEthRxForwardFirstBeatReg <- mkReg(True);
-
-    let xilinxXdmaStreamCtrl <- mkXdmaWrapper;
-    let xilinxXdmaAxiLiteCtrl <- mkXdmaAxiLiteBridgeWrapper;
-
-    Probe#(IoChannelEthDataStream) ethTxDataProbe <- mkProbe;
-    Probe#(IoChannelEthDataStream) ethRxDataProbe <- mkProbe;
-
-    // rule forwardEthRxStream;
-    //     let axiDs = axiStream512RxSyncFifo.first;
-    //     axiStream512RxSyncFifo.deq;
-
-    //     let ds = IoChannelEthDataStream {
-    //         data: axiDs.axisData,
-    //         startByteIdx: 0,
-    //         byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
-    //         isFirst: isEthRxForwardFirstBeatReg,
-    //         isLast: axiDs.axisLast
-    //     };
-    //     ethRxDataPipeOutQueue.enq(ds);
-    //     isEthRxForwardFirstBeatReg <= axiDs.axisLast;
-    //     ethRxDataProbe <= ds;
-    // endrule
-
-    // rule forwardEthTxStream;
-    //     let ds = ethTxDataPipeInQueue.first;
-    //     ethTxDataPipeInQueue.deq;
-
-    //     let axiDs = AxiStream {
-    //         axisData: ds.data,
-    //         axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
-    //         axisLast: ds.isLast,
-    //         axisUser: 0
-    //     };
-    //     axiStream512TxSyncFifo.enq(axiDs);
-    //     ethTxDataProbe <= ethTxDataPipeInQueue.first;
-    // endrule
-
-    
-
-    rule loopbackForTest;
-        ethRxDataPipeOutQueue.enq(ethTxDataPipeInQueue.first);
-        ethTxDataPipeInQueue.deq;
-        ethTxDataProbe <= ethTxDataPipeInQueue.first;
-    endrule
-
-    interface cmacController = xilinxCmacCtrl;
-    interface cntrlAxil = xilinxXdmaAxiLiteCtrl.cntrlAxil;
-    interface xdmaChannel = xilinxXdmaStreamCtrl.xdmaChannel;
-
-
-    interface dmaSlavePipeIfc = xilinxXdmaStreamCtrl.dmaSlavePipeIfc;
-    interface dmaMasterPipeIfc = xilinxXdmaAxiLiteCtrl.dmaMasterPipeIfc;
-    interface IoChannelBiDirStreamNoMetaPipeB0In           macStreamBiDirPipe;
-        interface dataPipeIn = toPipeInB0(ethTxDataPipeInQueue);
-        interface dataPipeOut = toPipeOut(ethRxDataPipeOutQueue);
+        interface IoChannelBiDirStreamNoMetaPipeB0In                        macStreamBiDirPipe;
+        
     endinterface
-endmodule
+
+    (* synthesize *)
+    module mkBsvTopOnlyHardIpWithXDMA#(
+            Clock cmacRxTxClk,
+            Reset cmacRxReset,
+            Reset cmacTxReset
+        )(BsvTopOnlyHardIpWithXDMA);
+
+        Vector#(NUMERIC_TYPE_TWO, IoChannelMemorySlavePipeB0In)   dmaSlavePipeIfcVecInst = newVector;
+
+        SyncFIFOIfc#(CmacAxiStream) axiStream512TxSyncFifo <- mkSyncFIFOFromCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk);
+        SyncFIFOIfc#(CmacAxiStream) axiStream512RxSyncFifo <- mkSyncFIFOToCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk, cmacRxReset);
+
+        Bool isEnableRsFec = True;
+        Bool isEnableFlowControl = False;
+        Bool isCmacTxWaitRxAligned = True;
+
+        FIFOF#(FlowControlReqVec) dummyTxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacTxReset);
+        FIFOF#(FlowControlReqVec) dummyRxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxReset);
+
+        let xilinxCmacCtrl <- mkXilinxCmacController(
+            isEnableRsFec,
+            isEnableFlowControl,
+            isCmacTxWaitRxAligned,
+            toPipeOutSync(axiStream512TxSyncFifo),
+            toPipeInSync(axiStream512RxSyncFifo),
+            toPipeOut(dummyTxFlowCtrlReqVecQueue),
+            toPipeIn(dummyRxFlowCtrlReqVecQueue),
+            cmacRxReset,
+            cmacTxReset,
+            clocked_by cmacRxTxClk
+        );
+
+        
+        PipeInAdapterB0#(IoChannelEthDataStream) ethTxDataPipeInQueue <- mkPipeInAdapterB0;
+        FIFOF#(IoChannelEthDataStream) ethRxDataPipeOutQueue <- mkFIFOF;
+
+        Reg#(Bool) isEthRxForwardFirstBeatReg <- mkReg(True);
+
+        let xilinxXdmaStreamCtrl <- mkXdmaWrapper;
+        let xilinxXdmaAxiLiteCtrl <- mkXdmaAxiLiteBridgeWrapper;
+
+        dmaSlavePipeIfcVecInst[0] = xilinxXdmaStreamCtrl.dmaSlavePipeIfc;
+        // dmaSlavePipeIfcVecInst[1] = not used;
+
+        Probe#(IoChannelEthDataStream) ethTxDataProbe <- mkProbe;
+        Probe#(IoChannelEthDataStream) ethRxDataProbe <- mkProbe;
+
+        // rule forwardEthRxStream;
+        //     let axiDs = axiStream512RxSyncFifo.first;
+        //     axiStream512RxSyncFifo.deq;
+
+        //     let ds = IoChannelEthDataStream {
+        //         data: axiDs.axisData,
+        //         startByteIdx: 0,
+        //         byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
+        //         isFirst: isEthRxForwardFirstBeatReg,
+        //         isLast: axiDs.axisLast
+        //     };
+        //     ethRxDataPipeOutQueue.enq(ds);
+        //     isEthRxForwardFirstBeatReg <= axiDs.axisLast;
+        //     ethRxDataProbe <= ds;
+        // endrule
+
+        // rule forwardEthTxStream;
+        //     let ds = ethTxDataPipeInQueue.first;
+        //     ethTxDataPipeInQueue.deq;
+
+        //     let axiDs = AxiStream {
+        //         axisData: ds.data,
+        //         axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
+        //         axisLast: ds.isLast,
+        //         axisUser: 0
+        //     };
+        //     axiStream512TxSyncFifo.enq(axiDs);
+        //     ethTxDataProbe <= ethTxDataPipeInQueue.first;
+        // endrule
+
+        
+
+        rule loopbackForTest;
+            ethRxDataPipeOutQueue.enq(ethTxDataPipeInQueue.first);
+            ethTxDataPipeInQueue.deq;
+            ethTxDataProbe <= ethTxDataPipeInQueue.first;
+        endrule
+
+        interface cmacController = xilinxCmacCtrl;
+        interface cntrlAxil = xilinxXdmaAxiLiteCtrl.cntrlAxil;
+        interface xdmaChannel = xilinxXdmaStreamCtrl.xdmaChannel;
 
 
+        interface dmaSlavePipeIfcVec = dmaSlavePipeIfcVecInst;
+        interface dmaMasterPipeIfc = xilinxXdmaAxiLiteCtrl.dmaMasterPipeIfc;
+        interface IoChannelBiDirStreamNoMetaPipeB0In           macStreamBiDirPipe;
+            interface dataPipeIn = toPipeInB0(ethTxDataPipeInQueue);
+            interface dataPipeOut = toPipeOut(ethRxDataPipeOutQueue);
+        endinterface
+    endmodule
+`elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
+
+    interface BsvTopOnlyHardIpWithXilBDMA;
+        // to verilog side ===================================================
+
+        // Interface with Hard IP
+        (* prefix = "" *)       interface   XilinxCmacController    cmacController;
+        (* prefix = "" *)       interface   RawXilinxPcieIp         rawPcie;
+        (* prefix = "" *)       method      TlpSizeCfg              tlpSizeDebugPort;
+        (* prefix = "" *)       method      Bool                    sys_reset;
+
+        // to bsv side =======================================================
+
+        interface Vector#(NUMERIC_TYPE_TWO, IoChannelMemorySlavePipeB0In)   dmaSlavePipeIfcVec;
+        interface IoChannelMemoryMasterPipe                                 dmaMasterPipeIfc;
+
+        interface IoChannelBiDirStreamNoMetaPipeB0In            macStreamBiDirPipe;
+        
+    endinterface
+
+    (* synthesize *)
+    module mkBsvTopOnlyHardIpWithXilBDMA#(
+            Clock cmacRxTxClk,
+            Reset cmacRxReset,
+            Reset cmacTxReset
+        )(BsvTopOnlyHardIpWithXilBDMA);
+
+
+        SyncFIFOIfc#(CmacAxiStream) axiStream512TxSyncFifo <- mkSyncFIFOFromCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk);
+        SyncFIFOIfc#(CmacAxiStream) axiStream512RxSyncFifo <- mkSyncFIFOToCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk, cmacRxReset);
+
+        Bool isEnableRsFec = True;
+        Bool isEnableFlowControl = False;
+        Bool isCmacTxWaitRxAligned = True;
+
+        FIFOF#(FlowControlReqVec) dummyTxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacTxReset);
+        FIFOF#(FlowControlReqVec) dummyRxFlowCtrlReqVecQueue <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxReset);
+
+        let xilinxCmacCtrl <- mkXilinxCmacController(
+            isEnableRsFec,
+            isEnableFlowControl,
+            isCmacTxWaitRxAligned,
+            toPipeOutSync(axiStream512TxSyncFifo),
+            toPipeInSync(axiStream512RxSyncFifo),
+            toPipeOut(dummyTxFlowCtrlReqVecQueue),
+            toPipeIn(dummyRxFlowCtrlReqVecQueue),
+            cmacRxReset,
+            cmacTxReset,
+            clocked_by cmacRxTxClk
+        );
+
+        
+        PipeInAdapterB0#(IoChannelEthDataStream) ethTxDataPipeInQueue <- mkPipeInAdapterB0;
+        FIFOF#(IoChannelEthDataStream) ethRxDataPipeOutQueue <- mkFIFOF;
+
+        Reg#(Bool) isEthRxForwardFirstBeatReg <- mkReg(True);
+
+        let xilBdmaController <- mkXilBdmacWrapper;
+
+        Probe#(IoChannelEthDataStream) ethTxDataProbe <- mkProbe;
+        Probe#(IoChannelEthDataStream) ethRxDataProbe <- mkProbe;
+
+        // rule forwardEthRxStream;
+        //     let axiDs = axiStream512RxSyncFifo.first;
+        //     axiStream512RxSyncFifo.deq;
+
+        //     let ds = IoChannelEthDataStream {
+        //         data: axiDs.axisData,
+        //         startByteIdx: 0,
+        //         byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
+        //         isFirst: isEthRxForwardFirstBeatReg,
+        //         isLast: axiDs.axisLast
+        //     };
+        //     ethRxDataPipeOutQueue.enq(ds);
+        //     isEthRxForwardFirstBeatReg <= axiDs.axisLast;
+        //     ethRxDataProbe <= ds;
+        // endrule
+
+        // rule forwardEthTxStream;
+        //     let ds = ethTxDataPipeInQueue.first;
+        //     ethTxDataPipeInQueue.deq;
+
+        //     let axiDs = AxiStream {
+        //         axisData: ds.data,
+        //         axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
+        //         axisLast: ds.isLast,
+        //         axisUser: 0
+        //     };
+        //     axiStream512TxSyncFifo.enq(axiDs);
+        //     ethTxDataProbe <= ethTxDataPipeInQueue.first;
+        // endrule
+
+        
+
+        rule loopbackForTest;
+            ethRxDataPipeOutQueue.enq(ethTxDataPipeInQueue.first);
+            ethTxDataPipeInQueue.deq;
+            ethTxDataProbe <= ethTxDataPipeInQueue.first;
+        endrule
+
+        interface cmacController = xilinxCmacCtrl;    
+
+        interface   rawPcie             = xilBdmaController.rawPcie;
+        method      tlpSizeDebugPort    = xilBdmaController.tlpSizeDebugPort;
+        method      sys_reset           = xilBdmaController.sys_reset;
+
+        interface dmaSlavePipeIfcVec    = xilBdmaController.dmaSlavePipeIfcVec;
+        interface dmaMasterPipeIfc      = xilBdmaController.dmaMasterPipeIfc;
+
+        interface IoChannelBiDirStreamNoMetaPipeB0In           macStreamBiDirPipe;
+            interface dataPipeIn = toPipeInB0(ethTxDataPipeInQueue);
+            interface dataPipeOut = toPipeOut(ethRxDataPipeOutQueue);
+        endinterface
+    endmodule
+`endif
 
 
 typedef DtldStreamArbiterSlave#(NUMERIC_TYPE_SIX, DATA, ADDR, Length) IoChannelSixChannelDmaMux;
@@ -248,7 +388,7 @@ endmodule
 
 interface BsvTopWithoutHardIpInstance;
     interface IoChannelMemorySlavePipe dmaSlavePipeIfc;
-    interface IoChannelMemoryMasterPipeB0In   dmaMasterPipeIfc;
+    interface Vector#(NUMERIC_TYPE_TWO, IoChannelMemoryMasterPipeB0In)   dmaMasterPipeIfcVec;
     interface IoChannelBiDirStreamNoMetaPipeB0In  qpEthDataStreamIfc;
 endinterface
 
@@ -256,12 +396,14 @@ endinterface
 
 (* synthesize *)
 module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
+
+    Vector#(NUMERIC_TYPE_TWO, IoChannelMemoryMasterPipeB0In)   dmaMasterPipeIfcVecInst = newVector;
+
     let qpMrPgtQpc <- mkQpMrPgtQpc;
     let ringbufAndDescriptorHandler <- mkRingbufAndDescriptorHandler;
     mkConnection(ringbufAndDescriptorHandler.wqePipeOut, qpMrPgtQpc.wqePipeIn);  // already Nr
 
     TopLevelDmaChannelMux topLevelDmaChannelMux <- mkTopLevelDmaChannelMux;
-    
 
     let csrRootConnector <- mkCsrRootConnector;
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
@@ -287,9 +429,16 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
     mkConnection(qpMrPgtQpc.csrUpStreamPort, csrNode.downStreamPortsVec[1]);
 
+    `ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
+        mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfc, topLevelDmaChannelMux.qpDmaRequestSlaveIfc);  // already Nr
+        dmaMasterPipeIfcVecInst[0] = topLevelDmaChannelMux.dmaMasterPipeIfc;
+        // dmaMasterPipeIfcVecInst[1] = not used;
+    `elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
+        dmaMasterPipeIfcVecInst[0] = qpMrPgtQpc.qpDmaRequestMasterIfc;
+        dmaMasterPipeIfcVecInst[1] = topLevelDmaChannelMux.dmaMasterPipeIfc;
+    `endif
 
     mkConnection(qpMrPgtQpc.pgtUpdateDmaMasterPipe, topLevelDmaChannelMux.pgtUpdateDmaSlavePipe);    // already Nr
-    mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfc, topLevelDmaChannelMux.qpDmaRequestSlaveIfc);  // already Nr
     mkConnection(ringbufAndDescriptorHandler.qpRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.qpRingbufDmaSlavePipeIfc); // already Nr
     mkConnection(ringbufAndDescriptorHandler.cmdQueueRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.cmdQueueRingbufDmaSlavePipeIfc);  // already Nr
     mkConnection(ringbufAndDescriptorHandler.simpleNicRingbufDmaMasterPipeIfc, topLevelDmaChannelMux.simpleNicRingbufDmaSlavePipeIfc);  // already Nr
@@ -308,7 +457,7 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
  
 
     interface dmaSlavePipeIfc = csrRootConnector.dmaSidePipeIfc;
-    interface dmaMasterPipeIfc = topLevelDmaChannelMux.dmaMasterPipeIfc;
+    interface dmaMasterPipeIfcVec = dmaMasterPipeIfcVecInst;
     interface qpEthDataStreamIfc = qpMrPgtQpc.qpEthDataStreamIfc;
 endmodule
 

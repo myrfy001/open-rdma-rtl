@@ -283,7 +283,6 @@ module mkXdmaAxiLiteBridgeWrapper(XdmaAxiLiteBridgeWrapper);
 
     rule handleRead;
         cntrlRdAddrFifo.deq;
-
         readMetaPipeOutQueue.enq(IoChannelMemoryAccessMeta {
             addr: unpack(zeroExtend(cntrlRdAddrFifo.first.arAddr)),
             totalLen: fromInteger(valueOf(SizeOf#(XdmaAxiLiteStrb)))

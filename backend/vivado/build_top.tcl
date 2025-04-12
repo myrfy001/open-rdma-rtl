@@ -6,6 +6,9 @@ set top_module 				$::env(TOP)
 set rtl_dirs 				$::env(RTL_DIRS)
 set sdc_dirs 				$::env(VIVADO_SDC_DIRS)
 
+set eth_ip_type             $::env(BLUE_RDMA_ETH_IP_TYPE)
+set dma_ip_type             $::env(BLUE_RDMA_DMA_IP_TYPE)
+
 set part $::env(VIVADO_PART)
 set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
 
@@ -86,7 +89,7 @@ proc createSourceSnapshot {vivado_work_dir rtl_dir_list sdc_dir_list vivado_back
 }
 
 proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir} {
-    global part device
+    global part device 
     set_part $device
     set_param general.maxthreads 24
 
@@ -105,8 +108,8 @@ proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir
 
 
 proc runSynthDesign {args} {
-	global vivado_work_dir top_module
-	synth_design -top $top_module -flatten_hierarchy none
+	global vivado_work_dir top_module eth_ip_type dma_ip_type
+	synth_design -top $top_module -flatten_hierarchy none -verilog_define "BLUE_RDMA_ETH_IP_TYPE_${eth_ip_type} BLUE_RDMA_DMA_IP_TYPE_${dma_ip_type}"
 
     source batch_insert_ila.tcl
     batch_insert_ila 256

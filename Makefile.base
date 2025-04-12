@@ -23,6 +23,25 @@ WORKDIR = -fdir $(abspath .)
 BSVSRCDIR = -p +:$(abspath ../src) \
 			-p +:$(abspath ../test)
 
+
+BLUE_RDMA_DMA_IP_TYPE ?= XILINX_BLUE_DMAC
+BLUE_RDMA_ETH_IP_TYPE ?= XILINX_CMAC
+
+ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_XDMA)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/xdma)
+else ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_BLUE_DMAC)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac/blue-dmac/src)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac/blue-dmac/lib/blue_wrapper/src)
+endif
+
+ifeq ($(BLUE_RDMA_ETH_IP_TYPE), XILINX_CMAC)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/cmac)
+endif
+
+MISCFLAGS += -D BLUE_RDMA_DMA_IP_TYPE_$(BLUE_RDMA_DMA_IP_TYPE)
+MISCFLAGS += -D BLUE_RDMA_ETH_IP_TYPE_$(BLUE_RDMA_ETH_IP_TYPE)
+
 BSV_C_EXT_FILES += \
 	$(abspath ../src)/MockHost.c
 
@@ -35,9 +54,5 @@ ifeq ($(BLUERDMA_BUILD_TARGET), XILINX_100G)
 endif
 
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)
-MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 \
-	-D IS_SUPPORT_RDMA=True \
-	-D IS_250MHZ_512BITS=True \
-	-D VIVADO \
-	-D DO_BANDWIDTH_TEST=True 
+MISCFLAGS += -print-flags -show-timestamps -show-version -steps 6000000
 RUNTIMEFLAGS = +RTS -K4095M -RTS
