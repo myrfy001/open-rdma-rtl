@@ -33,6 +33,9 @@ ifeq ($(BLUERDMA_BUILD_TARGET), XILINX_100G)
 	RTL_DIRS += $(BACKENDDIR)/vivado/rtl/*.v
 endif
 
+ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_BLUE_DMAC)
+	VIVADO_SDC_DIRS += $(VIVADO_BACKEND_DIR)/sdc/xil_blue_dmac/*.sdc
+endif
 
 # TARGETFILE ?= ../test/TestFullyPipelinedUpdateBram.bsv
 # BSV_TOP_MODULE ?= mkTestFullyPipelinedBackendTimingTest

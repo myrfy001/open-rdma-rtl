@@ -271,10 +271,10 @@ module bluerdma_top#(
     wire            gt_usr_tx_reset;
     wire            gt_usr_rx_reset;
 
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_rx_axis_tvalid;
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_rx_axis_tready;
+    wire            gt_rx_axis_tvalid;
+    wire            gt_rx_axis_tready;
     wire            gt_rx_axis_tlast;
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_rx_axis_tdata;
+    wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_rx_axis_tdata;
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_rx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_rx_axis_tuser;
 
@@ -312,15 +312,15 @@ module bluerdma_top#(
     wire [8:0]      gt_ctl_rx_pause_ack;
     wire [8:0]      gt_ctl_rx_pause_enable;
 
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tready;
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tvalid;
+     wire            gt_tx_axis_tready;
+     wire            gt_tx_axis_tvalid;
     wire            gt_tx_axis_tlast;
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_tx_axis_tdata;
+     wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_tx_axis_tdata;
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_tx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_tx_axis_tuser;
 
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_tx_ovfout;
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire            gt_tx_unfout;
+    wire            gt_tx_ovfout;
+    wire            gt_tx_unfout;
     wire            gt_ctl_tx_enable;
     wire            gt_ctl_tx_test_pattern;
     wire            gt_ctl_tx_send_idle;
@@ -348,8 +348,8 @@ module bluerdma_top#(
     wire            gt_ctl_rx_rsfec_enable_indication;
 
     // CMAC CTRL STATE
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire [3:0]      cmac_ctrl_tx_state;
-    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)wire [3:0]      cmac_ctrl_rx_state;
+    wire [3:0]      cmac_ctrl_tx_state;
+    wire [3:0]      cmac_ctrl_rx_state;
     wire            is_cmac_rx_aligned;
 
 
