@@ -83,7 +83,31 @@ module mkBsvTop(
 
     BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
 
-    mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.dmaSlavePipeIfcVec);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(IoChannelMemoryAccessMeta)) slrCrossFifoDmacHipSideReadMetaVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(IoChannelMemoryAccessDataStream)) slrCrossFifoDmacUserLogicSideReadDataVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(IoChannelMemoryAccessMeta)) slrCrossFifoDmacHipSideWriteMetaVec <- replicateM(mkFIFOF);
+    Vector#(NUMERIC_TYPE_TWO, FIFOF#(IoChannelMemoryAccessDataStream)) slrCrossFifoDmacHipSideWriteDataVec <- replicateM(mkFIFOF);
+
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(NUMERIC_TYPE_TWO); channelIdx = channelIdx + 1) begin
+        // read meta
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[channelIdx].readPipeIfc.readMetaPipeOut, toPipeIn(slrCrossFifoDmacHipSideReadMetaVec[channelIdx]));
+        mkConnection(toPipeOut(slrCrossFifoDmacHipSideReadMetaVec[channelIdx]), bsvTopOnlyHardIp.dmaSlavePipeIfcVec[channelIdx].readPipeIfc.readMetaPipeIn);
+        // read data
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[channelIdx].readPipeIfc.readDataPipeIn, toPipeOut(slrCrossFifoDmacUserLogicSideReadDataVec[channelIdx]));
+        mkConnection(toPipeIn(slrCrossFifoDmacUserLogicSideReadDataVec[channelIdx]), bsvTopOnlyHardIp.dmaSlavePipeIfcVec[channelIdx].readPipeIfc.readDataPipeOut);
+
+
+        // write meta
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[channelIdx].writePipeIfc.writeMetaPipeOut, toPipeIn(slrCrossFifoDmacHipSideWriteMetaVec[channelIdx]));
+        mkConnection(toPipeOut(slrCrossFifoDmacHipSideWriteMetaVec[channelIdx]), bsvTopOnlyHardIp.dmaSlavePipeIfcVec[channelIdx].writePipeIfc.writeMetaPipeIn);
+        // write data
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[channelIdx].writePipeIfc.writeDataPipeOut, toPipeIn(slrCrossFifoDmacHipSideWriteDataVec[channelIdx]));
+        mkConnection(toPipeOut(slrCrossFifoDmacHipSideWriteDataVec[channelIdx]), bsvTopOnlyHardIp.dmaSlavePipeIfcVec[channelIdx].writePipeIfc.writeDataPipeIn);
+    end
+
+    
+
     mkConnection(bsvTopOnlyHardIp.dmaMasterPipeIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
 
     mkConnection(bsvTopOnlyHardIp.macStreamBiDirPipe.dataPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfc.dataPipeIn);
@@ -282,43 +306,43 @@ endmodule
         Probe#(IoChannelEthDataStream) ethTxDataProbe <- mkProbe;
         Probe#(IoChannelEthDataStream) ethRxDataProbe <- mkProbe;
 
-        // rule forwardEthRxStream;
-        //     let axiDs = axiStream512RxSyncFifo.first;
-        //     axiStream512RxSyncFifo.deq;
+        rule forwardEthRxStream;
+            let axiDs = axiStream512RxSyncFifo.first;
+            axiStream512RxSyncFifo.deq;
 
-        //     let ds = IoChannelEthDataStream {
-        //         data: axiDs.axisData,
-        //         startByteIdx: 0,
-        //         byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
-        //         isFirst: isEthRxForwardFirstBeatReg,
-        //         isLast: axiDs.axisLast
-        //     };
-        //     ethRxDataPipeOutQueue.enq(ds);
-        //     isEthRxForwardFirstBeatReg <= axiDs.axisLast;
-        //     ethRxDataProbe <= ds;
-        // endrule
+            let ds = IoChannelEthDataStream {
+                data: axiDs.axisData,
+                startByteIdx: 0,
+                byteNum: axiDs.axisLast ? unpack(pack(countZerosLSB(~axiDs.axisKeep))) : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)),
+                isFirst: isEthRxForwardFirstBeatReg,
+                isLast: axiDs.axisLast
+            };
+            ethRxDataPipeOutQueue.enq(ds);
+            isEthRxForwardFirstBeatReg <= axiDs.axisLast;
+            ethRxDataProbe <= ds;
+        endrule
 
-        // rule forwardEthTxStream;
-        //     let ds = ethTxDataPipeInQueue.first;
-        //     ethTxDataPipeInQueue.deq;
+        rule forwardEthTxStream;
+            let ds = ethTxDataPipeInQueue.first;
+            ethTxDataPipeInQueue.deq;
 
-        //     let axiDs = AxiStream {
-        //         axisData: ds.data,
-        //         axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
-        //         axisLast: ds.isLast,
-        //         axisUser: 0
-        //     };
-        //     axiStream512TxSyncFifo.enq(axiDs);
-        //     ethTxDataProbe <= ethTxDataPipeInQueue.first;
-        // endrule
+            let axiDs = AxiStream {
+                axisData: ds.data,
+                axisKeep: ds.isLast ? (1 << ds.byteNum) - 1 : maxBound,
+                axisLast: ds.isLast,
+                axisUser: 0
+            };
+            axiStream512TxSyncFifo.enq(axiDs);
+            ethTxDataProbe <= ethTxDataPipeInQueue.first;
+        endrule
 
         
 
-        rule loopbackForTest;
-            ethRxDataPipeOutQueue.enq(ethTxDataPipeInQueue.first);
-            ethTxDataPipeInQueue.deq;
-            ethTxDataProbe <= ethTxDataPipeInQueue.first;
-        endrule
+        // rule loopbackForTest;
+        //     ethRxDataPipeOutQueue.enq(ethTxDataPipeInQueue.first);
+        //     ethTxDataPipeInQueue.deq;
+        //     ethTxDataProbe <= ethTxDataPipeInQueue.first;
+        // endrule
 
         interface cmacController = xilinxCmacCtrl;    
 
@@ -434,8 +458,11 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
         dmaMasterPipeIfcVecInst[0] = topLevelDmaChannelMux.dmaMasterPipeIfc;
         // dmaMasterPipeIfcVecInst[1] = not used;
     `elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
-        dmaMasterPipeIfcVecInst[0] = qpMrPgtQpc.qpDmaRequestMasterIfc;
-        dmaMasterPipeIfcVecInst[1] = topLevelDmaChannelMux.dmaMasterPipeIfc;
+        // dmaMasterPipeIfcVecInst[0] = qpMrPgtQpc.qpDmaRequestMasterIfc;
+        // dmaMasterPipeIfcVecInst[1] = topLevelDmaChannelMux.dmaMasterPipeIfc;
+
+        mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfc, topLevelDmaChannelMux.qpDmaRequestSlaveIfc);  // already Nr
+        dmaMasterPipeIfcVecInst[0] = topLevelDmaChannelMux.dmaMasterPipeIfc;
     `endif
 
     mkConnection(qpMrPgtQpc.pgtUpdateDmaMasterPipe, topLevelDmaChannelMux.pgtUpdateDmaSlavePipe);    // already Nr

@@ -132,7 +132,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
         descReadProxy.descFragsPipeOut.deq;
 
         RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
-        RingbufDescCommonHead descComHdr = unpack(truncate(rawDesc >> 240));
+        RingbufDescCommonHead descComHdr = unpack(truncate(rawDesc >> valueOf(BLUERDMA_DESCRIPTOR_COMMON_HEADER_START_POS)));
 
         case (unpack(truncate(descComHdr.opCode)))
             CmdQueueOpcodeUpdateMrTable, CmdQueueOpcodeUpdatePGT: begin
@@ -197,6 +197,9 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
                 descWriteProxy.descFragsPipeIn.enq(tuple2(respRawDescSeg, 0));
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
+            end
+            default: begin
+                immFail("unsupported Descriptor", $format("descComHdr=", fshow(descComHdr), ", rawDesc=", fshow(rawDesc)));
             end
         endcase
 
@@ -285,7 +288,7 @@ module mkDescriptorMux(DescriptorMux);
         // end
 
         if (rawDescMaybe matches tagged Valid .rawDesc) begin
-            RingbufDescCommonHead descHeader = unpack(truncate(rawDesc >> 240));
+            RingbufDescCommonHead descHeader = unpack(truncate(rawDesc >> valueOf(BLUERDMA_DESCRIPTOR_COMMON_HEADER_START_POS)));
 
             immAssert(
                 descHeader.valid,
@@ -309,7 +312,7 @@ module mkDescriptorMux(DescriptorMux);
         let rawDesc = descPipeInQueueVec[currentForwardChannelReg].first;
         descPipeInQueueVec[currentForwardChannelReg].deq;
 
-        RingbufDescCommonHead descHeader = unpack(truncate(rawDesc >> 240));
+        RingbufDescCommonHead descHeader = unpack(truncate(rawDesc >> valueOf(BLUERDMA_DESCRIPTOR_COMMON_HEADER_START_POS)));
         immAssert(
             descHeader.valid,
             "desc should be valid",

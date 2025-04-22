@@ -28,6 +28,7 @@ create_clock -name board_sys_clk -period 10 [get_ports board_sys_clk_p]
 # set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {bsv_userlogic_top_inst}]
 # set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -hierarchical "udp*"]
 set_property USER_SLR_ASSIGNMENT SLR3 [get_cells -regexp -hierarchical bsv_top.bsvTopOnlyHardIp.xilinxCmacCtrl_txController_cmacAxiStreamOutQueue.*]
+# set_property USER_SLR_ASSIGNMENT SLR1 [get_cells -regexp -hierarchical bsv_top.bsvTopOnlyHardIp.xilBdmaController.*]
 # set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -regexp -hierarchical bsv_top.bsvTopWithoutHardIpInstance.*]
 
 # # very tricky one

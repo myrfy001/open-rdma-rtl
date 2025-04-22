@@ -682,7 +682,7 @@ module mkRingbufDescriptorReadProxy(RingbufDescriptorReadProxy#(n_desc));
         let rawDesc = ringbufQ.first;
         ringbufQ.deq;
         segBuf[0] <= rawDesc;
-        RingbufDescCommonHead head = unpack(truncate(rawDesc >> 240));
+        RingbufDescCommonHead head = unpack(truncate(rawDesc >> valueOf(BLUERDMA_DESCRIPTOR_COMMON_HEADER_START_POS)));
 
         let hasMoreSegs = head.hasNextFrag;
         if (!hasMoreSegs) begin

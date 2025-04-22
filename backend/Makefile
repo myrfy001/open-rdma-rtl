@@ -25,12 +25,14 @@ RUNTOPHASE ?= all # synth place route all
 DEVICE ?= AGIB027R29B1E2V
 FAMILY ?= Agilex 7
 
-VIVADO_PART ?= xcvu13p-fhgb2104-2-i
+VIVADO_PART ?= xcvu13p-fhgb2104-2L-e
+
 
 
 ifeq ($(BLUERDMA_BUILD_TARGET), XILINX_100G)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx)
 	RTL_DIRS += $(BACKENDDIR)/vivado/rtl/*.v
+	VIVADO_SDC_DIRS += $(VIVADO_BACKEND_DIR)/sdc/xilinx_100g/*.sdc
 endif
 
 ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_BLUE_DMAC)

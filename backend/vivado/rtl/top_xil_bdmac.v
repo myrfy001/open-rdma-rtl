@@ -93,36 +93,36 @@ module bluerdma_top#(
    wire                                       user_clk_250;
    wire                                       user_reset;
  
-  (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       s_axis_rq_tlast;
+   wire                                       s_axis_rq_tlast;
    (*mark_debug, mark_debug_clock="user_clk_250" *)wire                 [C_DATA_WIDTH-1:0]    s_axis_rq_tdata;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire          [AXI4_RQ_TUSER_WIDTH-1:0]    s_axis_rq_tuser;
+   wire          [AXI4_RQ_TUSER_WIDTH-1:0]    s_axis_rq_tuser;
    wire                   [KEEP_WIDTH-1:0]    s_axis_rq_tkeep;
    (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [3:0]    s_axis_rq_tready;
    (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       s_axis_rq_tvalid;
  
    (*mark_debug, mark_debug_clock="user_clk_250" *)wire                 [C_DATA_WIDTH-1:0]    m_axis_rc_tdata;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire          [AXI4_RC_TUSER_WIDTH-1:0]    m_axis_rc_tuser;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       m_axis_rc_tlast;
+   wire          [AXI4_RC_TUSER_WIDTH-1:0]    m_axis_rc_tuser;
+   wire                                       m_axis_rc_tlast;
    wire                   [KEEP_WIDTH-1:0]    m_axis_rc_tkeep;
    (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       m_axis_rc_tvalid;
    (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       m_axis_rc_tready;
  
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                 [C_DATA_WIDTH-1:0]    m_axis_cq_tdata;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire          [AXI4_CQ_TUSER_WIDTH-1:0]    m_axis_cq_tuser;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       m_axis_cq_tlast;
+   wire                 [C_DATA_WIDTH-1:0]    m_axis_cq_tdata;
+   wire          [AXI4_CQ_TUSER_WIDTH-1:0]    m_axis_cq_tuser;
+   wire                                       m_axis_cq_tlast;
    wire                   [KEEP_WIDTH-1:0]    m_axis_cq_tkeep;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       m_axis_cq_tvalid;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       m_axis_cq_tready;
+   wire                                       m_axis_cq_tvalid;
+   wire                                       m_axis_cq_tready;
  
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                 [C_DATA_WIDTH-1:0]    s_axis_cc_tdata;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire          [AXI4_CC_TUSER_WIDTH-1:0]    s_axis_cc_tuser;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       s_axis_cc_tlast;
+   wire                 [C_DATA_WIDTH-1:0]    s_axis_cc_tdata;
+   wire          [AXI4_CC_TUSER_WIDTH-1:0]    s_axis_cc_tuser;
+   wire                                       s_axis_cc_tlast;
    wire                   [KEEP_WIDTH-1:0]    s_axis_cc_tkeep;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       s_axis_cc_tvalid;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [3:0]    s_axis_cc_tready;
+   wire                                       s_axis_cc_tvalid;
+   wire                              [3:0]    s_axis_cc_tready;
  
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [3:0]    pcie_tfc_nph_av;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [3:0]    pcie_tfc_npd_av;
+   wire                              [3:0]    pcie_tfc_nph_av;
+   wire                              [3:0]    pcie_tfc_npd_av;
    //----------------------------------------------------------------------------------------------------------------//
    //  Configuration (CFG) Interface                                                                                 //
    //----------------------------------------------------------------------------------------------------------------//
@@ -176,13 +176,13 @@ module bluerdma_top#(
    wire                              [2:0]    cfg_msg_transmit_type;
    wire                             [31:0]    cfg_msg_transmit_data;
    wire                                       cfg_msg_transmit_done;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [7:0]    cfg_fc_ph;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                             [11:0]    cfg_fc_pd;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [7:0]    cfg_fc_nph;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                             [11:0]    cfg_fc_npd;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [7:0]    cfg_fc_cplh;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                             [11:0]    cfg_fc_cpld;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [2:0]    cfg_fc_sel;
+   wire                              [7:0]    cfg_fc_ph;
+   wire                             [11:0]    cfg_fc_pd;
+   wire                              [7:0]    cfg_fc_nph;
+   wire                             [11:0]    cfg_fc_npd;
+   wire                              [7:0]    cfg_fc_cplh;
+   wire                             [11:0]    cfg_fc_cpld;
+   wire                              [2:0]    cfg_fc_sel;
    wire                              [2:0]    cfg_per_func_status_control;
    wire                              [3:0]    cfg_per_function_number;
    wire                                       cfg_per_function_output_request;
@@ -365,7 +365,18 @@ module bluerdma_top#(
     // assign qsfp2_lpmode_out = 1'b0;
     // assign qsfp2_resetl_out = 1'b1;
 
-    assign user_resetn = ~user_reset;
+
+
+    always @ (negedge user_resetn) begin
+      qsfp_reset_flag_reg <= !qsfp_reset_flag_reg;
+    end
+
+
+    reg user_resetn_buffer_reg;
+    always @ (posedge user_clk_250) begin
+      user_resetn_buffer_reg <= ~user_reset;
+    end
+    assign user_resetn = user_resetn_buffer_reg;
 
     pcie4_uscale_plus_0  pcie4_uscale_plus_0_i (
     //---------------------------------------------------------------------------------------//

@@ -495,7 +495,7 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
         reqQ.deq;
         // $display("PGT get modify request", fshow(descRaw));
 
-        RingbufDescCommonHead descComHdr = unpack(truncate(descRaw >> 240));
+        RingbufDescCommonHead descComHdr = unpack(truncate(descRaw >> valueOf(BLUERDMA_DESCRIPTOR_COMMON_HEADER_START_POS)));
 
         case (unpack(truncate(descComHdr.opCode)))
             CmdQueueOpcodeUpdateMrTable: begin

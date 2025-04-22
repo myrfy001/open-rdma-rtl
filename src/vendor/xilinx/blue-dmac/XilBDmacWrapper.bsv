@@ -44,8 +44,8 @@ module mkXilBdmacWrapper(XilBdmacWrapper);
     FIFOF#(IoChannelMemoryAccessMeta)        csrReadMetaPipeOutQueue     <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)  csrReadDataPipeInQueue      <- mkFIFOF;
 
-    Vector#(NUMERIC_TYPE_TWO, PipeInAdapterB0#(IoChannelMemoryAccessMeta))         dmaWriteMetaPipeInQueueVec   <- replicateM(mkPipeInAdapterB0);
-    Vector#(NUMERIC_TYPE_TWO, PipeInAdapterB0#(IoChannelMemoryAccessMeta))         dmaReadMetaPipeInQueueVec    <- replicateM(mkPipeInAdapterB0);
+    Vector#(NUMERIC_TYPE_TWO, PipeInAdapterB0#(IoChannelMemoryAccessMeta))         dmaWriteMetaPipeInQueueVec   <- replicateM(mkPipeInAdapterB2);
+    Vector#(NUMERIC_TYPE_TWO, PipeInAdapterB0#(IoChannelMemoryAccessMeta))         dmaReadMetaPipeInQueueVec    <- replicateM(mkPipeInAdapterB2);
 
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(Bit#(TLog#(TDiv#(SizeOf#(DATA), BYTE_WIDTH))))) rightShifterOffsetPipeInConverterVec = newVector;
     Vector#(NUMERIC_TYPE_TWO, PipeIn#(Bit#(TLog#(TDiv#(SizeOf#(DATA), BYTE_WIDTH))))) leftShifterOffsetPipeInConverterVec = newVector;
@@ -64,7 +64,7 @@ module mkXilBdmacWrapper(XilBdmacWrapper);
 
         rightShifterOffsetPipeInConverterVec[channelIdx] <- mkPipeInB0ToPipeIn(rightShifterVec[channelIdx].offsetPipeIn, 64);
         leftShifterOffsetPipeInConverterVec[channelIdx] <- mkPipeInB0ToPipeIn(leftShifterVec[channelIdx].offsetPipeIn, 64);
-        leftShifterStreamPipeInConverterVec[channelIdx] <- mkPipeInB0ToPipeIn(leftShifterVec[channelIdx].streamPipeIn, 1);
+        leftShifterStreamPipeInConverterVec[channelIdx] <- mkPipeInB0ToPipeIn(leftShifterVec[channelIdx].streamPipeIn, 2);
 
         rule forwardDmaReadWriteMeta;
             // Write has high priority
@@ -74,13 +74,18 @@ module mkXilBdmacWrapper(XilBdmacWrapper);
 
                 ByteIdxInDword addrOffsetInDword = truncate(req.addr);
                 rightShifterOffsetPipeInConverterVec[channelIdx].enq(zeroExtend(addrOffsetInDword));
-
-                innerDmac.c2hReqFifoIn[channelIdx].enq(DmaRequest{
+                
+                let writeReq = DmaRequest{
                     startAddr:unpack(req.addr),
                     length: unpack(req.totalLen),
                     isWrite: True,
                     attr: unpack(0)
-                });
+                };
+                innerDmac.c2hReqFifoIn[channelIdx].enq(writeReq);
+                $display(
+                    "time=%0t:", $time, toGreen(" mkXilBdmacWrapper forwardDmaReadWriteMeta channel[%0d] Write"), channelIdx,
+                    toBlue(", writeReq="), fshow(writeReq)
+                );
             end
             else begin
                 dmaReadMetaPipeInQueueVec[channelIdx].deq;
@@ -89,12 +94,18 @@ module mkXilBdmacWrapper(XilBdmacWrapper);
                 ByteIdxInDword addrOffsetInDword = truncate(req.addr);
                 leftShifterOffsetPipeInConverterVec[channelIdx].enq(zeroExtend(addrOffsetInDword));
 
-                innerDmac.c2hReqFifoIn[channelIdx].enq(DmaRequest{
+                let readReq = DmaRequest{
                     startAddr:unpack(req.addr),
                     length: unpack(req.totalLen),
                     isWrite: False,
                     attr: unpack(0)
-                });
+                };
+                innerDmac.c2hReqFifoIn[channelIdx].enq(readReq);
+
+                $display(
+                    "time=%0t:", $time, toGreen(" mkXilBdmacWrapper forwardDmaReadWriteMeta channel[%0d] Read"), channelIdx,
+                    toBlue(", readReq="), fshow(readReq)
+                );
             end
         endrule
 
@@ -102,12 +113,19 @@ module mkXilBdmacWrapper(XilBdmacWrapper);
             rightShifterVec[channelIdx].streamPipeOut.deq;
             let ds = rightShifterVec[channelIdx].streamPipeOut.first;
 
-            ds = XilBdmaDmaTypes::DataStream {
+            let dsDma = XilBdmaDmaTypes::DataStream {
                 data    : ds.data,
                 byteEn  : convertBytePtr2ByteEn(truncate(ds.byteNum)),
                 isFirst: ds.isFirst,
                 isLast: ds.isLast
             };
+            innerDmac.c2hDataFifoIn[channelIdx].enq(dsDma);
+
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkXilBdmacWrapper forwardDmaWriteData channel[%0d]"), channelIdx,
+                toBlue(", ds="), fshow(ds)
+            );
         endrule
 
 
@@ -122,6 +140,11 @@ module mkXilBdmacWrapper(XilBdmacWrapper);
                 isFirst: ds.isFirst,
                 isLast: ds.isLast
             });
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkXilBdmacWrapper forwardDmaReadResp channel[%0d]"), channelIdx,
+                toBlue(", ds="), fshow(ds)
+            );
         endrule
 
         
