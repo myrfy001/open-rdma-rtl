@@ -32,3 +32,13 @@ create_waiver -type DRC -id {REQP-1840} -tags "1167240" -scope -internal -user "
 
 create_waiver -type CDC -id {CDC-1} -tags "1165868" -scope -internal -user "pcie4_uscale_plus" -desc "PCIe reset path -Safe to waive" -from [get_ports sys_rst_n] -to [get_pins -hier -filter {NAME =~ {*/user_clk_heartbeat_reg[*]/R}}]
 
+
+
+create_pblock pblock_xilBdmaController
+resize_pblock pblock_xilBdmaController -add {SLICE_X140Y236:SLICE_X232Y482 BUFG_GT_X1Y96:BUFG_GT_X1Y191 BUFG_GT_SYNC_X1Y60:BUFG_GT_SYNC_X1Y119 DSP48E2_X17Y96:DSP48E2_X31Y191 LAGUNA_X16Y232:LAGUNA_X31Y485 RAMB18_X9Y96:RAMB18_X13Y191 RAMB36_X9Y48:RAMB36_X13Y95 URAM288_X2Y64:URAM288_X4Y127}
+add_cells_to_pblock pblock_xilBdmaController [get_cells [list bsv_top/bsvTopOnlyHardIp/xilBdmaController]]
+
+
+create_pblock pblock_bsvTpWthtHrdIpInstnc
+resize_pblock pblock_bsvTpWthtHrdIpInstnc -add {SLICE_X0Y238:SLICE_X180Y479 BUFG_GT_X0Y96:BUFG_GT_X0Y191 BUFG_GT_SYNC_X0Y60:BUFG_GT_SYNC_X0Y119 CMACE4_X0Y3:CMACE4_X0Y5 DSP48E2_X0Y96:DSP48E2_X17Y191 RAMB18_X0Y96:RAMB18_X8Y191 RAMB36_X0Y48:RAMB36_X8Y95 URAM288_X0Y64:URAM288_X2Y127}
+add_cells_to_pblock pblock_bsvTpWthtHrdIpInstnc [get_cells [list bsv_top/bsvTopWithoutHardIpInstance]]

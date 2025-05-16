@@ -109,7 +109,7 @@ proc createProject {vivado_work_dir rtl_dir_list sdc_dir_list vivado_backend_dir
 
 proc runSynthDesign {args} {
 	global vivado_work_dir top_module eth_ip_type dma_ip_type
-	synth_design -top $top_module -flatten_hierarchy none -verilog_define "BLUE_RDMA_ETH_IP_TYPE_${eth_ip_type} BLUE_RDMA_DMA_IP_TYPE_${dma_ip_type}"
+	synth_design -top $top_module -flatten_hierarchy rebuilt -verilog_define "BLUE_RDMA_ETH_IP_TYPE_${eth_ip_type} BLUE_RDMA_DMA_IP_TYPE_${dma_ip_type}"
 
     source batch_insert_ila.tcl
     batch_insert_ila 256
@@ -159,7 +159,7 @@ proc runRoute {args} {
                 phys_opt_design
             }
             route_design
-            if {[get_property SLACK [get_timing_paths ]] >= -0.02} {
+            if {[get_property SLACK [get_timing_paths ]] >= -0.05} {
                 break; # Stop if timing closure
             }
 
@@ -191,8 +191,8 @@ proc runWriteBitStream {args} {
 }
 
 createSourceSnapshot $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
-runGenerateIP $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
-runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
+# runGenerateIP $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
+# runSynthIP $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
 
 createProject $vivado_work_dir $rtl_dirs $sdc_dirs $vivado_backend_dir
 
@@ -203,3 +203,5 @@ runPlacement -open_checkpoint -false -directive ExtraNetDelay_high
 runRoute -open_checkpoint -false
 
 runWriteBitStream -open_checkpoint -false
+
+#place_design -directive ExtraNetDelay_high; phys_opt_design -placement_opt; route_design -directive AggressiveExplore; phys_opt_design -placement_opt;
