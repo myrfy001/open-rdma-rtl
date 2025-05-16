@@ -275,6 +275,10 @@ endmodule
         SyncFIFOIfc#(CmacAxiStream) axiStream512TxSyncFifo <- mkSyncFIFOFromCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk);
         SyncFIFOIfc#(CmacAxiStream) axiStream512RxSyncFifo <- mkSyncFIFOToCC(valueOf(CMAC_SYNC_BRAM_BUF_DEPTH), cmacRxTxClk, cmacRxReset);
 
+
+        FIFOF#(CmacAxiStream) axiStream512TxTimingFixFifo <- mkFIFOF;
+        FIFOF#(CmacAxiStream) axiStream512RxTimingFixFifo <- mkFIFOF;
+
         Bool isEnableRsFec = True;
         Bool isEnableFlowControl = False;
         Bool isCmacTxWaitRxAligned = True;
@@ -306,9 +310,19 @@ endmodule
         Probe#(IoChannelEthDataStream) ethTxDataProbe <- mkProbe;
         Probe#(IoChannelEthDataStream) ethRxDataProbe <- mkProbe;
 
-        rule forwardEthRxStream;
-            let axiDs = axiStream512RxSyncFifo.first;
+        rule forwardTimingFixTx;
+            axiStream512TxTimingFixFifo.deq;
+            axiStream512TxSyncFifo.enq(axiStream512TxTimingFixFifo.first);
+        endrule
+
+        rule forwardTimingFixRx;
             axiStream512RxSyncFifo.deq;
+            axiStream512RxTimingFixFifo.enq(axiStream512RxSyncFifo.first);
+        endrule
+
+        rule forwardEthRxStream;
+            let axiDs = axiStream512RxTimingFixFifo.first;
+            axiStream512RxTimingFixFifo.deq;
 
             let ds = IoChannelEthDataStream {
                 data: axiDs.axisData,
@@ -332,7 +346,7 @@ endmodule
                 axisLast: ds.isLast,
                 axisUser: 0
             };
-            axiStream512TxSyncFifo.enq(axiDs);
+            axiStream512TxTimingFixFifo.enq(axiDs);
             ethTxDataProbe <= ethTxDataPipeInQueue.first;
         endrule
 
@@ -453,13 +467,29 @@ module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
     mkConnection(ringbufAndDescriptorHandler.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
     mkConnection(qpMrPgtQpc.csrUpStreamPort, csrNode.downStreamPortsVec[1]);
 
+
+    let notUsedDmaWriteMetaQueue <- mkLFIFOF;
+    let notUsedDmaWriteDataQueue <- mkLFIFOF;
+    let notUsedDmaReadMetaQueue <- mkLFIFOF;
+    let notUsedDmaReadDataQueue          <- mkPipeInAdapterB0;
+
     `ifdef BLUE_RDMA_DMA_IP_TYPE_XILINX_XDMA
         mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfc, topLevelDmaChannelMux.qpDmaRequestSlaveIfc);  // already Nr
         dmaMasterPipeIfcVecInst[0] = topLevelDmaChannelMux.dmaMasterPipeIfc;
+        dmaMasterPipeIfcVecInst[1].writePipeIfc.writeMetaPipeOut = toPipeOut(notUsedDmaWriteMetaQueue);
+        dmaMasterPipeIfcVecInst[1].writePipeIfc.writeDataPipeOut = toPipeOut(notUsedDmaWriteDataQueue);
+        dmaMasterPipeIfcVecInst[1].readPipeIfc.readMetaPipeOut = toPipeOut(notUsedDmaReadMetaQueue);
+        dmaMasterPipeIfcVecInst[1].readPipeIfc.readDataPipeIn = toPipeInB0(notUsedDmaReadDataQueue);
+
         // dmaMasterPipeIfcVecInst[1] = not used;
     `elsif BLUE_RDMA_DMA_IP_TYPE_XILINX_BLUE_DMAC
         // dmaMasterPipeIfcVecInst[0] = qpMrPgtQpc.qpDmaRequestMasterIfc;
         // dmaMasterPipeIfcVecInst[1] = topLevelDmaChannelMux.dmaMasterPipeIfc;
+
+        dmaMasterPipeIfcVecInst[1].writePipeIfc.writeMetaPipeOut = toPipeOut(notUsedDmaWriteMetaQueue);
+        dmaMasterPipeIfcVecInst[1].writePipeIfc.writeDataPipeOut = toPipeOut(notUsedDmaWriteDataQueue);
+        dmaMasterPipeIfcVecInst[1].readPipeIfc.readMetaPipeOut = toPipeOut(notUsedDmaReadMetaQueue);
+        dmaMasterPipeIfcVecInst[1].readPipeIfc.readDataPipeIn = toPipeInB0(notUsedDmaReadDataQueue);
 
         mkConnection(qpMrPgtQpc.qpDmaRequestMasterIfc, topLevelDmaChannelMux.qpDmaRequestSlaveIfc);  // already Nr
         dmaMasterPipeIfcVecInst[0] = topLevelDmaChannelMux.dmaMasterPipeIfc;
