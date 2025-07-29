@@ -152,8 +152,8 @@ module bluerdma_top#(
    wire                                       cfg_err_cor_out;
    wire                                       cfg_err_nonfatal_out;
    wire                                       cfg_err_fatal_out;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                              [4:0]    cfg_local_error_out;
-   (*mark_debug, mark_debug_clock="user_clk_250" *)wire                                       cfg_local_error_valid;
+   wire                              [4:0]    cfg_local_error_out;
+   wire                                       cfg_local_error_valid;
  
    wire                              [5:0]    cfg_ltssm_state;
    wire                              [3:0]    cfg_rcb_status;
