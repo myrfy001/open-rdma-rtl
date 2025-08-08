@@ -8,10 +8,30 @@ import ConnectableF :: *;
 import BasicDataTypes :: *;
 import FullyPipelineChecker :: *;
 
+typedef enum {
+    MemAccessTypeNormalReadWrite = 0,
+    MemAccessTypeFetchAdd  = 1,
+    MemAccessTypeSwap = 2,
+    MemAccessTypeCAS  = 3
+} MemAccessType deriving (Eq, Bits, FShow);
+
+typedef enum {
+    ONE_DW = 0,
+    TWO_DW = 1 //only support this now
+} OperandSize deriving (Eq, Bits, FShow);
+
+typedef Bit#(2) OperandNum;
+
+typedef TMul#(2,DWORD_WIDTH) ATOMIC_OPERAND_WIDTH;
+typedef Bit#(ATOMIC_OPERAND_WIDTH) AtomicOperand;
 
 typedef struct {
     tAddr                                               addr;
     tLen                                                totalLen;
+    MemAccessType                                       accessType;
+    AtomicOperand                                       operand_1;
+    AtomicOperand                                       operand_2;
+    Bool                                                noSnoop;
 } DtldStreamMemAccessMeta#(type tAddr, type tLen) deriving(Bits, FShow);
 
 typedef struct {
@@ -108,7 +128,6 @@ interface DtldStreamMasterWritePipes#(type tData, type tAddr, type tLen);
 endinterface
 
 
-
 interface DtldStreamMasterReadPipes#(type tData, type tAddr, type tLen);
     interface PipeOut#(DtldStreamMemAccessMeta#(tAddr, tLen))   readMetaPipeOut;
     interface PipeIn#(DtldStreamData#(tData))                   readDataPipeIn;
@@ -181,8 +200,6 @@ endinterface
 
 
 
-
-
 interface DtldStreamNoMetaBiDirPipes#(type tData);
     interface PipeIn#(DtldStreamData#(tData))                   dataPipeIn;
     interface PipeOut#(DtldStreamData#(tData))                  dataPipeOut;
@@ -210,7 +227,6 @@ instance Connectable#(DtldStreamBiDirMasterPipesB0In#(tData, tAddr, tLen), DtldS
         mkConnection(master.readPipeIfc.readDataPipeIn, slave.readPipeIfc.readDataPipeOut);
     endmodule
 endinstance
-
 
 
 

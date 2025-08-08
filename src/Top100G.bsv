@@ -19,7 +19,7 @@ import PacketGenAndParse :: *;
 import EthernetTypes :: *;
 import AxiBus :: *;
 
-import EthernetFrameIO512 :: *;
+import EthernetFrameIO256 :: *;
 import PacketGenAndParse :: *;
 import MemRegionAndAddressTranslate :: *;
 import QPContext :: *;

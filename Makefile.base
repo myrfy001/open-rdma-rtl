@@ -24,8 +24,8 @@ BSVSRCDIR = -p +:$(abspath ../src) \
 			-p +:$(abspath ../test)
 
 
-BLUE_RDMA_DMA_IP_TYPE ?= XILINX_BLUE_DMAC
-BLUE_RDMA_ETH_IP_TYPE ?= XILINX_CMAC
+BLUE_RDMA_DMA_IP_TYPE ?= ALTERA_RTILE_BLUE_DMAC
+BLUE_RDMA_ETH_IP_TYPE ?= ALTERA_FTILE
 
 ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_XDMA)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/xdma)
@@ -33,10 +33,12 @@ else ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_BLUE_DMAC)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac/blue-dmac/src)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac/blue-dmac/lib/blue_wrapper/src)
+else ifeq ($(BLUE_RDMA_DMA_IP_TYPE), ALTERA_RTILE_BLUE_DMAC)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/altera)
 endif
 
-ifeq ($(BLUE_RDMA_ETH_IP_TYPE), XILINX_CMAC)
-	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/cmac)
+ifeq ($(BLUE_RDMA_ETH_IP_TYPE), ALTERA_FTILE)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/altera)
 endif
 
 MISCFLAGS += -D BLUE_RDMA_DMA_IP_TYPE_$(BLUE_RDMA_DMA_IP_TYPE)
@@ -47,10 +49,12 @@ BSV_C_EXT_FILES += \
 
 
 
-BLUERDMA_BUILD_TARGET ?= XILINX_100G
+BLUERDMA_BUILD_TARGET ?= ALTERA_400G
 
 ifeq ($(BLUERDMA_BUILD_TARGET), XILINX_100G)
 	BLUERDMA_DATA_BUS_WIDTH = 512
+else ifeq ($(BLUERDMA_BUILD_TARGET), ALTERA_400G)
+	BLUERDMA_DATA_BUS_WIDTH = 256
 endif
 
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)

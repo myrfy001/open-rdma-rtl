@@ -17,10 +17,13 @@ import PAClib :: *;
 import ConnectableF :: *;
 import PrimUtils :: *;
 import PrioritySearchBuffer :: *;
-import AxiBus :: *;
+// import AxiBus :: *;
 import DtldStream :: *;
 
 import StreamShifterG :: *;
+import FullyPipelineChecker :: *;
+
+import Probe :: *;
 
 `include "PcieMacros.bsv"
 
@@ -111,7 +114,7 @@ typedef Bit#(PCIE_SEGMENT_CNT) EopSignalBundle;
 typedef Bit#(PCIE_SEGMENT_CNT) HvalidSignalBundle;
 typedef Bit#(PCIE_SEGMENT_CNT) DvalidSignalBundle;
 
-typedef 12 CREDIT_COUNTER_WIDTH;
+typedef 16 CREDIT_COUNTER_WIDTH;
 typedef Bit#(CREDIT_COUNTER_WIDTH) CreditCount;
 
 typedef 4 DWORD_CNT_PER_FLOW_CONTROL_CREDIT;
@@ -527,7 +530,7 @@ module mkPcieCreditCounterSink#(tCounter initValue)(PcieCreditCounterSink#(tCoun
         end
         else begin
             updateSignalReg <= True;
-            tDelta delta = unpack(pack(initCounter) > zeroExtend(pack(maxDelta)) ? pack(maxDelta) : truncate(pack(initCounter)));
+            tDelta delta = unpack(pack(updateCounter) > zeroExtend(pack(maxDelta)) ? pack(maxDelta) : truncate(pack(updateCounter)));
             updateCntSignalReg <= delta;
             updateCounter.decr(unpack(zeroExtend(pack(delta))));
             // $display(
@@ -625,11 +628,11 @@ module mkPcieCreditCounterSource(PcieCreditCounterSource#(tCounter, tDelta)) pro
                 end
             end
         end
-        $display(
-            "time=%0t:", $time, toGreen(" mkPcieCreditCounterSource recvInitValue"),
-            ", updateSignalWire=", fshow(updateSignalWire),
-            ", updateCntSignalWire=", fshow(updateCntSignalWire)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCreditCounterSource recvInitValue"),
+        //     ", updateSignalWire=", fshow(updateSignalWire),
+        //     ", updateCntSignalWire=", fshow(updateCntSignalWire)
+        // );
     endrule
 
     rule normalOperation if (stateReg == PcieCreditCounterSourceStateNormalOperation);   
@@ -1080,7 +1083,9 @@ function Tuple6#(Bool, Bool, Bool, CreditCount, CreditCount, CreditCount) getFlo
     Bool isIoTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_NO_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_IO);
     Bool isCgfTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_NO_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CFG_TYPE_0 || headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CFG_TYPE_1);
     Bool isFetchAndAddAtomicTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_FETCH_ADD);
-    Bool isNonPostedTlp = isMemReadTlp || isIoTlp || isCgfTlp || isFetchAndAddAtomicTlp;
+    Bool isSwapAtomicTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_IO_SWAP);
+    Bool isCompareAndSwapAtomicTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_IO_CAS);    
+    Bool isNonPostedTlp = isMemReadTlp || isIoTlp || isCgfTlp || isFetchAndAddAtomicTlp || isSwapAtomicTlp || isCompareAndSwapAtomicTlp;
 
     Bool isCpltNoLockTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CPL);
     Bool isCpltWithLockTlp = (headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_NO_DATA || headerFirstDW.fmt == `PCIE_TLP_HEADER_FMT_3DW_WITH_DATA) && (headerFirstDW.typ == `PCIE_TLP_HEADER_TYPE_CPL_LOCK);
@@ -1525,13 +1530,14 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     FIFOF#(Tuple2#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaUpdateReqQueueForTagAlloc <- mkLFIFOF;
     FIFOF#(Tuple2#(PcieCompletionBufferSlotIdx, PcieCompletionBufferTagSlotMeta)) slotMetaUpdateReqQueueForWritePtrUpdate <- mkLFIFOF;
+    FIFOF#(PcieCompletionBufferSlotIdx) slotMetaUpdateReqQueueForSlotRelease <- mkLFIFOF;
 
     Reg#(Maybe#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) curInputCpltTlpVecMaybeReg <- mkReg(tagged Invalid);
     
     Reg#(Maybe#(PcieCompletionBufferTagSlotMetaForOutputStage))     curOutputSlotMetaMaybeReg   <- mkReg(tagged Invalid);
     Reg#(Maybe#(PcieCompletionBufferCpltTlpInfoForOutputStage))     curOutputCpltTlpMaybeReg    <- mkReg(tagged Invalid);
 
-    DtldStreamConcator#(DATA, NUMERIC_TYPE_TWO) outputCpltStreamConcator <- mkDtldStreamConcator;
+    DtldStreamConcator#(DATA, NUMERIC_TYPE_TWO) outputCpltStreamConcator <- mkDtldStreamConcator(DebugConf{name:"mkPcieCompletionBuffer outputCpltStreamConcator", enableDebug: False});
 
     // Pipeline FIFOs
     FIFOF#(RtilePcieRxTlpInfoCplt)                                              handleInputCpltTlpVecStep2PipelineQueue             <- mkSizedFIFOF(6);
@@ -1556,6 +1562,25 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     Reg#(Bool) isFirstCpltInOriginReadReqReg        <- mkReg(True);
     Reg#(DwordIdxInUserLogicBeat)   finalDataStreamConcatShiftDwordOffsetReg <- mkRegU;
     Reg#(RtilePcieUserStream)   previousDs <- mkRegU;
+
+
+    Reg#(Bit#(3)) debugRuleRunCntHandleInputCpltTlpVecStep1C0 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntHandleInputCpltTlpVecStep1C1 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntHandleInputCpltTlpVecStep2C0 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntHandleInputCpltTlpVecStep2C1 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntOutputWaitStateQueryRespC0 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntOutputWaitStateQueryRespC1 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntReadCpltTlpInfoForOutputC0 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntReadCpltTlpInfoForOutputC1 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntReadDataStorageForOutputC0 <- mkReg(0);
+    Reg#(Bit#(3)) debugRuleRunCntReadDataStorageForOutputC1 <- mkReg(0);
+
+    Probe#(Bit#(3)) dummyProbe <- mkProbe;
+
+
+    
+
+    
 
 
     let outputCpltStreamConcatorDataPipeInConverter <- mkPipeInB0ToPipeIn(outputCpltStreamConcator.dataPipeIn, 1);
@@ -1611,6 +1636,21 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     // endrule
 
 
+    rule probe;
+
+        dummyProbe <=   debugRuleRunCntHandleInputCpltTlpVecStep1C0 ^ 
+                        debugRuleRunCntHandleInputCpltTlpVecStep1C1 ^ 
+                        debugRuleRunCntHandleInputCpltTlpVecStep2C0 ^ 
+                        debugRuleRunCntHandleInputCpltTlpVecStep2C1 ^ 
+                        debugRuleRunCntOutputWaitStateQueryRespC0 ^ 
+                        debugRuleRunCntOutputWaitStateQueryRespC1 ^ 
+                        debugRuleRunCntReadCpltTlpInfoForOutputC0 ^ 
+                        debugRuleRunCntReadCpltTlpInfoForOutputC1 ^ 
+                        debugRuleRunCntReadDataStorageForOutputC0 ^ 
+                        debugRuleRunCntReadDataStorageForOutputC1;
+    endrule
+
+
     rule handleDataStreamInput;
         let req = tlpRawBeatDataStorageWriteReqPipeInQueue.first;
         tlpRawBeatDataStorageWriteReqPipeInQueue.deq;
@@ -1643,6 +1683,13 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 slotMetaStorageDoubleWriteVec[idx].write(addr, data);
             end
             
+        end
+        else if (slotMetaUpdateReqQueueForSlotRelease.notEmpty) begin
+            let addr = slotMetaUpdateReqQueueForSlotRelease.first;
+            slotMetaUpdateReqQueueForSlotRelease.deq;
+            for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                slotMetaStorageDoubleWriteVec[idx].write(addr, unpack(0));
+            end
         end
         else if (slotMetaUpdateReqQueueForTagAlloc.notEmpty) begin
             let {addr, data} = slotMetaUpdateReqQueueForTagAlloc.first;
@@ -1691,6 +1738,8 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     rule handleInputCpltTlpVecStep1;
         if (curInputCpltTlpVecMaybeReg matches tagged Valid .curInputCpltTlpVec) begin
+
+            debugRuleRunCntHandleInputCpltTlpVecStep1C1 <= debugRuleRunCntHandleInputCpltTlpVecStep1C1 + 1;
             immAssert(
                 isValid(curInputCpltTlpVec[0]),
                 "input vector's first element must be valid",
@@ -1724,6 +1773,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
         end
         else begin
+            debugRuleRunCntHandleInputCpltTlpVecStep1C0 <= debugRuleRunCntHandleInputCpltTlpVecStep1C0 + 1;
+
+
             curInputCpltTlpVecMaybeReg <= tagged Valid cpltTlpVecPipeInQueue.first;
             cpltTlpVecPipeInQueue.deq;
 
@@ -1741,6 +1793,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     endrule
 
     rule handleInputCpltTlpVecStep2;
+        debugRuleRunCntHandleInputCpltTlpVecStep2C0 <= debugRuleRunCntHandleInputCpltTlpVecStep2C0 + 1;
         let curCplt = handleInputCpltTlpVecStep2PipelineQueue.first;
         handleInputCpltTlpVecStep2PipelineQueue.deq;
 
@@ -1761,7 +1814,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 headerSlotCnt   : zeroExtend(slotMeta.maxCpltTlpCntNeeded),
                 dataSlotCnt     : zeroExtend(slotMeta.hwClptBufDataSlotCntNeeded)
             });
+            slotMetaUpdateReqQueueForSlotRelease.enq(slotIdx);
             busySlotCounter.decr(1);
+            debugRuleRunCntHandleInputCpltTlpVecStep2C1 <= debugRuleRunCntHandleInputCpltTlpVecStep2C1 + 1;
         end
 
         slotMetaUpdateReqQueueForWritePtrUpdate.enq(tuple2(slotIdx, slotMeta));
@@ -1839,10 +1894,12 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg),
                 toBlue(", newTagAllocTail="), fshow(newTagAllocTail)
             );
+            debugRuleRunCntOutputWaitStateQueryRespC0 <= debugRuleRunCntOutputWaitStateQueryRespC0 + 1;
         end
         else begin
             slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
             slotMetaQueryForOutputPipelineQueue.enq(tagAllocTailReg);
+            debugRuleRunCntOutputWaitStateQueryRespC1 <= debugRuleRunCntOutputWaitStateQueryRespC1 + 1;
         end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp"),
@@ -1854,6 +1911,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     rule readCpltTlpInfoForOutput;
         if (curOutputSlotMetaMaybeReg matches tagged Valid .curOutputSlotMeta) begin
+            debugRuleRunCntReadCpltTlpInfoForOutputC1 <= debugRuleRunCntReadCpltTlpInfoForOutputC1 + 1;
             let isLast = curOutputSlotMeta.cpltTlpListCurReadOffset == curOutputSlotMeta.cpltTlpListTargetReadOffset;
             let cpltTlpMetaAddr = curOutputSlotMeta.cpltTlpListStartAddr + zeroExtend(curOutputSlotMeta.cpltTlpListCurReadOffset);
             cpltTlpInfoStorage.putReadReq(cpltTlpMetaAddr);
@@ -1880,6 +1938,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             end
         end
         else begin
+            debugRuleRunCntReadCpltTlpInfoForOutputC0 <= debugRuleRunCntReadCpltTlpInfoForOutputC0 + 1;
             let slotMeta = readCpltTlpInfoForOutputPipelineQueue.first;
             readCpltTlpInfoForOutputPipelineQueue.deq;
             curOutputSlotMetaMaybeReg <= tagged Valid slotMeta;
@@ -1912,6 +1971,8 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         end
 
         if (curOutputCpltTlpMaybeReg matches tagged Valid .curOutputCpltTlp) begin
+            debugRuleRunCntReadDataStorageForOutputC1 <= debugRuleRunCntReadDataStorageForOutputC1 + 1;
+
             let curSegAddrInStorage = {pack(curOutputCpltTlp.storageRowAddr), pack(curOutputCpltTlp.storageSegOffset)};
             let isLastSegInThisCpltTlp = curOutputCpltTlp.segCntLeftToRead == 1;
 
@@ -1960,6 +2021,7 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             );
         end
         else begin
+            debugRuleRunCntReadDataStorageForOutputC0 <= debugRuleRunCntReadDataStorageForOutputC0 + 1;
             cpltTlpInfoStorage.readRespPipeOut.deq;
             curOutputCpltTlpMaybeReg <= tagged Valid nextNewOutputCpltTlpInfo;
             $display(
@@ -2073,11 +2135,14 @@ typedef struct {
     PcieHeaderFieldFirstDwBe    firstDwBe;
 } PcieLengthAndByteEn deriving(FShow, Bits);
 
-typedef DtldStreamBiDirSlavePipes#(DATA, ADDR, Length) PcieBiDirUserDataStreamSlavePipes;
-typedef DtldStreamBiDirMasterPipes#(DATA, ADDR, Length) PcieBiDirUserDataStreamMasterPipes;
+typedef DtldStreamBiDirSlavePipes#(DATA, ADDR, Length)      PcieBiDirUserDataStreamSlavePipes;
+typedef DtldStreamBiDirMasterPipes#(DATA, ADDR, Length)     PcieBiDirUserDataStreamMasterPipes;
 
-typedef DtldStreamBiDirSlavePipesB0In#(DATA, ADDR, Length) PcieBiDirUserDataStreamSlavePipesB0In;
+typedef DtldStreamBiDirSlavePipesB0In#(DATA, ADDR, Length)   PcieBiDirUserDataStreamSlavePipesB0In;
 typedef DtldStreamBiDirMasterPipesB0In#(DATA, ADDR, Length) PcieBiDirUserDataStreamMasterPipesB0In;
+
+typedef Bit#(TAdd#(1, TLog#(TDiv#(TMul#(2,ATOMIC_OPERAND_WIDTH), BYTE_WIDTH)))) AtomicOperandCnt;
+typedef Tuple2#(Bit#(TMul#(2,ATOMIC_OPERAND_WIDTH)), AtomicOperandCnt) AtomicOperandPack;
 
 interface PcieRequestTlpHeaderGen;
     interface PcieBiDirUserDataStreamSlavePipesB0In                             dtldStreamSlavePipes;
@@ -2101,7 +2166,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueWm                <- mkPipeInAdapterB1;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
     PipeInAdapterB0#(RtilePcieUserStream)                     slaveSideQueueWd                <- mkPipeInAdapterB1;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
     PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueRm                <- mkPipeInAdapterB0;
-    FIFOF#(RtilePcieUserStream)                             slaveSideQueueRd                <- mkFIFOF;
+    FIFOF#(RtilePcieUserStream)                               slaveSideQueueRd                <- mkFIFOF;
 
     PipeInAdapterB0#(RtilePcieUserStream)                     cpltTlpDataStreamPipeInQueue    <- mkPipeInAdapterB0;
 
@@ -2112,15 +2177,17 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     FIFOF#(PcieSharedCompletionBufferSlotAllocReq)                  slotAllocReqPipeOutQueue <- mkFIFOF;
 
     FIFOF#(PcieTlpHeaderMemoryRead4Dw)  readTlpQueue                <- mkLFIFOF;
+    FIFOF#(AtomicOperandPack) atomicOperandQueue <- mkLFIFOF;
     FIFOF#(PcieTlpHeaderMemoryWrite4Dw) writeTlpQueue               <- mkLFIFOF;
     PipeInAdapterB0#(PcieTlpHeaderCompletion)     cpltTlpQueue        <- mkPipeInAdapterB0;
 
     FIFOF#(PcieTlpHeaderBuffer)         arbittedTlpBufferQueue      <- mkFIFOF;
     FIFOF#(RtilePcieUserStream)         arbittedTlpDataStreamQueue  <- mkFIFOF;
     Reg#(Bool)                          isOutputingPayloadStreamReg <- mkReg(False);
-
     
-    FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  tagAllocToReadTlpGenPipelineQ         <- mkLFIFOF;
+    FIFOF#(RtilePcieUserStream)                               slaveSideQueueWdD            <- mkLFIFOF;
+    
+    FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  tagAllocToReadTlpGenPipelineQ          <- mkLFIFOF;
 
     function Tuple3#(PcieHeaderFieldFirstDwBe, PcieHeaderFieldLastDwBe, Length) genFirstLastBeAndLengthDw(ADDR startAddr, Length len);
         // TODO: can reduce the bit width of the add operation.    
@@ -2149,6 +2216,35 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         end
 
         return tuple3(firstDwBe, lastDwBe, truncate(lengthInDw));
+    endfunction
+    
+    function Tuple2#(PcieHeaderFieldType, OperandNum) getTlpHeaderType(MemAccessType accessType);
+        case (accessType)
+            MemAccessTypeNormalReadWrite    : return tuple2(`PCIE_TLP_HEADER_TYPE_MEM_READ, 2'b00);
+            MemAccessTypeFetchAdd           : return tuple2(`PCIE_TLP_HEADER_TYPE_FETCH_ADD, 2'b01);
+            MemAccessTypeSwap               : return tuple2(`PCIE_TLP_HEADER_TYPE_IO_SWAP, 2'b01);
+            MemAccessTypeCAS                : return tuple2(`PCIE_TLP_HEADER_TYPE_IO_CAS, 2'b10);
+            default   : return tuple2(5'b00000, 2'b00);  
+        endcase
+    endfunction
+
+    function AtomicOperandPack generateDataAndByteNum(AtomicOperand operand_1, AtomicOperand operand_2, Bit#(2) opNum, OperandSize opSize);
+        Bit#(TMul#(2, ATOMIC_OPERAND_WIDTH)) result = 0;
+        if(opNum == 2'b10) begin
+            result = {truncate(result), opSize == ONE_DW ? pack(operand_2)[valueOf(DWORD_WIDTH)-1:0] : pack(operand_2), opSize == ONE_DW ? pack(operand_1)[valueOf(DWORD_WIDTH)-1:0] : pack(operand_1)};
+        end 
+        else if(opNum == 2'b01) begin
+            result = {truncate(result), opSize == ONE_DW ? pack(operand_1)[valueOf(DWORD_WIDTH)-1:0] : pack(operand_1)};
+        end
+        
+        AtomicOperandCnt byteNum;
+        case (opNum)
+            2'b00  : byteNum = 0;
+            2'b01  : byteNum = opSize == ONE_DW ? 4 : 8;
+            2'b10  : byteNum = opSize == ONE_DW ? 8 : 16;
+            default: byteNum = 0;
+        endcase
+        return tuple2(result, byteNum);
     endfunction
 
     // rule debug;
@@ -2212,14 +2308,14 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
             th      : False,
             td      : False,
             ep      : False,
-            attrl   : 0,
+            attrl   : wm.noSnoop ? 2'b01 : 2'b00,
             at      : 0,
             length  : unpack(truncate(pack(lengthInDw)))
         };
         
         let memoryWriteHeader = PcieTlpHeaderMemoryWrite {
             commonHeader    : commonHeader,
-            requesterId     : 0,  // will filled by IP core
+            requesterId     : 16'h0000,  // will filled by IP core
             st              : 0,
             lastDwBe        : lastDwBe,
             firstDwBe       : firstDwBe
@@ -2244,11 +2340,17 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
 
     endrule
-    
+
 
     rule sendGenPcieTagReq;
         let rm = slaveSideQueueRm.first;
         slaveSideQueueRm.deq;
+        
+        immAssert(
+            rm.accessType == MemAccessTypeNormalReadWrite || (pack(rm.totalLen) == 4 && pack(rm.addr)[1:0] == 0) || (pack(rm.totalLen) == 8 && pack(rm.addr)[2:0] == 0),
+            "the operand size of AtomicOp Request must be 32Bits or 64Bits and the Address must be naturally aligned with the operand size.",
+            $format("rm=", fshow(rm))
+        );
 
         ADDR endAddr = rm.addr + unpack(zeroExtend(pack(rm.totalLen))) - 1; 
 
@@ -2275,6 +2377,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         // );
     endrule
 
+
     rule genTlpMrd;
         
         let rm = tagAllocToReadTlpGenPipelineQ.first;
@@ -2286,10 +2389,11 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         slotAllocRespPipeInQueue.deq;
 
         let {firstDwBe, lastDwBe, lengthInDw} = genFirstLastBeAndLengthDw(rm.addr, rm.totalLen);
+        let {typ, opNum} = getTlpHeaderType(rm.accessType);
 
         let commonHeader = PcieTlpHeaderCommon {
-            fmt     : `PCIE_TLP_HEADER_FMT_4DW_NO_DATA,
-            typ     : `PCIE_TLP_HEADER_TYPE_MEM_READ,
+            fmt     : (rm.accessType == MemAccessTypeNormalReadWrite) ? `PCIE_TLP_HEADER_FMT_4DW_NO_DATA : `PCIE_TLP_HEADER_FMT_4DW_WITH_DATA,
+            typ     : typ,
             t9      : unpack(tag[9]),
             tc      : 0,
             t8      : unpack(tag[8]),
@@ -2305,7 +2409,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         
         let memoryReadHeader = PcieTlpHeaderMemoryRead {
             commonHeader    : commonHeader,
-            requesterId     : 0,  // will filled by IP core
+            requesterId     : 16'h0000,  // will filled by IP core
             tag             : truncate(tag),
             lastDwBe        : lastDwBe,
             firstDwBe       : firstDwBe
@@ -2317,13 +2421,21 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
             ph                  : 0
         };
 
+        OperandSize opSize = rm.totalLen == 4 ? ONE_DW : TWO_DW;
+        let {data, byteNum} = generateDataAndByteNum(rm.operand_1, rm.operand_2, opNum, opSize);
         readTlpQueue.enq(tlp);
-
+        atomicOperandQueue.enq(tuple2(data, byteNum));
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen genTlpMrd"),
         //     toBlue(", rm="), fshow(rm),
         //     toBlue(", tlp="), fshow(tlp)
         // );
+    endrule
+
+    //synchronize Wd and Wm
+    rule delayWd;
+        slaveSideQueueWdD.enq(slaveSideQueueWd.first);
+        slaveSideQueueWd.deq;
     endrule
 
     rule arbitOutputTlp if (!isOutputingPayloadStreamReg);
@@ -2332,8 +2444,8 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         if (writeTlpQueue.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(writeTlpQueue.first)));
             writeTlpQueue.deq;
-            let ds = slaveSideQueueWd.first;
-            slaveSideQueueWd.deq;
+            let ds = slaveSideQueueWdD.first;
+            slaveSideQueueWdD.deq;
 
 
             arbittedTlpDataStreamQueue.enq(ds);
@@ -2345,10 +2457,13 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(readTlpQueue.first)));
             readTlpQueue.deq;
 
+            let {data, byteNum} = atomicOperandQueue.first;
+            atomicOperandQueue.deq;
+
             // generate a fake only stream for the payload and header merge.
-            let ds = DtldStreamData {
-                data        : unpack(0),
-                byteNum     : unpack(0),
+            let ds = RtilePcieUserStream {
+                data        : zeroExtend(data),
+                byteNum     : zeroExtend(byteNum),
                 startByteIdx: unpack(0),
                 isFirst     : True,
                 isLast      : True
@@ -2382,8 +2497,8 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     endrule
 
     rule arbitOutputDataStream if (isOutputingPayloadStreamReg);
-        let ds = slaveSideQueueWd.first;
-        slaveSideQueueWd.deq;
+        let ds = slaveSideQueueWdD.first;
+        slaveSideQueueWdD.deq;
         arbittedTlpDataStreamQueue.enq(ds);
         if (ds.isLast) begin
             isOutputingPayloadStreamReg <= False;
@@ -2476,8 +2591,8 @@ typedef struct {
     RtilePcieTxChannelBufferSegCnt                  segCnt;                         // 9
     Bool                                            isStorageRowCountSmall;         // 1
     RtilePcieFlowControlTlpTypeEnum                 flowControlTlpType;             // 2
-    CreditCount                                     flowControlCreditConsumed;      // 12
-    ReservedZero#(29)                               reserved;                       // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
+    CreditCount                                     flowControlCreditConsumed;      // 16
+    ReservedZero#(25)                               reserved;                       // make this struct's size is power of two, or the MIMO FIFO will use dsp block to implement multiply operation. cause very bad timing.
 } RtilePcieTxBufferRangeWithSrcChannelIdxAndDestSegOffset deriving(Bits, FShow);
 
 typedef struct {
@@ -2504,7 +2619,7 @@ endinterface
 module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInputGearboxStorageAndMetaExtractor);
     PipeInAdapterB0#(RtilePcieUserStream)             streamPipeInQueue               <- mkPipeInAdapterB0;
     PipeInAdapterB0#(PcieTlpHeaderBuffer)             txTlpHeaderBufferPipeInQueue    <- mkPipeInAdapterB0;
-    FIFOF#(RtilePcieTxBufferRange)                  packetMetaPipeOutQueue          <- mkFIFOF;
+    FIFOF#(RtilePcieTxBufferRange)                  packetMetaPipeOutQueue          <- mkSizedFIFOF(16);//buffer req when pingpoongfork blocked
 
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInB0#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInVecInst = newVector;
     Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, PipeInAdapterB0#(RtilePcieTxBramBufferReadReq)) bramReadReqPipeInQueueVec <- replicateM(mkPipeInAdapterB0);
@@ -2567,7 +2682,7 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
         endrule
 
         rule handlePayloadStorageReadResp;
-            Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, DATA) outputVec = newVector;
+            Vector#(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG, DATA) outputVec = newVector;
             for (Integer segIdx = 0; segIdx < valueOf(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG); segIdx = segIdx + 1) begin
                 outputVec[segIdx] = dataStreamStorageVec[idx][segIdx].readRespPipeOut.first;
                 dataStreamStorageVec[idx][segIdx].readRespPipeOut.deq;
@@ -2736,7 +2851,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         LUInt#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT)
     ))  mimoInputPipelineQueue <- mkLFIFOF;
 
-    FIFOF#(Tuple2#(RtilePcieTxPingPongChannelIdx, RtilePcieTxPingPongChannelMetaBundle)) outputTimingFixPipelineQueue <- mkLFIFOF;
+    FIFOF#(RtilePcieTxPingPongChannelMetaBundle) outputTimingFixPipelineQueue <- mkLFIFOFWithFullAssert(DebugConf{name:"2",enableDebug:True});
 
     // rule debug;
     //     if (!txFlowControlAvaliablePipeInQueue.notEmpty) begin
@@ -3094,10 +3209,11 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
 
         let hasEnoughCredit =   phToConsume <= availableCreditPh        && 
                                 nphToConsume <= availableCreditNph      &&
-                                cplhToConsume <= availableCreditCplh    &&
                                 pdToConsume <= availableCreditPd        &&
-                                npdToConsume <= availableCreditNpd      &&
-                                cpldToConsume <= availableCreditCpld;
+                                npdToConsume <= availableCreditNpd;
+                                // note cplh and cpld should be infinite, no need to check
+                                // cplhToConsume <= availableCreditCplh    &&
+                                // cpldToConsume <= availableCreditCpld;
 
         if (enqCnt == 0) begin
             flowControlCheckPipelineQueue.deq;
@@ -3205,12 +3321,22 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 };
 
 
-                immAssert(selectedInputChannelMetaMIMO.deqReadyN(1), "MIMO Queue doesn't have enough element", $format(""));
-                selectedInputChannelMetaMIMO.deq(1);
-
+                // immAssert(selectedInputChannelMetaMIMO.deqReadyN(1), "MIMO Queue doesn't have enough element", $format(""));
+                // if (packetTwoWillEndInThisBeat) begin
+                //     curMetaMaybeReg <= tagged Invalid;
+                //     isFirstReg <= True;
+                //     selectedInputChannelMetaMIMO.deq(1);
+                // end
                 if (packetTwoWillEndInThisBeat) begin
-                    curMetaMaybeReg <= tagged Invalid;
-                    isFirstReg <= True;
+                    if(selectedInputChannelMetaMIMO.deqReadyN(2))begin //if more than 1 req in the MIMO,move the second one into curMetaMaybeReg directly
+                        curMetaMaybeReg <= tagged Valid selectedInputChannelMetaMIMO.first[1];
+                        isFirstReg <= True;
+                        selectedInputChannelMetaMIMO.deq(2);
+                    end else begin 
+                        curMetaMaybeReg <= tagged Invalid;
+                        isFirstReg <= True;
+                        selectedInputChannelMetaMIMO.deq(1);
+                    end
                 end
                 else begin
                     let nextCurMeta                     = packetTwoMeta;
@@ -3220,6 +3346,7 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                     nextCurMeta.isStorageRowCountSmall  = (nextCurMeta.segCnt >> valueOf(RTILE_PCIE_TX_SEG_ADDR_TO_ROW_ADDR_CONVERT_SHIFT_OFFSET)) <= fromInteger(valueOf(RTILE_PCIE_TX_INPUT_BRAM_ROW_CNT_PER_OUTPUT_BEAT));
                     curMetaMaybeReg                     <= tagged Valid nextCurMeta;
                     isFirstReg                          <= False;
+                    selectedInputChannelMetaMIMO.deq(1);
                 end
             end
             else if (beatWillHoldOnePacket) begin
@@ -3255,14 +3382,13 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
                 immFail("should not reach here", $format(""));
             end
 
-            outputTimingFixPipelineQueue.enq(tuple2(curOutputRoundRobinIdxReg, outputMetaBundle));
+            outputTimingFixPipelineQueue.enq(outputMetaBundle);
             // $display(
             //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork dispatch final output"),
             //     toBlue(", curOutputRoundRobinIdxReg="), fshow(curOutputRoundRobinIdxReg),
             //     toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
             // );
 
-            curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
         end
         else begin
             if (selectedInputChannelMetaMIMO.deqReadyN(1)) begin
@@ -3282,9 +3408,10 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
     endrule
 
     rule forwardOutput;
-        let {curOutputRoundRobinIdx, outputMetaBundle} = outputTimingFixPipelineQueue.first;
+        let outputMetaBundle = outputTimingFixPipelineQueue.first;
         outputTimingFixPipelineQueue.deq;
-        pingpongChannelMetaPipeOutQueueVec[curOutputRoundRobinIdx].enq(outputMetaBundle);
+        curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
+        pingpongChannelMetaPipeOutQueueVec[curOutputRoundRobinIdxReg].enq(outputMetaBundle);
     endrule
 
     
@@ -3653,7 +3780,11 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
                     unfinishedReadReqQueue.enq(readReqTlp);
                     masterSideQueueRm.enq(DtldStreamMemAccessMeta{
                         addr        : readReqTlp.addr,
-                        totalLen    : fromInteger(valueOf(RTILE_PCIE_COMPLETER_MAX_READ_WRITE_BYTE_CNT))
+                        totalLen    : fromInteger(valueOf(RTILE_PCIE_COMPLETER_MAX_READ_WRITE_BYTE_CNT)),
+                        accessType  : MemAccessTypeNormalReadWrite,
+                        operand_1   : 0,
+                        operand_2   : 0,
+                        noSnoop     : False
                     });
                 end
                 tagged TlpTypeMrWrite .writeReqTlp: begin
@@ -3712,7 +3843,11 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
 
         masterSideQueueWm.enq(DtldStreamMemAccessMeta{
             addr        : writeAddr,
-            totalLen    : fromInteger(valueOf(RTILE_PCIE_COMPLETER_MAX_READ_WRITE_BYTE_CNT))
+            totalLen    : fromInteger(valueOf(RTILE_PCIE_COMPLETER_MAX_READ_WRITE_BYTE_CNT)),
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         });
 
         Dword writeDataValid    = truncate(writeDataOrigin);

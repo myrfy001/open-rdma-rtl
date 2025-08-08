@@ -547,3 +547,81 @@ module mkServerToClientArbitFixPriorityP#(
     interface srvIfcVec = srvIfcVecInst;
     interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeInB0(cltSideRespQueue));
 endmodule
+
+
+
+
+
+
+
+interface SimpleRoundRobinPipeArbiter#(type nChannel, type tElement);
+    interface Vector#(nChannel, PipeInB0#(tElement)) pipeInVec;
+    interface PipeOut#(tElement) pipeOut;
+endinterface
+
+
+module mkSimpleRoundRobinPipeArbiter#(Integer bufferDepth)(SimpleRoundRobinPipeArbiter#(nChannel, tElement)) provisos (
+        Bits#(tElement, szElement)
+    );
+    Vector#(nChannel, PipeInB0#(tElement)) pipeInVecInst = newVector;
+    
+    Vector#(nChannel, PipeInAdapterB0#(tElement)) pipeInQueueVec <- replicateM(mkPipeInAdapterB0);
+
+    
+    FIFOF#(tElement) pipeOutQueue <- mkSizedFIFOF(bufferDepth);
+
+
+    Arbiter_IFC#(nChannel) arbiter <- mkArbiter(False);
+
+    // Reg#(Bool) isForwardFirstBeatReg <- mkReg(True);
+
+    // Reg#(Bit#(TLog#(nChannel))) curChannelIdxReg <- mkRegU;
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+        pipeInVecInst[channelIdx] = pipeInQueueVec[channelIdx].pipeInIfc;
+    end
+
+    rule sendArbitReq;
+        for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+            if (pipeInQueueVec[channelIdx].notEmpty) begin
+                arbiter.clients[channelIdx].request;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeArbiter sendArbitReq"),
+                //     toBlue(", channelIdx=%d"), channelIdx
+                // );
+            end
+        end
+    endrule
+
+
+    rule recvArbitResp;
+        Maybe#(tElement) elementMaybe = tagged Invalid;
+        Bit#(TLog#(nChannel)) curChannelIdx = 0;
+
+        for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+            if (arbiter.clients[channelIdx].grant) begin
+                elementMaybe = tagged Valid pipeInQueueVec[channelIdx].first;
+                pipeInQueueVec[channelIdx].deq;
+                curChannelIdx = fromInteger(channelIdx);
+            end
+        end
+
+        if (elementMaybe matches tagged Valid .element) begin
+            pipeOutQueue.enq(element);
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeArbiter forward beat first"),
+            //     toBlue(", element="), fshow(element),
+            //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+            // );
+        end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeArbiter recvArbitResp"),
+        //     toBlue(", elementMaybe="), fshow(elementMaybe)
+        // );
+    endrule
+
+
+
+    interface pipeInVec     = pipeInVecInst;
+    interface pipeOut       = toPipeOut(pipeOutQueue);
+endmodule

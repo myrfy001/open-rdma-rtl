@@ -480,8 +480,6 @@ module bluerdma_top(
 		.o_rx_mac_fcs_error              (ftile_eth_rx_mac_fcs_error),              //  output,    width = 16,                      .o_rx_mac_fcs_error
 		.o_rx_mac_error                  (ftile_eth_rx_mac_error),                  //  output,    width = 32,                      .o_rx_mac_error
 		.o_rx_mac_status                 (ftile_eth_rx_mac_status),                 //  output,    width = 48,                      .o_rx_mac_status
-		.i_tx_pfc                        ('h0),                        				//   input,     width = 8,             pfc_ports.i_tx_pfc
-		.o_rx_pfc                        (),                        				//  output,     width = 8,                      .o_rx_pfc
 		.i_tx_pause                      ('h0),                      				//   input,     width = 1,             sfc_ports.i_tx_pause
 		.o_rx_pause                      (),                      					//  output,     width = 1,                      .o_rx_pause
 		.i_reconfig_xcvr0_addr           ('h0),           							//   input,    width = 18, reconfig_xcvr_slave_0.address

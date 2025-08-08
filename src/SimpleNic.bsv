@@ -136,7 +136,11 @@ module mkSimpleNic(SimpleNic);
         if (ds.isFirst) begin
             let wm = IoChannelMemoryAccessMeta{
                 addr        : chunkInfo.startAddr,
-                totalLen    : chunkInfo.len
+                totalLen    : chunkInfo.len,
+                accessType  : MemAccessTypeNormalReadWrite,
+                operand_1   : 0,
+                operand_2   : 0,
+                noSnoop     : False
             };
             dmaWriteMetaPipeOutQueue.enq(wm);
         end
@@ -195,7 +199,11 @@ module mkSimpleNic(SimpleNic);
 
         let dmaReadReq = IoChannelMemoryAccessMeta{
             addr: chunkInfo.startAddr,
-            totalLen: chunkInfo.len
+            totalLen: chunkInfo.len,
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         };
         dmaReadMetaPipeOutQueue.enq(dmaReadReq);
         txConcatorIsLastStreamFlagPipeInConverter.enq(chunkInfo.isLast);

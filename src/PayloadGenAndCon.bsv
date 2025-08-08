@@ -199,7 +199,11 @@ module mkPayloadGen(PayloadGen);
         
         let readReq = DtldStreamMemAccessMeta {
             addr: translatedAddr,
-            totalLen: len
+            totalLen: len,
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         };
         dmaReadReqPipeOutGuardQ.enq(readReq);
         dsConcatorIsLastStreamFlagPipeInConverterGuardQueue.enq(isLast);
@@ -323,7 +327,11 @@ module mkPayloadCon(PayloadCon);
 
         let writeReq = DtldStreamMemAccessMeta {
             addr: translatedAddr,
-            totalLen: len
+            totalLen: len,
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         };
         dmaWriteReqAddrPipeOutQ.enq(writeReq);
         $display(

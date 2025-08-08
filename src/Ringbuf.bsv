@@ -468,7 +468,11 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
 
         IoChannelMemoryAccessMeta meta = IoChannelMemoryAccessMeta {
             addr: req.addr,
-            totalLen: unpack((zeroExtend(req.zeroBasedDescWriteCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)))
+            totalLen: unpack((zeroExtend(req.zeroBasedDescWriteCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH))),
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         };
         dmaWriteMetaPipeOutQueue.enq(meta);
 
@@ -558,7 +562,11 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
 
         IoChannelMemoryAccessMeta meta = IoChannelMemoryAccessMeta {
             addr: req.addr,
-            totalLen: unpack((zeroExtend(req.zeroBasedDescReadCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)))
+            totalLen: unpack((zeroExtend(req.zeroBasedDescReadCnt) + 1) << valueOf(TLog#(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH))),
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         };
         dmaReadMetaPipeOutQueue.enq(meta);
 

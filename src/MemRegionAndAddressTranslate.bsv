@@ -646,7 +646,11 @@ module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
 
         let meta = IoChannelMemoryAccessMeta {
             addr: req.addr,
-            totalLen: dmaReadLengthInByte
+            totalLen: dmaReadLengthInByte,
+            accessType  : MemAccessTypeNormalReadWrite,
+            operand_1   : 0,
+            operand_2   : 0,
+            noSnoop     : False
         };
         busReadMetaPipeOutQueue.enq(meta);
     endrule

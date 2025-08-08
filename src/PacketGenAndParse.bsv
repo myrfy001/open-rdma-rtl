@@ -26,7 +26,7 @@ import NapWrapper :: *;
 import AddressChunker :: *;
 import EthernetTypes :: *;
 import PayloadGenAndCon :: *;
-import EthernetFrameIO512 :: *;
+import EthernetFrameIO256 :: *;
 import StreamShifterG :: *;
 import DtldStream :: *;
 import QPContext :: *;

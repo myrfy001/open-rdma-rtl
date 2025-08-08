@@ -4,6 +4,7 @@ import ClientServer :: *;
 import GetPut :: *;
 import Vector :: *;
 import Clocks :: *;
+import CommitIfc :: * ;
 
 import ConnectableF :: *;
 import RdmaUtils :: *;
@@ -13,6 +14,7 @@ import DtldStream :: *;
 import StreamDataTypes :: *;
 import BasicDataTypes :: *;
 import IoChannels :: *;
+import Arbitration :: *;
 import PacketGenAndParse :: *;
 import EthernetTypes :: *;
 import PacketGenAndParse :: *;
@@ -27,6 +29,10 @@ import CsrAddress :: *;
 import AutoAckGenerator :: *;
 import SimpleNic :: *;
 import CnpPacketGen :: *;
+
+import EthernetFrameIO256 :: *;
+
+import FullyPipelineChecker :: *;
 
 import Settings :: *;
 import Utils4Test :: *;
@@ -153,7 +159,7 @@ endinterface
 
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelThreeChannelDmaMux)    muxVector <- replicateM(mkDtldStreamArbiterSlave(256, 16, True));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelThreeChannelDmaMux)       muxVector <- replicateM(mkDtldStreamArbiterSlave(256, 16, True, DebugConf{name: "mkTopLevelDmaChannelMux muxInst", enableDebug: False}));
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)     dmaMasterPipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)      qpRingbufDmaSlavePipeIfcVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)      qpDmaRequestSlaveIfcVecInst = newVector;
@@ -187,7 +193,7 @@ endmodule
 
 interface BsvTopWithoutHardIpInstance;
     interface IoChannelMemorySlavePipe dmaSlavePipeIfc;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)   dmaMasterPipeIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)       dmaMasterPipeIfcVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeB0In)  qpEthDataStreamIfcVec;
 endinterface
 
@@ -797,12 +803,16 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     PgtUpdateDmaInterfaceConvertor pgtUpdateDmaInterfaceConvertor <- mkPgtUpdateDmaInterfaceConvertor;
     AutoAckGenerator    autoAckGenerator <- mkAutoAckGenerator;
     SimpleNic simpleNic <- mkSimpleNic;
-    CnpPacketGenerator cnpPacketGenerator <- mkCnpPacketGenerator;
+    DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA) simpleNicRxStreamArbiter <- mkDtldStreamNoMetaArbiterSlave(valueOf(HARDWARE_QP_CHANNEL_CNT));
+
+    SimpleRoundRobinPipeArbiter#(HARDWARE_QP_CHANNEL_CNT, AutoAckGeneratorReq) autoAckGeneratorReqArbiter <- mkSimpleRoundRobinPipeArbiter(valueOf(MULTI_CHANNEL_TO_ONE_CHANNEL_ARBITER_BUFFER_DEPTH));
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, CnpPacketGenerator) cnpPacketGeneratorVec <- replicateM(mkCnpPacketGenerator);
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon);
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_THREE, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_THREE)));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_TWO, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_TWO)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
 
@@ -810,10 +820,16 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)         qpDmaRequestMasterIfcVecInst    = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeB0In)    qpEthDataStreamIfcVecInst       = newVector;
 
+    Vector#(HARDWARE_QP_CHANNEL_CNT, EthernetPacketGenerator)    ethernetPacketGenVecInst           <- replicateM(mkEthernetPacketGenerator);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PacketGenReqArbiter)        packetGenReqArbiterVecInst         <- replicateM(mkPacketGenReqArbiter);
+
     mkConnection(mrAndPgtUpdater.dmaReadReqPipeOut, pgtUpdateDmaInterfaceConvertor.dmaReadReqPipeIn);   // already Nr
     mkConnection(mrAndPgtUpdater.dmaReadRespPipeIn, pgtUpdateDmaInterfaceConvertor.dmaReadRespPipeOut);    
     mkConnection(mrAndPgtUpdater.mrModifyClt, mrTable.modifySrv);
     mkConnection(mrAndPgtUpdater.pgtModifyClt, addrTranslator.modifySrv);
+
+    mkConnection(simpleNicRxStreamArbiter.pipeOutIfc, simpleNic.rawEthernetPacketPipeIn);
+    mkConnection(autoAckGeneratorReqArbiter.pipeOut, autoAckGenerator.reqPipeIn);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // Payload gen and con
@@ -824,8 +840,22 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut);
         mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn);
 
-        // ethernet ifc
-        mkConnection(sqVec[idx].packetPipeOut, ethTxStreamArbiterVec[idx].pipeInIfcVec[0]);
+        // Connection for ethernet packet generate
+
+        mkConnection(sqVec[idx].macIpUdpMetaPipeOut, packetGenReqArbiterVecInst[idx].macIpUdpMetaPipeInVec[0]);
+        mkConnection(sqVec[idx].rdmaPacketMetaPipeOut, packetGenReqArbiterVecInst[idx].rdmaPacketMetaPipeInVec[0]);
+        mkConnection(sqVec[idx].rdmaPayloadPipeOut, packetGenReqArbiterVecInst[idx].rdmaPayloadPipeInVec[0]);
+
+        mkConnection(cnpPacketGeneratorVec[idx].macIpUdpMetaPipeOut, packetGenReqArbiterVecInst[idx].macIpUdpMetaPipeInVec[1]);
+        mkConnection(cnpPacketGeneratorVec[idx].rdmaPacketMetaPipeOut, packetGenReqArbiterVecInst[idx].rdmaPacketMetaPipeInVec[1]);
+        mkConnection(cnpPacketGeneratorVec[idx].rdmaPayloadPipeOut, packetGenReqArbiterVecInst[idx].rdmaPayloadPipeInVec[1]);
+
+        mkConnection(packetGenReqArbiterVecInst[idx].macIpUdpMetaPipeOut, ethernetPacketGenVecInst[idx].macIpUdpMetaPipeIn);
+        mkConnection(packetGenReqArbiterVecInst[idx].rdmaPacketMetaPipeOut, ethernetPacketGenVecInst[idx].rdmaPacketMetaPipeIn);
+        mkConnection(packetGenReqArbiterVecInst[idx].rdmaPayloadPipeOut, ethernetPacketGenVecInst[idx].rdmaPayloadPipeIn);
+
+        mkConnection(ethernetPacketGenVecInst[idx].ethernetPacketPipeOut, ethTxStreamArbiterVec[idx].pipeInIfcVec[0]);
+
         qpEthDataStreamIfcVecInst[idx] = (
                 interface IoChannelBiDirStreamNoMetaPipeB0In
                     interface dataPipeIn = rqVec[idx].ethernetFramePipeIn;
@@ -844,12 +874,11 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1]);
 
         // Simple Nic Packet input
-        mkConnection(rqVec[idx].otherRawPacketPipeOut, simpleNic.rawEthernetPacketPipeInVec[idx]);
+        mkConnection(rqVec[idx].otherRawPacketPipeOut, simpleNicRxStreamArbiter.pipeInIfcVec[idx]);
 
         // auto ack, bitmap report and CNP
-        mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGenerator.reqPipeInVec[idx]);  // already Nr
-        mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGenerator.genReqPipeInVec[idx]);  // already Nr
-        mkConnection(cnpPacketGenerator.cnpEthPacketPipeOutVec[idx], ethTxStreamArbiterVec[idx].pipeInIfcVec[1]);
+        mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGeneratorReqArbiter.pipeInVec[idx]);  // already Nr
+        mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGeneratorVec[idx].genReqPipeIn);  // already Nr
 
         // meta report descriptors
         mkConnection(rqVec[idx].metaReportDescPipeOut, descriptorMuxVec[idx].descPipeInVec[0]);  // already Nr
@@ -866,20 +895,18 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         endrule
     end
 
-    // other meta report desc related connection
-    // since after bitmap merge, four channel becomes two channel, and background loop tooks another channel
-    // to simpilify design, we won't dispatch them evenly.
-    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[0], descriptorMuxVec[0].descPipeInVec[1]);  // already Nr
-    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[1], descriptorMuxVec[1].descPipeInVec[1]);  // already Nr
-    mkConnection(autoAckGenerator.metaReportDescPipeOutVec[2], descriptorMuxVec[2].descPipeInVec[1]);  // already Nr
 
-    // Ethernet Tx channel 0 will handle simple Nic's traffic. Tx channel 1 and 2 will handle auto ack traffic. It may lead to unbalance between other channels.
-    mkConnection(simpleNic.rawEthernetPacketPipeOut         , ethTxStreamArbiterVec[0].pipeInIfcVec[2]);
-    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[0] , ethTxStreamArbiterVec[1].pipeInIfcVec[2]);
-    mkConnection(autoAckGenerator.ackEthPacketPipeOutVec[1] , ethTxStreamArbiterVec[2].pipeInIfcVec[2]);
+
+    
+
+    mkConnection(autoAckGenerator.macIpUdpMetaPipeOut, packetGenReqArbiterVecInst[0].macIpUdpMetaPipeInVec[2]);
+    mkConnection(autoAckGenerator.rdmaPacketMetaPipeOut, packetGenReqArbiterVecInst[0].rdmaPacketMetaPipeInVec[2]);
+    mkConnection(autoAckGenerator.rdmaPayloadPipeOut, packetGenReqArbiterVecInst[0].rdmaPayloadPipeInVec[2]);
+
+    mkConnection(simpleNic.rawEthernetPacketPipeOut, ethTxStreamArbiterVec[1].pipeInIfcVec[1]);
+
 
     let qpContextUpdateSrvRequestPipeInB0Adapter <- mkPipeInB0ToPipeIn(qpContext.updateSrv.request, 1);
-    let autoAckGeneratorQpcUpdateSrvRequestPipeInB0Adapter <- mkPipeInB0ToPipeIn(autoAckGenerator.qpcUpdateSrv.request, 1);
 
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
@@ -914,24 +941,22 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         let req = qpContextUpdateReqQueue.first;
         qpContextUpdateReqQueue.deq;
         qpContextUpdateSrvRequestPipeInB0Adapter.enq(req);
-        autoAckGeneratorQpcUpdateSrvRequestPipeInB0Adapter.enq(req);
     endrule
     
     rule forwardQpContextUpdateResp;
         let r1 = qpContext.updateSrv.response.first;
         qpContext.updateSrv.response.deq;
-        let r2 = autoAckGenerator.qpcUpdateSrv.response.first;
-        autoAckGenerator.qpcUpdateSrv.response.deq;
-        qpContextUpdateRespQueue.enq(r1 && r2);
+        qpContextUpdateRespQueue.enq(r1);
+    endrule
+
+    rule drainSimpleNicRxStreamArbiterSourceIdOutput;
+        simpleNicRxStreamArbiter.sourceChannelIdPipeOut.deq;
     endrule
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
         for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-            sqVec[idx].setLocalNetworkSettings(networkSettings);
             rqVec[idx].setLocalNetworkSettings(networkSettings);
         end
-        autoAckGenerator.setLocalNetworkSettings(networkSettings);
-        cnpPacketGenerator.setLocalNetworkSettings(networkSettings);
     endmethod
 
     interface csrUpStreamPort                   = csrNode.upStreamPort;

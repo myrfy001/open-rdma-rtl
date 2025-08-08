@@ -33,6 +33,10 @@ ifeq ($(BLUERDMA_BUILD_TARGET), XILINX_100G)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx)
 	RTL_DIRS += $(BACKENDDIR)/vivado/rtl/*.v
 	VIVADO_SDC_DIRS += $(VIVADO_BACKEND_DIR)/sdc/xilinx_100g/*.sdc
+else ifeq ($(BLUERDMA_BUILD_TARGET), ALTERA_400G)
+	BSVSRCDIR += -p +:$(abspath ../src/vendor/altera)
+	RTL_DIRS += $(BACKENDDIR)/quartus/rtl/*.v
+	VIVADO_SDC_DIRS += $(QUARTUS_BACKEND_DIR)/sdc/*.sdc
 endif
 
 ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_BLUE_DMAC)
@@ -130,7 +134,7 @@ endif
 # BSV_TOP_MODULE ?= mkBsvTop
 # TOP = bluerdma_top
 
-TARGETFILE ?= ../src/Top100G.bsv
+TARGETFILE ?= ../src/Top.bsv
 BSV_TOP_MODULE ?= mkBsvTop
 TOP = bluerdma_top
 

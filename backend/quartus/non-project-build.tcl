@@ -99,7 +99,7 @@ if {$make_assignments} {
 
 	# assign pin location
 	source "$quartus_backend_dir/sdc/set_pin_loc.tcl"
-	source "$quartus_backend_dir/sdc/fitter_assignments.tcl"
+	# source "$quartus_backend_dir/sdc/fitter_assignments.tcl"
 
 	set_global_assignment -name TOP_LEVEL_ENTITY $top_module
 	set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
@@ -107,11 +107,40 @@ if {$make_assignments} {
 	set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
 	set_global_assignment -name DEVICE $device
 	set_global_assignment -name FAMILY $family
-	set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 256
+	set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+	set_global_assignment -name AUTO_RESTART_CONFIGURATION OFF
 	set_global_assignment -name PWRMGT_VOLTAGE_OUTPUT_FORMAT "LINEAR FORMAT"
 	set_global_assignment -name PWRMGT_LINEAR_FORMAT_N "-12"
 	set_global_assignment -name POWER_APPLY_THERMAL_MARGIN ADDITIONAL
 	set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT WITH MAXIMUM PLACEMENT EFFORT"
+	set_global_assignment -name BOARD default
+
+	# important, power mgt and flash related. will turn your card into dead brick if not correct.
+	set_global_assignment -name USE_PWRMGT_SCL SDM_IO0
+	set_global_assignment -name USE_PWRMGT_SDA SDM_IO11
+	set_global_assignment -name USE_CONF_DONE SDM_IO16
+	set_global_assignment -name USE_SEU_ERROR SDM_IO14
+	set_global_assignment -name USE_NCATTRIP SDM_IO12
+	set_global_assignment -name SDM_DIRECT_TO_FACTORY_IMAGE SDM_IO10
+	set_global_assignment -name PWRMGT_SLAVE_DEVICE_TYPE OTHER
+	set_global_assignment -name PWRMGT_SLAVE_DEVICE0_ADDRESS 58
+	set_global_assignment -name PWRMGT_VOLTAGE_OUTPUT_FORMAT "DIRECT FORMAT"
+	set_global_assignment -name PWRMGT_DIRECT_FORMAT_COEFFICIENT_M 1
+	set_global_assignment -name PWRMGT_DIRECT_FORMAT_COEFFICIENT_B "-200"
+	set_global_assignment -name PWRMGT_DIRECT_FORMAT_COEFFICIENT_R "-1"
+	set_global_assignment -name PWRMGT_LINEAR_FORMAT_N "-12"
+	set_global_assignment -name PWRMGT_TRANSLATED_VOLTAGE_VALUE_UNIT MILLIVOLTS
+	set_global_assignment -name ENABLE_STATUS_BYTE OFF
+	set_global_assignment -name ACTIVE_SERIAL_CLOCK AS_FREQ_125MHZ
+	# the following line is very important, must match the clock on your board.
+	set_global_assignment -name DEVICE_INITIALIZATION_CLOCK OSC_CLK_1_125MHZ
+
+	#signal tap
+	set_global_assignment -name RTL_ANALYSIS_DEBUG_MODE ON
+	set_global_assignment -name SIGNALTAP_FILE ../quartus/signal_taps/stp1.stp
+	set_global_assignment -name ENABLE_SIGNALTAP ON
+	set_global_assignment -name USE_SIGNALTAP_FILE ../quartus/signal_taps/stp1.stp
+	set_global_assignment -name PRESERVE_FOR_DEBUG_ENABLE ON
 
 	# Including default assignments
 	set_global_assignment -name FLOW_ENABLE_DESIGN_ASSISTANT ON -family $family

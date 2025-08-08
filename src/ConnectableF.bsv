@@ -1,7 +1,7 @@
 import PAClib :: *;
 import FIFOF :: *;
 import Clocks :: *;
-
+import CommitIfc :: * ;
 import Connectable :: *;
 import FullyPipelineChecker :: *;
 
@@ -506,3 +506,35 @@ endmodule
 //         mkConnection(fo, fi);
 //     endmodule
 // endinstance
+
+instance ToSendCommit#(PipeOut#(a), a);
+   // Assumes fifo has proper implicit conditions
+   module mkSendCommit #(PipeOut#(a) p) (SendCommit#(a));
+      PulseWire doAck <- mkPulseWire;
+      (*fire_when_enabled*)
+      rule doDeq (doAck /*&& f.notEmpty*/);
+         p.deq;
+      endrule
+      method a dataout /*if (f.notEmpty)*/;
+        return p.first;
+      endmethod
+      method Action ack = doAck.send;
+   endmodule
+endinstance
+
+
+instance ToRecvCommit#(PipeIn#(a), a)
+   provisos(Bits#(a,sa));
+   // Assumes fifo has proper implicit conditions
+   module mkRecvCommit #(PipeIn#(a) p) (RecvCommit#(a));
+      RWire#(a) d <- mkRWire;
+      (*fire_when_enabled*)
+      rule doEnq (/*p.notFull &&& */ d.wget matches tagged Valid .data);
+         p.enq(data);
+      endrule
+      method Action datain (a din);
+         d.wset(din);
+      endmethod
+      method Bool accept = p.notFull;
+   endmodule
+endinstance
