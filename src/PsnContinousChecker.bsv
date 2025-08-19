@@ -111,7 +111,6 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     FIFOF#(tRowAddr) resetReqPipeInQ <- mkLFIFOF;
 
-    PrioritySearchBuffer#(NUMERIC_TYPE_SIX, tRowAddr, BitmapWindowStorageEntry#(tData, tBoundary)) storageForwardBuffer <- mkPrioritySearchBuffer(valueOf(NUMERIC_TYPE_SIX));
 
     // rule printDebugInfo0;
     //     if (!respPipeOutQueueVec[0].notFull) $display("time=%0t, ", $time, "FullQueue: mkBitmapWindowStorage respPipeOutQueueVec[0]");
@@ -120,6 +119,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
     Reg#(Bool) bramInitedReg <- mkReg(False);
     Reg#(tRowAddr) bramInitPtrReg <- mkReg(0);
+    Reg#(Bool) bitmapUpdateBusyReg <- mkReg(False);
 
     let resetValue = BitmapWindowStorageEntry{
         leftBound: -1,
@@ -140,8 +140,19 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
 
 
     // Merge Pipeline Stage One
-    rule sendBramQueryReqAndGenOneHotBitmap if (bramInitedReg);
-        if (reqPipeInQueue.notEmpty) begin
+    rule sendBramQueryReqAndGenOneHotBitmap if (bramInitedReg && !bitmapUpdateBusyReg);
+        if (resetReqPipeInQ.notEmpty) begin
+            bitmapUpdateBusyReg <= True;
+            resetReqPipeInQ.deq;
+            let pipelineEntryOut = BitmapWindowStorageStageOneToTwoPipelineEntry {
+                rowAddr: resetReqPipeInQ.first,
+                newEntry: resetValue,
+                isReset: True
+            };
+            stageOneToTwoPipelineQueue.enq(pipelineEntryOut);
+        end
+        else if (reqPipeInQueue.notEmpty) begin
+            bitmapUpdateBusyReg <= True;
             let req = reqPipeInQueue.first;
             reqPipeInQueue.deq;
 
@@ -168,15 +179,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
             //         ", req=", fshow(req)
             // );
         end
-        else if (resetReqPipeInQ.notEmpty) begin
-            resetReqPipeInQ.deq;
-            let pipelineEntryOut = BitmapWindowStorageStageOneToTwoPipelineEntry {
-                rowAddr: resetReqPipeInQ.first,
-                newEntry: resetValue,
-                isReset: True
-            };
-            stageOneToTwoPipelineQueue.enq(pipelineEntryOut);
-        end
+        
         
         
   
@@ -196,16 +199,11 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                newEntry: pipelineEntryIn.newEntry
             };
             stageTwoToThreePipelineQueue.enq(bramWriteBackReq);
-            storageForwardBuffer.enq(pipelineEntryIn.rowAddr, pipelineEntryIn.newEntry);
         end
         else begin
             entryFromBram = storage[0].readRespPipeOut.first;
             storage[0].readRespPipeOut.deq;
-            let entryFromForwardCacheMaybe <- storageForwardBuffer.search(pipelineEntryIn.rowAddr);
             let newestAlreadyExistEntry = entryFromBram;
-            if (entryFromForwardCacheMaybe matches tagged Valid .entryFromForwardCache) begin
-                newestAlreadyExistEntry = entryFromForwardCache;
-            end
 
             let oldEntry = newestAlreadyExistEntry;
 
@@ -275,18 +273,19 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                    newEntry: newEntry
                    };
                 stageTwoToThreePipelineQueue.enq(bramWriteBackReq);
-                storageForwardBuffer.enq(pipelineEntryIn.rowAddr, newEntry);
             end
         end
     endrule
 
     // Merge Pipeline Stage Three
-    rule doBramWriteBack if (bramInitedReg);
+    rule doBramWriteBack if (bramInitedReg && bitmapUpdateBusyReg);
         let writeBackReq = stageTwoToThreePipelineQueue.first;
         stageTwoToThreePipelineQueue.deq;
 
         storage[0].write(writeBackReq.rowAddr, writeBackReq.newEntry);
         storage[1].write(writeBackReq.rowAddr, writeBackReq.newEntry);
+
+        bitmapUpdateBusyReg <= False;
 
         // $display("time=%0t", $time, "mkBitmapWindowStorage 3 doBramWriteBack", 
         //         ", writeBackReq=", fshow(writeBackReq)
