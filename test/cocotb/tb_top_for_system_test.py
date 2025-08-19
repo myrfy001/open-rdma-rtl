@@ -44,7 +44,7 @@ class TB(object):
         self.csr_read_lock = threading.Lock()
 
         self.rpc_server = UserspaceDriverServer(
-            "0.0.0.0", 7700, self._csr_write_cb, self._csr_read_cb)
+            "0.0.0.0", 7701, self._csr_write_cb, self._csr_read_cb)
         self.rpc_server.run()
 
         self.pcie_bfm = SimplePcieBehaviorModel(
@@ -109,7 +109,7 @@ class TB(object):
             self.csr_read_req_queue.put_nowait(addr)
             while self.csr_read_resp_queue.empty():
                 time.sleep(0)
-            return self.csr_read_req_queue.get_nowait()
+            return self.csr_read_resp_queue.get_nowait()
 
     async def _forward_csr_write_task(self):
         while True:

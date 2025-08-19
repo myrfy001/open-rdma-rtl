@@ -53,7 +53,7 @@ class TB(object):
             "0.0.0.0", 7700 + int(self.inst_id), self._csr_write_cb, self._csr_read_cb)
         self.rpc_server.run()
 
-        is_test_100g = True
+        is_test_100g = False
         if is_test_100g:
             channel_cnt = 1
             self.pcie_bfm = SimplePcieBehaviorModel(
@@ -144,7 +144,9 @@ class TB(object):
             self.csr_read_req_queue.put_nowait(addr)
             while self.csr_read_resp_queue.empty():
                 time.sleep(0)
-            return self.csr_read_req_queue.get_nowait()
+            ret = self.csr_read_resp_queue.get_nowait()
+            self.log.info(f"_csr_read_cb: {addr, ret}")
+            return ret
 
     async def _forward_csr_write_task(self):
         while True:

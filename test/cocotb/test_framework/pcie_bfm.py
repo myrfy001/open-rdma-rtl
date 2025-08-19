@@ -52,6 +52,8 @@ class SimplePcieBehaviorModel(object):
                 dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
 
         self.requester_channel_cnt = len(requester_ifc_base_names)
+        self.requester_pending_write_metas = [
+            [] for _ in range(self.requester_channel_cnt)]
 
         self.read_delay_queues = [
             deque() for _ in range(self.requester_channel_cnt)
@@ -76,9 +78,6 @@ class SimplePcieBehaviorModel(object):
         self.completer_inflight_read_enevts = [
             [] for _ in range(self.completer_channel_cnt)]
         self.completer_inflight_read_resps = [
-            [] for _ in range(self.completer_channel_cnt)]
-
-        self.pending_write_metas = [
             [] for _ in range(self.completer_channel_cnt)]
 
         self.mem = mem or [0] * (1 << 25)
@@ -106,7 +105,7 @@ class SimplePcieBehaviorModel(object):
                     write_meta_raw)
                 cur_write_addr = write_meta.addr()
 
-                self.pending_write_metas[channel_idx].append(
+                self.requester_pending_write_metas[channel_idx].append(
                     (cur_time, write_meta))
                 self.log.info(
                     f"put write request to delay queue cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
@@ -117,11 +116,11 @@ class SimplePcieBehaviorModel(object):
         # loop to handle each request
         while True:
             cur_time = cocotb.utils.get_sim_time("ns")
-            if len(self.pending_write_metas[channel_idx]) != 0:
-                enq_time, write_meta = self.pending_write_metas[channel_idx][0]
+            if len(self.requester_pending_write_metas[channel_idx]) != 0:
+                enq_time, write_meta = self.requester_pending_write_metas[channel_idx][0]
                 if cur_time - enq_time >= self.write_meta_to_data_delay_ns:
 
-                    self.pending_write_metas[channel_idx].pop(0)
+                    self.requester_pending_write_metas[channel_idx].pop(0)
                     cur_write_addr = write_meta.addr()
                     total_len = 0
 

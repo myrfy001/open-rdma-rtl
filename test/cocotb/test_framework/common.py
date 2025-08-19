@@ -478,24 +478,46 @@ class BlueRdmaLength(BluespecBits):
 class BlueRdmaAddr(BluespecBits):
     _width = 64
 
+class BlueRdmaMemAccessType(BluespecBits):
+    _width = 2
+    MemAccessTypeNormalReadWrite = 0
+    MemAccessTypeFetchAdd  = 1
+    MemAccessTypeSwap = 2
+    MemAccessTypeCAS  = 3
+
+
+class BlueRdmaAtomicOperand(BluespecBits):
+    _width = 64
+
 
 class BlueRdmaDtldStreamMemAccessMeta(BluespecStruct):
     _members_def = OrderedDict(
         addr=BlueRdmaAddr,
         total_len=BlueRdmaLength,
+        accessType=BlueRdmaMemAccessType,
+        operand_1=BlueRdmaAtomicOperand,
+        operand_2=BlueRdmaAtomicOperand,
+        noSnoop=BluespecBool
     )
 
-    def __init__(self, addr, total_len):
+    def __init__(self, addr, total_len, accessType=BlueRdmaMemAccessType.MemAccessTypeNormalReadWrite, operand_1=0, operand_2=0, noSnoop=False):
         addr = BlueRdmaAddr(addr)
         total_len = BlueRdmaLength(total_len)
-
-        super().__init__(addr, total_len)
+        accessType = BlueRdmaMemAccessType(accessType)
+        operand_1 = BlueRdmaAtomicOperand(operand_1)
+        operand_2 = BlueRdmaAtomicOperand(operand_2)
+        noSnoop = BluespecBool(noSnoop)
+        super().__init__(addr, total_len, accessType, operand_1, operand_2, noSnoop)
 
     def __str__(self):
         return (
             f"< BlueRdmaDtldStreamMemAccessMeta "
             f"addr={self.addr}, "
-            f"total_len={self.total_len} >"
+            f"total_len={self.total_len}, "
+            f"accessType={self.accessType}, "
+            f"operand_1={self.operand_1}, "
+            f"operand_2={self.operand_2}, "
+            f"noSnoop={self.noSnoop} >"
         )
 
 

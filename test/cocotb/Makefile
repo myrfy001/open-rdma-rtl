@@ -45,7 +45,11 @@ SYSTEM_TEST_TB_FILE_TWO_CARD = tb_top_for_system_test_two_card.py
 # TOP_MODULE ?= mkBsvTopWithoutHardIpInstance
 # TB_FILE = tb_top_without_hard_ip.py
 
-TOP_BSV_SRC_FILE ?= ../src/Top100G.bsv
+# TOP_BSV_SRC_FILE ?= ../src/Top100G.bsv
+# TOP_MODULE ?= mkBsvTop
+# TB_FILE = tb_100g_with_bdma.py
+
+TOP_BSV_SRC_FILE ?= ../src/Top.bsv
 TOP_MODULE ?= mkBsvTop
 TB_FILE = tb_100g_with_bdma.py
 
