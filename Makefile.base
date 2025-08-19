@@ -29,12 +29,18 @@ BLUE_RDMA_ETH_IP_TYPE ?= ALTERA_FTILE
 
 ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_XDMA)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/xdma)
+	MISCFLAGS += -D PCIE_MAX_BEAT_CNT_IN_BURST=64
+	MISCFLAGS += -D PCIE_BYTE_PER_BEAT=64
 else ifeq ($(BLUE_RDMA_DMA_IP_TYPE), XILINX_BLUE_DMAC)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac/blue-dmac/src)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/xilinx/blue-dmac/blue-dmac/lib/blue_wrapper/src)
+	MISCFLAGS += -D PCIE_MAX_BEAT_CNT_IN_BURST=64
+	MISCFLAGS += -D PCIE_BYTE_PER_BEAT=64
 else ifeq ($(BLUE_RDMA_DMA_IP_TYPE), ALTERA_RTILE_BLUE_DMAC)
 	BSVSRCDIR += -p +:$(abspath ../src/vendor/altera)
+	MISCFLAGS += -D PCIE_MAX_BEAT_CNT_IN_BURST=16
+	MISCFLAGS += -D PCIE_BYTE_PER_BEAT=32
 endif
 
 ifeq ($(BLUE_RDMA_ETH_IP_TYPE), ALTERA_FTILE)

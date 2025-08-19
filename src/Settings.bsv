@@ -32,8 +32,11 @@ typedef 0 MAX_INLINE_DATA; // No inline data
 
 typedef TExp#(17)   MAX_PTE_ENTRY_CNT; // Max cover 256GB
 
-typedef 64  PCIE_MAX_BEAT_CNT_IN_BURST;  // Important: must be suitable for the selected PCIe IO implementation
-typedef 64  PCIE_BYTE_PER_BEAT;          // Important: must be suitable for the selected PCIe IO implementation
+
+typedef `PCIE_MAX_BEAT_CNT_IN_BURST  PCIE_MAX_BEAT_CNT_IN_BURST;    // Important: must be suitable for the selected PCIe IO implementation
+typedef `PCIE_BYTE_PER_BEAT  PCIE_BYTE_PER_BEAT;                    // Important: must be suitable for the selected PCIe IO implementation
+
+
 typedef TMul#(PCIE_MAX_BEAT_CNT_IN_BURST, PCIE_BYTE_PER_BEAT) PCIE_MAX_BYTE_IN_BURST;
 
 typedef 3 MIN_RDMA_MESSAGE_BEAT_COUNT;
