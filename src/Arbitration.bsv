@@ -573,10 +573,6 @@ module mkSimpleRoundRobinPipeArbiter#(Integer bufferDepth)(SimpleRoundRobinPipeA
 
     Arbiter_IFC#(nChannel) arbiter <- mkArbiter(False);
 
-    // Reg#(Bool) isForwardFirstBeatReg <- mkReg(True);
-
-    // Reg#(Bit#(TLog#(nChannel))) curChannelIdxReg <- mkRegU;
-
     for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
         pipeInVecInst[channelIdx] = pipeInQueueVec[channelIdx].pipeInIfc;
     end
@@ -609,7 +605,7 @@ module mkSimpleRoundRobinPipeArbiter#(Integer bufferDepth)(SimpleRoundRobinPipeA
         if (elementMaybe matches tagged Valid .element) begin
             pipeOutQueue.enq(element);
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeArbiter forward beat first"),
+            //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeArbiter forward"),
             //     toBlue(", element="), fshow(element),
             //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
             // );
@@ -624,4 +620,71 @@ module mkSimpleRoundRobinPipeArbiter#(Integer bufferDepth)(SimpleRoundRobinPipeA
 
     interface pipeInVec     = pipeInVecInst;
     interface pipeOut       = toPipeOut(pipeOutQueue);
+endmodule
+
+
+
+interface SimpleRoundRobinPipeDispatcher#(type nChannel, type tElement);
+    interface PipeIn#(tElement)                     pipeIn;
+    interface Vector#(nChannel, PipeOut#(tElement)) pipeOutVec;
+endinterface
+
+
+module mkSimpleRoundRobinPipeDispatcher#(Integer bufferDepth)(SimpleRoundRobinPipeDispatcher#(nChannel, tElement)) provisos (
+        Bits#(tElement, szElement)
+    );
+    Vector#(nChannel, PipeOut#(tElement)) pipeOutVecInst = newVector;
+    
+    Vector#(nChannel, FIFOF#(tElement)) pipeOutQueueVec <- replicateM(mkFIFOF);
+
+    
+    FIFOF#(tElement) pipeInQueue <- mkSizedFIFOF(bufferDepth);
+
+
+    Arbiter_IFC#(nChannel) arbiter <- mkArbiter(False);
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+        pipeOutVecInst[channelIdx] = toPipeOut(pipeOutQueueVec[channelIdx]);
+    end
+
+    rule sendArbitReq;
+        for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+            if (pipeOutQueueVec[channelIdx].notFull) begin
+                arbiter.clients[channelIdx].request;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeDispatcher sendArbitReq"),
+                //     toBlue(", channelIdx=%d"), channelIdx
+                // );
+            end
+        end
+    endrule
+
+
+    rule recvArbitResp;
+        Bool successDispatched = False;
+        Bit#(TLog#(nChannel)) curChannelIdx = 0;
+
+        for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+            if (arbiter.clients[channelIdx].grant) begin
+                
+                pipeOutQueueVec[channelIdx].enq(pipeInQueue.first);
+                curChannelIdx = fromInteger(channelIdx);
+                successDispatched = True;
+            end
+        end
+
+        if (successDispatched) begin
+            pipeInQueue.deq;
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkSimpleRoundRobinPipeDispatcher forward"),
+            //     toBlue(", element="), fshow(pipeInQueue.first),
+            //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+            // );
+        end
+    endrule
+
+
+
+    interface pipeIn            = toPipeIn(pipeInQueue);
+    interface pipeOutVec        = pipeOutVecInst;
 endmodule

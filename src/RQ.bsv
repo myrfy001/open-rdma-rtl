@@ -129,7 +129,7 @@ endinterface
 //        only trust what you have really received.
 //        And for packet that isn't normal, make sure all related queues are dequeued. otherwise deadlock.
 (* synthesize *)
-module mkRQ(RQ);
+module mkRQ#(Word channelIdx)(RQ);
 
     FIFOF#(RingbufRawDescriptor)    metaReportDescPipeOutQueue  <- mkFIFOF;
     FIFOF#(AutoAckGeneratorReq)     autoAckGenReqPipeOutQueue   <- mkFIFOF;
@@ -200,7 +200,7 @@ module mkRQ(RQ);
             let routingMask = fromInteger(valueOf(CSR_ADDR_ROUTING_MASK_FOR_METRICS_OF_SINGLE_RQ));
             let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_RQ_PACKET_VERIFY));
 
-            if ((regIdx & routingMask) == fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_OF_ETHERNET_FRAME_IO))) begin
+            if ((regIdx & routingMask) == fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_OF_ETHERNET_FRAME_IO_RECV))) begin
                 return tagged CsrNodeResultForward 0;
             end
             else if (req.isWrite) begin
@@ -258,6 +258,7 @@ module mkRQ(RQ);
     mkConnection(packetParser.csrUpStreamPort, csrNode.downStreamPortsVec[0]);
 
     rule printDebugInfo;
+        if (!payloadStorage.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ payloadStorage");
         if (!checkQpcAndMrTablePipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkQpcAndMrTablePipeQ");
         if (!checkMrTableStep2PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep2PipeQ");
         if (!checkMrTableStep3PipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ checkMrTableStep3PipeQ");
@@ -713,7 +714,7 @@ module mkRQ(RQ);
             if (!isDiscard) begin
                 let resp = conRespPipeInQ.first;
                 conRespPipeInQ.deq;
-                $display("payload con resp = ", fshow(resp));
+                $display("mkRQ[%d] payload con resp = ", channelIdx, fshow(resp));
             end
         end
 
@@ -726,11 +727,13 @@ module mkRQ(RQ);
 
             let needUpdatePsnBitmap = rdmaPacketMeta.hasPayload;
             if (needUpdatePsnBitmap) begin
-                autoAckGenReqPipeOutQueue.enq(AutoAckGeneratorReq{
+                let autoAckReq = AutoAckGeneratorReq{
                     psn: bth.psn,
                     qpn: bth.dqpn,
                     qpc: pipelineEntryIn.qpc
-                });
+                };
+                autoAckGenReqPipeOutQueue.enq(autoAckReq);
+                $display("mkRQ[%d] enq autoAckReq = ", channelIdx, fshow(autoAckReq));
             end
 
             // need to check packet type to avoid cpn packet looping
@@ -746,7 +749,7 @@ module mkRQ(RQ);
         end
 
         $display(
-            "time=%0t:", $time, toGreen(" mkRQ handleConResp")
+            "time=%0t:", $time, toGreen(" mkRQ[%d] handleConResp"), channelIdx
         );
         metricsDebugCounter5Reg <= metricsDebugCounter5Reg + 1;
     endrule
@@ -928,10 +931,10 @@ module mkRQ(RQ);
         end
 
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRQ genMetaReportQueueDesc"),
-        //     toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkRQ[%d] genMetaReportQueueDesc"), channelIdx,
+            toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
+        );
         metricsDebugCounter6Reg <= metricsDebugCounter6Reg + 1;
     endrule
 
@@ -943,7 +946,7 @@ module mkRQ(RQ);
             metaReportDescPipeOutQueue.enq(desc);
 
             $display(
-                "time=%0t:", $time, toGreen(" mkRQ forwardMetaReportDescToOutput"),
+                "time=%0t:", $time, toGreen(" mkRQ[%d] forwardMetaReportDescToOutput"), channelIdx,
                 toBlue(", desc="), fshow(desc)
             );
         end
@@ -964,7 +967,7 @@ module mkRQ(RQ);
         end
 
         $display(
-            "time=%0t:", $time, toGreen(" mkRQ filterDiscardedPayloadStream"),
+            "time=%0t:", $time, toGreen(" mkRQ[%d] filterDiscardedPayloadStream"), channelIdx,
             isDiscard ? toRed(" Discard!") : " keeped",
             toBlue(", ds="), fshow(ds)
         );

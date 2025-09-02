@@ -98,7 +98,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
             let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
-            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_ETHERNET_FRAME_IO));
+            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_ETHERNET_FRAME_IO_RECV));
 
             if (req.isWrite) begin
                 return tagged CsrNodeResultNotMatched;

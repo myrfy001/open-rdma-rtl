@@ -28,7 +28,7 @@ import IoChannels :: *;
 
 interface InputPacketClassifier;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
-    interface PipeInB0#(IoChannelEthDataStream)       ethRawPacketPipeIn;
+    interface PipeInB0#(IoChannelEthDataStream)         ethRawPacketPipeIn;
     interface PipeOut#(DataStream)                      rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
@@ -98,7 +98,7 @@ module mkInputPacketClassifier(InputPacketClassifier);
     function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
         actionvalue
             let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
-            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_ETHERNET_FRAME_IO));
+            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_ETHERNET_FRAME_IO_RECV));
 
             if (req.isWrite) begin
                 return tagged CsrNodeResultNotMatched;
@@ -450,6 +450,12 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
     Reg#(Tuple2#(Bool, SimulationTime)) firstBeatToSecondBeatPipelineReg <- mkRegU;
     Integer bthEndBitOneBasedPosInSecondBeat = valueOf(BTH_FIRST_BIT_ONE_BASED_INDEX_IN_SECOND_BEAT) - valueOf(SizeOf#(BTH));
 
+    // rule debug;
+    //     if (!ethPipeInQ.notEmpty) $display("time=%0t, ", $time, "EmptyQueue: mkRdmaMetaAndPayloadExtractor ethPipeInQ");
+    //     if (!rdmaPayloadPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRdmaMetaAndPayloadExtractor rdmaPayloadPipeOutQ");
+    //     if (!rdmaPacketTailMetaPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRdmaMetaAndPayloadExtractor rdmaPacketTailMetaPipeOutQ");
+    // endrule
+
     rule handleFirstBeat if (stateReg == RdmaMetaAndPayloadExtractorStateHandleFirstBeat);
         let curFpDebugTime <- getSimulationTime;
         // first beat is totally ETH and IP header, skip them
@@ -521,10 +527,7 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleSecondBeat"),
         //     toBlue(", ds="), fshow(ds),
-        //     toBlue(", rdmaTotalHeaderLen=0x%x"), rdmaTotalHeaderLen,
-        //     toBlue(", rdmaHeaderIsComplete="), fshow(rdmaHeaderIsComplete),
-        //     toBlue(", outPacketMeta="), fshow(outPacketMeta),
-        //     toBlue(", payloadDs="), outputPayloadInThisBeat ? fshow(payloadDs) : $format("No Payload In This beat")
+        //     toBlue(", outPacketMeta="), fshow(outPacketMeta)
         // );
         checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleSecondBeat", enableDebug: True});
     endrule
@@ -550,7 +553,6 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleThirdBeat"),
         //     toBlue(", ds="), fshow(ds),
-        //     toBlue(", payloadDs="), rdmaMeta.hasPayload ? fshow(payloadDs) : $format("No Payload"),
         //     toBlue(", rdmaMeta="), fshow(rdmaMeta)
         // );
         checkFullyPipeline(fpDebugTime, 1, 2000, DebugConf{name: "mkRdmaMetaAndPayloadExtractor handleThirdBeat", enableDebug: True});
@@ -643,10 +645,11 @@ endmodule
 
 
 interface EthernetPacketGenerator;
-    interface PipeInB0#(ThinMacIpUdpMetaDataForSend) macIpUdpMetaPipeIn;
-    interface PipeInB0#(RdmaSendPacketMeta) rdmaPacketMetaPipeIn;
-    interface PipeInB0#(DataStream) rdmaPayloadPipeIn;
-    interface PipeOut#(IoChannelEthDataStream) ethernetPacketPipeOut;
+    interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
+    interface PipeInB0#(ThinMacIpUdpMetaDataForSend)    macIpUdpMetaPipeIn;
+    interface PipeInB0#(RdmaSendPacketMeta)             rdmaPacketMetaPipeIn;
+    interface PipeInB0#(DataStream)                     rdmaPayloadPipeIn;
+    interface PipeOut#(IoChannelEthDataStream)          ethernetPacketPipeOut;
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
 endinterface
@@ -737,6 +740,43 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
 
     IpID defaultIpId = 1;
 
+    // Metrics Regs
+    Reg#(Dword) metricsFirstBeatCntReg   <- mkReg(0);
+    Reg#(Dword) metricsSecondBeatCntReg  <- mkReg(0);
+    Reg#(Dword) metricsThirdBeatCntReg   <- mkReg(0);
+    Reg#(Dword) metricsMoreBeatCntReg    <- mkReg(0);
+
+
+    function ActionValue#(CsrNodeResultFork8) csrMatchFunc(CsrAccessReq req);
+        actionvalue
+            let regIdx = req.addr >> valueOf(BYTE_DWORD_CONVERT_SHIFT_NUM);
+            let leafMask = fromInteger(valueOf(CSR_ADDR_LEAF_MASK_FOR_METRICS_ETHERNET_FRAME_IO_SEND));
+
+            if (req.isWrite) begin
+                return tagged CsrNodeResultNotMatched;
+            end
+            else begin
+                case (regIdx & leafMask)
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_SEND_FIRST_BEAT_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsFirstBeatCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_SEND_SECOND_BEAT_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsSecondBeatCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_SEND_THIRD_BEAT_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsThirdBeatCntReg};
+                    end
+                    fromInteger(valueOf(CSR_ADDR_OFFSET_METRICS_ETHERNET_FRAME_IO_SEND_MORE_BEAT_CNT)): begin
+                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: metricsMoreBeatCntReg};
+                    end
+                    default: begin
+                        return tagged CsrNodeResultNotMatched;
+                    end
+                endcase
+            end
+        endactionvalue
+    endfunction
+    CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_ONE), "mkEthernetPacketGenerator");
 
     function IoChannelEthDataStream genEthernetPacket(NocData data, BusByteCnt byteNum, BusByteIdx startByteIdx, Bool isFirst, Bool isLast);
         
@@ -819,6 +859,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         };
         firstBeatToSecondBeatPipelineReg <= outPipelineEntry;
         statusReg <= EthernetPacketGeneratorStateGenSecondBeat;
+        metricsFirstBeatCntReg <= metricsFirstBeatCntReg + 1;
 
         $display(
             "time=%0t:", $time, toGreen(" mkEthernetPacketGenerator genFirstBeat"),
@@ -875,6 +916,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             statusReg <= EthernetPacketGeneratorStateGenThirdBeat;
         end
 
+        metricsSecondBeatCntReg <= metricsSecondBeatCntReg + 1;
+
         immAssert(
             !outBeat.isFirst,
             "The second beat's isFirst should be false",
@@ -913,6 +956,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
             statusReg <= EthernetPacketGeneratorStateGenMoreBeat;
         end
 
+        metricsThirdBeatCntReg <= metricsThirdBeatCntReg + 1;
+
         immAssert(
             !outBeat.isFirst,
             "The third beat's isFirst should be false",
@@ -949,6 +994,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         let outBeat = genEthernetPacket(data, payload.byteNum, payload.startByteIdx, False, isLast);
 
         ethernetPacketPipeOutQ.enq(outBeat);
+
+        metricsMoreBeatCntReg <= metricsMoreBeatCntReg + 1;
 
         immAssert(
             !outBeat.isFirst,
@@ -994,6 +1041,7 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         networkSettingsReg <= tagged Valid networkSettings;
     endmethod
 
+    interface csrUpStreamPort       = csrNode.upStreamPort;
     interface macIpUdpMetaPipeIn    = toPipeInB0(macIpUdpMetaPipeInQ);
     interface rdmaPacketMetaPipeIn  = toPipeInB0(rdmaPacketMetaPipeInQ);
     interface rdmaPayloadPipeIn     = toPipeInB0(rdmaPayloadPipeInQ);

@@ -56,7 +56,7 @@ typedef enum {
     AutoAckGenBackgroundPollingStateHandleResp = 2
 }  AutoAckGenBackgroundPollingState deriving(Bits, Eq, FShow);
 
-typedef 250000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
+typedef 5000 AUTO_ACK_POLLING_TIMEOUT_TICKS;
 
 interface AutoAckGenerator;
     interface PipeInB0#(AutoAckGeneratorReq) reqPipeIn;
@@ -176,10 +176,10 @@ module mkAutoAckGenerator(AutoAckGenerator);
         };
         handleMergedBitmapPipelineQueue.enq(outPipelineEntry);
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnBitMapStorage"),
-        //     toBlue(", req="), fshow(req)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardInputReqToPsnBitMapStorage"),
+            toBlue(", req="), fshow(req)
+        );
     endrule
 
     rule handleMergedBitmap;
@@ -204,12 +204,12 @@ module mkAutoAckGenerator(AutoAckGenerator);
         };
         genAutoAckEthPacketPipelineQueue.enq(outPipelineEntry);
         
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
-        //     toBlue(", bitmapResp="), fshow(bitmapResp),
-        //     toBlue(", hasPacketLost="), fshow(hasPacketLost),
-        //     toBlue(", needSendAckNow="), fshow(needSendAckNow)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkAutoAckGenerator handleMergedBitmap"),
+            toBlue(", bitmapResp="), fshow(bitmapResp),
+            toBlue(", hasPacketLost="), fshow(hasPacketLost),
+            toBlue(", needSendAckNow="), fshow(needSendAckNow)
+        );
     endrule
 
     rule genAutoAckEthPacket;
@@ -273,14 +273,24 @@ module mkAutoAckGenerator(AutoAckGenerator);
 
             let qpnKeyPart = qpCtx.qpnKeyPart;
             genAutoAckReportDescriptorPipelineQueue.enq(tuple3(bitmapInfo, ackMsnInfo, qpnKeyPart));
+
+            $display(
+                "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckEthPacket send ack now"),
+                toBlue(", ackMsnInfo="), fshow(ackMsnInfo),
+                toBlue(", pipelineEntryIn="), fshow(pipelineEntryIn),
+                toBlue(", thinMacIpUdpMetaDataForSend="), fshow(thinMacIpUdpMetaDataForSend),
+                toBlue(", rdmaSendPacketMeta="), fshow(rdmaSendPacketMeta),
+                toBlue(", bitmapInfo="), fshow(bitmapInfo),
+                toBlue(", qpnKeyPart="), fshow(qpnKeyPart)
+            );
             
         end
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckEthPacket"),
-        //     toBlue(", ackMsnInfo="), fshow(ackMsnInfo),
-        //     toBlue(", pipelineEntryIn="), fshow(pipelineEntryIn)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckEthPacket run"),
+            toBlue(", ackMsnInfo="), fshow(ackMsnInfo),
+            toBlue(", pipelineEntryIn="), fshow(pipelineEntryIn)
+        );
     endrule
 
     rule genAutoAckReportDescriptor;
@@ -331,11 +341,15 @@ module mkAutoAckGenerator(AutoAckGenerator);
             metaReportMimoQueue.enq(2, vecToEnq);
             genAutoAckReportDescriptorPipelineQueue.deq;
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckReportDescriptor"),
-            //     toBlue(", vecToEnq="), fshow(vecToEnq)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckReportDescriptor"),
+                toBlue(", vecToEnq="), fshow(vecToEnq)
+            );
         end
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkAutoAckGenerator genAutoAckReportDescriptor run")
+        );
         
     endrule
 
@@ -344,19 +358,19 @@ module mkAutoAckGenerator(AutoAckGenerator);
             metaReportMimoQueue.deq(1);
             let desc = metaReportMimoQueue.first[0];
             metaReportDescPipeOutQueue.enq(desc);
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
-            //     toBlue(", desc="), fshow(desc)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
+                toBlue(", desc="), fshow(desc)
+            );
         end
         else if (pollingTimeoutDescQueue.notEmpty) begin  
             let desc = pollingTimeoutDescQueue.first;
             pollingTimeoutDescQueue.deq;
             metaReportDescPipeOutQueue.enq(desc);
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
-            //     toBlue(", desc="), fshow(desc)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkAutoAckGenerator forwardMetaReportDescToOutput"),
+                toBlue(", desc="), fshow(desc)
+            );
         end
     endrule
 
@@ -395,10 +409,10 @@ module mkAutoAckGenerator(AutoAckGenerator);
     rule handlePollingResult if (bramInitedReg && backgroundPollingStateReg == AutoAckGenBackgroundPollingStateHandleResp);
         let {bitmapInfo, ackMeta, lastPollInfo, pollingQpIdx} = pollingQueryRespPipelineReg;
         if (!ackMeta.hasReported) begin
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
-            //     toBlue(", pollingQueryRespPipelineReg="), fshow(pollingQueryRespPipelineReg)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult"),
+                toBlue(", pollingQueryRespPipelineReg="), fshow(pollingQueryRespPipelineReg)
+            );
 
 
             let lastReportTimeTriggeredByPolling = lastPollInfo;
@@ -436,11 +450,11 @@ module mkAutoAckGenerator(AutoAckGenerator);
                 pollingTimeoutDescQueue.enq(pack(desc0));
                 lastReportTimeStorage.write(pollingQpIdx, ackMeta.lastEntryReceiveTime);
 
-                // $display(
-                //     "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult new report"),
-                //     toBlue(", pollingQpIdx="), fshow(pollingQpIdx),
-                //     toBlue(", ackMeta="), fshow(ackMeta)
-                // );
+                $display(
+                    "time=%0t:", $time, toGreen(" mkAutoAckGenerator handlePollingResult new report"),
+                    toBlue(", pollingQpIdx="), fshow(pollingQpIdx),
+                    toBlue(", ackMeta="), fshow(ackMeta)
+                );
             end
         end
         else begin

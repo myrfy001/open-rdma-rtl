@@ -148,7 +148,7 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
-    await Timer(15000, units='ns')
+    await Timer(150000, units='ns')
     tb.clean_up()
 
 
@@ -165,6 +165,9 @@ def test_top_without_hard_ip():
     copy_mem_file_to_sim_build_dir(rtl_dirs, sim_build)
 
     cocotb_test.simulator.run(
+        # "verilator",
+        # compile_args=["--timing", "--Wno-WIDTHTRUNC", "--Wno-CASEINCOMPLETE", "--Wno-INITIALDLY", "--autoflush"],
+        # make_args=["-j16"],
         python_search=[tests_dir],
         verilog_sources=verilog_sources,
         toplevel=toplevel,

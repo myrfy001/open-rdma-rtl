@@ -70,8 +70,11 @@ module mkBsvTop#(
     mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-        mkConnection(bsvTopOnlyHardIp.ftilemacRxStreamPipeOutVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
-        mkConnection(bsvTopOnlyHardIp.ftilemacTxStreamPipeInVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut);
+        // loopback test
+        mkConnection(bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
+
+        // mkConnection(bsvTopOnlyHardIp.ftilemacRxStreamPipeOutVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
+        // mkConnection(bsvTopOnlyHardIp.ftilemacTxStreamPipeInVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut);
     end
 
 
@@ -261,7 +264,7 @@ interface RingbufAndDescriptorHandler;
     interface BlueRdmaCsrUpStreamPort                                           csrUpStreamPort;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem))         wqePipeOutVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RingbufRawDescriptor))   metaReportDescPipeInVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(RingbufRawDescriptor)) metaReportDescPipeInVec;
 
     interface PipeIn#(RingbufRawDescriptor)                                     simpleNicRxDescPipeIn;
     interface PipeOut#(RingbufRawDescriptor)                                    simpleNicTxDescPipeOut;
@@ -280,18 +283,17 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     Vector#(HARDWARE_QP_CHANNEL_CNT, WorkQueueDescParser) workQueueDescParserVec <- replicateM(mkWorkQueueDescParser);
     CommandQueueDescParserAndDispatcher cmdQueueDescParserAndDispatcher <- mkCommandQueueDescParserAndDispatcher;
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem)) wqePipeOutVecInst = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(RingbufRawDescriptor))   metaReportDescPipeInVecInst = newVector;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufDmaIfcConvertor) qpRingbufDmaIfcConvertorVec <- replicateM(mkRingbufDmaIfcConvertor);
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In) qpRingbufDmaMasterPipeIfcVecInst = newVector;
+
+    SimpleRoundRobinPipeArbiter#(HARDWARE_QP_CHANNEL_CNT, RingbufRawDescriptor) metaReportDescCollector <- mkSimpleRoundRobinPipeArbiter(valueOf(MULTI_CHANNEL_TO_ONE_CHANNEL_ARBITER_BUFFER_DEPTH));
+    SimpleRoundRobinPipeDispatcher#(HARDWARE_QP_CHANNEL_CNT, WorkQueueElem) wqeDispatcher <- mkSimpleRoundRobinPipeDispatcher(valueOf(NUMERIC_TYPE_SIXTEEN));
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         wqeRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
         rqMetaReportRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
         mkConnection(wqeRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
-        wqePipeOutVecInst[idx] = workQueueDescParserVec[idx].workReqPipeOut;
-        metaReportDescPipeInVecInst[idx] = rqMetaReportRingbufVec[idx].descPipeIn;
 
         mkConnection(wqeRingbufVec[idx].dmaReadReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaReadReqPipeIn);               // already Nr
         mkConnection(wqeRingbufVec[idx].dmaReadRespPipeIn, qpRingbufDmaIfcConvertorVec[idx].dmaReadRespPipeOut);
@@ -301,6 +303,9 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
         qpRingbufDmaMasterPipeIfcVecInst[idx] = qpRingbufDmaIfcConvertorVec[idx].dmaMasterPipeIfc;
     end
     
+    mkConnection(workQueueDescParserVec[0].workReqPipeOut, wqeDispatcher.pipeIn);
+    mkConnection(metaReportDescCollector.pipeOut, rqMetaReportRingbufVec[0].descPipeIn);
+
     RingbufH2cSlot4096 cmdReqQueueRingbuf <- mkRingbufH2c(4);
     RingbufC2hSlot4096 cmdRespQueueRingbuf <- mkRingbufC2h(4);
     RingbufDmaIfcConvertor cmdQueueRingbufDmaIfcConvertor <- mkRingbufDmaIfcConvertor;
@@ -374,126 +379,126 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
                         rqMetaReportRingbufVec[0].controlRegs.tail <= unpack(truncate(req.value));
                         return tagged CsrNodeResultWriteHandled;
                     end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = wqeRingbufVec[1].controlRegs.addr;
-                        t[31:0] = req.value;
-                        wqeRingbufVec[1].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = wqeRingbufVec[1].controlRegs.addr;
-                        t[63:32] = req.value;
-                        wqeRingbufVec[1].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        wqeRingbufVec[1].controlRegs.head <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        wqeRingbufVec[1].controlRegs.tail <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = rqMetaReportRingbufVec[1].controlRegs.addr;
-                        t[31:0] = req.value;
-                        rqMetaReportRingbufVec[1].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = rqMetaReportRingbufVec[1].controlRegs.addr;
-                        t[63:32] = req.value;
-                        rqMetaReportRingbufVec[1].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        rqMetaReportRingbufVec[1].controlRegs.head <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        rqMetaReportRingbufVec[1].controlRegs.tail <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = wqeRingbufVec[2].controlRegs.addr;
-                        t[31:0] = req.value;
-                        wqeRingbufVec[2].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = wqeRingbufVec[2].controlRegs.addr;
-                        t[63:32] = req.value;
-                        wqeRingbufVec[2].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        wqeRingbufVec[2].controlRegs.head <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        wqeRingbufVec[2].controlRegs.tail <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = rqMetaReportRingbufVec[2].controlRegs.addr;
-                        t[31:0] = req.value;
-                        rqMetaReportRingbufVec[2].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = rqMetaReportRingbufVec[2].controlRegs.addr;
-                        t[63:32] = req.value;
-                        rqMetaReportRingbufVec[2].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        rqMetaReportRingbufVec[2].controlRegs.head <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        rqMetaReportRingbufVec[2].controlRegs.tail <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = wqeRingbufVec[3].controlRegs.addr;
-                        t[31:0] = req.value;
-                        wqeRingbufVec[3].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = wqeRingbufVec[3].controlRegs.addr;
-                        t[63:32] = req.value;
-                        wqeRingbufVec[3].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        wqeRingbufVec[3].controlRegs.head <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        wqeRingbufVec[3].controlRegs.tail <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = rqMetaReportRingbufVec[3].controlRegs.addr;
-                        t[31:0] = req.value;
-                        rqMetaReportRingbufVec[3].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        let t = rqMetaReportRingbufVec[3].controlRegs.addr;
-                        t[63:32] = req.value;
-                        rqMetaReportRingbufVec[3].controlRegs.addr <= t;
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        rqMetaReportRingbufVec[3].controlRegs.head <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        rqMetaReportRingbufVec[3].controlRegs.tail <= unpack(truncate(req.value));
-                        return tagged CsrNodeResultWriteHandled;
-                    end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = wqeRingbufVec[1].controlRegs.addr;
+                    //     t[31:0] = req.value;
+                    //     wqeRingbufVec[1].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = wqeRingbufVec[1].controlRegs.addr;
+                    //     t[63:32] = req.value;
+                    //     wqeRingbufVec[1].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     wqeRingbufVec[1].controlRegs.head <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     wqeRingbufVec[1].controlRegs.tail <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = rqMetaReportRingbufVec[1].controlRegs.addr;
+                    //     t[31:0] = req.value;
+                    //     rqMetaReportRingbufVec[1].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = rqMetaReportRingbufVec[1].controlRegs.addr;
+                    //     t[63:32] = req.value;
+                    //     rqMetaReportRingbufVec[1].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     rqMetaReportRingbufVec[1].controlRegs.head <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     rqMetaReportRingbufVec[1].controlRegs.tail <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = wqeRingbufVec[2].controlRegs.addr;
+                    //     t[31:0] = req.value;
+                    //     wqeRingbufVec[2].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = wqeRingbufVec[2].controlRegs.addr;
+                    //     t[63:32] = req.value;
+                    //     wqeRingbufVec[2].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     wqeRingbufVec[2].controlRegs.head <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     wqeRingbufVec[2].controlRegs.tail <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = rqMetaReportRingbufVec[2].controlRegs.addr;
+                    //     t[31:0] = req.value;
+                    //     rqMetaReportRingbufVec[2].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = rqMetaReportRingbufVec[2].controlRegs.addr;
+                    //     t[63:32] = req.value;
+                    //     rqMetaReportRingbufVec[2].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     rqMetaReportRingbufVec[2].controlRegs.head <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     rqMetaReportRingbufVec[2].controlRegs.tail <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = wqeRingbufVec[3].controlRegs.addr;
+                    //     t[31:0] = req.value;
+                    //     wqeRingbufVec[3].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = wqeRingbufVec[3].controlRegs.addr;
+                    //     t[63:32] = req.value;
+                    //     wqeRingbufVec[3].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     wqeRingbufVec[3].controlRegs.head <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     wqeRingbufVec[3].controlRegs.tail <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = rqMetaReportRingbufVec[3].controlRegs.addr;
+                    //     t[31:0] = req.value;
+                    //     rqMetaReportRingbufVec[3].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     let t = rqMetaReportRingbufVec[3].controlRegs.addr;
+                    //     t[63:32] = req.value;
+                    //     rqMetaReportRingbufVec[3].controlRegs.addr <= t;
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     rqMetaReportRingbufVec[3].controlRegs.head <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     rqMetaReportRingbufVec[3].controlRegs.tail <= unpack(truncate(req.value));
+                    //     return tagged CsrNodeResultWriteHandled;
+                    // end
 
                     // Cmd Queue ring bufs
                     fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_REQ_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
@@ -612,80 +617,80 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
                         return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[0].controlRegs.tail)))};
                     end
 
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[1].controlRegs.addr[31:0]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[1].controlRegs.addr[63:32]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[1].controlRegs.head)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[1].controlRegs.tail)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[1].controlRegs.addr[31:0]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[1].controlRegs.addr[63:32]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[1].controlRegs.head)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[1].controlRegs.tail)))};
-                    end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[1].controlRegs.addr[31:0]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[1].controlRegs.addr[63:32]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[1].controlRegs.head)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[1].controlRegs.tail)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[1].controlRegs.addr[31:0]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[1].controlRegs.addr[63:32]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[1].controlRegs.head)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 1 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[1].controlRegs.tail)))};
+                    // end
 
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[2].controlRegs.addr[31:0]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[2].controlRegs.addr[63:32]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[2].controlRegs.head)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[2].controlRegs.tail)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[2].controlRegs.addr[31:0]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[2].controlRegs.addr[63:32]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[2].controlRegs.head)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[2].controlRegs.tail)))};
-                    end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[2].controlRegs.addr[31:0]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[2].controlRegs.addr[63:32]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[2].controlRegs.head)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[2].controlRegs.tail)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[2].controlRegs.addr[31:0]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[2].controlRegs.addr[63:32]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[2].controlRegs.head)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 2 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[2].controlRegs.tail)))};
+                    // end
 
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[3].controlRegs.addr[31:0]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[3].controlRegs.addr[63:32]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[3].controlRegs.head)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[3].controlRegs.tail)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[3].controlRegs.addr[31:0]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[3].controlRegs.addr[63:32]};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[3].controlRegs.head)))};
-                    end
-                    fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
-                        return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[3].controlRegs.tail)))};
-                    end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_LOW)      + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[3].controlRegs.addr[31:0]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_BASE_ADDR_HIGH)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: wqeRingbufVec[3].controlRegs.addr[63:32]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_HEAD)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[3].controlRegs.head)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_WQE_RINGBUF_TAIL)               + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(wqeRingbufVec[3].controlRegs.tail)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_LOW)     + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[3].controlRegs.addr[31:0]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_BASE_ADDR_HIGH)    + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: rqMetaReportRingbufVec[3].controlRegs.addr[63:32]};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_HEAD)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[3].controlRegs.head)))};
+                    // end
+                    // fromInteger(valueOf(CSR_ADDR_OFFSET_RECV_RINGBUF_TAIL)              + 3 * valueOf(CSR_ADDR_BLOCK_SIZE_FOR_EACH_QP) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_QP)): begin
+                    //     return tagged CsrNodeResultReadHandled CsrReadWriteResp {value: unpack(zeroExtend(pack(rqMetaReportRingbufVec[3].controlRegs.tail)))};
+                    // end
 
                     //  Cmd Queue ring bufs
                     fromInteger(valueOf(CSR_ADDR_OFFSET_CMD_REQ_Q_RINGBUF_BASE_ADDR_LOW) + valueOf(CSR_ADDR_BLOCK_START_ADDR_FOR_CMDQ)): begin
@@ -753,8 +758,8 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     interface simpleNicRingbufDmaMasterPipeIfc = simpleNicRingbufDmaIfcConvertor.dmaMasterPipeIfc;
     interface csrUpStreamPort = csrNode.upStreamPort;
     
-    interface wqePipeOutVec = wqePipeOutVecInst;
-    interface metaReportDescPipeInVec = metaReportDescPipeInVecInst;
+    interface wqePipeOutVec = wqeDispatcher.pipeOutVec;
+    interface metaReportDescPipeInVec = metaReportDescCollector.pipeInVec;
 
     interface simpleNicRxDescPipeIn = simpleNicRxQueueRingbuf.descPipeIn;
     interface simpleNicTxDescPipeOut = simpleNicTxQueueRingbuf.descPipeOut;
@@ -809,9 +814,9 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, CnpPacketGenerator) cnpPacketGeneratorVec <- replicateM(mkCnpPacketGenerator);
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec <- replicateM(mkPayloadGenAndCon);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec <- replicateM(mkRQ);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_TWO, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_TWO)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem)) wqePipeInVecInst = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
@@ -832,6 +837,9 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(autoAckGeneratorReqArbiter.pipeOut, autoAckGenerator.reqPipeIn);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+
+        payloadGenAndConVec[idx] <- mkPayloadGenAndCon(fromInteger(idx));
+        rqVec[idx] <- mkRQ(fromInteger(idx));
         // Payload gen and con
         mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);    // already Nr
         mkConnection(sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
@@ -895,6 +903,9 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         endrule
     end
 
+    // TODO: Fixme, change mkDescriptorMux to support different channel count
+    mkConnection(autoAckGenerator.metaReportDescPipeOut, descriptorMuxVec[0].descPipeInVec[1]);  // already Nr
+
 
 
     
@@ -925,6 +936,18 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
             else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_RQ3)) == maskedAddr) begin
                 return tagged CsrNodeResultForward 3;
             end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_PACKET_GEN_0)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 4;
+            end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_PACKET_GEN_1)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 5;
+            end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_PACKET_GEN_2)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 6;
+            end
+            else if (fromInteger(valueOf(CSR_ADDR_ROUTING_FOR_METRICS_PACKET_GEN_3)) == maskedAddr) begin
+                return tagged CsrNodeResultForward 7;
+            end
             else begin
                 return tagged CsrNodeResultNotMatched;
             end
@@ -935,6 +958,10 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     mkConnection(rqVec[1].csrUpStreamPort, csrNode.downStreamPortsVec[1]);
     mkConnection(rqVec[2].csrUpStreamPort, csrNode.downStreamPortsVec[2]);
     mkConnection(rqVec[3].csrUpStreamPort, csrNode.downStreamPortsVec[3]);
+    mkConnection(ethernetPacketGenVecInst[0].csrUpStreamPort, csrNode.downStreamPortsVec[4]);
+    mkConnection(ethernetPacketGenVecInst[1].csrUpStreamPort, csrNode.downStreamPortsVec[5]);
+    mkConnection(ethernetPacketGenVecInst[2].csrUpStreamPort, csrNode.downStreamPortsVec[6]);
+    mkConnection(ethernetPacketGenVecInst[3].csrUpStreamPort, csrNode.downStreamPortsVec[7]);
 
     
     rule forwardQpContextUpdateReq;

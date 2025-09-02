@@ -76,10 +76,10 @@ interface PayloadGenAndCon;
 endinterface
 
 (* synthesize *)
-module mkPayloadGenAndCon(PayloadGenAndCon);
+module mkPayloadGenAndCon#(Word channelIdx)(PayloadGenAndCon);
 
     PayloadGen payloadGen <- mkPayloadGen;
-    PayloadCon payloadCon <- mkPayloadCon;
+    PayloadCon payloadCon <- mkPayloadCon(channelIdx);
 
     interface genAddrTranslateClt = payloadGen.addrTranslateClt;
     interface genReqPipeIn = payloadGen.genReqPipeIn;
@@ -231,7 +231,7 @@ endmodule
 
 
 (* synthesize *)
-module mkPayloadCon(PayloadCon);
+module mkPayloadCon#(Word channelIdx)(PayloadCon);
 
     PipeInAdapterB0#(PayloadConReq) conReqPipeInQ <- mkPipeInAdapterB0;
     PipeInAdapterB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkPipeInAdapterB0;
@@ -304,7 +304,7 @@ module mkPayloadCon(PayloadCon);
 
         issueDmaWritePipelineQ.enq(tuple2(burstAddrBoundry.len, curFpDebugTime));
         $display(
-            "time=%0t:", $time, toGreen(" mkPayloadCon getBurstChunRespAndIssueAddrTranslateReq"),
+            "time=%0t:", $time, toGreen(" mkPayloadCon[%d] getBurstChunRespAndIssueAddrTranslateReq"), channelIdx,
             toBlue(", addrTranslateReq="), fshow(addrTranslateReq),
             toBlue(", burstAddrBoundry="), fshow(burstAddrBoundry)
         );
@@ -335,7 +335,7 @@ module mkPayloadCon(PayloadCon);
         };
         dmaWriteReqAddrPipeOutQ.enq(writeReq);
         $display(
-            "time=%0t:", $time, toGreen(" mkPayloadCon getBeatChunkMetaCalculateRespAndIssueAxiWrite"),
+            "time=%0t:", $time, toGreen(" mkPayloadCon[%d] getBeatChunkMetaCalculateRespAndIssueAxiWrite"), channelIdx,
             toBlue(", writeReq="), fshow(writeReq),
             toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
             toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc)
@@ -356,7 +356,7 @@ module mkPayloadCon(PayloadCon);
         dsSpliterStreamAlignBlockCountPipeInConverter.enq(alignBlockCntForStreamSplit);
 
         $display(
-            "time=%0t:", $time, toGreen(" mkPayloadCon calcStreamSpliterMeta"),
+            "time=%0t:", $time, toGreen(" mkPayloadCon[%d] calcStreamSpliterMeta"), channelIdx, 
             toBlue(", truncatedStartAddr="), fshow(truncatedStartAddr),
             toBlue(", truncatedEndAddrForALignCalc="), fshow(truncatedEndAddrForALignCalc),
             toBlue(", alignBlockCntForStreamSplit="), fshow(alignBlockCntForStreamSplit)
@@ -372,11 +372,15 @@ module mkPayloadCon(PayloadCon);
        
         if (ds.isLast) begin
             conRespPipeOutQ.enq(True);
+            $display(
+                "time=%0t:", $time, toGreen(" mkPayloadCon[%d] forwardConsumedFinishedSignal enqueue consume signal"), channelIdx,
+                toBlue(", ds="), fshow(ds)
+            );
         end
-        $display(
-            "time=%0t:", $time, toGreen(" mkPayloadCon forwardConsumedFinishedSignal"),
-            toBlue(", ds="), fshow(ds)
-        );
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPayloadCon forwardConsumedFinishedSignal"),
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
     rule debugForwardSplitOutput;
