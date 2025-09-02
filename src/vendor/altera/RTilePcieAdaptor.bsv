@@ -1232,18 +1232,18 @@ typedef Bit#(PCIE_SEGMENT_IDX_IN_TLP_WIDTH)                             PcieSegI
 typedef Bit#(PCIE_SEGMENT_CNT_IN_TLP_WIDTH)                             PcieSegCntInTlp;
 
 typedef 64                                                              PCIE_RCB;
-typedef TAdd#(1, TDiv#(PCIE_MRRS, PCIE_RCB))                            PCIE_MAX_CPLT_TLP_CNT_PER_READ_REQUEST;
-typedef TLog#(PCIE_MAX_CPLT_TLP_CNT_PER_READ_REQUEST)                   PCIE_CPLT_TLP_IDX_IN_READ_REQUEST_WIDTH;
-typedef TAdd#(1, PCIE_CPLT_TLP_IDX_IN_READ_REQUEST_WIDTH)               PCIE_CPLT_TLP_CNT_IN_READ_REQUEST_WIDTH;
-typedef Bit#(PCIE_CPLT_TLP_IDX_IN_READ_REQUEST_WIDTH)                   PcieClptTlpIdxInReadRequest;
-typedef Bit#(PCIE_CPLT_TLP_CNT_IN_READ_REQUEST_WIDTH)                   PcieClptTlpCntInReadRequest;
+typedef TAdd#(1, TDiv#(PCIE_MRRS, PCIE_RCB))                            PCIE_MAX_CPLT_TLP_CNT_PER_READ_REQUEST;     // 65
+typedef TLog#(PCIE_MAX_CPLT_TLP_CNT_PER_READ_REQUEST)                   PCIE_CPLT_TLP_IDX_IN_READ_REQUEST_WIDTH;    // 7
+typedef TAdd#(1, PCIE_CPLT_TLP_IDX_IN_READ_REQUEST_WIDTH)               PCIE_CPLT_TLP_CNT_IN_READ_REQUEST_WIDTH;    // 8
+typedef Bit#(PCIE_CPLT_TLP_IDX_IN_READ_REQUEST_WIDTH)                   PcieClptTlpIdxInReadRequest;                // 7
+typedef Bit#(PCIE_CPLT_TLP_CNT_IN_READ_REQUEST_WIDTH)                   PcieClptTlpCntInReadRequest;                // 8
 
 typedef 64                                                                  PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT;
-typedef TAdd#(1, TDiv#(PCIE_MRRS, PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT))       PCIE_MAX_CPLT_DATA_SLOT_CNT_PER_READ_REQUEST;
-typedef TLog#(PCIE_MAX_CPLT_DATA_SLOT_CNT_PER_READ_REQUEST)                 PCIE_CPLT_DATA_SLOT_IDX_IN_READ_REQUEST_WIDTH;
-typedef TAdd#(1, PCIE_CPLT_DATA_SLOT_IDX_IN_READ_REQUEST_WIDTH)             PCIE_CPLT_DATA_SLOT_CNT_IN_READ_REQUEST_WIDTH;
+typedef TAdd#(1, TDiv#(PCIE_MRRS, PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT))       PCIE_MAX_CPLT_DATA_SLOT_CNT_PER_READ_REQUEST;  // 65
+typedef TLog#(PCIE_MAX_CPLT_DATA_SLOT_CNT_PER_READ_REQUEST)                 PCIE_CPLT_DATA_SLOT_IDX_IN_READ_REQUEST_WIDTH; // 7
+typedef TAdd#(1, PCIE_CPLT_DATA_SLOT_IDX_IN_READ_REQUEST_WIDTH)             PCIE_CPLT_DATA_SLOT_CNT_IN_READ_REQUEST_WIDTH; // 8
 typedef Bit#(PCIE_CPLT_DATA_SLOT_IDX_IN_READ_REQUEST_WIDTH)                 PcieClptDataSlotIdxInReadRequest;
-typedef Bit#(PCIE_CPLT_DATA_SLOT_CNT_IN_READ_REQUEST_WIDTH)                 PcieClptDataSlotCntInReadRequest;
+typedef Bit#(PCIE_CPLT_DATA_SLOT_CNT_IN_READ_REQUEST_WIDTH)                 PcieClptDataSlotCntInReadRequest;               // 8
 
 typedef 1444 RTILE_PCIE_RX_HARDWARE_CPLT_BUFFER_HEADER_DEPTH;
 typedef 2016 RTILE_PCIE_RX_HARDWARE_CPLT_BUFFER_DATA_DEPTH;
@@ -1433,11 +1433,11 @@ typedef Bit#(PCIE_EXTENDED_TAG_HIGH_PART_WIDTH) PcieExtendTagHighPart;
 typedef TAdd#(1, TSub#(PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MAX_VALUE, PCIE_COMPLETION_BUFFER_TAG_HIGH_PART_MIN_VALUE)) PCIE_COMPLETION_BUFFER_TAG_SLOT_COUNT;
 typedef TExp#(TLog#(TMul#(2, RTILE_PCIE_RX_HARDWARE_CPLT_BUFFER_HEADER_DEPTH))) PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_CNT;  // mul by 2 to leave enough space to prevent wrap around. use TExp to align power of 2.
 
-typedef TLog#(PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_CNT) PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_IDX_WIDTH;
+typedef TLog#(PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_CNT) PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_IDX_WIDTH;           // 12
 typedef TAdd#(1, PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_IDX_WIDTH) PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_CNT_WIDTH;
 
-typedef Bit#(PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_IDX_WIDTH) CpltBufferCpltTlpInfoBufferAddr;
-typedef Bit#(PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_CNT_WIDTH) CpltBufferCpltTlpInfoBufferCnt;
+typedef Bit#(PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_IDX_WIDTH) CpltBufferCpltTlpInfoBufferAddr;        // 12
+typedef Bit#(PCIE_COMPLETION_BUFFER_CPLT_TLP_INFO_BUFFER_ROW_CNT_WIDTH) CpltBufferCpltTlpInfoBufferCnt;         // 13
 
 typedef PCIE_EXTENDED_TAG_HIGH_PART_WIDTH PCIE_COMPLETION_BUFFER_TAG_SLOT_INDEX_WIDTH;   // 8
 
@@ -1457,11 +1457,11 @@ typedef struct {
 
 // each PCIe read request correspond to a Tag, so each tag slot correspond to a PCIe read request
 typedef struct {
-    CpltBufferCpltTlpInfoBufferAddr                     cpltTlpListStartAddr; 
-    PcieClptTlpIdxInReadRequest                         cpltTlpListCurWriteOffset;
+    CpltBufferCpltTlpInfoBufferAddr                     cpltTlpListStartAddr;           // 12
+    PcieClptTlpIdxInReadRequest                         cpltTlpListCurWriteOffset;      // 7
 
-    PcieClptTlpCntInReadRequest                         maxCpltTlpCntNeeded;
-    PcieClptDataSlotCntInReadRequest                    hwClptBufDataSlotCntNeeded;
+    PcieClptTlpCntInReadRequest                         maxCpltTlpCntNeeded;            // 8
+    PcieClptDataSlotCntInReadRequest                    hwClptBufDataSlotCntNeeded;     // 8
 
     Bool                                                isCompleted; 
 } PcieCompletionBufferTagSlotMeta deriving(Bits, FShow);
@@ -1542,7 +1542,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     // Pipeline FIFOs
     FIFOF#(RtilePcieRxTlpInfoCplt)                                              handleInputCpltTlpVecStep2PipelineQueue             <- mkSizedFIFOF(6);
     FIFOF#(PcieCompletionBufferTagSlotMetaForOutputStage)                       readCpltTlpInfoForOutputPipelineQueue               <- mkLFIFOF;
-    FIFOF#(PcieExtendTagHighPart)                                               slotMetaQueryForOutputPipelineQueue                 <- mkSizedFIFOF(6);
     FIFOF#(PcieCompletionBufferBeatInfoForOutputDataStreamGenerate)             outputDataStreamGenPipelineQueue                    <- mkSizedFIFOF(6);
     FIFOF#(Tuple2#(CpltBufferCpltTlpInfoBufferAddr, RtilePcieRxTlpInfoCplt))    handleCpltTlpInfoStorageWritePipelineQueue          <- mkLFIFOF;
 
@@ -1814,8 +1813,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
                 headerSlotCnt   : zeroExtend(slotMeta.maxCpltTlpCntNeeded),
                 dataSlotCnt     : zeroExtend(slotMeta.hwClptBufDataSlotCntNeeded)
             });
-            slotMetaUpdateReqQueueForSlotRelease.enq(slotIdx);
-            busySlotCounter.decr(1);
             debugRuleRunCntHandleInputCpltTlpVecStep2C1 <= debugRuleRunCntHandleInputCpltTlpVecStep2C1 + 1;
         end
 
@@ -1839,7 +1836,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
     rule sendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateInit);
 
         slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
-        slotMetaQueryForOutputPipelineQueue.enq(tagAllocTailReg);
         outputStateReg <= PcieCompletionBufferOutputStateWaitStateRunning;
         // $display(
         //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer sendStateQuery"),
@@ -1852,25 +1848,17 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         let slotMetaReadFromBram = slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].readRespPipeOut.first;
         slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].readRespPipeOut.deq;
 
-        let slotIdxForReadResp = slotMetaQueryForOutputPipelineQueue.first;
-        slotMetaQueryForOutputPipelineQueue.deq;
 
-        let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(tagAllocTailReg);
-
-        if (slotIdxForReadResp != tagAllocTailReg) begin
-            $display(
-                "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp"),
-                ", channel [%0d]", channelIdxWire,
-                ", got outdated slot meta query result",
-                toBlue(", slotIdxForReadResp="), fshow(slotIdxForReadResp),
-                toBlue(", tagAllocTailReg="), fshow(tagAllocTailReg),
-                toBlue(", use cache forwarded newest result="), fshow(isValid(slotMetaFromForwardBufferMaybe))
-            );
-        end
-
-        PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
+        // let slotMetaFromForwardBufferMaybe      <- slotMetaUpdateForwardBuffer.search(tagAllocTailReg);
+        // PcieCompletionBufferTagSlotMeta slotMeta   = isValid(slotMetaFromForwardBufferMaybe) ? fromMaybe(?, slotMetaFromForwardBufferMaybe) : slotMetaReadFromBram;
         
+        PcieCompletionBufferTagSlotMeta slotMeta = slotMetaReadFromBram;
+
         if (slotMeta.isCompleted) begin
+
+            slotMetaUpdateReqQueueForSlotRelease.enq(tagAllocTailReg);
+            busySlotCounter.decr(1);
+
             readCpltTlpInfoForOutputPipelineQueue.enq(PcieCompletionBufferTagSlotMetaForOutputStage {
                 cpltTlpListStartAddr        : slotMeta.cpltTlpListStartAddr,
                 cpltTlpListCurReadOffset    : 0,
@@ -1886,7 +1874,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             end
             tagAllocTailReg <= newTagAllocTail;
             slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(newTagAllocTail);
-            slotMetaQueryForOutputPipelineQueue.enq(newTagAllocTail);
             $display(
                 "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer outputWaitStateQueryResp found complete"),
                 ", channel [%0d]", channelIdxWire,
@@ -1898,7 +1885,6 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         end
         else begin
             slotMetaStorageDoubleWriteVec[slotMetaStorageBramIdxForOutputStatePollRead].putReadReq(tagAllocTailReg);
-            slotMetaQueryForOutputPipelineQueue.enq(tagAllocTailReg);
             debugRuleRunCntOutputWaitStateQueryRespC1 <= debugRuleRunCntOutputWaitStateQueryRespC1 + 1;
         end
         // $display(
