@@ -23,6 +23,7 @@ export toPipeInB0;
 export mkPipeInB0ToPipeIn;
 export mkPipeInB0ToPipeInWithDebug;
 export mkFifofToPipeInB0;
+export mkPipeInToPipeInB0;
 export GetF(..);
 export PutF(..);
 export ServerF(..);
@@ -377,6 +378,14 @@ module mkFifofToPipeInB0#(FIFOF#(tData) fifo)(PipeInB0#(tData)) provisos (Bits#(
     return b0Adapter.pipeInIfc;
 endmodule
 
+module mkPipeInToPipeInB0#(PipeIn#(tData) fifo)(PipeInB0#(tData)) provisos (Bits#(tData, szData));
+    let b0Adapter <- mkPipeInAdapterB0;
+    rule forward;
+        b0Adapter.deq;
+        fifo.enq(b0Adapter.first);
+    endrule
+    return b0Adapter.pipeInIfc;
+endmodule
 
 
 // // B1 means Buffer 1,
@@ -512,10 +521,10 @@ instance ToSendCommit#(PipeOut#(a), a);
    module mkSendCommit #(PipeOut#(a) p) (SendCommit#(a));
       PulseWire doAck <- mkPulseWire;
       (*fire_when_enabled*)
-      rule doDeq (doAck /*&& f.notEmpty*/);
+      rule doDeq (doAck /*&& p.notEmpty*/);
          p.deq;
       endrule
-      method a dataout /*if (f.notEmpty)*/;
+      method a dataout /*if (p.notEmpty)*/;
         return p.first;
       endmethod
       method Action ack = doAck.send;

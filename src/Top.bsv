@@ -287,24 +287,30 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufDmaIfcConvertor) qpRingbufDmaIfcConvertorVec <- replicateM(mkRingbufDmaIfcConvertor);
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In) qpRingbufDmaMasterPipeIfcVecInst = newVector;
 
-    SimpleRoundRobinPipeArbiter#(HARDWARE_QP_CHANNEL_CNT, RingbufRawDescriptor) metaReportDescCollector <- mkSimpleRoundRobinPipeArbiter(valueOf(MULTI_CHANNEL_TO_ONE_CHANNEL_ARBITER_BUFFER_DEPTH));
+    // SimpleRoundRobinPipeArbiter#(HARDWARE_QP_CHANNEL_CNT, RingbufRawDescriptor) metaReportDescCollector <- mkSimpleRoundRobinPipeArbiter(valueOf(MULTI_CHANNEL_TO_ONE_CHANNEL_ARBITER_BUFFER_DEPTH));
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(RingbufRawDescriptor)) metaReportDescPipeInVecInst = newVector;
     SimpleRoundRobinPipeDispatcher#(HARDWARE_QP_CHANNEL_CNT, WorkQueueElem) wqeDispatcher <- mkSimpleRoundRobinPipeDispatcher(valueOf(NUMERIC_TYPE_SIXTEEN));
 
+    // TODO: FIXME change 4 channel to one channel, infact, only first channel is working now.
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         wqeRingbufVec[idx] <- mkRingbufH2c(fromInteger(idx));
         rqMetaReportRingbufVec[idx] <- mkRingbufC2h(fromInteger(idx));
-        mkConnection(wqeRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
 
+        mkConnection(wqeRingbufVec[idx].descPipeOut, workQueueDescParserVec[idx].rawDescPipeIn);
         mkConnection(wqeRingbufVec[idx].dmaReadReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaReadReqPipeIn);               // already Nr
         mkConnection(wqeRingbufVec[idx].dmaReadRespPipeIn, qpRingbufDmaIfcConvertorVec[idx].dmaReadRespPipeOut);
+
         mkConnection(rqMetaReportRingbufVec[idx].dmaWriteReqPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaWriteReqPipeIn);    // already Nr
         mkConnection(rqMetaReportRingbufVec[idx].dmaWriteDataPipeOut, qpRingbufDmaIfcConvertorVec[idx].dmaWriteDataPipeIn);  // already Nr
         mkConnection(rqMetaReportRingbufVec[idx].dmaWriteRespPipeIn, qpRingbufDmaIfcConvertorVec[idx].dmaWriteRespPipeOut);
+
         qpRingbufDmaMasterPipeIfcVecInst[idx] = qpRingbufDmaIfcConvertorVec[idx].dmaMasterPipeIfc;
     end
     
     mkConnection(workQueueDescParserVec[0].workReqPipeOut, wqeDispatcher.pipeIn);
-    mkConnection(metaReportDescCollector.pipeOut, rqMetaReportRingbufVec[0].descPipeIn);
+    
+    // mkConnection(metaReportDescCollector.pipeOut, rqMetaReportRingbufVec[0].descPipeIn);
+    metaReportDescPipeInVecInst[0] <- mkPipeInToPipeInB0(rqMetaReportRingbufVec[0].descPipeIn);
 
     RingbufH2cSlot4096 cmdReqQueueRingbuf <- mkRingbufH2c(4);
     RingbufC2hSlot4096 cmdRespQueueRingbuf <- mkRingbufC2h(4);
@@ -759,7 +765,7 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     interface csrUpStreamPort = csrNode.upStreamPort;
     
     interface wqePipeOutVec = wqeDispatcher.pipeOutVec;
-    interface metaReportDescPipeInVec = metaReportDescCollector.pipeInVec;
+    interface metaReportDescPipeInVec = metaReportDescPipeInVecInst;
 
     interface simpleNicRxDescPipeIn = simpleNicRxQueueRingbuf.descPipeIn;
     interface simpleNicTxDescPipeOut = simpleNicTxQueueRingbuf.descPipeOut;
@@ -819,7 +825,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_TWO, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_TWO)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem)) wqePipeInVecInst = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, DescriptorMux) descriptorMuxVec <- replicateM(mkDescriptorMux);
+    DescriptorMux#(TAdd#(NUMERIC_TYPE_ONE, HARDWARE_QP_CHANNEL_CNT)) metaReportDescriptorMux <- mkDescriptorMux;
 
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)         qpDmaRequestMasterIfcVecInst    = newVector;
@@ -889,8 +895,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGeneratorVec[idx].genReqPipeIn);  // already Nr
 
         // meta report descriptors
-        mkConnection(rqVec[idx].metaReportDescPipeOut, descriptorMuxVec[idx].descPipeInVec[0]);  // already Nr
-        metaReportDescPipeOutVecInst[idx] = descriptorMuxVec[idx].descPipeOut;
+        mkConnection(rqVec[idx].metaReportDescPipeOut, metaReportDescriptorMux.descPipeInVec[idx]);  // already Nr
 
         // RDMA payload DMA Ifc
         qpDmaRequestMasterIfcVecInst[idx] = payloadGenAndConVec[idx].ioChannelMemoryMasterPipeIfc;  
@@ -903,8 +908,10 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         endrule
     end
 
-    // TODO: Fixme, change mkDescriptorMux to support different channel count
-    mkConnection(autoAckGenerator.metaReportDescPipeOut, descriptorMuxVec[0].descPipeInVec[1]);  // already Nr
+    mkConnection(autoAckGenerator.metaReportDescPipeOut, metaReportDescriptorMux.descPipeInVec[valueOf(HARDWARE_QP_CHANNEL_CNT)]);  // already Nr
+
+    // TODO: FIXME: change the following vector to a scalar, since only the firta channel is used
+    metaReportDescPipeOutVecInst[0] = metaReportDescriptorMux.descPipeOut;
 
 
 

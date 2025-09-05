@@ -339,7 +339,7 @@ module mkServerToClientArbitP#(
     rule sendWriteArbitReq if (isReqFirstBeatReg);
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (srvSideReqQueueVec[channelIdx].notEmpty) begin
-            innerArbiter.clients[channelIdx].request;
+                innerArbiter.clients[channelIdx].request;
                 // $display(
                 //     "time=%0t:", $time, toGreen(" mkServerToClientArbitP sendWriteArbitReq"),
                 //     toBlue(", channelIdx=%d"), channelIdx
@@ -687,4 +687,144 @@ module mkSimpleRoundRobinPipeDispatcher#(Integer bufferDepth)(SimpleRoundRobinPi
 
     interface pipeIn            = toPipeIn(pipeInQueue);
     interface pipeOutVec        = pipeOutVecInst;
+endmodule
+
+
+
+
+
+
+
+
+interface MultiBeatRoundRobinPipeArbiter#(type channelCnt, type tReq, type tResp);
+    interface Vector#(channelCnt, PipeInB0#(tReq)) reqPipeInVec;
+    interface PipeOut#(tReq) reqPipeOut;
+
+    interface PipeInB0#(tResp) respPipeIn;
+    interface Vector#(channelCnt, PipeOut#(tResp)) respPipeOutVec;
+
+    interface PipeOut#(Bit#(TLog#(channelCnt))) channelIdxPipeOut;
+
+endinterface
+
+
+module mkMultiBeatRoundRobinPipeArbiter#(
+        Integer bufferDepth,
+        Bool needReadResp,
+        Bool needChannelIdxPipeOut,
+        function Bool isReqFinished(tReq request),
+        function Bool isRespFinished(tResp response),
+        DebugConf dbgConf
+    )(MultiBeatRoundRobinPipeArbiter#(channelCnt, tReq, tResp)) provisos (
+        Bits#(tReq, szReq),
+        Bits#(tResp, szResp),
+        Alias#(Bit#(TLog#(channelCnt)), tChannelIdx),
+        FShow#(tReq),
+        FShow#(tResp)
+    );
+
+    Vector#(channelCnt, PipeInB0#(tReq))  reqPipeInVecInst    = newVector;
+    PipeInAdapterB0#(tResp)               respPipeInQueue     <-  mkPipeInAdapterB0;
+    Vector#(channelCnt, PipeOut#(tResp))  respPipeOutVecInst  = newVector;
+    
+    
+    Vector#(channelCnt, PipeInAdapterB0#(tReq)) reqPipeInQueueVec   <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, FIFOF#(tResp))          respPipeOutQueueVec <- replicateM(mkFIFOF);
+
+    FIFOF#(tReq)                                reqPipeOutQueue     <- mkSizedFIFOF(bufferDepth);
+    Arbiter_IFC#(channelCnt)                    innerArbiter        <- mkArbiter(False);
+    Reg#(Bool) isReqFirstBeatReg <- mkReg(True);
+    Reg#(tChannelIdx) curReqChannelIdxReg <- mkRegU;
+    FIFOF#(tChannelIdx) respKeepOrderQueue  <- mkSizedFIFOFWithFullAssert(bufferDepth, concatDebugName (dbgConf, "mkMultiBeatRoundRobinPipeArbiter respKeepOrderQueue"));
+    FIFOF#(tChannelIdx) channelIdxPipeOutQueue  <- mkSizedFIFOFWithFullAssert(bufferDepth, concatDebugName (dbgConf, "mkMultiBeatRoundRobinPipeArbiter channelIdxPipeOutQueue"));
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+        reqPipeInVecInst[channelIdx] = reqPipeInQueueVec[channelIdx].pipeInIfc;
+        respPipeOutVecInst[channelIdx] = toPipeOut(respPipeOutQueueVec[channelIdx]);
+    end
+
+    rule sendWriteArbitReq if (isReqFirstBeatReg);
+        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+            if (reqPipeInQueueVec[channelIdx].notEmpty) begin
+                innerArbiter.clients[channelIdx].request;
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkMultiBeatRoundRobinPipeArbiter sendWriteArbitReq"),
+                //     toBlue(", channelIdx=%d"), channelIdx
+                // );
+            end
+        end
+    endrule
+
+
+    rule recvReqArbitResult if (isReqFirstBeatReg);
+        Maybe#(tReq) reqMaybe = tagged Invalid;
+        tChannelIdx curChannelIdx = 0;
+        for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
+            if (innerArbiter.clients[channelIdx].grant) begin
+                reqMaybe = tagged Valid reqPipeInQueueVec[channelIdx].first;
+                reqPipeInQueueVec[channelIdx].deq;
+                curChannelIdx = fromInteger(channelIdx);
+            end
+        end
+
+        if (reqMaybe matches tagged Valid .req) begin
+            reqPipeOutQueue.enq(req);
+            isReqFirstBeatReg <= isReqFinished(req);
+            curReqChannelIdxReg <= curChannelIdx;
+            if (needReadResp) begin
+                respKeepOrderQueue.enq(curChannelIdx);
+            end
+            if (needChannelIdxPipeOut) begin
+                channelIdxPipeOutQueue.enq(curChannelIdx);
+            end
+            $display(
+                "time=%0t:", $time, toGreen(" mkMultiBeatRoundRobinPipeArbiter forward request first beat"),
+                toBlue(", req="), fshow(req)
+            );
+        end
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkMultiBeatRoundRobinPipeArbiter recvReqArbitResult"),
+        //     toBlue(", wmMaybe="), fshow(wmMaybe),
+        //     toBlue(", curChannelIdx="), fshow(curChannelIdx)
+        // );
+    endrule
+
+    rule forwardMoreReqBeat if (!isReqFirstBeatReg);
+        let req  = reqPipeInQueueVec[curReqChannelIdxReg].first;
+        reqPipeInQueueVec[curReqChannelIdxReg].deq;
+        reqPipeOutQueue.enq(req);
+        isReqFirstBeatReg <= isReqFinished(req);
+
+        $display(
+            "time=%0t:", $time, toGreen(" mkMultiBeatRoundRobinPipeArbiter forward request more beat"),
+            toBlue(", req="), fshow(req)
+        );
+    endrule
+
+    if (needReadResp) begin
+        rule forwardReadResp;
+            let resp = respPipeInQueue.first;
+            respPipeInQueue.deq;
+
+            let channelIdx = respKeepOrderQueue.first;
+            respPipeOutQueueVec[channelIdx].enq(resp);
+
+            if (isRespFinished(resp)) begin
+                respKeepOrderQueue.deq;
+            end
+            $display(
+                "time=%0t:", $time, toGreen(" mkMultiBeatRoundRobinPipeArbiter forwardReadResp"),
+                toBlue(", channelIdx="), fshow(channelIdx),
+                toBlue(", resp="), fshow(resp)
+            );
+        endrule
+    end
+
+    interface reqPipeInVec = reqPipeInVecInst;
+    interface reqPipeOut = toPipeOut(reqPipeOutQueue);
+
+    interface respPipeIn = toPipeInB0(respPipeInQueue);
+    interface respPipeOutVec = respPipeOutVecInst;
+
+    interface channelIdxPipeOut = toPipeOut(channelIdxPipeOutQueue);
 endmodule
