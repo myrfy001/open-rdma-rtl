@@ -9,6 +9,7 @@ import Connectable :: *;
 import ConfigReg :: *;
 import MIMO :: *;
 import Reserved :: *;
+import Printf :: *;
 
 
 import BasicDataTypes :: *;
@@ -238,23 +239,45 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
     PcieCreditCounterSource#(CreditCount, DataCreditUpdateCnt) txCreditCPLD <- mkPcieCreditCounterSource;
 
     FIFOF#(PcieRxBeat) pcieRxPipeOutQueue <- mkUGFIFOF;
-    FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGLFIFOF;
+    FIFOF#(PcieTxBeat) pcieTxPipeInQueue <- mkUGFIFOF;
 
     PipeInAdapterB0#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    rxFlowControlReleaseReqPipeInQueue <- mkPipeInAdapterB0;
     PipeInAdapterB0#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlConsumeReqPipeInQueue <- mkPipeInAdapterB0;
     FIFOF#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))    txFlowControlAvaliablePipeOutQueue <- mkFIFOF;
 
-    Reg#(Bool) txReadySignalOutputReg <- mkReg(False);
+    Wire#(Bool) txReadySignalWire <- mkBypassWire;
     Reg#(Bool) txTlpAcrossTwoBeatReg <- mkReg(False);
 
-    Bool txValid = pcieTxPipeInQueue.notEmpty && txReadySignalOutputReg;
+    Bool txValid = pcieTxPipeInQueue.notEmpty && txReadySignalWire;
+
+
    
     rule guard;
-        immAssert(
-            !(txTlpAcrossTwoBeatReg && !pcieTxPipeInQueue.notEmpty),
-            "Can't stop between sop and eop",
-            $format("")
-        );
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor guard"),
+        //     ", txReadySignalWire=", fshow(txReadySignalWire),
+        //     ", txTlpAcrossTwoBeatReg=", fshow(txTlpAcrossTwoBeatReg),
+        //     ", pcieTxPipeInQueue.notEmpty=", fshow(pcieTxPipeInQueue.notEmpty),
+        //     ", pcieTxPipeInQueue.notFull=", fshow(pcieTxPipeInQueue.notFull)
+        // );
+
+        if (txReadySignalWire) begin
+            immAssert(
+                !(txTlpAcrossTwoBeatReg && !pcieTxPipeInQueue.notEmpty),
+                "Can't stop between sop and eop",
+                $format("")
+            );
+        end
+
+        // if (pcieTxPipeInQueue.notEmpty) begin
+        //     $display(
+        //         "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor guard"),
+        //         ", pcieTxPipeInQueue.first=", fshow(pcieTxPipeInQueue.first)
+        //     );
+        // end
+
+
     endrule
 
     rule deq;
@@ -282,7 +305,19 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
                     txTlpAcrossTwoBeatReg <= False;
                 end
             endcase
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor deq"),
+            //     ", pcieTxPipeInQueue.first=", fshow(pcieTxPipeInQueue.first)
+            // );
         end
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor deq1"),
+        //     ", txValid=", fshow(txValid),
+        //     ", pcieTxPipeInQueue.notEmpty=", fshow(pcieTxPipeInQueue.notEmpty),
+        //     ", txReadySignalWire=", fshow(txReadySignalWire)
+        // );
     endrule
 
     rule handleRxFlowControlCreditRelease;
@@ -419,7 +454,12 @@ module mkRTilePcieAdaptor(RTilePcieAdaptor);
             txCreditNPD.setInputSignal(dcrdt_init.npd, dcrdt_update.npd, dcrdt_update_cnt.npd);
             txCreditCPLD.setInputSignal(dcrdt_init.cpld, dcrdt_update.cpld, dcrdt_update_cnt.cpld);
 
-            txReadySignalOutputReg <= ready;
+            txReadySignalWire <= ready;
+
+            // $display(
+            //     "time=%0t:", $time, toGreen(" mkRTilePcieAdaptor setTxInputData "),
+            //     ", IP core ready=", fshow(ready)
+            // );
         endmethod
 
         // output port
@@ -757,10 +797,14 @@ endinterface
 (* synthesize *)
 module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
     FIFOF#(PcieRxBeat) pcieRxPipeInQueue <- mkLFIFOF;
-    FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeOutQueue <- mkFIFOF;
+
+    // The completer path is not fully-pipelined, it handles TLPs one by one if multi TLPs in the same beat. so we give it more space. 
+    FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeOutQueue <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
 
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(RtilePcieRxPayloadStorageWriteReq)) tlpRawBeatDataStorageWriteReqPipeOutQueueVec <- replicateM(mkFIFOF);
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) cpltTlpPipeOutQueueVec <- replicateM(mkFIFOF);
+    // TODO: Fixme: if multi segment has the same cplt channel idx, then it will take the mkPcieCompletionBuffer more than one beat to handle them. it will block the pipeline if there is not
+    // a big enough buffer. but, what is big enough? Now, each channel can hold (1024 - 256) / 4 in-flight read request, so we use 256 here.
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, FIFOF#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) cpltTlpPipeOutQueueVec <- replicateM(mkSizedFIFOF(256));
 
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(RtilePcieRxPayloadStorageWriteReq)) tlpRawBeatDataStorageWriteReqPipeOutVecInst = newVector;
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PipeOut#(Vector#(PCIE_MAX_TLP_CNT, Maybe#(RtilePcieRxTlpInfoCplt)))) cpltTlpVecPipeOutVecInst = newVector;
@@ -778,6 +822,11 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
 
     // Pipeline FIFOs
     FIFOF#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) dispatchTlpInfoPipelineQueue <- mkLFIFOF;
+
+
+    // rule debug;
+    //     if (!memReadWriteReqTlpVecPipeOutQueue.notFull) $display("time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork debug FULL QUEUE memReadWriteReqTlpVecPipeOutQueue"));
+    // endrule
 
     rule calcRxBeatMetaAndForkPayloadStorageAndReleasePcieRxFlowCredit;
         // A trick here. we assume that the whole system is fully-pipelined, there will be no back preasure.
@@ -987,6 +1036,11 @@ module mkPcieRxStreamSegmentFork(PcieRxStreamSegmentFork);
         for (Integer channelIdx = 0; channelIdx < valueOf(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT); channelIdx = channelIdx + 1) begin
             if (channelHasClptTlpVec[channelIdx]) begin
                 cpltTlpPipeOutQueueVec[channelIdx].enq(cpltTlpInfoVec[channelIdx]);
+                // $display(
+                //     "time=%0t:", $time, toGreen(" mkPcieRxStreamSegmentFork dispatchTlpHeader enqueue cpltTlpPipeOutQueueVec"),
+                //     ", channelIdx=%d", channelIdx,
+                //     ", cpltTlpInfoVec[channelIdx]=", fshow(cpltTlpInfoVec[channelIdx])
+                // );
             end
         end
 
@@ -1358,21 +1412,12 @@ module mkPcieHwCpltBufferAllocator(PcieHwCpltBufferAllocator);
         // );
     endrule
 
-    Wire#(Tuple3#(PcieHwCpltBufferHeaderSlotCnt, PcieHwCpltBufferDataSlotCnt, Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, Bool))) incrSchedulerWorkAroundWire <- mkDWire(tuple3(0, 0, ?));
-    Wire#(Tuple2#(PcieHwCpltBufferHeaderSlotCnt, PcieHwCpltBufferDataSlotCnt)) decrSchedulerWorkAroundWire <- mkDWire(tuple2(0, 0));
-    rule schedulerWorkAround;
-        if (preCalcAllocReqPipelineQueue.notEmpty) begin
-            incrSchedulerWorkAroundWire <= preCalcAllocReqPipelineQueue.first;
-        end
-        if (preCalcDeallocReqPipelineQueue.notEmpty) begin
-            decrSchedulerWorkAroundWire <= preCalcDeallocReqPipelineQueue.first;
-            preCalcDeallocReqPipelineQueue.deq;
-        end
-    endrule
 
     rule merge;
-        let {incrHeader, incrData, incrReqChannelFlag} = incrSchedulerWorkAroundWire;
-        let {decrHeader, decrData} = decrSchedulerWorkAroundWire;
+        let {incrHeader, incrData, incrReqChannelFlag} = preCalcAllocReqPipelineQueue.first;
+        let {decrHeader, decrData} = preCalcDeallocReqPipelineQueue.first;
+
+        preCalcDeallocReqPipelineQueue.deq;
 
         let enoughHeaderToAlloc = headerUsedReg + incrHeader    <= fromInteger(valueOf(RTILE_PCIE_RX_HARDWARE_CPLT_BUFFER_HEADER_DEPTH));
         let enoughDataToAlloc   = dataUsedReg   + incrData      <= fromInteger(valueOf(RTILE_PCIE_RX_HARDWARE_CPLT_BUFFER_DATA_DEPTH));
@@ -1584,6 +1629,9 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
 
     let outputCpltStreamConcatorDataPipeInConverter <- mkPipeInB0ToPipeIn(outputCpltStreamConcator.dataPipeIn, 1);
     let outputCpltStreamConcatorIsLastStreamFlagPipeInConverter <- mkPipeInB0ToPipeIn(outputCpltStreamConcator.isLastStreamFlagPipeIn, 1);
+
+    let cpltTlpDataReadOutContinousChecker <- mkStreamFullyPipelineChecker(DebugConf{name: "mkPcieCompletionBuffer cpltTlpDataReadOutContinousChecker", enableDebug: True});
+
 
     // rule debug;
     //     if (!cpltTlpVecPipeInQueue.notFull) begin
@@ -1831,6 +1879,11 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
         let {cpltTlpEntryWriteAddr, curCplt} = handleCpltTlpInfoStorageWritePipelineQueue.first;
         handleCpltTlpInfoStorageWritePipelineQueue.deq;
         cpltTlpInfoStorage.write(cpltTlpEntryWriteAddr, curCplt);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieCompletionBuffer handleCpltTlpInfoStorageWrite"),
+        //     toBlue(", cpltTlpEntryWriteAddr="), fshow(cpltTlpEntryWriteAddr),
+        //     toBlue(", curCplt="), fshow(curCplt)
+        // );
     endrule
 
     rule sendStateQuery if (outputStateReg == PcieCompletionBufferOutputStateSendStateInit);
@@ -2083,6 +2136,8 @@ module mkPcieCompletionBuffer(PcieCompletionBuffer);
             isLast: isLast
         };
 
+        let _ <- cpltTlpDataReadOutContinousChecker.putStreamBeatInfo(ds.isFirst, ds.isLast);
+
         isCurCpltOutputFirstBeatReg <= beatMeta.isLast;
 
         outputCpltStreamConcatorDataPipeInConverter.enq(ds);
@@ -2146,7 +2201,7 @@ interface PcieRequestTlpHeaderGen;
 endinterface
 
 (*synthesize*)
-module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
+module mkPcieRequestTlpHeaderGen#(Byte chIdxForDebug)(PcieRequestTlpHeaderGen);
 
 
     PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueWm                <- mkPipeInAdapterB1;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
@@ -2156,7 +2211,7 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
     PipeInAdapterB0#(RtilePcieUserStream)                     cpltTlpDataStreamPipeInQueue    <- mkPipeInAdapterB0;
 
-    PipeInAdapterB0#(PcieHeaderFieldExtendedTag)                      tagAllocRespPipeInQueue  <- mkPipeInAdapterB0;
+    PipeInAdapterB0#(PcieHeaderFieldExtendedTag)                    tagAllocRespPipeInQueue  <- mkPipeInAdapterB0;
     FIFOF#(PcieChannelPrivateCompletionBufferSlotAllocReq)          tagAllocReqPipeOutQueue <- mkFIFOF;
 
     PipeInAdapterB0#(void)                                            slotAllocRespPipeInQueue <- mkPipeInAdapterB0;
@@ -2171,9 +2226,11 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     FIFOF#(RtilePcieUserStream)         arbittedTlpDataStreamQueue  <- mkFIFOF;
     Reg#(Bool)                          isOutputingPayloadStreamReg <- mkReg(False);
     
-    FIFOF#(RtilePcieUserStream)                               slaveSideQueueWdD            <- mkLFIFOF;
-    
+        
     FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  tagAllocToReadTlpGenPipelineQ          <- mkLFIFOF;
+
+    // must enable this check since the IP requires the output can not pause between sop and eop.
+    let writeStreamFullyPipelineChecker <- mkStreamFullyPipelineChecker(DebugConf{name: "mkPcieRequestTlpHeaderGen writeStreamFullyPipelineChecker", enableDebug: True});
 
     function Tuple3#(PcieHeaderFieldFirstDwBe, PcieHeaderFieldLastDwBe, Length) genFirstLastBeAndLengthDw(ADDR startAddr, Length len);
         // TODO: can reduce the bit width of the add operation.    
@@ -2233,47 +2290,27 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         return tuple2(result, byteNum);
     endfunction
 
-    // rule debug;
-    //     if (!cpltTlpDataStreamPipeInQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  cpltTlpDataStreamPipeInQueue");
-    //     end
-    //     if (!tagAllocRespPipeInQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  tagAllocRespPipeInQueue");
-    //     end
-    //     if (!tagAllocRespPipeInQueue.notFull) begin
-    //         if (!tagAllocToReadTlpGenPipelineQ.notEmpty) begin
-    //             $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  tagAllocToReadTlpGenPipelineQ");
-    //         end
-    //         if (!slotAllocRespPipeInQueue.notEmpty) begin
-    //             $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  slotAllocRespPipeInQueue");
-    //         end
-    //     end
+    rule debug;
 
-    //     if (!tagAllocReqPipeOutQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  tagAllocReqPipeOutQueue");
-    //     end
-    //     if (!slotAllocRespPipeInQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  slotAllocRespPipeInQueue");
-    //     end
-    //     if (!slotAllocReqPipeOutQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  slotAllocReqPipeOutQueue");
-    //     end
-    //     if (!readTlpQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  readTlpQueue");
-    //     end
-    //     if (!writeTlpQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  writeTlpQueue");
-    //     end
-    //     if (!cpltTlpQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  cpltTlpQueue");
-    //     end
-    //     if (!arbittedTlpBufferQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  arbittedTlpBufferQueue");
-    //     end
-    //     if (!arbittedTlpDataStreamQueue.notFull) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  arbittedTlpDataStreamQueue");
-    //     end
-    // endrule
+        // if (!tagAllocReqPipeOutQueue.notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  tagAllocReqPipeOutQueue");
+        // end
+        // if (!slotAllocReqPipeOutQueue.notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  slotAllocReqPipeOutQueue");
+        // end
+        // if (!readTlpQueue.notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  readTlpQueue");
+        // end
+        // if (!writeTlpQueue.notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  writeTlpQueue");
+        // end
+        // if (!arbittedTlpBufferQueue.notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  arbittedTlpBufferQueue");
+        // end
+        // if (!arbittedTlpDataStreamQueue.notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  arbittedTlpDataStreamQueue");
+        // end
+    endrule
 
     rule genTlpMwr;
         
@@ -2340,8 +2377,15 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
 
         ADDR endAddr = rm.addr + unpack(zeroExtend(pack(rm.totalLen))) - 1; 
 
-        let hwClptBufDataSlotCntNeeded = 1 + (pack(rm.totalLen) >> valueOf(TLog#(PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT)));
-        let maxCpltTlpCntNeeded        = 1 + (pack(rm.totalLen) >> valueOf(TLog#(PCIE_RCB)));
+        let startRcbIdx = rm.addr >> valueOf(TLog#(PCIE_RCB));
+        let endRcbIdx = endAddr >> valueOf(TLog#(PCIE_RCB));
+
+        let startHwClptBufDataSlotIdx = rm.addr >> valueOf(TLog#(PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT));
+        let endHwClptBufDataSlotIdx = endAddr >> valueOf(TLog#(PCIE_BYTE_PER_HW_CPLT_BUFFER_SLOT));
+
+
+        let hwClptBufDataSlotCntNeeded = 1 + (endHwClptBufDataSlotIdx - startHwClptBufDataSlotIdx);
+        let maxCpltTlpCntNeeded        = 1 + (endRcbIdx - startRcbIdx);
 
         let tagAllocReq = PcieChannelPrivateCompletionBufferSlotAllocReq {
             hwClptBufDataSlotCntNeeded  : truncate(hwClptBufDataSlotCntNeeded),
@@ -2418,26 +2462,23 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
         // );
     endrule
 
-    //synchronize Wd and Wm
-    rule delayWd;
-        slaveSideQueueWdD.enq(slaveSideQueueWd.first);
-        slaveSideQueueWd.deq;
-    endrule
 
     rule arbitOutputTlp if (!isOutputingPayloadStreamReg);
         // we use a fixed priority here. The MWr is for network packet receive, can't be blocked. so it should have the highest priority.
         // for cplt, it will affect the waiting time of the software, and there is few cplt packet, so it has the lowest priority.
-        if (writeTlpQueue.notEmpty) begin
+        if (writeTlpQueue.notEmpty && slaveSideQueueWd.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(writeTlpQueue.first)));
             writeTlpQueue.deq;
-            let ds = slaveSideQueueWdD.first;
-            slaveSideQueueWdD.deq;
+            let ds = slaveSideQueueWd.first;
+            slaveSideQueueWd.deq;
 
 
             arbittedTlpDataStreamQueue.enq(ds);
             if (!ds.isLast) begin
                 isOutputingPayloadStreamReg <= True;
             end
+
+            let _ <- writeStreamFullyPipelineChecker.putStreamBeatInfo(ds.isFirst, ds.isLast);
         end
         else if (readTlpQueue.notEmpty) begin
             arbittedTlpBufferQueue.enq(zeroExtendLSB(pack(readTlpQueue.first)));
@@ -2483,12 +2524,17 @@ module mkPcieRequestTlpHeaderGen(PcieRequestTlpHeaderGen);
     endrule
 
     rule arbitOutputDataStream if (isOutputingPayloadStreamReg);
-        let ds = slaveSideQueueWdD.first;
-        slaveSideQueueWdD.deq;
+        let ds = slaveSideQueueWd.first;
+        slaveSideQueueWd.deq;
         arbittedTlpDataStreamQueue.enq(ds);
         if (ds.isLast) begin
             isOutputingPayloadStreamReg <= False;
         end
+        let _ <- writeStreamFullyPipelineChecker.putStreamBeatInfo(ds.isFirst, ds.isLast);
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkPcieRequestTlpHeaderGen[%d] arbitOutputDataStream"), chIdxForDebug,
+        //     toBlue(", ds="), fshow(ds)
+        // );
     endrule
 
 
@@ -2602,7 +2648,7 @@ interface RtilePcieTxUserInputGearboxStorageAndMetaExtractor;
 endinterface
 
 (* synthesize *)
-module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInputGearboxStorageAndMetaExtractor);
+module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor#(Byte chIdxForDebug)(RtilePcieTxUserInputGearboxStorageAndMetaExtractor);
     PipeInAdapterB0#(RtilePcieUserStream)             streamPipeInQueue               <- mkPipeInAdapterB0;
     PipeInAdapterB0#(PcieTlpHeaderBuffer)             txTlpHeaderBufferPipeInQueue    <- mkPipeInAdapterB0;
     FIFOF#(RtilePcieTxBufferRange)                  packetMetaPipeOutQueue          <- mkSizedFIFOF(16);//buffer req when pingpoongfork blocked
@@ -2738,7 +2784,7 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
             nextBeatRowAddr =   curRowAddrReg + 1;
 
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor handleMetaCalc"),
+            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor[%d] handleMetaCalc"), chIdxForDebug,
             //     toBlue(", outputEntry="), fshow(outputEntry)
             // );
         end
@@ -2751,8 +2797,9 @@ module mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor(RtilePcieTxUserInput
         curRowAddrReg <= nextBeatRowAddr;
         isFirstReg <= ds.isLast;
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor handleMetaCalc BRAMwrite"),
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor[%d] handleMetaCalc BRAMwrite"), chIdxForDebug,
         //     toBlue(", curRowAddrReg="), fshow(curRowAddrReg),
+        //     toBlue(", curSegCntReg="), fshow(curSegCntReg),
         //     toBlue(", ds="), fshow(ds)
         // );
     endrule
@@ -2837,23 +2884,32 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         LUInt#(RTILE_PCIE_TX_MAX_NEW_PACKET_PER_BEAT)
     ))  mimoInputPipelineQueue <- mkLFIFOF;
 
-    FIFOF#(RtilePcieTxPingPongChannelMetaBundle) outputTimingFixPipelineQueue <- mkLFIFOFWithFullAssert(DebugConf{name:"2",enableDebug:True});
+    FIFOF#(RtilePcieTxPingPongChannelMetaBundle) outputTimingFixPipelineQueue <- mkFIFOFWithFullAssert(DebugConf{name:"mkRtilePcieTxPingPongFork outputTimingFixPipelineQueue",enableDebug:True});
 
-    // rule debug;
-    //     if (!txFlowControlAvaliablePipeInQueue.notEmpty) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  txFlowControlAvaliablePipeInQueue");
-    //     end
-    //     else begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE Not EMPTY!!!  txFlowControlAvaliablePipeInQueue.first=", fshow(txFlowControlAvaliablePipeInQueue.first));
-    //     end
+    rule debug;
+        // if (!txFlowControlAvaliablePipeInQueue.notEmpty) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  txFlowControlAvaliablePipeInQueue");
+        // end
+        // else begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE Not EMPTY!!!  txFlowControlAvaliablePipeInQueue.first=", fshow(txFlowControlAvaliablePipeInQueue.first));
+        // end
 
-    //     if (!flowControlCheckPipelineQueue.notEmpty) begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  flowControlCheckPipelineQueue");
-    //     end
-    //     else begin
-    //         $display("time=%0t, ", $time, "DEBUG QUEUE Not EMPTY!!!  flowControlCheckPipelineQueue.first=", fshow(flowControlCheckPipelineQueue.first));
-    //     end
-    // endrule
+        // if (!flowControlCheckPipelineQueue.notEmpty) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE EMPTY!!!  flowControlCheckPipelineQueue");
+        // end
+        // else begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE Not EMPTY!!!  flowControlCheckPipelineQueue.first=", fshow(flowControlCheckPipelineQueue.first));
+        // end
+
+        // if (!pingpongChannelMetaPipeOutQueueVec[0].notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  pingpongChannelMetaPipeOutQueueVec[0]");
+        // end
+
+        // if (!pingpongChannelMetaPipeOutQueueVec[1].notFull) begin
+        //     $display("time=%0t, ", $time, "DEBUG QUEUE FULL!!!  pingpongChannelMetaPipeOutQueueVec[1]");
+        // end
+        
+    endrule
 
 
     rule guard;
@@ -3308,11 +3364,6 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
 
 
                 // immAssert(selectedInputChannelMetaMIMO.deqReadyN(1), "MIMO Queue doesn't have enough element", $format(""));
-                // if (packetTwoWillEndInThisBeat) begin
-                //     curMetaMaybeReg <= tagged Invalid;
-                //     isFirstReg <= True;
-                //     selectedInputChannelMetaMIMO.deq(1);
-                // end
                 if (packetTwoWillEndInThisBeat) begin
                     if(selectedInputChannelMetaMIMO.deqReadyN(2))begin //if more than 1 req in the MIMO,move the second one into curMetaMaybeReg directly
                         curMetaMaybeReg <= tagged Valid selectedInputChannelMetaMIMO.first[1];
@@ -3398,6 +3449,11 @@ module mkRtilePcieTxPingPongFork(RtilePcieTxPingPongFork);
         outputTimingFixPipelineQueue.deq;
         curOutputRoundRobinIdxReg <= curOutputRoundRobinIdxReg + 1;
         pingpongChannelMetaPipeOutQueueVec[curOutputRoundRobinIdxReg].enq(outputMetaBundle);
+
+        // $display(
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongFork forwardOutput"),
+        //     toBlue(", outputMetaBundle="), fshow(outputMetaBundle)
+        // );
     endrule
 
     
@@ -3441,7 +3497,7 @@ interface RtilePcieTxPingPongSingleChannel;
 endinterface
 
 (* synthesize *)
-module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
+module mkRtilePcieTxPingPongSingleChannel#(Byte chIdxForDebug)(RtilePcieTxPingPongSingleChannel);
     PipeInAdapterB0#(RtilePcieTxPingPongChannelMetaBundle)  metaPipeInQueue       <- mkPipeInAdapterB0;
     FIFOF#(RtilePcieTxPingPongChannelOutputEntry) beatPipeOutQueue      <- mkFIFOF;
 
@@ -3478,7 +3534,6 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         let zeroBasedValidSegCnt = ?;
 
         if (curMetaEntryMaybeReg matches tagged Valid .curMetaEntry) begin
-            let metaBundle = metaPipeInQueue.first;
 
             let isCurMetaEntryLast = (curMetaEntry.zeroBasedSegCnt <= fromInteger(valueOf(PCIE_TX_SEG_CNT_PER_DOUBLE_WIDTH_SEG)-1));
             let isPacketLast = isCurMetaEntryLast && curMetaEntry.isLast;
@@ -3544,7 +3599,7 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
             immAssert(isValid(metaPipeInQueue.first[0]), "must always be valid", $format(""));
             isFirstReg <= fromMaybe(?, metaPipeInQueue.first[0]).isFirst;
             // $display(
-            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel sendBramReadReq IDLE"),
+            //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel[%d] sendBramReadReq IDLE"), chIdxForDebug,
             //     toBlue(", metaPipeInQueue.first="), fshow(metaPipeInQueue.first)
             // );
         end
@@ -3556,7 +3611,7 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         bramReadPipelineQueue.deq;
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel handleBramReadRespAndMergeHeader"),
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel[%d] handleBramReadRespAndMergeHeader"), chIdxForDebug,
         //     toBlue(", bramReadBeatMeta="), fshow(bramReadBeatMeta)
         // );
 
@@ -3621,7 +3676,7 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         finalShiftPipelineQueue.deq;
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift before shift"),
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel[%d] finalShift before shift"), chIdxForDebug,
         //     toBlue(", outputBeatEmptyStorageRowCnt="), fshow(outputBeatEmptyStorageRowCnt),
         //     toBlue(", outputEntry="), fshow(outputEntry)
         // );
@@ -3644,7 +3699,7 @@ module mkRtilePcieTxPingPongSingleChannel(RtilePcieTxPingPongSingleChannel);
         beatPipeOutQueue.enq(outputEntry);
 
         // $display(
-        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel finalShift after shift"),
+        //     "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongSingleChannel[%d] finalShift after shift"), chIdxForDebug,
         //     toBlue(", outputEntry="), fshow(outputEntry)
         // );
     endrule
@@ -3692,9 +3747,18 @@ module mkRtilePcieTxPingPongJoin(RtilePcieTxPingPongJoin);
 
         $display(
             "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongJoin doJoin"),
+            toBlue(", curChannelIdxReg="), fshow(curChannelIdxReg),
             toBlue(", beatOut="), fshow(beatOut)
         );
     endrule
+
+    // rule debug;
+    //     $display(
+    //         "time=%0t:", $time, toGreen(" mkRtilePcieTxPingPongJoin debug"),
+    //         toBlue(", pingpongBeatPipeInQueueVec[0].notEmpty"), fshow(pingpongBeatPipeInQueueVec[0].notEmpty),
+    //         toBlue(", pingpongBeatPipeInQueueVec[1].notEmpty"), fshow(pingpongBeatPipeInQueueVec[1].notEmpty)
+    //     );
+    // endrule
 
     interface pingpongBeatPipeInVec     = pingpongBeatPipeInVecInst;
     interface rtilePcieTxPipeOut        = toPipeOut(rtilePcieTxPipeOutQueue);
@@ -3722,8 +3786,8 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
     PipeInAdapterB0#(Vector#(PCIE_MAX_TLP_CNT, RtilePcieRxTlpInfo)) memReadWriteReqTlpVecPipeInQueue <- mkPipeInAdapterB0;
     PipeInAdapterB0#(RtilePcieRxPayloadStorageWriteReq)             tlpRawBeatDataStorageWriteReqPipeInQueue        <- mkPipeInAdapterB0;
 
-    FIFOF#(PcieTlpHeaderCompletion)                 cpltTlpHeaderPipeOutQueue       <- mkFIFOF;
-    FIFOF#(RtilePcieUserStream)                     cpltTlpDataStreamPipeOutQueue   <- mkFIFOF;
+    FIFOF#(PcieTlpHeaderCompletion)                 cpltTlpHeaderPipeOutQueue       <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_SIXTEEN));
+    FIFOF#(RtilePcieUserStream)                     cpltTlpDataStreamPipeOutQueue   <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_SIXTEEN));
 
     FIFOF#(RtilePcieRxTlpInfoMrRead)                unfinishedReadReqQueue <- mkSizedFIFOF(10);
 
@@ -3734,6 +3798,11 @@ module mkRtilePcieCompleter(RtilePcieCompleter);
 
     // Pipeline Queues:
     FIFOF#(Tuple2#(ADDR, PcieSegmentIdx))    readBramKeepOrderAndPipelineQueue <- mkSizedFIFOF(4);
+
+    // rule debug;
+    //     if (!masterSideQueueWm.notFull) $display("time=%0t:", $time, toGreen(" mkRtilePcieCompleter debug FULL QUEUE masterSideQueueWm"));
+    //     if (!masterSideQueueWd.notFull) $display("time=%0t:", $time, toGreen(" mkRtilePcieCompleter debug FULL QUEUE masterSideQueueWd"));
+    // endrule
 
     rule handleDataStreamInput;
         let req = tlpRawBeatDataStorageWriteReqPipeInQueue.first;
@@ -3945,10 +4014,10 @@ module mkRTilePcie(RTilePcie);
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieCompletionBuffer) cpltBufferVec <- replicateM(mkPcieCompletionBuffer);
     let pcieHwCpltBufferAllocator <- mkPcieHwCpltBufferAllocator;
 
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieRequestTlpHeaderGen) tlpHeaderGenVec <- replicateM(mkPcieRequestTlpHeaderGen);
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, RtilePcieTxUserInputGearboxStorageAndMetaExtractor) userInputGearboxStorageAndMetaExtractorVec <- replicateM(mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor);
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieRequestTlpHeaderGen) tlpHeaderGenVec <- genWithM(compose(mkPcieRequestTlpHeaderGen, fromInteger));
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, RtilePcieTxUserInputGearboxStorageAndMetaExtractor) userInputGearboxStorageAndMetaExtractorVec <- genWithM(compose(mkRtilePcieTxUserInputGearboxStorageAndMetaExtractor, fromInteger));
     let rtilePcieTxPingPongFork <- mkRtilePcieTxPingPongFork;
-    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, RtilePcieTxPingPongSingleChannel) rtilePcieTxPingPongSingleChannelVec <- replicateM(mkRtilePcieTxPingPongSingleChannel);
+    Vector#(RTILE_PCIE_TX_PING_PONG_CHANNEL_CNT, RtilePcieTxPingPongSingleChannel) rtilePcieTxPingPongSingleChannelVec <- genWithM(compose(mkRtilePcieTxPingPongSingleChannel, fromInteger));
     let rtilePcieTxPingPongJoin <- mkRtilePcieTxPingPongJoin;
     let pcieCompleter <- mkRtilePcieCompleter;
 
