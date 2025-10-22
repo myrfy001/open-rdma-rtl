@@ -2,6 +2,7 @@ import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
 
+//与DMA引擎连接
 
 import ConnectableF :: *;
 import RdmaUtils :: *;

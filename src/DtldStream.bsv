@@ -8,6 +8,8 @@ import ConnectableF :: *;
 import BasicDataTypes :: *;
 import FullyPipelineChecker :: *;
 
+// 很重要 数据流相关
+
 typedef enum {
     MemAccessTypeNormalReadWrite = 0,
     MemAccessTypeFetchAdd  = 1,
@@ -33,7 +35,7 @@ typedef struct {
     AtomicOperand                                       operand_2;
     Bool                                                noSnoop;
 } DtldStreamMemAccessMeta#(type tAddr, type tLen) deriving(Bits, FShow);
-
+// 很重要
 typedef struct {
     tData                                                       data;
     Bit#(TAdd#(1, TLog#(TDiv#(SizeOf#(tData), BYTE_WIDTH))))    byteNum;

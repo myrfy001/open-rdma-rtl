@@ -26,6 +26,7 @@ import PacketGenAndParse :: *;
 import Ringbuf :: *;
 import EthernetTypes :: *;
 
+// 变长： 1. sglist 2. 通用性
 
 typedef 2 COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 typedef 2 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;

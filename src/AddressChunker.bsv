@@ -13,6 +13,7 @@ import RdmaHeaders :: *;
 import RdmaHeaders :: *;
 import NapWrapper :: *;
 
+// 地址对齐
 
 typedef struct {
     tAddr startAddr;

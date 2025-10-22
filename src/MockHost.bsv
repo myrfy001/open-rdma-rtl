@@ -1,5 +1,5 @@
 package MockHost ;
-
+// 忽略 上一代仿真环境用的
 import Clocks :: * ;
 import BRAM :: *;
 import BRAMCore ::*;

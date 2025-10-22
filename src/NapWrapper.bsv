@@ -11,7 +11,7 @@ import PrimUtils :: *;
 import ConnectableF :: *;
 import MockHost :: *;
 
-
+// 忽略，正对特定FPGA
 
 
 typedef 4 VERTICAL_NAP_NODE_ID_WIDTH;

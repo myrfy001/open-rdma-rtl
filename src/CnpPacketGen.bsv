@@ -20,6 +20,8 @@ import Descriptors :: *;
 import EthernetTypes :: *;
 import EthernetFrameIO256 :: *;
 
+// TODO 查找 Ecn Cnp 机制，与ip包有关， uccl（EQDS） 拥塞问题
+
 typedef struct {
     ThinMacIpUdpMetaDataForRecv peerAddrInfo;
     QPN                         peerQpn;

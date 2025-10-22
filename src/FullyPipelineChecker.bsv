@@ -1,6 +1,7 @@
 import FIFOF :: *;
 typedef Bit#(64) SimulationTime;
 
+// 调试工具
 typedef struct {
     String name;
     Bool enableDebug;

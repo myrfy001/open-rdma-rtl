@@ -6,6 +6,8 @@ import Arbiter :: *;
 import ConnectableF :: *;
 import BasicDataTypes :: *;
 
+// 暂时忽略
+
 // Common ==================
 typedef 8 AXI_AXLEN_WIDTH;
 typedef Bit#(AXI_AXLEN_WIDTH) AxiAxlen;

@@ -76,6 +76,9 @@ run:
 	set -o pipefail; \
 	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(TB_FILE) 2>&1 | tee $(LOG_FILE)
 
+#在这里
+# iverilog
+# cocotb (python3)
 run_system_test_server:
 	cd $(TB_DIR)
 	mkdir -p log
