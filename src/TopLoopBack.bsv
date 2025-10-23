@@ -71,10 +71,10 @@ module mkBsvTop#(
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // loopback test
-        // mkConnection(bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
+        mkConnection(bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut, bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
 
-        mkConnection(bsvTopOnlyHardIp.ftilemacRxStreamPipeOutVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
-        mkConnection(bsvTopOnlyHardIp.ftilemacTxStreamPipeInVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut);
+        // mkConnection(bsvTopOnlyHardIp.ftilemacRxStreamPipeOutVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeIn);
+        // mkConnection(bsvTopOnlyHardIp.ftilemacTxStreamPipeInVec[idx], bsvTopWithoutHardIpInstance.qpEthDataStreamIfcVec[idx].dataPipeOut);
     end
 
 
