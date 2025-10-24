@@ -4,6 +4,7 @@ import gc
 import logging
 import os
 import threading
+import queue
 
 import time
 
@@ -48,6 +49,10 @@ class TB(object):
         self.csr_read_req_queue = Queue()
         self.csr_read_resp_queue = Queue()
         self.csr_read_lock = threading.Lock()
+
+        # Thread-safe queue for RPC received packets (standard library queue.Queue)
+        self.eth_rpc_rx_queue = queue.Queue(maxsize=100)
+        self._rpc_rx_thread_running = True
 
         self.rpc_server = UserspaceDriverServer(
             "0.0.0.0", 7700 + int(self.inst_id), self._csr_write_cb, self._csr_read_cb)
@@ -103,27 +108,60 @@ class TB(object):
 
         self.eth_packet_rpc = EthPacketRpc(self.inst_id)
 
+        # Start dedicated thread for RPC packet reception
+        self._rpc_rx_thread = threading.Thread(
+            target=self._rpc_recv_thread_task,
+            daemon=True
+        )
+        self._rpc_rx_thread.start()
+
+    def _rpc_recv_thread_task(self):
+        """Dedicated thread for polling RPC packets (thread-safe)"""
+        while self._rpc_rx_thread_running:
+            rx_beat = self.eth_packet_rpc.recv_packet()
+            if rx_beat is not None:
+                # Thread-safe write to queue.Queue
+                try:
+                    self.eth_rpc_rx_queue.put(rx_beat, block=False)
+                    self.log.info(
+                        f"RPC thread received packet: {len(rx_beat)} bytes")
+                except queue.Full:
+                    self.log.warning("RPC RX queue full, dropping packet")
+            else:
+                # Avoid busy-wait when no packets
+                time.sleep(0.01)  # 100 microseconds
+
     async def start_eth_packet_rpc(self):
         async def _tx_task(self):
             while True:
                 tx_beat = await self.eth_bfm.get_tx_packet()
                 self.eth_packet_rpc.send_packet(tx_beat)
-                self.log.debug(
+                self.log.info(
                     f"eth packet rpc tx beat: {tx_beat}")
 
         async def _rx_task(self):
             while True:
-                rx_beat = self.eth_packet_rpc.recv_packet()
-                if rx_beat is not None:
+                # Poll thread-safe queue without blocking event loop
+                try:
+                    rx_beat = self.eth_rpc_rx_queue.get(block=False)
                     await self.eth_bfm.inject_rx_packet(rx_beat)
-                    self.log.debug(
+                    self.log.info(
                         f"eth packet rpc rx beat: {rx_beat}")
-                await Timer(1, units='ns')
+                except queue.Empty:
+                    pass  # No packet available
+
+                # Yield control using clock edge to avoid ReadOnly phase conflicts
+                await RisingEdge(self.clock)
 
         cocotb.start_soon(_tx_task(self))
         cocotb.start_soon(_rx_task(self))
 
     def clean_up(self):
+        # Stop RPC receive thread
+        self._rpc_rx_thread_running = False
+        if self._rpc_rx_thread.is_alive():
+            self._rpc_rx_thread.join(timeout=1.0)
+
         self.rpc_server.stop()
 
         # need to ensure no reference to shared_mem, if not, the shared memory resource can not be released.
@@ -151,12 +189,14 @@ class TB(object):
     async def _forward_csr_write_task(self):
         while True:
             addr, value = await self.csr_write_req_queue.get()
+            await RisingEdge(self.clock)  # ← 添加：等待时钟边沿 
             await self.pcie_bfm.host_write_blocking(addr, value)
             self.log.info(f"_forward_csr_write_task: {addr, value}")
 
     async def _forward_csr_read_req_task(self):
         while True:
             addr = await self.csr_read_req_queue.get()
+            await RisingEdge(self.clock)  # ← 添加：等待时钟边沿 
             val = await self.pcie_bfm.host_read_blocking(addr)
             await self.csr_read_resp_queue.put(val)
 
@@ -186,7 +226,11 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
-    await Timer(15000, units='ns')
+    # FIX: Increased wait time from 15us to 150us to allow:
+    # - User-space driver (BluerdmaCore) to connect via UDP
+    # - RDMA operations (QP creation, memory registration, data transfer) to complete
+    # - DMA operations to finish processing
+    await Timer(15000000, units='ns')
     tb.clean_up()
 
 
