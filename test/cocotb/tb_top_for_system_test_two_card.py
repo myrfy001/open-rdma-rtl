@@ -16,7 +16,7 @@ from cocotb.regression import TestFactory
 from cocotb.clock import Clock
 from cocotb.queue import Queue
 
-from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator, EthPacketRpc
+from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_hw_simulator, EthPacketTcp
 
 
 from test_framework.common import gen_rtl_file_list, copy_mem_file_to_sim_build_dir
@@ -101,14 +101,15 @@ class TB(object):
         cocotb.start_soon(self._forward_csr_write_task())
         cocotb.start_soon(self._forward_csr_read_req_task())
 
-        self.eth_packet_rpc = EthPacketRpc(self.inst_id)
+        self.eth_packet_rpc = EthPacketTcp(self.inst_id)
 
     async def start_eth_packet_rpc(self):
         async def _tx_task(self):
             while True:
                 tx_beat = await self.eth_bfm.get_tx_packet()
+                self.log.info(f"eth packet rpc tx beat is going to send: {tx_beat}")
                 self.eth_packet_rpc.send_packet(tx_beat)
-                self.log.debug(
+                self.log.info(
                     f"eth packet rpc tx beat: {tx_beat}")
 
         async def _rx_task(self):
@@ -151,12 +152,14 @@ class TB(object):
     async def _forward_csr_write_task(self):
         while True:
             addr, value = await self.csr_write_req_queue.get()
+            await RisingEdge(self.clock)  # ← 添加：等待时钟边沿 
             await self.pcie_bfm.host_write_blocking(addr, value)
             self.log.info(f"_forward_csr_write_task: {addr, value}")
 
     async def _forward_csr_read_req_task(self):
         while True:
             addr = await self.csr_read_req_queue.get()
+            await RisingEdge(self.clock)  # ← 添加：等待时钟边沿 
             val = await self.pcie_bfm.host_read_blocking(addr)
             await self.csr_read_resp_queue.put(val)
 
@@ -186,7 +189,11 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
-    await Timer(15000, units='ns')
+    # FIX: Increased wait time from 15us to 150us to allow:
+    # - User-space driver (BluerdmaCore) to connect via UDP
+    # - RDMA operations (QP creation, memory registration, data transfer) to complete
+    # - DMA operations to finish processing
+    await Timer(15000000, units='ns')
     tb.clean_up()
 
 
