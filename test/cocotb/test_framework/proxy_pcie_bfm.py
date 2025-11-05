@@ -3,6 +3,10 @@ from collections import deque, OrderedDict
 from abc import ABC
 import logging
 import math
+import json
+import time
+import threading
+import queue
 
 import asyncio
 import os
@@ -12,6 +16,8 @@ from cocotb.triggers import RisingEdge, FallingEdge, ReadWrite, ReadOnly, Edge, 
 from cocotb.binary import BinaryValue
 from cocotb.queue import Queue
 import cocotb.triggers
+from .tcpConnectionManager import *
+
 
 from .common import BluespecPipeOut, BluespecPipeInNrWithQueue, BluespecPipeIn, BlueRdmaDtldStreamMemAccessMeta
 
@@ -23,8 +29,8 @@ else:
     DATA_BUS_BYTE_WIDTH = 64
 
 
-class SimplePcieBehaviorModel(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=800, write_meta_to_data_delay_ns=300):
+class SimplePcieBehaviorModelProxy(object):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=800, write_meta_to_data_delay_ns=300,tcp_port):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -80,7 +86,8 @@ class SimplePcieBehaviorModel(object):
         self.completer_inflight_read_resps = [
             [] for _ in range(self.completer_channel_cnt)]
 
-        self.mem = mem or [0] * (1 << 25)
+        # 移除共享内存，改用TCP访问
+        # self.mem = mem or [0] * (1 << 25)
 
         for channel_idx in range(self.requester_channel_cnt):
             cocotb.start_soon(
@@ -93,6 +100,21 @@ class SimplePcieBehaviorModel(object):
 
         for channel_idx in range(self.completer_channel_cnt):
             cocotb.start_soon(self._handle_completer_read_resp(channel_idx))
+
+        # TCP connection manager init
+        self.tcpConnection = TcpConnectionManager("1", "127.0.0.1", tcp_port)
+        self.requester_send_queue = Queue()
+        self.requester_read_queue = [Queue() for _ in range(self.requester_channel_cnt)]
+
+        # TCP工作线程相关
+        self.request_counter = [0] * self.requester_channel_cnt
+        self.stop_tcp_threads = False
+
+        # 启动TCP工作线程
+        self.tcp_sender_thread = threading.Thread(target=self._tcp_sender_thread, daemon=True)
+        self.tcp_receiver_thread = threading.Thread(target=self._tcp_receiver_thread, daemon=True)
+        self.tcp_sender_thread.start()
+        self.tcp_receiver_thread.start()
 
     async def _handle_requester_write_req_meta(self, channel_idx):
         # loop to handle each request
@@ -141,16 +163,45 @@ class SimplePcieBehaviorModel(object):
                             old_write_addr = cur_write_addr
                             # since pcie stream is aligned to 4 byte, each beat's first 3 byte may be invalid
                             skip_byte_cnt = cur_write_addr % 4
+
+                            # 移除直接内存访问，改为TCP请求
+                            # for byte_idx in range(write_data.byte_num()):
+                            #     if byte_idx >= skip_byte_cnt:
+                            #         self.mem[cur_write_addr] = data & 0xff
+                            #         cur_write_addr += 1
+                            #     data >>= 8
+
+                            # 生成写数据字节数组
+                            write_bytes = []
+                            temp_data = data
                             for byte_idx in range(write_data.byte_num()):
                                 if byte_idx >= skip_byte_cnt:
-                                    self.mem[cur_write_addr] = data & 0xff
+                                    write_bytes.append(temp_data & 0xff)
                                     cur_write_addr += 1
-                                data >>= 8
+                                temp_data >>= 8
 
-                            total_len += (write_data.byte_num() -
-                                          skip_byte_cnt)
-                            self.log.info(
-                                f"pcie bfm write host mem. write_addr = {hex(old_write_addr)}, write_data={write_data}", )
+                            # 生成TCP写请求
+                            if write_bytes:  # 只有在有有效数据时才发送
+                                request = {
+                                    "type": "mem_write",
+                                    "channel_id": channel_idx,
+                                    "address": old_write_addr + skip_byte_cnt,
+                                    "data": write_bytes,
+                                    "length": len(write_bytes)
+                                }
+
+                                # 放入发送队列，由工作线程处理
+                                self.requester_send_queue.put(request)
+
+                                self.log.info(
+                                    f"pcie bfm send tcp write request: channel={channel_idx} addr={hex(old_write_addr + skip_byte_cnt)}, length={len(write_bytes)}")
+                            else:
+                                self.log.info(
+                                    f"pcie bfm skip empty write: addr={hex(old_write_addr)}")
+
+                            total_len += (write_data.byte_num() - skip_byte_cnt)
+                            # self.log.info(
+                            #     f"pcie bfm write host mem. write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
                             if (write_data.is_last()):
                                 print(
@@ -178,8 +229,7 @@ class SimplePcieBehaviorModel(object):
                 read_req_arrive_time = cocotb.utils.get_sim_time("ns")
                 # loop to handle each beat in a request
                 while True:
-
-                    data = 0
+                    # data = 0  # 移除未使用变量
 
                     if is_first:
                         start_byte_index = cur_read_addr & 0x03
@@ -194,27 +244,53 @@ class SimplePcieBehaviorModel(object):
                         byte_num = DATA_BUS_BYTE_WIDTH - start_byte_index
 
                     old_read_addr = cur_read_addr
-                    for byte_idx in range(byte_num):
-                        data |= (self.mem[cur_read_addr] << (byte_idx * 8))
-                        cur_read_addr += 1
+                    # 移除直接内存访问，改为TCP请求
+                    # for byte_idx in range(byte_num):
+                    #     data |= (self.mem[cur_read_addr] << (byte_idx * 8))
+                    #     cur_read_addr += 1
 
-                    if (is_first):
-                        data <<= (start_byte_index * 8)
+                    # 生成TCP读请求
+                    request = {
+                        "type": "mem_read",
+                        "channel_id": channel_idx,
+                        "address": old_read_addr,
+                        "length": byte_num,
+                        "start_byte_index": start_byte_index,
+                        "is_first": is_first,
+                        "is_last": is_last,
+                        "request_id": f"req_{channel_idx}_{self.request_counter[channel_idx]}"
+                    }
 
-                    read_data = BlueRdmaDataStream(
-                        data=data.to_bytes(
-                            DATA_BUS_BYTE_WIDTH, byteorder="little"),
-                        byte_num=byte_num,
-                        start_byte_index=start_byte_index,
-                        is_first=is_first,
-                        is_last=is_last
+                    # 放入发送队列，由工作线程处理
+                    self.requester_send_queue.put(request)
+                    self.request_counter[channel_idx] += 1
+
+                    #放入延迟队列
+                    self.read_delay_queues[channel_idx].append(
+                        (request, read_req_arrive_time, old_read_addr)
                     )
 
-                    self.read_delay_queues[channel_idx].append(
-                        (read_data.pack(), read_req_arrive_time, old_read_addr))
-
                     self.log.info(
-                        f"pcie bfm sample read data and put into delay queue, channel={channel_idx} addr={hex(old_read_addr)}, read_data={read_data}")
+                        f"pcie bfm send tcp read request: channel={channel_idx} addr={hex(old_read_addr)}, length={byte_num}")
+
+                    # 不再直接构造读数据，等待TCP响应后在延迟响应协程中处理
+                    # if (is_first):
+                    #     data <<= (start_byte_index * 8)
+
+                    # read_data = BlueRdmaDataStream(
+                    #     data=data.to_bytes(
+                    #         DATA_BUS_BYTE_WIDTH, byteorder="little"),
+                    #     byte_num=byte_num,
+                    #     start_byte_index=start_byte_index,
+                    #     is_first=is_first,
+                    #     is_last=is_last
+                    # )
+
+                    # self.read_delay_queues[channel_idx].append(
+                    #     (read_data.pack(), read_req_arrive_time, old_read_addr))
+
+                    # self.log.info(
+                    #     f"pcie bfm sample read data and put into delay queue, channel={channel_idx} addr={hex(old_read_addr)}, read_data={read_data}")
 
                     is_first = False
                     bytes_left -= byte_num
@@ -227,16 +303,61 @@ class SimplePcieBehaviorModel(object):
 
     async def _forward_delayed_requester_read_resp(self, channel_idx):
         while True:
+            # 1. 首先检查延迟队列（保持原有延迟逻辑）
             if len(self.read_delay_queues[channel_idx]) > 0:
                 if await self.requester_read_data_pipes[channel_idx].not_full():
                     cur_time = cocotb.utils.get_sim_time("ns")
-                    beat_to_forward, beat_read_time, old_read_addr = self.read_delay_queues[
+                    origin_read_req, beat_read_time, old_read_addr = self.read_delay_queues[
                         channel_idx][0]
                     if cur_time - beat_read_time >= self.read_delay_time_ns:
+                        # 从tcp响应队列中获取对应响应，阻塞获取
+                        cur_real_time = time.time()
+                        last_log_time = cur_real_time
+
+                        while self.requester_read_queue[channel_idx].empty():
+                            current_time = time.time()
+                            # 每5秒记录一次超时日志，但继续等待
+                            if current_time - last_log_time >= 5:
+                                self.log.warning(
+                                    f"Still waiting for TCP read response: channel={channel_idx} addr={hex(old_read_addr)} elapsed={current_time - cur_real_time:.1f}s")
+                                last_log_time = current_time
+                            time.sleep(0)
+
+                        # 获取响应（不检查超时，必须等到响应）
+                        # 从TCP响应队列获取响应（这是一个dict）
+                        response = self.requester_read_queue[channel_idx].get_nowait()
+
+                        # 获取响应数据和元信息
+                        data_bytes = response["data"]
+                        start_byte_index = response.get("start_byte_index", 0)
+                        is_first = response.get("is_first", True)
+                        byte_num = len(data_bytes)
+
+                        # 转换为整数进行对齐处理
+                        data = int.from_bytes(bytes(data_bytes), byteorder="little")
+
+                        # 如果是第一个beat，需要左移对齐（参考原始代码）
+                        if is_first:
+                            data <<= (start_byte_index * 8)
+
+                        # 转换为BlueRdmaDataStream对象
+                        read_data = BlueRdmaDataStream(
+                            data=data.to_bytes(DATA_BUS_BYTE_WIDTH, byteorder="little"),
+                            byte_num=byte_num,
+                            start_byte_index=start_byte_index,
+                            is_first=is_first,
+                            is_last=response.get("is_last", True)
+                        )
+
+                        # 从延迟队列移除已处理的请求
                         self.read_delay_queues[channel_idx].popleft()
-                        await self.requester_read_data_pipes[channel_idx].enq(beat_to_forward)
+
+                        # 转发packed格式到DUT
+                        await self.requester_read_data_pipes[channel_idx].enq(read_data.pack())
+
                         self.log.info(
                             f"pcie bfm read, put delayed read beat, channel={channel_idx} addr={hex(old_read_addr)}")
+
             await RisingEdge(self.clock)  # wait for next read req
 
     async def _handle_completer_read_resp(self, channel_idx):
@@ -288,3 +409,56 @@ class SimplePcieBehaviorModel(object):
         await self.completer_write_meta_pipes[0].enq(write_meta.pack())
         await self.completer_write_data_pipes[0].enq(write_data.pack())
         await RisingEdge(self.clock)
+
+    def _tcp_sender_thread(self):
+        """TCP发送工作线程"""
+        while not self.stop_tcp_threads:
+            try:
+                # 从单一发送队列获取请求
+                request = self.requester_send_queue.get(timeout=0.1)
+                # 发送TCP请求（添加换行符以匹配receive_line协议）
+                if self.tcpConnection.is_connected():
+                    self.tcpConnection.send_data((json.dumps(request) + '\n').encode("utf-8"))
+                    self.log.debug(f"TCP发送请求: {request['type']} channel={request['channel_id']} addr=0x{request['address']:08x}")
+                else:
+                    self.log.warning("TCP未连接，丢弃请求")
+            except queue.Empty:
+                continue
+            except Exception as e:
+                self.log.error(f"TCP发送错误: {e}")
+
+    def _tcp_receiver_thread(self):
+        """TCP接收工作线程"""
+        while not self.stop_tcp_threads:
+            try:
+                # 接收TCP响应
+                response_data = self.tcpConnection.receive_line()
+                if response_data:
+                    response = json.loads(response_data.decode())
+                    channel_id = response.get("channel_id")
+                    if channel_id is not None and 0 <= channel_id < len(self.requester_read_queue):
+                        # 放入对应通道的接收队列
+                        self.requester_read_queue[channel_id].put(response)
+                        self.log.debug(f"TCP接收响应: {response['type']} channel={channel_id}")
+                    else:
+                        self.log.error(f"无效的channel_id: {channel_id}")
+            except Exception as e:
+                self.log.error(f"TCP接收错误: {e}")
+            time.sleep(0.001)  # 避免CPU占用过高
+
+    def close(self):
+        """清理TCP线程和连接"""
+        self.log.info("正在关闭TCP连接和线程...")
+        self.stop_tcp_threads = True
+
+        # 等待线程结束
+        if hasattr(self, 'tcp_sender_thread'):
+            self.tcp_sender_thread.join(timeout=1)
+        if hasattr(self, 'tcp_receiver_thread'):
+            self.tcp_receiver_thread.join(timeout=1)
+
+        # 关闭TCP连接
+        if hasattr(self, 'tcpConnection'):
+            self.tcpConnection.close()
+
+        self.log.info("TCP连接和线程已关闭")

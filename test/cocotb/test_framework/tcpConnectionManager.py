@@ -217,6 +217,33 @@ class TcpConnectionManager:
             self._handle_connection_error()
             return None
 
+    def receive_line(self) -> bytes:
+        """
+        Receive a line from the persistent connection
+
+        Returns:
+            Line as bytes
+        """
+        return self.get_connection().makefile('r').readline().rstrip(b'\n\r')
+        # connection = self.get_connection()
+        # if not connection:
+        #     return None
+
+        # try:
+        #     # 设置短超时避免长时间阻塞
+        #     connection.settimeout(0.1)
+        #     file_obj = connection.makefile('rb')
+        #     line = file_obj.readline()
+        #     if line:
+        #         return line.rstrip(b'\n\r')  # 移除换行符
+        #     return None
+        # except socket.timeout:
+        #     return None  # 超时返回None，外层继续轮询
+        # except Exception as e:
+        #     print(f"TcpConnectionManager receive_line error: {e}")
+        #     self._handle_connection_error()
+        #     return None
+
     def _handle_connection_error(self):
         """Handle connection errors by resetting connection state"""
         with self._connection_lock:
