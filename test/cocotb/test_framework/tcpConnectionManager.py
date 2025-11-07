@@ -44,6 +44,7 @@ class TcpConnectionManager:
         # Connection management
         self._connection: Optional[socket.socket] = None
         self._server_socket: Optional[socket.socket] = None
+        self._readfile = None  # File object for readline operations
         self._connection_lock = threading.Lock()
         self._stop_flag = False
 
@@ -67,6 +68,7 @@ class TcpConnectionManager:
         """Setup server to listen for incoming connection"""
         try:
             self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # SO_REUSEADDR 允许快速重启服务器，但不能完全避免 TIME_WAIT 问题
             self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self._server_socket.bind((self.host, self.port))
             self._server_socket.listen(1)
@@ -79,6 +81,7 @@ class TcpConnectionManager:
 
         except Exception as e:
             print(f"TcpConnectionManager server setup error: {e}")
+            print(f"  Hint: Port {self.port} may be in use. Try: sudo lsof -i:{self.port} or wait 60s for TIME_WAIT")
 
     def _accept_connection_loop(self):
         """Continuously accept connections in server mode"""
@@ -90,7 +93,12 @@ class TcpConnectionManager:
                     print(f"TcpConnectionManager server connected to {addr}")
 
                     with self._connection_lock:
-                        # Close any existing connection
+                        # Close any existing connection and file object
+                        if self._readfile:
+                            try:
+                                self._readfile.close()
+                            except:
+                                pass
                         if self._connection:
                             try:
                                 self._connection.close()
@@ -98,6 +106,7 @@ class TcpConnectionManager:
                                 pass
 
                         self._connection = connection
+                        self._readfile = connection.makefile('rb')
                         self._connected = True
                         # No need to notify with polling approach
 
@@ -122,6 +131,7 @@ class TcpConnectionManager:
 
                 with self._connection_lock:
                     self._connection = client_socket
+                    self._readfile = client_socket.makefile('rb')  # Create file object for client too
                     self._connected = True
                     print(f"TcpConnectionManager client connected to {self.host}:{self.port}")
                     # No need to notify with polling approach
@@ -217,36 +227,29 @@ class TcpConnectionManager:
             self._handle_connection_error()
             return None
 
-    def receive_line(self) -> bytes:
+    def receive_line(self, timeout: float = 1.0) -> bytes:
         """
-        Receive a line from the persistent connection
+        Receive a line from the persistent connection with timeout
+
+        Args:
+            timeout: Socket timeout in seconds (default: 1.0)
 
         Returns:
-            Line as bytes
+            Line as bytes, or None if timeout/error occurs
         """
-        return self.get_connection().makefile('r').readline().rstrip(b'\n\r')
-        # connection = self.get_connection()
-        # if not connection:
-        #     return None
-
-        # try:
-        #     # 设置短超时避免长时间阻塞
-        #     connection.settimeout(0.1)
-        #     file_obj = connection.makefile('rb')
-        #     line = file_obj.readline()
-        #     if line:
-        #         return line.rstrip(b'\n\r')  # 移除换行符
-        #     return None
-        # except socket.timeout:
-        #     return None  # 超时返回None，外层继续轮询
-        # except Exception as e:
-        #     print(f"TcpConnectionManager receive_line error: {e}")
-        #     self._handle_connection_error()
-        #     return None
+        
+        self.get_connection()
+        return self._readfile.readline()
 
     def _handle_connection_error(self):
         """Handle connection errors by resetting connection state"""
         with self._connection_lock:
+            if self._readfile:
+                try:
+                    self._readfile.close()
+                except:
+                    pass
+                self._readfile = None
             if self._connection:
                 try:
                     self._connection.close()
@@ -264,6 +267,13 @@ class TcpConnectionManager:
         self._stop_flag = True
 
         with self._connection_lock:
+            if self._readfile:
+                try:
+                    self._readfile.close()
+                except:
+                    pass
+                self._readfile = None
+
             if self._connection:
                 try:
                     self._connection.close()

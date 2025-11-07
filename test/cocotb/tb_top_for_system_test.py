@@ -22,6 +22,7 @@ from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_h
 from test_framework.common import gen_rtl_file_list, copy_mem_file_to_sim_build_dir
 from test_framework.eth_bfm import SimpleEthBehaviorModel
 from test_framework.pcie_bfm import SimplePcieBehaviorModel
+from test_framework.proxy_pcie_bfm import SimplePcieBehaviorModelProxy
 from scapy.layers.inet import IP, UDP
 from scapy.layers.l2 import Ether
 
@@ -47,7 +48,7 @@ class TB(object):
             "0.0.0.0", 7701, self._csr_write_cb, self._csr_read_cb)
         self.rpc_server.run()
 
-        self.pcie_bfm = SimplePcieBehaviorModel(
+        self.pcie_bfm = SimplePcieBehaviorModelProxy(
             dut,
             ["dmaMasterPipeIfcVec_0",
              "dmaMasterPipeIfcVec_1",
@@ -148,7 +149,7 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
-    await Timer(150000, units='ns')
+    await Timer(15000000, units='ns')
     tb.clean_up()
 
 

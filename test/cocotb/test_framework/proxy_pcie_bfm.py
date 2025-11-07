@@ -6,7 +6,7 @@ import math
 import json
 import time
 import threading
-import queue
+import queue  # Python 标准库的线程安全队列
 
 import asyncio
 import os
@@ -30,7 +30,7 @@ else:
 
 
 class SimplePcieBehaviorModelProxy(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=800, write_meta_to_data_delay_ns=300,tcp_port):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=800, write_meta_to_data_delay_ns=300,tcp_port=7003):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -103,8 +103,9 @@ class SimplePcieBehaviorModelProxy(object):
 
         # TCP connection manager init
         self.tcpConnection = TcpConnectionManager("1", "127.0.0.1", tcp_port)
-        self.requester_send_queue = Queue()
-        self.requester_read_queue = [Queue() for _ in range(self.requester_channel_cnt)]
+        self.requester_send_queue = queue.Queue()  # 使用线程安全的标准库Queue
+        # 使用线程安全的标准库Queue，无限缓冲区长度
+        self.requester_read_queue = [queue.Queue() for _ in range(self.requester_channel_cnt)]
 
         # TCP工作线程相关
         self.request_counter = [0] * self.requester_channel_cnt
@@ -191,7 +192,7 @@ class SimplePcieBehaviorModelProxy(object):
                                 }
 
                                 # 放入发送队列，由工作线程处理
-                                self.requester_send_queue.put(request)
+                                self.requester_send_queue.put(request)  # 标准库Queue使用put而非put_nowait
 
                                 self.log.info(
                                     f"pcie bfm send tcp write request: channel={channel_idx} addr={hex(old_write_addr + skip_byte_cnt)}, length={len(write_bytes)}")
@@ -249,6 +250,8 @@ class SimplePcieBehaviorModelProxy(object):
                     #     data |= (self.mem[cur_read_addr] << (byte_idx * 8))
                     #     cur_read_addr += 1
 
+                    # 需要更新 cur_read_addr
+                    cur_read_addr += byte_num
                     # 生成TCP读请求
                     request = {
                         "type": "mem_read",
@@ -262,7 +265,7 @@ class SimplePcieBehaviorModelProxy(object):
                     }
 
                     # 放入发送队列，由工作线程处理
-                    self.requester_send_queue.put(request)
+                    self.requester_send_queue.put(request)  # 标准库Queue使用put而非put_nowait
                     self.request_counter[channel_idx] += 1
 
                     #放入延迟队列
@@ -271,7 +274,9 @@ class SimplePcieBehaviorModelProxy(object):
                     )
 
                     self.log.info(
-                        f"pcie bfm send tcp read request: channel={channel_idx} addr={hex(old_read_addr)}, length={byte_num}")
+                        f"→ Send TCP read request: request_id={request['request_id']} "
+                        f"channel={channel_idx} addr={hex(old_read_addr)} length={byte_num} "
+                        f"is_first={is_first} is_last={is_last}")
 
                     # 不再直接构造读数据，等待TCP响应后在延迟响应协程中处理
                     # if (is_first):
@@ -314,18 +319,35 @@ class SimplePcieBehaviorModelProxy(object):
                         cur_real_time = time.time()
                         last_log_time = cur_real_time
 
-                        while self.requester_read_queue[channel_idx].empty():
-                            current_time = time.time()
-                            # 每5秒记录一次超时日志，但继续等待
-                            if current_time - last_log_time >= 5:
+                        # 使用阻塞方式获取响应（带超时）
+                        response = None
+                        while response is None:
+                            try:
+                                # 每5秒超时一次，用于打印日志
+                                response = self.requester_read_queue[channel_idx].get(timeout=5.0)
+                            except queue.Empty:
+                                current_time = time.time()
+                                expected_id = origin_read_req.get("request_id", "N/A")
                                 self.log.warning(
-                                    f"Still waiting for TCP read response: channel={channel_idx} addr={hex(old_read_addr)} elapsed={current_time - cur_real_time:.1f}s")
+                                    f"⏳ Still waiting for TCP read response: "
+                                    f"channel={channel_idx} addr={hex(old_read_addr)} "
+                                    f"expected_request_id={expected_id} elapsed={current_time - cur_real_time:.1f}s")
                                 last_log_time = current_time
-                            time.sleep(0)
+                                # 继续等待
 
-                        # 获取响应（不检查超时，必须等到响应）
-                        # 从TCP响应队列获取响应（这是一个dict）
-                        response = self.requester_read_queue[channel_idx].get_nowait()
+                        # 验证 request_id 匹配
+                        expected_id = origin_read_req.get("request_id")
+                        actual_id = response.get("request_id")
+
+                        if expected_id != actual_id:
+                            self.log.error(
+                                f"❌ Request ID mismatch! channel={channel_idx} "
+                                f"addr={hex(old_read_addr)} "
+                                f"expected={expected_id}, actual={actual_id}")
+                            # 严重错误，直接抛出异常
+                            raise ValueError(f"Request ID mismatch: expected={expected_id}, actual={actual_id}")
+
+                        self.log.info(f"✅ Got TCP read response: request_id={actual_id} channel={channel_idx} addr={hex(old_read_addr)}")
 
                         # 获取响应数据和元信息
                         data_bytes = response["data"]
@@ -356,7 +378,9 @@ class SimplePcieBehaviorModelProxy(object):
                         await self.requester_read_data_pipes[channel_idx].enq(read_data.pack())
 
                         self.log.info(
-                            f"pcie bfm read, put delayed read beat, channel={channel_idx} addr={hex(old_read_addr)}")
+                            f"✓ Forwarded read beat to DUT: request_id={actual_id} "
+                            f"channel={channel_idx} addr={hex(old_read_addr)} "
+                            f"delay={cur_time - beat_read_time}ns")
 
             await RisingEdge(self.clock)  # wait for next read req
 
@@ -414,8 +438,9 @@ class SimplePcieBehaviorModelProxy(object):
         """TCP发送工作线程"""
         while not self.stop_tcp_threads:
             try:
-                # 从单一发送队列获取请求
+                # 从单一发送队列获取请求（阻塞，带超时）
                 request = self.requester_send_queue.get(timeout=0.1)
+
                 # 发送TCP请求（添加换行符以匹配receive_line协议）
                 if self.tcpConnection.is_connected():
                     self.tcpConnection.send_data((json.dumps(request) + '\n').encode("utf-8"))
@@ -423,28 +448,66 @@ class SimplePcieBehaviorModelProxy(object):
                 else:
                     self.log.warning("TCP未连接，丢弃请求")
             except queue.Empty:
+                # 队列为空是正常情况，继续等待
                 continue
             except Exception as e:
-                self.log.error(f"TCP发送错误: {e}")
+                self.log.error(f"TCP发送错误: {type(e).__name__}: {e}")
+                # 记录详细信息用于调试
+                if 'request' in locals():
+                    self.log.error(f"失败的请求: {request}")
 
     def _tcp_receiver_thread(self):
-        """TCP接收工作线程"""
+        """TCP接收工作线程（带超时和详细错误处理）"""
+        consecutive_errors = 0
+        max_consecutive_errors = 100
+
         while not self.stop_tcp_threads:
             try:
-                # 接收TCP响应
-                response_data = self.tcpConnection.receive_line()
+                # 接收TCP响应（带1秒超时）
+                response_data = self.tcpConnection.receive_line(timeout=1.0)
+
                 if response_data:
-                    response = json.loads(response_data.decode())
+                    # 解码并去除首尾空白
+                    line = response_data.decode().strip()
+
+                    # 忽略心跳包（空行）
+                    if not line:
+                        self.log.debug("Received heartbeat (empty line)")
+                        continue
+
+                    # 重置错误计数器
+                    consecutive_errors = 0
+
+                    self.log.info(f"TCP接收数据: {line}")
+                    response = json.loads(line)
                     channel_id = response.get("channel_id")
+
                     if channel_id is not None and 0 <= channel_id < len(self.requester_read_queue):
-                        # 放入对应通道的接收队列
+                        # 放入对应通道的接收队列（非阻塞，标准库Queue无限缓冲区不会满）
                         self.requester_read_queue[channel_id].put(response)
                         self.log.debug(f"TCP接收响应: {response['type']} channel={channel_id}")
                     else:
-                        self.log.error(f"无效的channel_id: {channel_id}")
+                        self.log.error(f"无效的channel_id: {channel_id}, 完整响应: {response}")
+                else:
+                    # receive_line 超时返回 None，这是正常情况
+                    pass
+
+            except json.JSONDecodeError as e:
+                consecutive_errors += 1
+                self.log.error(f"JSON解析错误: {e}, 原始数据: {response_data if 'response_data' in locals() else 'N/A'}")
             except Exception as e:
-                self.log.error(f"TCP接收错误: {e}")
-            time.sleep(0.001)  # 避免CPU占用过高
+                consecutive_errors += 1
+                self.log.error(f"TCP接收错误: {type(e).__name__}: {e}")
+                if 'response_data' in locals():
+                    self.log.error(f"失败的响应数据: {response_data}")
+
+            # 如果连续错误过多，可能是连接断开，短暂休眠后重试
+            if consecutive_errors >= max_consecutive_errors:
+                self.log.warning(f"连续{consecutive_errors}次接收错误，休眠1秒后继续...")
+                time.sleep(1.0)
+                consecutive_errors = 0
+            else:
+                time.sleep(0.001)  # 避免CPU占用过高
 
     def close(self):
         """清理TCP线程和连接"""
