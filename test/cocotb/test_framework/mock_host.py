@@ -138,7 +138,7 @@ class EthPacketRpc:
             packet_b64 = self.write_buf.popleft()
             self.to_peer_pipe.write(packet_b64)
 
-
+# TODO 会不会需要写成阻塞式的？目前在没连接时的send recv会直接丢包
 class EthPacketTcp:
     def __init__(self, inst_id, host='127.0.0.1', port=7777):
         """
@@ -161,6 +161,7 @@ class EthPacketTcp:
         # Connection management
         self.socket = None
         self.connection = None
+        self.conn_file = None  # File object for readline, created only once
         self.connected = False
         self.stop_flag = False
 
@@ -197,6 +198,7 @@ class EthPacketTcp:
         """Accept incoming connection"""
         try:
             self.connection, addr = self.socket.accept()
+            self.conn_file = self.connection.makefile('r')  # Create makefile once
             self.connected = True
             print(f"EthPacketTcp server connected to {addr}")
         except Exception as e:
@@ -209,6 +211,7 @@ class EthPacketTcp:
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.socket.connect((self.host, self.port))
                 self.connection = self.socket
+                self.conn_file = self.connection.makefile('r')  # Create makefile once
                 self.connected = True
                 print(f"EthPacketTcp client connected to {self.host}:{self.port}")
             except Exception as e:
@@ -242,23 +245,20 @@ class EthPacketTcp:
     def _read_task(self):
         """Background task to read packets from TCP connection"""
         while not self.stop_flag:
-            if not self.connected:
+            if not self.connected or self.conn_file is None:
                 time.sleep(0.001)
                 continue
 
             try:
-                # Use makefile to get readline functionality
-                if self.connection:
-                    conn_file = self.connection.makefile('r')
-                    while not self.stop_flag and self.connected:
-                        packet_b64 = conn_file.readline()
-                        if not packet_b64:
-                            # Connection closed
-                            self.connected = False
-                            break
-                        packet_bytes = base64.standard_b64decode(packet_b64.strip())
-                        self.read_buf.append(packet_bytes)
-                    conn_file.close()
+                # Use the single makefile instance created during connection
+                packet_b64 = self.conn_file.readline()
+                if not packet_b64:
+                    # Connection closed
+                    self.connected = False
+                    print("EthPacketTcp connection closed by peer")
+                    break
+                packet_bytes = base64.standard_b64decode(packet_b64.strip())
+                self.read_buf.append(packet_bytes)
             except Exception as e:
                 print(f"EthPacketTcp read error: {e}")
                 self.connected = False
@@ -286,6 +286,14 @@ class EthPacketTcp:
         """Close TCP connection and stop threads"""
         self.stop_flag = True
         self.connected = False
+
+        # Close makefile first to unblock readline()
+        if self.conn_file:
+            try:
+                self.conn_file.close()
+            except:
+                pass
+            self.conn_file = None
 
         if self.connection:
             self.connection.close()
