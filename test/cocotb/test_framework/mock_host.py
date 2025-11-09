@@ -140,7 +140,7 @@ class EthPacketRpc:
 
 
 class EthPacketTcp:
-    def __init__(self, inst_id, host='127.0.0.1', port=9999):
+    def __init__(self, inst_id, host='127.0.0.1', port=7777):
         """
         Initialize EthPacketTcp with TCP communication
 

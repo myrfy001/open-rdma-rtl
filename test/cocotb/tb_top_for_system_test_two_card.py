@@ -22,6 +22,7 @@ from test_framework.mock_host import UserspaceDriverServer, open_shared_mem_to_h
 from test_framework.common import gen_rtl_file_list, copy_mem_file_to_sim_build_dir
 from test_framework.eth_bfm import SimpleEthBehaviorModel
 from test_framework.pcie_bfm import SimplePcieBehaviorModel
+from test_framework.proxy_pcie_bfm import SimplePcieBehaviorModelProxy
 from scapy.layers.inet import IP, UDP
 from scapy.layers.l2 import Ether
 
@@ -53,6 +54,11 @@ class TB(object):
             "0.0.0.0", 7700 + int(self.inst_id), self._csr_write_cb, self._csr_read_cb)
         self.rpc_server.run()
 
+        if self.inst_id == "1":
+            pcie_proxy_port = 7003
+        else:
+            pcie_proxy_port = 7004
+
         is_test_100g = False
         if is_test_100g:
             channel_cnt = 1
@@ -70,7 +76,7 @@ class TB(object):
             )
         else:
             channel_cnt = 4
-            self.pcie_bfm = SimplePcieBehaviorModel(
+            self.pcie_bfm = SimplePcieBehaviorModelProxy(
                 dut,
                 ["dmaMasterPipeIfcVec_0",
                  "dmaMasterPipeIfcVec_1",
@@ -79,7 +85,8 @@ class TB(object):
                 [
                     "dmaSlavePipeIfc"
                 ],
-                self.shared_mem.buf
+                self.shared_mem.buf,
+                tcp_port=pcie_proxy_port
             )
 
             self.eth_bfm = SimpleEthBehaviorModel(
