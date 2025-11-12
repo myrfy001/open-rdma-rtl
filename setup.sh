@@ -5,8 +5,10 @@ set -o nounset
 set -o xtrace
 
 rm -rf bsc-*
+
+# 需要选择适合的Ubuntu 版本
 # wget https://github.com/B-Lang-org/bsc/releases/download/2022.01/bsc-2022.01-ubuntu-20.04.tar.gz
-wget https://github.com/B-Lang-org/bsc/releases/download/2023.01/bsc-2023.01-ubuntu-22.04.tar.gz
+wget https://github.com/B-Lang-org/bsc/releases/download/2023.01/bsc-2023.01-ubuntu-24.04.tar.gz
 tar zxf bsc-*
 
 BSC_FILE_NAME=`ls bsc-*.tar.gz`
@@ -19,13 +21,13 @@ BASH_RC=$HOME/.bashrc
 touch $BASH_PROFILE
 cat <<EOF >> $BASH_PROFILE
 # BSV required env
-export BLUESPECDIR=$BLUESPEC_HOME/lib
-export PATH=$PATH:$BLUESPEC_HOME/bin
+export BLUESPECDIR="$BLUESPEC_HOME/lib"
+export PATH="$PATH:$BLUESPEC_HOME/bin"
 EOF
 
 touch $BASH_RC
 cat <<EOF >> $BASH_RC
 # BSV required env
-export BLUESPECDIR=$BLUESPEC_HOME/lib
-export PATH=$PATH:$BLUESPEC_HOME/bin
+export BLUESPECDIR="$BLUESPEC_HOME/lib"
+export PATH="$PATH:$BLUESPEC_HOME/bin"
 EOF
