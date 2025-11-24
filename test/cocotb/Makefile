@@ -5,13 +5,16 @@ BACKEND_DIR = $(ROOT_DIR)/backend
 SRC_DIR = $(ROOT_DIR)/src
 TB_DIR = $(abspath ./)
 include $(ROOT_DIR)/Makefile.base
-VBUILD_DIR = $(BACKEND_DIR)/build 
+VBUILD_DIR = $(BACKEND_DIR)/build
 GENERATED_VSRC_DIR = $(BACKEND_DIR)/verilog
 
-SYSTEM_TEST_TOP_BSV_SRC_FILE = ../src/Top.bsv
-SYSTEM_TEST_TOP_MODULE = mkBsvTopWithoutHardIpInstance
-SYSTEM_TEST_TB_FILE = tb_top_for_system_test.py
-SYSTEM_TEST_TB_FILE_TWO_CARD = tb_top_for_system_test_two_card.py
+# System test configuration - use same Top.bsv for all modes
+TOP_BSV_SRC_FILE = ../src/Top.bsv
+TOP_MODULE = mkBsvTopWithoutHardIpInstance
+
+# Test file configuration
+LOOPBACK_TB_FILE = tb_top_for_system_test.py
+TWO_CARD_TB_FILE = tb_top_for_system_test_two_card.py
 
 # TOP_BSV_SRC_FILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOP_MODULE ?= mkTestRTilePcieByCocotbTest
@@ -49,19 +52,12 @@ SYSTEM_TEST_TB_FILE_TWO_CARD = tb_top_for_system_test_two_card.py
 # TOP_MODULE ?= mkBsvTop
 # TB_FILE = tb_100g_with_bdma.py
 
-TOP_BSV_SRC_FILE ?= ../src/Top.bsv
-TOP_MODULE ?= mkBsvTop
-TB_FILE = tb_100g_with_bdma.py
-
-
-
 TOP_FILE = $(TOP_MODULE).v
 VLOG_FILE = $(TB_DIR)/$(TOP_FILE)
 
 
 DATE = $(shell date "+%Y%m%d")
 LOG_FILE = $(TB_DIR)/log/$(DATE)_$(TOP_MODULE).log
-
 
 verilog:
 	cd $(BACKEND_DIR) && make TARGETFILE=${TOP_BSV_SRC_FILE} BSV_TOP_MODULE=${TOP_MODULE} IS_COMPILE_FOR_SIM=True verilog
@@ -76,29 +72,30 @@ run:
 	set -o pipefail; \
 	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(TB_FILE) 2>&1 | tee $(LOG_FILE)
 
+
 #在这里
 # iverilog
 # cocotb (python3)
-run_system_test_server:
+run_system_test_server_loopback:
 	cd $(TB_DIR)
 	mkdir -p log
 
 	set -o pipefail ; \
-	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=1 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(SYSTEM_TEST_TB_FILE) 2>&1 | tee $(LOG_FILE).1
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=1 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(LOOPBACK_TB_FILE) 2>&1 | tee $(LOG_FILE).loopback
 
 run_system_test_server_1:
 	cd $(TB_DIR)
 	mkdir -p log
 
 	set -o pipefail ; \
-	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=1 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(SYSTEM_TEST_TB_FILE_TWO_CARD) 2>&1 | tee $(LOG_FILE).1
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=1 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(TWO_CARD_TB_FILE) 2>&1 | tee $(LOG_FILE).1
 
 run_system_test_server_2:
 	cd $(TB_DIR)
 	mkdir -p log
 
 	set -o pipefail ; \
-	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(SYSTEM_TEST_TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=2 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(SYSTEM_TEST_TB_FILE_TWO_CARD) 2>&1 | tee $(LOG_FILE).2
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=2 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(TWO_CARD_TB_FILE) 2>&1 | tee $(LOG_FILE).2
 
 
 
