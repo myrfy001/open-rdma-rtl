@@ -23,3 +23,7 @@ generate
 *.bin
 *.o
 __pycache__
+
+*.log.1
+*.log.2
+*.log.loopback
