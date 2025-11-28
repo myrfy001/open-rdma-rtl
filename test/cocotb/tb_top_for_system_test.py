@@ -115,12 +115,14 @@ class TB(object):
     async def _forward_csr_write_task(self):
         while True:
             addr, value = await self.csr_write_req_queue.get()
+            await RisingEdge(self.clock)  # ← 添加：等待时钟边沿 
             await self.pcie_bfm.host_write_blocking(addr, value)
             self.log.info(f"_forward_csr_write_task: {addr, value}")
 
     async def _forward_csr_read_req_task(self):
         while True:
             addr = await self.csr_read_req_queue.get()
+            await RisingEdge(self.clock)  # ← 添加：等待时钟边沿 
             val = await self.pcie_bfm.host_read_blocking(addr)
             await self.csr_read_resp_queue.put(val)
 
