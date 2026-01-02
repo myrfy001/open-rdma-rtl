@@ -90,10 +90,22 @@ class TcpConnectionManager:
                 if self._server_socket:
                     # Accept connection (blocking)
                     connection, addr = self._server_socket.accept()
-                    print(f"TcpConnectionManager server connected to {addr}")
 
                     with self._connection_lock:
-                        # Close any existing connection and file object
+                        # If already connected, reject new connection
+                        if self._connection and self._connected:
+                            print(f"TcpConnectionManager server REJECTING new connection from {addr} - already connected")
+                            try:
+                                connection.close()
+                            except:
+                                pass
+                            # Continue waiting for next connection (in case current one drops)
+                            continue
+
+                        # Accept new connection only if no existing connection
+                        print(f"TcpConnectionManager server connected to {addr}")
+
+                        # Close any stale connection and file object (if exists but marked as disconnected)
                         if self._readfile:
                             try:
                                 self._readfile.close()

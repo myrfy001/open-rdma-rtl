@@ -107,7 +107,7 @@ class SimplePcieBehaviorModel(object):
 
                 self.requester_pending_write_metas[channel_idx].append(
                     (cur_time, write_meta))
-                self.log.info(
+                self.log.debug(
                     f"put write request to delay queue cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
 
             await RisingEdge(self.clock)  # wait for next write req
@@ -124,7 +124,7 @@ class SimplePcieBehaviorModel(object):
                     cur_write_addr = write_meta.addr()
                     total_len = 0
 
-                    self.log.info(
+                    self.log.debug(
                         f"get write request from delay queue cur_write_addr={hex(cur_write_addr)}, total_len={hex(write_meta.total_len())}")
                     # loop to handle each beat in a request
                     while True:
@@ -149,7 +149,7 @@ class SimplePcieBehaviorModel(object):
 
                             total_len += (write_data.byte_num() -
                                           skip_byte_cnt)
-                            self.log.info(
+                            self.log.debug(
                                 f"pcie bfm write host mem. write_addr = {hex(old_write_addr)}, write_data={write_data}", )
 
                             if (write_data.is_last()):
@@ -173,7 +173,7 @@ class SimplePcieBehaviorModel(object):
                 cur_read_addr = read_meta.addr()
                 bytes_left = read_meta.total_len()
                 is_first = True
-                self.log.info(
+                self.log.debug(
                     f"pcie bfm got read request: cur_read_addr={hex(cur_read_addr)}, bytes_left={hex(bytes_left)}")
                 read_req_arrive_time = cocotb.utils.get_sim_time("ns")
                 # loop to handle each beat in a request
@@ -213,7 +213,7 @@ class SimplePcieBehaviorModel(object):
                     self.read_delay_queues[channel_idx].append(
                         (read_data.pack(), read_req_arrive_time, old_read_addr))
 
-                    self.log.info(
+                    self.log.debug(
                         f"pcie bfm sample read data and put into delay queue, channel={channel_idx} addr={hex(old_read_addr)}, read_data={read_data}")
 
                     is_first = False
@@ -235,7 +235,7 @@ class SimplePcieBehaviorModel(object):
                     if cur_time - beat_read_time >= self.read_delay_time_ns:
                         self.read_delay_queues[channel_idx].popleft()
                         await self.requester_read_data_pipes[channel_idx].enq(beat_to_forward)
-                        self.log.info(
+                        self.log.debug(
                             f"pcie bfm read, put delayed read beat, channel={channel_idx} addr={hex(old_read_addr)}")
             await RisingEdge(self.clock)  # wait for next read req
 

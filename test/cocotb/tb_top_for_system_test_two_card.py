@@ -124,7 +124,7 @@ class TB(object):
                 rx_beat = self.eth_packet_rpc.recv_packet()
                 if rx_beat is not None:
                     await self.eth_bfm.inject_rx_packet(rx_beat)
-                    self.log.debug(
+                    self.log.info(
                         f"eth packet rpc rx beat: {rx_beat}")
                 await Timer(1, units='ns')
 

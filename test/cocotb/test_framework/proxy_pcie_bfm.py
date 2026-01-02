@@ -30,7 +30,7 @@ else:
 
 
 class SimplePcieBehaviorModelProxy(object):
-    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=800, write_meta_to_data_delay_ns=300,tcp_port=7003):
+    def __init__(self, dut, requester_ifc_base_names, completer_ifc_base_names, mem=None, read_delay_time_ns=50, write_meta_to_data_delay_ns=50,tcp_port=7003):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -225,7 +225,7 @@ class SimplePcieBehaviorModelProxy(object):
                 cur_read_addr = read_meta.addr()
                 bytes_left = read_meta.total_len()
                 is_first = True
-                self.log.info(
+                self.log.debug(
                     f"pcie bfm got read request: cur_read_addr={hex(cur_read_addr)}, bytes_left={hex(bytes_left)}")
                 read_req_arrive_time = cocotb.utils.get_sim_time("ns")
                 # loop to handle each beat in a request
@@ -377,7 +377,7 @@ class SimplePcieBehaviorModelProxy(object):
                         # 转发packed格式到DUT
                         await self.requester_read_data_pipes[channel_idx].enq(read_data.pack())
 
-                        self.log.info(
+                        self.log.debug(
                             f"✓ Forwarded read beat to DUT: request_id={actual_id} "
                             f"channel={channel_idx} addr={hex(old_read_addr)} "
                             f"delay={cur_time - beat_read_time}ns")
@@ -478,7 +478,7 @@ class SimplePcieBehaviorModelProxy(object):
                     # 重置错误计数器
                     consecutive_errors = 0
 
-                    self.log.info(f"TCP接收数据: {line}")
+                    self.log.debug(f"TCP接收数据: {line}")
                     response = json.loads(line)
                     channel_id = response.get("channel_id")
 
