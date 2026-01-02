@@ -568,6 +568,7 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
             ds = curBeatOfDataReg;
         end
 
+        // count by overflowing
         zeroBasedPgtEntryBeatCntReg <= zeroBasedPgtEntryBeatCntReg + 1;
 
         let modifyReq = PgtModifyReq {
@@ -595,6 +596,10 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
         if (pgtUpdateRespCounter == 0) begin
             respQ.enq(True);
             state <= MrAndPgtManagerFsmStateIdle;
+
+            // clear the state
+            zeroBasedPgtEntryBeatCntReg <= 0;   
+            // curBeatOfDataReg <= unpack(0);     
         end
     endrule
 
