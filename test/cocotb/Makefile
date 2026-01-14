@@ -97,6 +97,18 @@ run_system_test_server_2:
 	set -o pipefail ; \
 	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) COCOTB_DUT=$(TOP_MODULE) BLUERDMA_SIMULATOR_INST_ID=2 BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) python3 $(TWO_CARD_TB_FILE) 2>&1 | tee $(LOG_FILE).2
 
+# Compile Verilator without running full tests
+# Usage: make compile_verilator [TOP_MODULE=<module_name>] [BLUERDMA_DATA_BUS_WIDTH=<width>]
+compile_verilator:
+	@echo "==============================================="
+	@echo "Compiling Verilator for $(TOP_MODULE)"
+	@echo "Data bus width: $(BLUERDMA_DATA_BUS_WIDTH)"
+	@echo "==============================================="
+	cd $(TB_DIR) && \
+	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) \
+	COCOTB_DUT=$(TOP_MODULE) \
+	BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) \
+	python3 compile_verilator.py
 
 
 
