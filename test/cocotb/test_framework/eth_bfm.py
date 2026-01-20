@@ -59,12 +59,21 @@ class SimpleEthBehaviorModel(object):
 
     async def _handle_dut_tx_task(self, idx):
         packet_data = b""
+        is_in_stream=False
         while True:
             if await self.txChannels[idx].not_empty():
                 ds_raw = await self.txChannels[idx].first()
                 await self.txChannels[idx].deq()
                 ds = BlueRdmaDataStream.unpack(ds_raw)
                 # self.log.debug(f"eth bfm channel {idx} got beat, ds={ds}")
+
+                if ds.is_first():
+                    assert is_in_stream==False,"eth bfm channel {idx} got wrong stream"
+                    is_in_stream=True
+
+                if ds.is_last():
+                    assert is_in_stream==True,"eth bfm channel {idx} got wrong stream"
+                    is_in_stream=False
 
                 ds_data_as_bytes = ds.data().to_bytes(DATA_BUS_BYTE_WIDTH, byteorder="little")
                 packet_data += ds_data_as_bytes[:ds.byte_num()]

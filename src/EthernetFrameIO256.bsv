@@ -545,11 +545,23 @@ module mkRdmaMetaAndPayloadExtractor(RdmaMetaAndPayloadExtractor);
         rdmaMeta.header.rdmaExtendHeaderBuf = truncateLSB({rdmaExtendHeaderSecondBeatFragment, ds.data});
         rdmaMeta.fpDebugTime = curFpDebugTime;
 
+        // update rdmaMeta.hasPayload , isZeroPayload means no payload
+        // TODO maybe timing is too long
+        let reth = extractPriRETH(rdmaMeta.header.rdmaExtendHeaderBuf, rdmaMeta.header.bth.trans);
+        let isZeroPayload = reth.dlen == 0;
+        rdmaMeta.hasPayload = rdmaMeta.hasPayload && !isZeroPayload;
+
         rdmaPacketMetaPipeOutQ.enq(rdmaMeta);
     
 
         stateReg <= ds.isLast ? RdmaMetaAndPayloadExtractorStateHandleFirstBeat : RdmaMetaAndPayloadExtractorStateHandleMoreBeat;
 
+        if (ds.isLast) begin
+            immAssert(
+                !rdmaMeta.hasPayload,
+                "mkRdmaMetaAndPayloadExtractor handleThirdBeat error, should not have hasPayload",
+                $format("rdmaMeta=", fshow(rdmaMeta)));
+        end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkRdmaMetaAndPayloadExtractor handleThirdBeat"),
         //     toBlue(", ds="), fshow(ds),

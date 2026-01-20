@@ -289,11 +289,12 @@ module mkRQ#(Word channelIdx)(RQ);
         };
         qpcQueryCltInst.putReq(qpcQueryResp);
 
-
+        
+        
         let isRespNeedDMAWrite  = rdmaRespNeedDmaWrite(bth.opcode);
         let isReqNeedDMAWrite   = rdmaReqNeedDmaWrite(bth.opcode);
         let isZeroPayload       = isZeroR(reth.dlen);
-        let isNeedQueryMrTable  = isRespNeedDMAWrite || isReqNeedDMAWrite;
+        let isNeedQueryMrTable  = (isRespNeedDMAWrite || isReqNeedDMAWrite) && !isZeroPayload;
         let isFirstPacket       = isFirstRdmaOpCode(bth.opcode);
 
 
@@ -700,6 +701,15 @@ module mkRQ#(Word channelIdx)(RQ);
     endrule
 
     rule handleConResp;
+
+        function Bool isOnlyWithImm(RdmaOpCode opCode);
+            case(opCode)
+                SEND_ONLY_WITH_IMMEDIATE,
+                RDMA_WRITE_ONLY_WITH_IMMEDIATE: return True;
+                default: return False;
+            endcase
+        endfunction
+
         let curFpDebugTime <- getSimulationTime;
 
         let pipelineEntryIn = handleConRespPipeQ.first;
@@ -725,7 +735,7 @@ module mkRQ#(Word channelIdx)(RQ);
             };
             handleGenMetaReportQueueDescPipeQ.enq(pipelineEntryOut);
 
-            let needUpdatePsnBitmap = rdmaPacketMeta.hasPayload;
+            let needUpdatePsnBitmap = isOnlyWithImm(bth.opcode) || rdmaPacketMeta.hasPayload;
             if (needUpdatePsnBitmap) begin
                 let autoAckReq = AutoAckGeneratorReq{
                     psn: bth.psn,
