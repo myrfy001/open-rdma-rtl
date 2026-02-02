@@ -46,7 +46,7 @@ class TB(object):
 
         self.rpc_server = UserspaceDriverServer(
             "0.0.0.0", 7701, self._csr_write_cb, self._csr_read_cb)
-        self.rpc_server.run()
+        # self.rpc_server.run()
 
         self.pcie_bfm = SimplePcieBehaviorModelProxy(
             dut,
@@ -150,6 +150,7 @@ async def small_desc_fp_test(dut):
     await cocotb.start(tb.start_single_card_loop_back())
 
     await tb.gen_reset()
+    tb.rpc_server.run()
 
     await Timer(15000000, units='ns')
     tb.clean_up()

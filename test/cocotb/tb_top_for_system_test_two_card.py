@@ -52,7 +52,7 @@ class TB(object):
 
         self.rpc_server = UserspaceDriverServer(
             "0.0.0.0", 7700 + int(self.inst_id), self._csr_write_cb, self._csr_read_cb)
-        self.rpc_server.run()
+        # self.rpc_server.run()
 
         if self.inst_id == "1":
             pcie_proxy_port = 7003
@@ -196,6 +196,7 @@ async def small_desc_fp_test(dut):
 
     await tb.gen_reset()
 
+    tb.rpc_server.run()
     # FIX: Increased wait time from 15us to 150us to allow:
     # - User-space driver (BluerdmaCore) to connect via UDP
     # - RDMA operations (QP creation, memory registration, data transfer) to complete
