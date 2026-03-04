@@ -139,6 +139,7 @@ class EthPacketRpc:
             self.to_peer_pipe.write(packet_b64)
 
 # TODO 会不会需要写成阻塞式的？目前在没连接时的send recv会直接丢包
+# For Peer-to-peer eth packet exchange
 class EthPacketTcp:
     def __init__(self, inst_id, host='127.0.0.1', port=7777):
         """
@@ -301,6 +302,111 @@ class EthPacketTcp:
             self.socket.close()
 
         # Wait for threads to finish
+        if hasattr(self, 'read_thread') and self.read_thread.is_alive():
+            self.read_thread.join(timeout=1)
+        if hasattr(self, 'write_thread') and self.write_thread.is_alive():
+            self.write_thread.join(timeout=1)
+
+
+# For multi-card eth packet exchange using TCP communication
+class EthSwitchTcp:
+    def __init__(self, inst_id):
+        self.inst_id = inst_id
+        self.host = '127.0.0.1'
+        self.port = 8100 + int(inst_id)
+        
+        self.write_buf = collections.deque()
+        self.read_buf = collections.deque()
+
+        self.socket = None
+        self.conn_file = None
+        self.stop_flag = False
+        self.connected = False
+
+        self._connect_to_switch()
+
+        self.read_thread = threading.Thread(target=self._read_task)
+        self.write_thread = threading.Thread(target=self._write_task)
+        self.read_thread.start()
+        self.write_thread.start()
+
+
+    def _connect_to_switch(self):
+        """Connect to the switch and start packet exchange"""
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # use self.port to connect to the switch
+        self.socket.bind((self.host, self.port))
+        self.socket.connect((self.host, 8100))
+        self.conn_file = self.socket.makefile('r')
+        self.connected = True
+
+    def send_packet(self, buf):
+        """
+        Send packet using base64 encoding
+
+        Args:
+            buf: Raw bytes to send
+        """
+        if self.connected:
+            encoded_packet = base64.standard_b64encode(buf).decode() + "\n"
+            self.write_buf.append(encoded_packet)
+
+    def recv_packet(self):
+        if self.connected and len(self.read_buf) > 0:
+            return self.read_buf.popleft()
+        return None
+
+    def _write_task(self):
+        """Background task to write packets to TCP connection"""
+        while not self.stop_flag:
+            if not self.connected or len(self.write_buf) == 0:
+                time.sleep(0.001)
+                continue
+
+            try:
+                packet_b64 = self.write_buf.popleft()
+                print(f"EthSwitchTcp self.socket: {self.socket}, sending packet: {packet_b64.strip()}")
+                if self.socket:
+                    self.socket.send(packet_b64.encode())
+                    print("EthSwitchTcp packet sent successfully")
+            except Exception as e:
+                print(f"EthSwitchTcp write error: {e}")
+                self.connected = False
+                # Put packet back to buffer for retry
+                self.write_buf.appendleft(packet_b64)
+                time.sleep(0.01)  # Wait before retry
+
+    def _read_task(self):
+        """Background task to read packets from TCP connection"""
+        while not self.stop_flag:
+            if not self.connected or self.conn_file is None:
+                time.sleep(0.001)
+                continue
+
+            try:
+                packet_b64 = self.conn_file.readline()
+                if not packet_b64:
+                    # Connection closed
+                    print("EthSwitchTcp connection closed by switch")
+                    break
+                packet_bytes = base64.standard_b64decode(packet_b64.strip())
+                self.read_buf.append(packet_bytes)
+            except Exception as e:
+                print(f"EthSwitchTcp read error: {e}")
+                time.sleep(0.01)  # Wait before retry
+    
+    def close(self):
+        self.stop_flag = True
+        self.connected = False
+        if self.conn_file:
+            try:
+                self.conn_file.close()
+            except:
+                pass
+            self.conn_file = None
+        if self.socket:
+            self.socket.close()
+
         if hasattr(self, 'read_thread') and self.read_thread.is_alive():
             self.read_thread.join(timeout=1)
         if hasattr(self, 'write_thread') and self.write_thread.is_alive():
