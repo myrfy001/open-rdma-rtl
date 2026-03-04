@@ -313,7 +313,6 @@ class EthSwitchTcp:
     def __init__(self, inst_id):
         self.inst_id = inst_id
         self.host = '127.0.0.1'
-        self.port = 8100 + int(inst_id)
         
         self.write_buf = collections.deque()
         self.read_buf = collections.deque()
@@ -335,9 +334,9 @@ class EthSwitchTcp:
         """Connect to the switch and start packet exchange"""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # use self.port to connect to the switch
-        self.socket.bind((self.host, self.port))
         self.socket.connect((self.host, 8100))
         self.conn_file = self.socket.makefile('r')
+        self.socket.send(f"{self.inst_id}\n".encode())  # Send registration info to switch
         self.connected = True
 
     def send_packet(self, buf):

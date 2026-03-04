@@ -10,8 +10,10 @@ async def handle_host(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     addr = writer.get_extra_info('peername')
     print(f"新 Host 连接: {addr}")
 
-    _, port = addr
-    src_ip_int = int(base_ip) + port - 8100 - 1
+    inst_id = await reader.readline()
+    print(f"instance id is: {inst_id.strip()}")
+
+    src_ip_int = int(base_ip) + int(inst_id) - 1
     src_ip = ipaddress.IPv4Address(src_ip_int)
     routing_table[src_ip_int] = writer
     print(f"Host  已注册到交换机: {src_ip}")
@@ -37,12 +39,14 @@ async def handle_host(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
             
             sys.stdout.flush()
             # 转发
-            if dest_ip_int in routing_table:
-                print(f"转发包: {src_ip} -> {dest_ip}, 大小: {len(packet)}")
-                routing_table[dest_ip_int].write(packet)
-                await routing_table[dest_ip_int].drain()
-            else:
-                exit(f"未找到目标 IP: {dest_ip}")
+            while dest_ip_int not in routing_table:
+                print(f"目标 IP {dest_ip} 不在线，等待中...")
+                await asyncio.sleep(1)
+
+            print(f"转发包: {src_ip} -> {dest_ip}, 大小: {len(packet)}")
+            routing_table[dest_ip_int].write(packet)
+            await routing_table[dest_ip_int].drain()
+
                 
     except Exception as e:
         print(f"连接中断: {e}")
