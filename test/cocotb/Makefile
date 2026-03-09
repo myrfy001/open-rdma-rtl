@@ -19,6 +19,8 @@ MULTI_NODE_TB_FILE = tb_top_for_system_test_multi_node.py
 
 INST_ID ?= 1
 
+PYTHON ?= python3
+
 # TOP_BSV_SRC_FILE ?= ../test/TestRTilePcieAdaptor.bsv
 # TOP_MODULE ?= mkTestRTilePcieByCocotbTest
 # TB_FILE = tb_simple_root_complex.py
@@ -118,7 +120,7 @@ compile_verilator:
 	COCOTB_VERILOG_DIR=$(SRC_DIR)/verilog:$(GENERATED_VSRC_DIR) \
 	COCOTB_DUT=$(TOP_MODULE) \
 	BLUERDMA_DATA_BUS_WIDTH=$(BLUERDMA_DATA_BUS_WIDTH) \
-	python3 compile_verilator.py
+	$(PYTHON) compile_verilator.py
 
 
 
