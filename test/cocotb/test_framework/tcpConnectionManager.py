@@ -8,6 +8,7 @@ for scenarios where connection timing is uncertain.
 """
 
 import socket
+import sys
 import threading
 import time
 from typing import Optional
@@ -94,7 +95,7 @@ class TcpConnectionManager:
                     with self._connection_lock:
                         # If already connected, reject new connection
                         if self._connection and self._connected:
-                            print(f"TcpConnectionManager server REJECTING new connection from {addr} - already connected")
+                            print(f"TcpConnectionManager server REJECTING new connection from {addr} - already connected", file=sys.stderr)
                             try:
                                 connection.close()
                             except:

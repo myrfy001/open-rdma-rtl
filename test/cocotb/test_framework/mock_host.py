@@ -14,6 +14,8 @@ import collections
 
 from abc import ABC, abstractmethod
 
+from .tcpConnectionManager import TcpConnectionManager
+
 
 class MockHostMem:
     def __init__(self, shared_mem_name, shared_mem_size) -> None:
@@ -64,26 +66,19 @@ class UserspaceDriverServer:
         self.stop_flag = True
 
     def _run(self, listen_addr, listen_port):
-
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((listen_addr, listen_port))
-        server_socket.settimeout(0.5)
+        tcpConnection = TcpConnectionManager("1", listen_addr, listen_port)
         while not self.stop_flag:
-            try:
-                recv_raw, resp_addr = server_socket.recvfrom(1024)
-            except:
+            recv_raw = tcpConnection.receive_line()
+            if not recv_raw:
                 continue
             recv_req = json.loads(recv_raw)
             if recv_req["is_write"]:
-                self.csr_write_cb(
-                    recv_req["addr"], recv_req["value"])
+                self.csr_write_cb(recv_req["addr"], recv_req["value"])
             else:
                 value = self.csr_read_cb(recv_req["addr"])
-                server_socket.sendto(json.dumps(
-                    {"value": value, "addr": recv_req["addr"], "is_write": False}).encode("utf-8"), resp_addr)
-
-        server_socket.close()
+                tcpConnection.send_data(
+                    (json.dumps({"is_write": False, "addr": recv_req["addr"], "value": value}) + '\n').encode("utf-8"))
+        tcpConnection.close()
 
 
 class EthPacketRpc:

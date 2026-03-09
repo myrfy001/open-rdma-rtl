@@ -31,6 +31,7 @@ async def handle_host(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
             src_ip_bytes = packet_bytes[26:30]
             if src_ip_bytes != src_ip_int.to_bytes(4, byteorder='big'):
                 print(f"[Warning]: 收到的包源 IP 与注册 IP 不匹配, src_ip_bytes={src_ip_bytes}, expected={src_ip_int.to_bytes(4, byteorder='big')}")
+                sys.stdout.flush()
 
             dest_ip_bytes = packet_bytes[30:34]
             dest_ip_int = int.from_bytes(dest_ip_bytes, byteorder='big')
