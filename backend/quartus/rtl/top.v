@@ -418,7 +418,7 @@ module bluerdma_top(
 
 	ftile_reset ftile_reset_inst (
 		.clk(ftile_eth_reconfig_clk),
-		.i_reset_n(rtile_pcie_pin_perst_n_o),
+		.i_reset_n(rtile_pcie_p0_reset_status_n),
 		.i_reset_ack_n(ftile_eth_rst_ack_n),
 		.o_reset_n(ftile_eth_rst_n)
 	);

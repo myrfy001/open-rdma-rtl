@@ -140,23 +140,23 @@ set_instance_assignment -name IO_STANDARD "HIGH SPEED DIFFERENTIAL I/O" -to rtil
 
 ########################################################################
 # qsfpdd
-# set_location_assignment PIN_N45 -to clk_sys_100m_p
-# set_location_assignment PIN_EW75 -to qsfpdd_refclk_fht
-# set_location_assignment PIN_HJ68 -to qsfpdd_refclk_fgt
+set_location_assignment PIN_N45 -to clk_sys_100m_p
+set_location_assignment PIN_EW75 -to qsfpdd_refclk_fht
+set_location_assignment PIN_HJ68 -to qsfpdd_refclk_fgt
 
-# set_location_assignment PIN_DL78 -to qsfpdd0_rx_p[0]
-# set_location_assignment PIN_EC78 -to qsfpdd0_rx_p[1]
-# set_location_assignment PIN_ET78 -to qsfpdd0_rx_p[2]
-# set_location_assignment PIN_FH78 -to qsfpdd0_rx_p[3]
-# set_location_assignment PIN_DP79 -to qsfpdd0_rx_n[0]
-# set_location_assignment PIN_EF79 -to qsfpdd0_rx_n[1]
-# set_location_assignment PIN_EW79 -to qsfpdd0_rx_n[2]
-# set_location_assignment PIN_FL79 -to qsfpdd0_rx_n[3]
-# set_location_assignment PIN_DU82 -to qsfpdd0_tx_p[0]
-# set_location_assignment PIN_EK82 -to qsfpdd0_tx_p[1]
-# set_location_assignment PIN_FB82 -to qsfpdd0_tx_p[2]
-# set_location_assignment PIN_FP82 -to qsfpdd0_tx_p[3]
-# set_location_assignment PIN_DY81 -to qsfpdd0_tx_n[0]
-# set_location_assignment PIN_EN81 -to qsfpdd0_tx_n[1]
-# set_location_assignment PIN_FE81 -to qsfpdd0_tx_n[2]
-# set_location_assignment PIN_FU81 -to qsfpdd0_tx_n[3]
+set_location_assignment PIN_DL78 -to qsfpdd0_rx_p[0]
+set_location_assignment PIN_EC78 -to qsfpdd0_rx_p[1]
+set_location_assignment PIN_ET78 -to qsfpdd0_rx_p[2]
+set_location_assignment PIN_FH78 -to qsfpdd0_rx_p[3]
+set_location_assignment PIN_DP79 -to qsfpdd0_rx_n[0]
+set_location_assignment PIN_EF79 -to qsfpdd0_rx_n[1]
+set_location_assignment PIN_EW79 -to qsfpdd0_rx_n[2]
+set_location_assignment PIN_FL79 -to qsfpdd0_rx_n[3]
+set_location_assignment PIN_DU82 -to qsfpdd0_tx_p[0]
+set_location_assignment PIN_EK82 -to qsfpdd0_tx_p[1]
+set_location_assignment PIN_FB82 -to qsfpdd0_tx_p[2]
+set_location_assignment PIN_FP82 -to qsfpdd0_tx_p[3]
+set_location_assignment PIN_DY81 -to qsfpdd0_tx_n[0]
+set_location_assignment PIN_EN81 -to qsfpdd0_tx_n[1]
+set_location_assignment PIN_FE81 -to qsfpdd0_tx_n[2]
+set_location_assignment PIN_FU81 -to qsfpdd0_tx_n[3]
