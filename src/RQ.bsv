@@ -143,7 +143,7 @@ module mkRQ#(Word channelIdx)(RQ);
     QueuedClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst <- mkQueuedClientP(DebugConf{name: "mrTableQueryCltInst", enableDebug: False});
 
     FIFOF#(PayloadConReq) conReqPipeOutQ <- mkSizedFIFOF(4);
-    FIFOF#(Bool) conRespPipeInQ <- mkSizedFIFOF(4);
+    FIFOF#(Bool) conRespPipeInQ <- mkSizedFIFOF(36);
 
     // invalid request payload filter related
     FIFOF#(Bool) filterCmdQ <-  mkSizedFIFOF(4);
@@ -268,6 +268,7 @@ module mkRQ#(Word channelIdx)(RQ);
         if (!autoAckGenReqPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ autoAckGenReqPipeOutQueue");
         if (!genCnpReqPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ genCnpReqPipeOutQueue");
         if (!handleGenMetaReportQueueDescPipeQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRQ handleGenMetaReportQueueDescPipeQ");
+        if (!metaReportMimoQueue.enqReady) $display("time=%0t, ", $time, "NotReady: mkRQ metaReportMimoQueue");
         
     endrule
 
@@ -922,29 +923,39 @@ module mkRQ#(Word channelIdx)(RQ);
                 if (metaReportMimoQueue.enqReadyN(2)) begin
                     metaReportMimoQueue.enq(2, vecToEnq);
                     handleGenMetaReportQueueDescPipeQ.deq;
+                    $display(
+                        "time=%0t:", $time, toGreen(" mkRQ[%d] genMetaReportQueueDesc"), channelIdx,
+                        toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe), "metricsDebugCounter6Reg=", metricsDebugCounter6Reg
+                    );
                 end
             end
             else if (isValid(vecToEnqMaybe[0])) begin
                 if (metaReportMimoQueue.enqReadyN(1)) begin
                     metaReportMimoQueue.enq(1, vecToEnq);
                     handleGenMetaReportQueueDescPipeQ.deq;
+                    $display(
+                        "time=%0t:", $time, toGreen(" mkRQ[%d] genMetaReportQueueDesc"), channelIdx,
+                        toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe), "metricsDebugCounter6Reg=", metricsDebugCounter6Reg
+                    );
                 end
             end
             else begin
                 if (noNeedToGenDesc) begin
                     handleGenMetaReportQueueDescPipeQ.deq;
+                    $display(
+                        "time=%0t:", $time, toGreen(" mkRQ[%d] genMetaReportQueueDesc"), channelIdx,
+                        toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe), "metricsDebugCounter6Reg=", metricsDebugCounter6Reg
+                    );
                 end
                 else begin
+                    $display("Warn: Decode Success but No Valid Desc to Enqueue, Check the Logic!");
                     // metaReportMimoQueue doesn't have enough space, so nothing to do, and no need to deq;
                 end
             end
         end
 
 
-        $display(
-            "time=%0t:", $time, toGreen(" mkRQ[%d] genMetaReportQueueDesc"), channelIdx,
-            toBlue(", vecToEnqMaybe="), fshow(vecToEnqMaybe)
-        );
+
         metricsDebugCounter6Reg <= metricsDebugCounter6Reg + 1;
     endrule
 

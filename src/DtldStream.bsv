@@ -304,6 +304,17 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
 
     FIFOF#(tChannelIdx) readKeepOrderQueue  <- mkSizedFIFOF(readDepth);   // TODO: check why use mkRegisteredSizedFIFOF will deadlock here
 
+    rule debugMasterSideQueueWm;
+        if(!masterSideQueueWm.notFull) $display("time=%0t, ", $time, "FullQueue: mkDtldStreamArbiterSlave [", dbgConf.name, "] masterSideQueueWm");
+    endrule
+
+    rule debugMasterSideQueueWd;
+        if(!masterSideQueueWd.notFull) $display("time=%0t, ", $time, "FullQueue: mkDtldStreamArbiterSlave [", dbgConf.name, "] masterSideQueueWd");
+    endrule
+
+    rule debugwriteKeepOrderQueue;
+        if(!writeKeepOrderQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkDtldStreamArbiterSlave [", dbgConf.name, "] writeKeepOrderQueue");
+    endrule
 
     // for read path, a big WQE may lead to read a lot of beat, DMA may be faster than ethernet port, leading to blocking.
     // we only care the output of ethernet port and make sure it is continous.
@@ -317,7 +328,6 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
     // rule debug;
     //     $display(
     //         "time=%0t, ", $time, "DEBUG", 
-    //         ", isWriteFirstBeatReg=", fshow(isWriteFirstBeatReg),
     //         ", masterSideQueueWm.notFull=", fshow(masterSideQueueWm.notFull),
     //         ", masterSideQueueWd.notFull=", fshow(masterSideQueueWd.notFull),
     //         ", writeSourceChannelIdPipeOutQueue.notFull=", fshow(writeSourceChannelIdPipeOutQueue.notFull)
@@ -345,6 +355,11 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
             if (writeArbiter.clients[channelIdx].grant) begin
                 wmMaybe = tagged Valid slaveSideQueueVecWm[channelIdx].first;
                 curChannelIdx = fromInteger(channelIdx);
+                $display(
+                    "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave [%s] recvWriteArbitResp get grant"), dbgConf.name,
+                    toBlue(", channelIdx=%d"), channelIdx,
+                    toBlue(", wmMaybe="), fshow(wmMaybe)
+                );
             end
         end
 
@@ -353,11 +368,11 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
             masterSideQueueWm.enq(wm);
             writeKeepOrderQueue.enq(curChannelIdx);
             writeSourceChannelIdPipeOutQueue.enq(curChannelIdx);
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forward write beat first"),
-            //     toBlue(", wm="), fshow(wm),
-            //     toBlue(", wd="), fshow(wd)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave [%s] forward write beat first"), dbgConf.name,
+                toBlue(", wm="), fshow(wm),
+                toBlue(", wd="), fshow(wd)
+            );
         end
         // $display(
         //     "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave recvWriteArbitResp"),
@@ -375,11 +390,17 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
         let _ <- fpCheckerWrite.putStreamBeatInfo(wd.isFirst, wd.isLast);
         if (wd.isLast) begin
             writeKeepOrderQueue.deq;
+            $display(
+                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave [%s] forward write beat last"), dbgConf.name,
+                toBlue(", wd="), fshow(wd),
+                toBlue(", curWriteChannelIdx="), fshow(curWriteChannelIdx)
+            );
         end
 
         $display(
-            "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardMoreWriteBeat"),
-            toBlue(", wd="), fshow(wd)
+            "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave [%s] forwardMoreWriteBeat"), dbgConf.name,
+            toBlue(", wd="), fshow(wd),
+            toBlue(", curWriteChannelIdx="), fshow(curWriteChannelIdx)
         );
     endrule
 
@@ -424,7 +445,7 @@ module mkDtldStreamArbiterSlave#(Integer readDepth, Integer writeOutputBufDepth,
             end
             let _ <- fpCheckerRead.putStreamBeatInfo(rd.isFirst, rd.isLast);
             $display(
-                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave forwardReadResp"),
+                "time=%0t:", $time, toGreen(" mkDtldStreamArbiterSlave [%s] forwardReadResp"), dbgConf.name,
                 toBlue(", channelIdx="), fshow(channelIdx),
                 toBlue(", rd="), fshow(rd)
             );
@@ -582,7 +603,7 @@ endmodule
 // The first (or only) fragment's first (or only) beat can have startByteIdx != 0
 // The first (or only) fragment's last (or only) beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)
 // The last (or only) fragment's last beat can have invalid bytes at the tail, i.e., (startByteIdx + byteNum < byte_nume_per_beat)
-// All the other fragments's beats must be full, i.e., startByteIdx == 0 && startByteIdx == byte_nume_per_beat
+// All the other fragments's beats must be full, i.e., startByteIdx == 0 && byteNum == byte_nume_per_beat
 interface DtldStreamConcator#(type tData, numeric type nLogOfAlign);
     interface PipeInB0#(DtldStreamData#(tData))                    dataPipeIn;
     interface PipeInB0#(Bool)                                      isLastStreamFlagPipeIn;

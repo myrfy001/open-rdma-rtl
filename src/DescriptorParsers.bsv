@@ -269,7 +269,7 @@ module mkDescriptorMux(DescriptorMux#(nChannelCnt));
             False,  // needChannelIdxPipeOut
             isReqFinished,
             isRespFinished,
-            DebugConf{name: "mkDescriptorMux", enableDebug: False}
+            DebugConf{name: "mkDescriptorMux", enableDebug: True}
         );
 
     

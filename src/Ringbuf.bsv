@@ -91,7 +91,7 @@ instance Literal#(RingbufPointer#(w));
 endinstance
 
 
-typedef 4096  USER_LOGIC_RING_BUF_4096_DEEP; 
+typedef 16  USER_LOGIC_RING_BUF_4096_DEEP; 
 typedef TLog#(USER_LOGIC_RING_BUF_4096_DEEP)  USER_LOGIC_RING_BUF_4096_DEEP_WIDTH; 
 typedef RingbufPointer#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) Fix128kBRingBufPointer;
 typedef RingbufC2h#(USER_LOGIC_RING_BUF_4096_DEEP_WIDTH) RingbufC2hSlot4096;
@@ -308,6 +308,32 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
     Reg#(RingBufWriteBlockOffset)      zeroBasedDescWriteCntReg    <- mkRegU;
     Reg#(Bool)                         isWriteStreamFirstBeatReg   <- mkReg(True);                     
 
+    rule debugDmaWriteAddrQ;
+        if(!dmaWriteAddrQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufC2h dmaWriteAddrQ");
+    endrule
+
+    rule debugDmaWriteDataQ;
+        if(!dmaWriteDataQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufC2h dmaWriteDataQ");
+    endrule
+
+    rule debugDmaWriteRespQ;
+        if(!dmaWriteRespQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufC2h dmaWriteRespQ");
+    endrule
+
+    rule debugInFlightWriteReqHeaadUpdateQ;
+        if(!inFlightWriteReqHeaadUpdateQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufC2h inFlightWriteReqHeaadUpdateQ");
+    endrule
+
+
+    // rule debug2;
+    //     if(!isRingbufNotFull(headShadowReg,tailReg[0])) $display("time=%0t, ", $time, "FullRingbuffer: mkRingbufC2h headShadowReg");
+    //     if(!isRingbufNotFull(headReg[0] ,tailReg[0])) $display("time=%0t, ", $time, "FullRingbuffer: mkRingbufC2h headReg");
+    //     $display("time=%0t, ", $time, "FullRingbuffer: mkRingbufC2h, headShadowReg is %d,headReg[0] is %d, tailReg[0] is %d",headShadowReg,headReg[0],tailReg[0]);
+    // endrule
+
+    // rule debug3;
+    // endrule
+
     rule handleBatchDelay;
         if (!bufQ.notEmpty) begin
             batchDelayCounterReg <= 0;
@@ -340,21 +366,21 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
             zeroBasedDescWriteCntReg <= zeroBasedDescWriteCnt;
             isSendingDescBodyReg <= True;
 
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRingbufC2h prepareDmaWrite"),
-            //     "needDoDMA=", fshow(needDoDMA),
-            //     ", isBatchDelayCounterFired=",fshow(isBatchDelayCounterFired),
-            //     ", bufQ.notEmpty=", fshow(bufQ.notEmpty),
-            //     ", freeSlotCnt=", fshow(pack(freeSlotCnt)),
-            //     ", zeroBasedDescWriteCnt=", fshow(pack(zeroBasedDescWriteCnt)),
-            //     ", headReg=", fshow(pack(headReg[0])),
-            //     ", headShadowReg=", fshow(pack(headShadowReg)),
-            //     ", tailReg=", fshow(pack(tailReg[0])),
-            //     ", head-tail=", fshow(pack(headReg[0] - tailReg[0])),
-            //     ", headS-tail=", fshow(pack(headShadowReg - tailReg[0])),
-            //     ", validCounter=", fshow(pack(validCounter)),
-            //     ", zeroBasedAvailableDescToWrite=", fshow(pack(zeroBasedAvailableDescToWrite))
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkRingbufC2h prepareDmaWrite"),
+                "needDoDMA=", fshow(needDoDMA),
+                ", isBatchDelayCounterFired=",fshow(isBatchDelayCounterFired),
+                ", bufQ.notEmpty=", fshow(bufQ.notEmpty),
+                ", freeSlotCnt=", fshow(pack(freeSlotCnt)),
+                ", zeroBasedDescWriteCnt=", fshow(pack(zeroBasedDescWriteCnt)),
+                ", headReg=", fshow(pack(headReg[0])),
+                ", headShadowReg=", fshow(pack(headShadowReg)),
+                ", tailReg=", fshow(pack(tailReg[0])),
+                ", head-tail=", fshow(pack(headReg[0] - tailReg[0])),
+                ", headS-tail=", fshow(pack(headShadowReg - tailReg[0])),
+                ", validCounter=", fshow(pack(validCounter)),
+                ", zeroBasedAvailableDescToWrite=", fshow(pack(zeroBasedAvailableDescToWrite))
+            );
         end
 
     endrule
@@ -386,30 +412,31 @@ module mkRingbufC2h(RingbufNumber qIdx, RingbufC2h#(szPtrIdx) ifc) provisos(
         headShadowReg <= newHeadShadow;
         isWriteStreamFirstBeatReg <= isLast;
 
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRingbufC2h doDmaWrite"),
-        //     toBlue(", qIdx="), fshow(qIdx),
-        //     toBlue(", tailReg="), fshow(pack(tailReg[0])),
-        //     toBlue(", headReg="), fshow(pack(headReg[0])),
-        //     toBlue(", old headShadowReg="), fshow(pack(headShadowReg)),
-        //     toBlue(", new headShadowReg="), fshow(pack(newHeadShadow)),
-        //     toBlue(", desc="), fshow(ds)
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkRingbufC2h doDmaWrite"),
+            toBlue(", qIdx="), fshow(qIdx),
+            toBlue(", tailReg="), fshow(pack(tailReg[0])),
+            toBlue(", headReg="), fshow(pack(headReg[0])),
+            toBlue(", old headShadowReg="), fshow(pack(headShadowReg)),
+            toBlue(", new headShadowReg="), fshow(pack(newHeadShadow)),
+            toBlue(", desc="), fshow(ds)
+        );
     endrule
 
     rule handleWriteResp;
+        // immAssert(dmaWriteRespQ.first);
         dmaWriteRespQ.deq;
         let newHead = inFlightWriteReqHeaadUpdateQ.first;
         inFlightWriteReqHeaadUpdateQ.deq;
 
         headReg[0] <= newHead;
         
-        // $display(
-        //     "time=%0t:", $time, toGreen(" mkRingbufC2h handleWriteResp"),
-        //     toBlue(", qIdx="), fshow(qIdx),
-        //     toBlue(", headReg="), fshow(pack(headReg[0])),
-        //     toBlue(", newHead="), fshow(pack(newHead))
-        // );
+        $display(
+            "time=%0t:", $time, toGreen(" mkRingbufC2h handleWriteResp"),
+            toBlue(", qIdx="), fshow(qIdx),
+            toBlue(", headReg="), fshow(pack(headReg[0])),
+            toBlue(", newHead="), fshow(pack(newHead))
+        );
     endrule
 
 
@@ -446,10 +473,22 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
     PipeInAdapterB0#(DescDataStream)        dmaWriteDataPipeInQ     <- mkPipeInAdapterB0;
     FIFOF#(Bool)                            dmaWriteRespPipeOutQ    <- mkFIFOF;
 
+    rule debugDmaWriteRespPipeOutQ;
+        if(!dmaWriteRespPipeOutQ.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufDmaIfcConvertor dmaWriteRespPipeOutQ");
+    endrule
+
     FIFOF#(IoChannelMemoryAccessMeta)                       dmaReadMetaPipeOutQueue     <- mkFIFOF;
     PipeInAdapterB0#(IoChannelMemoryAccessDataStream)       dmaReadDataPipeInQueue      <- mkPipeInAdapterB0;
     FIFOF#(IoChannelMemoryAccessMeta)                       dmaWriteMetaPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)                 dmaWriteDataPipeOutQueue    <- mkFIFOF;
+
+    rule debugDmaWriteMetaPipeOutQueue;
+        if(!dmaWriteMetaPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufDmaIfcConvertor dmaWriteMetaPipeOutQueue");
+    endrule
+
+    rule debugDmaWriteDataPipeOutQueue;
+        if(!dmaWriteDataPipeOutQueue.notFull) $display("time=%0t, ", $time, "FullQueue: mkRingbufDmaIfcConvertor dmaWriteDataPipeOutQueue");
+    endrule
 
     let needWidthConvert = valueOf(DATA_BUS_WIDTH) != valueOf(DESC_DATA_WIDTH);
 
@@ -547,10 +586,10 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
             if (ds.isLast) begin
                 dmaWriteRespPipeOutQ.enq(True);
             end
-            // $display(
-            //     "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData"),
-            //     toBlue(", ds="), fshow(ds)
-            // );
+            $display(
+                "time=%0t:", $time, toGreen(" mkRingbufDmaIfcConvertor forwardWriteData (no width convert)"),
+                toBlue(", ds="), fshow(ds)
+            );
         endrule
     end
 
@@ -628,6 +667,12 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
         rule forwardReadResp;
             let dmaResp = dmaReadDataPipeInQueue.first;
             dmaReadDataPipeInQueue.deq;
+
+            immAssert(
+                dmaResp.byteNum == fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
+                "the received payload size should be exactly one descriptor.",
+                $format("dmaResp=", fshow(dmaResp))
+            );
 
             let resp = RingbufDmaReadResp {
                 data: DescDataStream {

@@ -184,6 +184,34 @@ def test_top_without_hard_ip():
         waves=True,
     )
 
+    #     cocotb_test.simulator.run(
+    #     # 需要编译，但是可以大幅加速运行速度
+    #     "verilator",
+    #     compile_args=[
+    #         "--no-timing",
+    #         "--Wno-WIDTHTRUNC",
+    #         "--Wno-CASEINCOMPLETE",
+    #         "--Wno-INITIALDLY",
+    #         "-Wno-STMTDLY",
+    #         "--autoflush",
+    #         "--trace",
+    #         "--trace-fst",
+    #         "--trace-structs",
+    #         "--trace-max-array", "1024"
+    #     ],
+    #     make_args=["-j64"],
+
+    #     python_search=[tests_dir],
+    #     verilog_sources=verilog_sources,
+    #     toplevel=toplevel,
+    #     module=module,
+    #     timescale="1ns/1ps",
+    #     sim_build=sim_build,
+    #     waves=True,
+    #     # Use plus_args to pass trace flags - these get passed to the executable
+    #     plus_args=["--trace", f"--trace-file={sim_build}/dump.fst"],
+    # )
+
 
 if __name__ == "__main__":
     test_top_without_hard_ip()

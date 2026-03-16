@@ -743,6 +743,18 @@ module mkMultiBeatRoundRobinPipeArbiter#(
         respPipeOutVecInst[channelIdx] = toPipeOut(respPipeOutQueueVec[channelIdx]);
     end
 
+    rule debug;
+        if (dbgConf.enableDebug && !reqPipeOutQueue.notFull) begin
+            $display(
+                "time=%0t, ", $time, "DEBUG", 
+                ", isReqFirstBeatReg=", fshow(isReqFirstBeatReg),
+                ", reqPipeOutQueue.notFull=", fshow(reqPipeOutQueue.notFull),
+                ", respKeepOrderQueue.notFull=", fshow(respKeepOrderQueue.notFull),
+                ", channelIdxPipeOutQueue.notFull=", fshow(channelIdxPipeOutQueue.notFull)
+            );
+        end
+    endrule
+
     rule sendWriteArbitReq if (isReqFirstBeatReg);
         for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
             if (reqPipeInQueueVec[channelIdx].notEmpty) begin
