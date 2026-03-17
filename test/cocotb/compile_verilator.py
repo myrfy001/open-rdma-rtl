@@ -53,7 +53,7 @@ def compile_verilator():
             "-Wno-STMTDLY",
             "--autoflush"
         ],
-        make_args=["-j16"],
+        make_args=[f"-j{os.cpu_count() or 4}"],
         python_search=[tests_dir],
         verilog_sources=verilog_sources,
         toplevel=dut,

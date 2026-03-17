@@ -225,7 +225,7 @@ def test_top_without_hard_ip():
         # 需要编译，但是可以大幅加速运行速度
         "verilator",
         compile_args=["--no-timing", "--Wno-WIDTHTRUNC", "--Wno-CASEINCOMPLETE", "--Wno-INITIALDLY", "-Wno-STMTDLY", "--autoflush" ],
-        make_args=["-j16"],
+        make_args=[f"-j{os.cpu_count() or 4}"],
 
         python_search=[tests_dir],
         verilog_sources=verilog_sources,
