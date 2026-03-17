@@ -229,13 +229,81 @@ module mkPayloadGen(PayloadGen);
 
 endmodule
 
+interface ReservedFIFOF#(type td,numeric type capacity);
+    method Action reserve();
+    method Bool notFull;
+    method Bool notEmpty;
+    method Action enq(td x);	
+    method td first;
+    method Action deq;
+endinterface
+
+//TODO maybe can use counter to implement a simpler version of reserved fifo
+module mkReservedFIFOF(ReservedFIFOF#(td, capacity)) provisos (
+        Bits#(td, a__)
+    );
+    FIFOF#(td) fifo <- mkGSizedFIFOF(True, False, valueOf(capacity));
+    Reg#(Bit#(TLog#(TAdd#(1, capacity)))) count <- mkReg(0);
+    PulseWire reservePulse <- mkPulseWire;
+    PulseWire deqPulse <- mkPulseWire;
+
+    rule dealWithCount;
+        Bool reserve = reservePulse;
+        Bool deq = deqPulse;
+
+        count <= case(tuple2(reserve,deq)) matches
+            {True, False} : return count + 1;
+            {False, True} : return count - 1;
+            {._,.__} : return count;
+        endcase;
+        // $display("time=%0t, ", $time, "mkReservedFIFOF rule dealWithCount, count is: %d, reserve is %d, deq is %d", count, reserve, deq);
+
+    endrule
+
+    method Action reserve() if(count < fromInteger(valueOf(capacity)));
+        // $display("time=%0t, ", $time, "mkReservedFIFOF call reserve, count is: %d", count);
+        reservePulse.send();
+    endmethod
+    // TODO enq should less than capacity times of reserve, can add assert to check this.
+    method Action enq(td x) if(fifo.notFull);
+        // $display("time=%0t, ", $time, "mkReservedFIFOF call enq, count is: %d", count);
+        immAssert(fifo.notFull,"ReservedFIFOF is full when enqueuing", $format("ReservedFIFOF capacity=",valueOf(capacity)));
+        fifo.enq(x);
+    endmethod
+    method td first if(fifo.notEmpty);
+        return fifo.first;
+    endmethod
+    method Action deq if(fifo.notEmpty);
+        // $display("time=%0t, ", $time, "mkReservedFIFOF call deq, count is: %d", count);
+        fifo.deq;
+        deqPulse.send();
+    endmethod
+    method Bool notFull;
+        return count < fromInteger(valueOf(capacity));
+    endmethod
+    method Bool notEmpty;
+        return fifo.notEmpty;
+    endmethod
+
+
+endmodule
+
+
+function PipeOut#(tData) f_ReservedFIFOF_to_PipeOut(ReservedFIFOF#(tData,capacity) reservedFifo);
+    return (interface PipeOut;      
+                method first = reservedFifo.first;
+                method deq = reservedFifo.deq;
+                method notEmpty = reservedFifo.notEmpty;
+            endinterface);
+endfunction
+
 
 (* synthesize *)
 module mkPayloadCon#(Word channelIdx)(PayloadCon);
 
     PipeInAdapterB0#(PayloadConReq) conReqPipeInQ <- mkPipeInAdapterB0;
     PipeInAdapterB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkPipeInAdapterB0;
-    FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;  // TODO: maybe need to be sized fifo
+    ReservedFIFOF#(Bool,4) conRespPipeOutQ <- mkReservedFIFOF;  // TODO: maybe need to be deeper
 
     FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqAddrPipeOutQ", enableDebug: False});
     FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqDataPipeOutQ", enableDebug: True});
@@ -277,6 +345,8 @@ module mkPayloadCon#(Word channelIdx)(PayloadCon);
         rawReqToBurstChunkerRequestPipeInAdapter.enq(chunkReq);
         getBurstChunRespAndIssueAddrTranslateReqPipelineQ.enq(
             tuple3(req.pgtOffset, req.baseVA, curFpDebugTime));
+        conRespPipeOutQ.reserve();  // reserve a slot for response, the actual response will be enqueued after the last beat is consumed.
+
         $display(
             "time=%0t:", $time, toGreen(" mkPayloadCon handleInReq"),
             toBlue(", req="), fshow(req),
@@ -396,7 +466,7 @@ module mkPayloadCon#(Word channelIdx)(PayloadCon);
 
     interface addrTranslateClt = addrTranslateCltInst.clt;
     interface conReqPipeIn = toPipeInB0(conReqPipeInQ);
-    interface conRespPipeOut = toPipeOut(conRespPipeOutQ);
+    interface conRespPipeOut = f_ReservedFIFOF_to_PipeOut(conRespPipeOutQ);
     interface payloadConStreamPipeIn = toPipeInB0(payloadConStreamPipeInQ);
 
     interface IoChannelMemoryWriteMasterPipe dmaWriteMasterPipe;
