@@ -186,7 +186,7 @@ class SimplePcieBehaviorModelProxy(object):
                                 request = {
                                     "type": "mem_write",
                                     "channel_id": channel_idx,
-                                    "address": old_write_addr + skip_byte_cnt,
+                                    "address": old_write_addr,
                                     "data": write_bytes,
                                     "length": len(write_bytes)
                                 }
