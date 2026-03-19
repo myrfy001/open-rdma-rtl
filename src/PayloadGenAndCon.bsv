@@ -273,7 +273,7 @@ module mkReservedFIFOF(ReservedFIFOF#(td, capacity)) provisos (
     method td first if(fifo.notEmpty);
         return fifo.first;
     endmethod
-    method Action deq if(fifo.notEmpty);
+    method Action deq if(fifo.notEmpty && count > 0);
         // $display("time=%0t, ", $time, "mkReservedFIFOF call deq, count is: %d", count);
         fifo.deq;
         deqPulse.send();
