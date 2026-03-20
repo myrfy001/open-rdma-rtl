@@ -134,7 +134,7 @@ endif
 # BSV_TOP_MODULE ?= mkBsvTop
 # TOP = bluerdma_top
 
-TARGETFILE ?= ../src/Top.bsv
+TARGETFILE ?= ../src/TopFTileMacAdaptorTest.bsv
 BSV_TOP_MODULE ?= mkBsvTop
 TOP = bluerdma_top
 

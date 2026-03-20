@@ -1334,96 +1334,6 @@ https://fpgasoftware.intel.com/eula.-->
       </ipxact:parameters>
     </ipxact:busInterface>
     <ipxact:busInterface>
-      <ipxact:name>pfc_ports</ipxact:name>
-      <ipxact:busType vendor="intel" library="intel" name="conduit" version="25.1"></ipxact:busType>
-      <ipxact:abstractionTypes>
-        <ipxact:abstractionType>
-          <ipxact:abstractionRef vendor="intel" library="intel" name="conduit" version="25.1"></ipxact:abstractionRef>
-          <ipxact:portMaps>
-            <ipxact:portMap>
-              <ipxact:logicalPort>
-                <ipxact:name>i_tx_pfc</ipxact:name>
-              </ipxact:logicalPort>
-              <ipxact:physicalPort>
-                <ipxact:name>i_tx_pfc</ipxact:name>
-              </ipxact:physicalPort>
-            </ipxact:portMap>
-            <ipxact:portMap>
-              <ipxact:logicalPort>
-                <ipxact:name>o_rx_pfc</ipxact:name>
-              </ipxact:logicalPort>
-              <ipxact:physicalPort>
-                <ipxact:name>o_rx_pfc</ipxact:name>
-              </ipxact:physicalPort>
-            </ipxact:portMap>
-          </ipxact:portMaps>
-        </ipxact:abstractionType>
-      </ipxact:abstractionTypes>
-      <ipxact:slave></ipxact:slave>
-      <ipxact:parameters>
-        <ipxact:parameter parameterId="associatedClock" type="string">
-          <ipxact:name>associatedClock</ipxact:name>
-          <ipxact:displayName>associatedClock</ipxact:displayName>
-          <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-        <ipxact:parameter parameterId="associatedReset" type="string">
-          <ipxact:name>associatedReset</ipxact:name>
-          <ipxact:displayName>associatedReset</ipxact:displayName>
-          <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-        <ipxact:parameter parameterId="prSafe" type="bit">
-          <ipxact:name>prSafe</ipxact:name>
-          <ipxact:displayName>Partial Reconfiguration Safe</ipxact:displayName>
-          <ipxact:value>false</ipxact:value>
-        </ipxact:parameter>
-      </ipxact:parameters>
-    </ipxact:busInterface>
-    <ipxact:busInterface>
-      <ipxact:name>sfc_ports</ipxact:name>
-      <ipxact:busType vendor="intel" library="intel" name="conduit" version="25.1"></ipxact:busType>
-      <ipxact:abstractionTypes>
-        <ipxact:abstractionType>
-          <ipxact:abstractionRef vendor="intel" library="intel" name="conduit" version="25.1"></ipxact:abstractionRef>
-          <ipxact:portMaps>
-            <ipxact:portMap>
-              <ipxact:logicalPort>
-                <ipxact:name>i_tx_pause</ipxact:name>
-              </ipxact:logicalPort>
-              <ipxact:physicalPort>
-                <ipxact:name>i_tx_pause</ipxact:name>
-              </ipxact:physicalPort>
-            </ipxact:portMap>
-            <ipxact:portMap>
-              <ipxact:logicalPort>
-                <ipxact:name>o_rx_pause</ipxact:name>
-              </ipxact:logicalPort>
-              <ipxact:physicalPort>
-                <ipxact:name>o_rx_pause</ipxact:name>
-              </ipxact:physicalPort>
-            </ipxact:portMap>
-          </ipxact:portMaps>
-        </ipxact:abstractionType>
-      </ipxact:abstractionTypes>
-      <ipxact:slave></ipxact:slave>
-      <ipxact:parameters>
-        <ipxact:parameter parameterId="associatedClock" type="string">
-          <ipxact:name>associatedClock</ipxact:name>
-          <ipxact:displayName>associatedClock</ipxact:displayName>
-          <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-        <ipxact:parameter parameterId="associatedReset" type="string">
-          <ipxact:name>associatedReset</ipxact:name>
-          <ipxact:displayName>associatedReset</ipxact:displayName>
-          <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-        <ipxact:parameter parameterId="prSafe" type="bit">
-          <ipxact:name>prSafe</ipxact:name>
-          <ipxact:displayName>Partial Reconfiguration Safe</ipxact:displayName>
-          <ipxact:value>false</ipxact:value>
-        </ipxact:parameter>
-      </ipxact:parameters>
-    </ipxact:busInterface>
-    <ipxact:busInterface>
       <ipxact:name>reconfig_xcvr_slave_0</ipxact:name>
       <ipxact:busType vendor="intel" library="intel" name="avalon" version="25.1"></ipxact:busType>
       <ipxact:abstractionTypes>
@@ -2925,43 +2835,6 @@ https://fpgasoftware.intel.com/eula.-->
           <ipxact:name>ptfSchematicName</ipxact:name>
           <ipxact:displayName>PTF schematic name</ipxact:displayName>
           <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-      </ipxact:parameters>
-    </ipxact:busInterface>
-    <ipxact:busInterface>
-      <ipxact:name>anlt_ports</ipxact:name>
-      <ipxact:busType vendor="intel" library="intel" name="conduit" version="25.1"></ipxact:busType>
-      <ipxact:abstractionTypes>
-        <ipxact:abstractionType>
-          <ipxact:abstractionRef vendor="intel" library="intel" name="conduit" version="25.1"></ipxact:abstractionRef>
-          <ipxact:portMaps>
-            <ipxact:portMap>
-              <ipxact:logicalPort>
-                <ipxact:name>anlt_link</ipxact:name>
-              </ipxact:logicalPort>
-              <ipxact:physicalPort>
-                <ipxact:name>anlt_link</ipxact:name>
-              </ipxact:physicalPort>
-            </ipxact:portMap>
-          </ipxact:portMaps>
-        </ipxact:abstractionType>
-      </ipxact:abstractionTypes>
-      <ipxact:slave></ipxact:slave>
-      <ipxact:parameters>
-        <ipxact:parameter parameterId="associatedClock" type="string">
-          <ipxact:name>associatedClock</ipxact:name>
-          <ipxact:displayName>associatedClock</ipxact:displayName>
-          <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-        <ipxact:parameter parameterId="associatedReset" type="string">
-          <ipxact:name>associatedReset</ipxact:name>
-          <ipxact:displayName>associatedReset</ipxact:displayName>
-          <ipxact:value></ipxact:value>
-        </ipxact:parameter>
-        <ipxact:parameter parameterId="prSafe" type="bit">
-          <ipxact:name>prSafe</ipxact:name>
-          <ipxact:displayName>Partial Reconfiguration Safe</ipxact:displayName>
-          <ipxact:value>false</ipxact:value>
         </ipxact:parameter>
       </ipxact:parameters>
     </ipxact:busInterface>
@@ -169219,66 +169092,6 @@ https://fpgasoftware.intel.com/eula.-->
         </ipxact:wire>
       </ipxact:port>
       <ipxact:port>
-        <ipxact:name>i_tx_pfc</ipxact:name>
-        <ipxact:wire>
-          <ipxact:direction>in</ipxact:direction>
-          <ipxact:vectors>
-            <ipxact:vector>
-              <ipxact:left>0</ipxact:left>
-              <ipxact:right>7</ipxact:right>
-            </ipxact:vector>
-          </ipxact:vectors>
-          <ipxact:wireTypeDefs>
-            <ipxact:wireTypeDef>
-              <ipxact:typeName>STD_LOGIC_VECTOR</ipxact:typeName>
-              <ipxact:viewRef>QUARTUS_SYNTH</ipxact:viewRef>
-            </ipxact:wireTypeDef>
-          </ipxact:wireTypeDefs>
-        </ipxact:wire>
-      </ipxact:port>
-      <ipxact:port>
-        <ipxact:name>o_rx_pfc</ipxact:name>
-        <ipxact:wire>
-          <ipxact:direction>out</ipxact:direction>
-          <ipxact:vectors>
-            <ipxact:vector>
-              <ipxact:left>0</ipxact:left>
-              <ipxact:right>7</ipxact:right>
-            </ipxact:vector>
-          </ipxact:vectors>
-          <ipxact:wireTypeDefs>
-            <ipxact:wireTypeDef>
-              <ipxact:typeName>STD_LOGIC_VECTOR</ipxact:typeName>
-              <ipxact:viewRef>QUARTUS_SYNTH</ipxact:viewRef>
-            </ipxact:wireTypeDef>
-          </ipxact:wireTypeDefs>
-        </ipxact:wire>
-      </ipxact:port>
-      <ipxact:port>
-        <ipxact:name>i_tx_pause</ipxact:name>
-        <ipxact:wire>
-          <ipxact:direction>in</ipxact:direction>
-          <ipxact:wireTypeDefs>
-            <ipxact:wireTypeDef>
-              <ipxact:typeName>STD_LOGIC</ipxact:typeName>
-              <ipxact:viewRef>QUARTUS_SYNTH</ipxact:viewRef>
-            </ipxact:wireTypeDef>
-          </ipxact:wireTypeDefs>
-        </ipxact:wire>
-      </ipxact:port>
-      <ipxact:port>
-        <ipxact:name>o_rx_pause</ipxact:name>
-        <ipxact:wire>
-          <ipxact:direction>out</ipxact:direction>
-          <ipxact:wireTypeDefs>
-            <ipxact:wireTypeDef>
-              <ipxact:typeName>STD_LOGIC</ipxact:typeName>
-              <ipxact:viewRef>QUARTUS_SYNTH</ipxact:viewRef>
-            </ipxact:wireTypeDef>
-          </ipxact:wireTypeDefs>
-        </ipxact:wire>
-      </ipxact:port>
-      <ipxact:port>
         <ipxact:name>i_reconfig_xcvr0_addr</ipxact:name>
         <ipxact:wire>
           <ipxact:direction>in</ipxact:direction>
@@ -169770,18 +169583,6 @@ https://fpgasoftware.intel.com/eula.-->
           </ipxact:wireTypeDefs>
         </ipxact:wire>
       </ipxact:port>
-      <ipxact:port>
-        <ipxact:name>anlt_link</ipxact:name>
-        <ipxact:wire>
-          <ipxact:direction>out</ipxact:direction>
-          <ipxact:wireTypeDefs>
-            <ipxact:wireTypeDef>
-              <ipxact:typeName>STD_LOGIC</ipxact:typeName>
-              <ipxact:viewRef>QUARTUS_SYNTH</ipxact:viewRef>
-            </ipxact:wireTypeDef>
-          </ipxact:wireTypeDefs>
-        </ipxact:wire>
-      </ipxact:port>
     </ipxact:ports>
   </ipxact:model>
   <ipxact:vendorExtensions>
@@ -169871,12 +169672,12 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="ENABLE_ANLT_GUI" type="int">
           <ipxact:name>ENABLE_ANLT_GUI</ipxact:name>
           <ipxact:displayName>Enable auto-negotiation and link training</ipxact:displayName>
-          <ipxact:value>1</ipxact:value>
+          <ipxact:value>0</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="ENABLE_ADME_GUI" type="int">
           <ipxact:name>ENABLE_ADME_GUI</ipxact:name>
           <ipxact:displayName>Enable debug endpoint for transceiver toolkit</ipxact:displayName>
-          <ipxact:value>0</ipxact:value>
+          <ipxact:value>1</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="ENABLE_ETK_GUI" type="int">
           <ipxact:name>ENABLE_ETK_GUI</ipxact:name>
@@ -170166,12 +169967,12 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="tx_max_frame_size_gui" type="int">
           <ipxact:name>tx_max_frame_size_gui</ipxact:name>
           <ipxact:displayName>TX maximum framesize</ipxact:displayName>
-          <ipxact:value>4192</ipxact:value>
+          <ipxact:value>9600</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="rx_max_frame_size_gui" type="int">
           <ipxact:name>rx_max_frame_size_gui</ipxact:name>
           <ipxact:displayName>RX maximum framesize</ipxact:displayName>
-          <ipxact:value>4192</ipxact:value>
+          <ipxact:value>9600</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="enforce_max_frame_size_gui" type="int">
           <ipxact:name>enforce_max_frame_size_gui</ipxact:name>
@@ -170186,7 +169987,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="rx_bytes_to_remove_gui" type="string">
           <ipxact:name>rx_bytes_to_remove_gui</ipxact:name>
           <ipxact:displayName>Bytes to remove from RX frames</ipxact:displayName>
-          <ipxact:value>Remove CRC and PAD bytes</ipxact:value>
+          <ipxact:value>None</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="forward_rx_pause_requests_gui" type="int">
           <ipxact:name>forward_rx_pause_requests_gui</ipxact:name>
@@ -170226,7 +170027,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="tx_ipg_size_gui" type="string">
           <ipxact:name>tx_ipg_size_gui</ipxact:name>
           <ipxact:displayName>Average inter-packet gap</ipxact:displayName>
-          <ipxact:value>1</ipxact:value>
+          <ipxact:value>12</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="preamble_passthrough_gui" type="int">
           <ipxact:name>preamble_passthrough_gui</ipxact:name>
@@ -170241,7 +170042,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="flow_control_gui" type="string">
           <ipxact:name>flow_control_gui</ipxact:name>
           <ipxact:displayName>Stop TX traffic when link partner sends PAUSE</ipxact:displayName>
-          <ipxact:value>No</ipxact:value>
+          <ipxact:value>Disable flow control</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="ready_latency_gui" type="int">
           <ipxact:name>ready_latency_gui</ipxact:name>
@@ -170351,7 +170152,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="GEN_SIM" type="int">
           <ipxact:name>GEN_SIM</ipxact:name>
           <ipxact:displayName>Simulation</ipxact:displayName>
-          <ipxact:value>1</ipxact:value>
+          <ipxact:value>0</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="GEN_SYNTH" type="int">
           <ipxact:name>GEN_SYNTH</ipxact:name>
@@ -170376,12 +170177,12 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="DEV_INIT_CLK" type="int">
           <ipxact:name>DEV_INIT_CLK</ipxact:name>
           <ipxact:displayName>Select device initialization clock for the development kit</ipxact:displayName>
-          <ipxact:value>0</ipxact:value>
+          <ipxact:value>3</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="FAST_SIM_ENABLE" type="int">
           <ipxact:name>FAST_SIM_ENABLE</ipxact:name>
           <ipxact:displayName>Enable fast simulation</ipxact:displayName>
-          <ipxact:value>1</ipxact:value>
+          <ipxact:value>0</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="OPTIMIZED_SIM_ENABLE" type="int">
           <ipxact:name>OPTIMIZED_SIM_ENABLE</ipxact:name>
@@ -170396,7 +170197,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="DEVICE" type="string">
           <ipxact:name>DEVICE</ipxact:name>
           <ipxact:displayName>DEVICE</ipxact:displayName>
-          <ipxact:value>AGIB027R29A1E2VC</ipxact:value>
+          <ipxact:value>AGIB027R29B1E2V</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="DEVICE_FAMILY" type="string">
           <ipxact:name>DEVICE_FAMILY</ipxact:name>
@@ -170466,27 +170267,27 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="bk_txeq_post_tap_2" type="real">
           <ipxact:name>bk_txeq_post_tap_2</ipxact:name>
           <ipxact:displayName>Post-Cursor 2,0.25 step size</ipxact:displayName>
-          <ipxact:value>0.0</ipxact:value>
+          <ipxact:value>0.75</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="bk_txeq_post_tap_1" type="real">
           <ipxact:name>bk_txeq_post_tap_1</ipxact:name>
           <ipxact:displayName>Post-Cursor 1, 0.5 step size</ipxact:displayName>
-          <ipxact:value>0.0</ipxact:value>
+          <ipxact:value>1.5</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="bk_txeq_main_tap" type="real">
           <ipxact:name>bk_txeq_main_tap</ipxact:name>
           <ipxact:displayName>Main-Cursor,0.5 step size</ipxact:displayName>
-          <ipxact:value>41.5</ipxact:value>
+          <ipxact:value>27.0</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="bk_txeq_pre_tap_1" type="real">
           <ipxact:name>bk_txeq_pre_tap_1</ipxact:name>
           <ipxact:displayName>Pre-Cursor 1,0.5 step size</ipxact:displayName>
-          <ipxact:value>0.0</ipxact:value>
+          <ipxact:value>-9.0</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="bk_txeq_pre_tap_2" type="real">
           <ipxact:name>bk_txeq_pre_tap_2</ipxact:name>
           <ipxact:displayName>Pre-Cursor 2,0.25 step size</ipxact:displayName>
-          <ipxact:value>0.0</ipxact:value>
+          <ipxact:value>2.5</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="bk_txeq_pre_tap_3" type="real">
           <ipxact:name>bk_txeq_pre_tap_3</ipxact:name>
@@ -170570,7 +170371,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="device" type="string">
           <ipxact:name>device</ipxact:name>
           <ipxact:displayName>Device</ipxact:displayName>
-          <ipxact:value>AGIB027R29A1E2VC</ipxact:value>
+          <ipxact:value>AGIB027R29B1E2V</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="deviceFamily" type="string">
           <ipxact:name>deviceFamily</ipxact:name>
@@ -170791,9 +170592,7 @@ https://fpgasoftware.intel.com/eula.-->
       </ipxact:parameters>
     </altera:altera_system_parameters>
     <altera:altera_interface_boundary>
-      <altera:interface_mapping altera:name="anlt_ports" altera:internal="eth_f_0.anlt_ports" altera:type="conduit" altera:dir="end">
-        <altera:port_mapping altera:name="anlt_link" altera:internal="anlt_link"></altera:port_mapping>
-      </altera:interface_mapping>
+      <altera:interface_mapping altera:name="anlt_ports" altera:internal="eth_f_0.anlt_ports"></altera:interface_mapping>
       <altera:interface_mapping altera:name="clk_rec_div" altera:internal="eth_f_0.clk_rec_div" altera:type="clock" altera:dir="start">
         <altera:port_mapping altera:name="o_clk_rec_div" altera:internal="o_clk_rec_div"></altera:port_mapping>
       </altera:interface_mapping>
@@ -170845,10 +170644,7 @@ https://fpgasoftware.intel.com/eula.-->
       <altera:interface_mapping altera:name="o_sys_pll_locked" altera:internal="eth_f_0.o_sys_pll_locked" altera:type="conduit" altera:dir="end">
         <altera:port_mapping altera:name="o_sys_pll_locked" altera:internal="o_sys_pll_locked"></altera:port_mapping>
       </altera:interface_mapping>
-      <altera:interface_mapping altera:name="pfc_ports" altera:internal="eth_f_0.pfc_ports" altera:type="conduit" altera:dir="end">
-        <altera:port_mapping altera:name="i_tx_pfc" altera:internal="i_tx_pfc"></altera:port_mapping>
-        <altera:port_mapping altera:name="o_rx_pfc" altera:internal="o_rx_pfc"></altera:port_mapping>
-      </altera:interface_mapping>
+      <altera:interface_mapping altera:name="pfc_ports" altera:internal="eth_f_0.pfc_ports"></altera:interface_mapping>
       <altera:interface_mapping altera:name="reconfig_eth_slave" altera:internal="eth_f_0.reconfig_eth_slave" altera:type="avalon" altera:dir="end">
         <altera:port_mapping altera:name="i_reconfig_eth_addr" altera:internal="i_reconfig_eth_addr"></altera:port_mapping>
         <altera:port_mapping altera:name="i_reconfig_eth_byteenable" altera:internal="i_reconfig_eth_byteenable"></altera:port_mapping>
@@ -170923,10 +170719,7 @@ https://fpgasoftware.intel.com/eula.-->
         <altera:port_mapping altera:name="o_tx_serial" altera:internal="o_tx_serial"></altera:port_mapping>
         <altera:port_mapping altera:name="o_tx_serial_n" altera:internal="o_tx_serial_n"></altera:port_mapping>
       </altera:interface_mapping>
-      <altera:interface_mapping altera:name="sfc_ports" altera:internal="eth_f_0.sfc_ports" altera:type="conduit" altera:dir="end">
-        <altera:port_mapping altera:name="i_tx_pause" altera:internal="i_tx_pause"></altera:port_mapping>
-        <altera:port_mapping altera:name="o_rx_pause" altera:internal="o_rx_pause"></altera:port_mapping>
-      </altera:interface_mapping>
+      <altera:interface_mapping altera:name="sfc_ports" altera:internal="eth_f_0.sfc_ports"></altera:interface_mapping>
       <altera:interface_mapping altera:name="status_ports" altera:internal="eth_f_0.status_ports" altera:type="conduit" altera:dir="end">
         <altera:port_mapping altera:name="i_stats_snapshot" altera:internal="i_stats_snapshot"></altera:port_mapping>
         <altera:port_mapping altera:name="o_local_fault_status" altera:internal="o_local_fault_status"></altera:port_mapping>

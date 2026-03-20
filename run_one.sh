@@ -92,8 +92,11 @@ truncate -s 0 $TEST_LOG
 # TESTCASE=mkTestTop
 # TESTCASE=mkTestTopNoMockHost
 
-FILE=`ls TestPipeIoAdaptor.bsv`
-TESTCASE=mkTop
+# FILE=`ls TestPipeIoAdaptor.bsv`
+# TESTCASE=mkTop
+
+FILE=`ls TopFTileMacAdaptorTest.bsv`
+TESTCASE=mkBsvTopTB
 
 
 
