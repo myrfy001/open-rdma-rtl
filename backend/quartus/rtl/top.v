@@ -480,8 +480,8 @@ module bluerdma_top(
 		.o_rx_mac_fcs_error              (ftile_eth_rx_mac_fcs_error),              //  output,    width = 16,                      .o_rx_mac_fcs_error
 		.o_rx_mac_error                  (ftile_eth_rx_mac_error),                  //  output,    width = 32,                      .o_rx_mac_error
 		.o_rx_mac_status                 (ftile_eth_rx_mac_status),                 //  output,    width = 48,                      .o_rx_mac_status
-		.i_tx_pause                      ('h0),                      				//   input,     width = 1,             sfc_ports.i_tx_pause
-		.o_rx_pause                      (),                      					//  output,     width = 1,                      .o_rx_pause
+		// .i_tx_pause                      ('h0),                      				//   input,     width = 1,             sfc_ports.i_tx_pause
+		// .o_rx_pause                      (),                      					//  output,     width = 1,                      .o_rx_pause
 		.i_reconfig_xcvr0_addr           ('h0),           							//   input,    width = 18, reconfig_xcvr_slave_0.address
 		.i_reconfig_xcvr0_byteenable     ('h0),     								//   input,     width = 4,                      .byteenable
 		.o_reconfig_xcvr0_readdata_valid (), 										//  output,     width = 1,                      .readdatavalid
@@ -514,8 +514,8 @@ module bluerdma_top(
 		.o_reconfig_xcvr3_readdata       (),       									//  output,    width = 32,                      .readdata
 		.i_reconfig_xcvr3_writedata      ('h0),      								//   input,    width = 32,                      .writedata
 		.o_reconfig_xcvr3_waitrequest    (),    									//  output,     width = 1,                      .waitrequest
-		.i_clk_pll                       (ftile_eth_clk_pll),                       //   input,     width = 1,             i_clk_pll.clk
-		.anlt_link                       (ftile_eth_anlt_link)                      //  output,     width = 1,            anlt_ports.anlt_link
+		.i_clk_pll                       (ftile_eth_clk_pll)                       //   input,     width = 1,             i_clk_pll.clk
+		// .anlt_link                       (ftile_eth_anlt_link)                      //  output,     width = 1,            anlt_ports.anlt_link
 	);
 
 	rtile_reset_output_buffer rtile_reset_output_buffer_inst (

@@ -235,7 +235,7 @@ module mkPayloadCon#(Word channelIdx)(PayloadCon);
 
     PipeInAdapterB0#(PayloadConReq) conReqPipeInQ <- mkPipeInAdapterB0;
     PipeInAdapterB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeInQ <- mkPipeInAdapterB0;
-    FIFOF#(Bool) conRespPipeOutQ <- mkFIFOF;  // TODO: maybe need to be sized fifo
+    FIFOF#(Bool) conRespPipeOutQ <- mkSizedFIFOF(64);  // TODO: maybe need to be sized fifo
 
     FIFOF#(IoChannelMemoryAccessMeta)       dmaWriteReqAddrPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqAddrPipeOutQ", enableDebug: False});
     FIFOF#(IoChannelMemoryAccessDataStream) dmaWriteReqDataPipeOutQ <- mkSizedFIFOFWithFullAssert(valueOf(PAYLOAD_STORAGE_CAPACITY_FOR_RQ_OUTPUT_DMA_DATA_STREAM_BUF), DebugConf{name: "PayloadCon dmaWriteReqDataPipeOutQ", enableDebug: True});

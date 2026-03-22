@@ -912,7 +912,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="clockRate" type="longint">
           <ipxact:name>clockRate</ipxact:name>
           <ipxact:displayName>Clock rate</ipxact:displayName>
-          <ipxact:value>400000000</ipxact:value>
+          <ipxact:value>450000000</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="clockRateKnown" type="bit">
           <ipxact:name>clockRateKnown</ipxact:name>
@@ -21532,7 +21532,7 @@ https://fpgasoftware.intel.com/eula.-->
         <ipxact:parameter parameterId="g5_pld_clkfreq_user_hwtcl" type="string">
           <ipxact:name>g5_pld_clkfreq_user_hwtcl</ipxact:name>
           <ipxact:displayName>PLD Clock Frequency</ipxact:displayName>
-          <ipxact:value>400MHz</ipxact:value>
+          <ipxact:value>450MHz</ipxact:value>
         </ipxact:parameter>
         <ipxact:parameter parameterId="g4_pld_clkfreq_single_user_hwtcl" type="string">
           <ipxact:name>g4_pld_clkfreq_single_user_hwtcl</ipxact:name>
@@ -33530,7 +33530,7 @@ https://fpgasoftware.intel.com/eula.-->
                 &lt;consumedSystemInfos&gt;
                     &lt;entry&gt;
                         &lt;key&gt;CLOCK_RATE&lt;/key&gt;
-                        &lt;value&gt;400000000&lt;/value&gt;
+                        &lt;value&gt;450000000&lt;/value&gt;
                     &lt;/entry&gt;
                 &lt;/consumedSystemInfos&gt;
             &lt;/value&gt;
