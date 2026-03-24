@@ -37,13 +37,13 @@ endinterface
 (* synthesize *)
 module mkCsrRootConnector(CsrRootConnector);
    
-    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeInQueue  <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeOutQueue <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeInQueue <- mkLFIFOF;
-    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeInQueue <- mkLFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeInQueue  <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeOutQueue <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeInQueue <- mkFIFOF;
+    FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeInQueue <- mkFIFOF;
 
-    FIFOF#(CsrReadWriteReq#(CsrAddr, CsrData))  csrReqQueue <- mkLFIFOF;
-    FIFOF#(CsrReadWriteResp#(CsrData))          csrRespQueue <- mkLFIFOF;
+    FIFOF#(CsrReadWriteReq#(CsrAddr, CsrData))  csrReqQueue <- mkFIFOF;
+    FIFOF#(CsrReadWriteResp#(CsrData))          csrRespQueue <- mkFIFOF;
     
     // rule debug;
     //     if (!busWriteMetaPipeInQueue.notEmpty) begin

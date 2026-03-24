@@ -50,10 +50,10 @@ module mkCsrNode#(
     );
 
     Vector#(nDownStreamPortCnt, Wire#(CsrReadWriteReq#(tAddr, tValue))) reqWireVec <- replicateM(mkWire);
-    Vector#(nDownStreamPortCnt, FIFOF#(CsrReadWriteReq#(tAddr, tValue))) reqRelayQueueVec <- replicateM(mkLFIFOF);
-    Vector#(nDownStreamPortCnt, FIFOF#(CsrReadWriteResp#(tValue))) respRelayQueueVec <- replicateM(mkLFIFOF);
+    Vector#(nDownStreamPortCnt, FIFOF#(CsrReadWriteReq#(tAddr, tValue))) reqRelayQueueVec <- replicateM(mkFIFOF);
+    Vector#(nDownStreamPortCnt, FIFOF#(CsrReadWriteResp#(tValue))) respRelayQueueVec <- replicateM(mkFIFOF);
 
-    FIFOF#(CsrReadWriteResp#(tValue)) selfRespQueue <- mkLFIFOF;
+    FIFOF#(CsrReadWriteResp#(tValue)) selfRespQueue <- mkFIFOF;
     FIFOF#(Tuple2#(Bool, tDownStreamPordIdx)) keepOrderQueue <- mkSizedFIFOF(queueDepth);
 
     Vector#(nDownStreamPortCnt, CsrNodeDownStreamPort#(tAddr, tValue)) downStreamPortsVecInst = newVector;
