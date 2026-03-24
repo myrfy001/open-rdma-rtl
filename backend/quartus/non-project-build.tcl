@@ -14,7 +14,7 @@ set family 					$::env(FAMILY)
 
 
 proc build_snapshot_dir_and_file_list {snapshot_dir snapshot_file_list filetype dir_list } {
-	
+
 	foreach dir $dir_list {
 		foreach filename [ glob -- $dir] {
 			set filename_without_path [file tail $filename]
@@ -60,11 +60,10 @@ proc addFilesToProj {quartus_work_dir rtl_dir_list sdc_dir_list quartus_backend_
 	foreach tuple $snapshot_file_list {
 		lassign $tuple filetype filename
 		set_global_assignment -name $filetype $filename
-		
+
 		puts "add file to project: $filetype $filename"
 	}
 }
-
 
 
 # change into work dir
@@ -73,7 +72,7 @@ cd $quartus_work_dir
 
 
 set need_to_close_project 0
-set make_assignments 1
+set project_already_exists 0
 
 # Check that the right project is open
 if {[is_project_open]} {
@@ -81,20 +80,46 @@ if {[is_project_open]} {
 		puts "Another project called $quartus(project) is open now, closing it"
 		project_close
 	}
-} 
+}
 
 # Only open if not already open
 if {[project_exists $project_name]} {
+	puts "Opening existing project $project_name for incremental build..."
 	project_open -revision $revision_name $project_name
+	set project_already_exists 1
 } else {
+	puts "Creating new project $project_name..."
 	project_new -revision $revision_name $project_name
 }
 set need_to_close_project 1
 
 
+if {$project_already_exists} {
+	# Incremental build: only update RTL snapshots and add new files to project.
+	# All other assignments (device, family, optimization, pin loc, etc.) are
+	# preserved from the existing project, so partition-based incremental
+	# synthesis can reuse prior compilation results.
+	puts "Incremental build: updating source file snapshots and adding new files..."
 
-# Make assignments
-if {$make_assignments} {
+	set verilog_snapshot_dir "$quartus_work_dir/verilog_snapshot_dir"
+	set sdc_snapshot_dir "$quartus_work_dir/sdc_snapshot_dir"
+
+	file mkdir $verilog_snapshot_dir
+	file mkdir $sdc_snapshot_dir
+
+	set snapshot_file_list {}
+	set snapshot_file_list [build_snapshot_dir_and_file_list $verilog_snapshot_dir $snapshot_file_list "VERILOG_FILE" $rtl_dirs]
+	set snapshot_file_list [build_snapshot_dir_and_file_list $sdc_snapshot_dir $snapshot_file_list "SDC_FILE" $sdc_dirs]
+
+	foreach tuple $snapshot_file_list {
+		lassign $tuple filetype filename
+		set_global_assignment -name $filetype $filename
+		puts "add/update file in project: $filetype $filename"
+	}
+
+	export_assignments
+} else {
+	# New project: full initialization with all assignments
 	addFilesToProj $quartus_work_dir $rtl_dirs $sdc_dirs $quartus_backend_dir
 
 	# assign pin location
@@ -179,11 +204,12 @@ if {$make_assignments} {
 
 	# Commit assignments
 	export_assignments
+}
 
-	execute_flow -compile
+# Run compilation (both new project and incremental build)
+execute_flow -compile
 
-	# Close project
-	if {$need_to_close_project} {
-		project_close
-	}
+# Close project
+if {$need_to_close_project} {
+	project_close
 }

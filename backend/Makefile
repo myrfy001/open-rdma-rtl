@@ -8,7 +8,14 @@ BACKENDDIR ?= $(shell readlink -f ./)
 QUARTUS_BACKEND_DIR ?= $(BACKENDDIR)/quartus
 VIVADO_BACKEND_DIR ?= $(BACKENDDIR)/vivado
 
-QUARTUS_WORKDIR ?= $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
+# If QUARTUS_WORKDIR_NAME is set, use it as the directory name under BACKENDDIR.
+# Otherwise fall back to a timestamped name.
+# Usage: make quartus QUARTUS_WORKDIR_NAME=my_existing_workdir
+ifdef QUARTUS_WORKDIR_NAME
+QUARTUS_WORKDIR := $(BACKENDDIR)/$(QUARTUS_WORKDIR_NAME)
+else
+QUARTUS_WORKDIR := $(BACKENDDIR)/quartus_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
+endif
 VIVADO_WORKDIR ?= $(BACKENDDIR)/vivado_workdir_$(shell date +"%Y-%m-%d-%H-%M-%S-%N")
 
 RTL_DIRS ?= $(BACKENDDIR)/verilog/*.v\
