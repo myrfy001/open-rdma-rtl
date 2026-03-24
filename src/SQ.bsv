@@ -2,6 +2,8 @@ import Connectable :: *;
 import FIFOF :: *;
 import ClientServer :: *;
 
+import Vector :: *;
+
 
 import ConnectableF :: *;
 import RdmaUtils :: *;
@@ -49,4 +51,18 @@ module mkSQ(SQ);
 
     interface payloadGenReqPipeOut = packetGen.genReqPipeOut;
     interface payloadGenRespPipeIn = packetGen.genRespPipeIn;
+endmodule
+
+
+interface SqGroup;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec;
+endinterface
+
+(* synthesize *)
+module mkSqGroup(SqGroup);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) inner = newVector;
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        inner[idx] <- mkSQ;
+    end
+    interface sqVec = inner;
 endmodule

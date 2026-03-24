@@ -1003,3 +1003,16 @@ module mkRQ#(Word channelIdx)(RQ);
 endmodule
 
 
+
+interface RqGroup;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec;
+endinterface
+
+(* synthesize *)
+module mkRqGroup(RqGroup);
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) inner = newVector;
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        inner[idx] <- mkRQ(fromInteger(idx));
+    end
+    interface rqVec = inner;
+endmodule

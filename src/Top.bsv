@@ -103,7 +103,7 @@ interface BsvTopOnlyHardIp;
     // to bsv side =======================================================
 
     interface PcieBiDirUserDataStreamMasterPipes                                                    rtilepcieStreamMasterIfc;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesB0In)     rtilepcieStreamSlaveIfcVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)         rtilepcieStreamSlaveIfcVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeInB0#(FtileMacTxUserStream))           ftilemacTxStreamPipeInVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeOut#(FtileMacRxUserStream))            ftilemacRxStreamPipeOutVec;
     
@@ -821,8 +821,8 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     Vector#(HARDWARE_QP_CHANNEL_CNT, CnpPacketGenerator) cnpPacketGeneratorVec <- replicateM(mkCnpPacketGenerator);
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadGenAndCon) payloadGenAndConVec = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, SQ) sqVec <- replicateM(mkSQ);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec = newVector;
+    SqGroup sqGroup <- mkSqGroup;
+    RqGroup rqGroup <- mkRqGroup;
     Vector#(HARDWARE_QP_CHANNEL_CNT, DtldStreamNoMetaArbiterSlave#(NUMERIC_TYPE_TWO, DATA)) ethTxStreamArbiterVec <- replicateM(mkDtldStreamNoMetaArbiterSlave(valueOf(NUMERIC_TYPE_TWO)));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem)) wqePipeInVecInst = newVector;
     DescriptorMux#(TAdd#(NUMERIC_TYPE_ONE, HARDWARE_QP_CHANNEL_CNT)) metaReportDescriptorMux <- mkDescriptorMux;
@@ -845,20 +845,19 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
 
         payloadGenAndConVec[idx] <- mkPayloadGenAndCon(fromInteger(idx));
-        rqVec[idx] <- mkRQ(fromInteger(idx));
         // Payload gen and con
-        mkConnection(sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);    // already Nr
-        mkConnection(sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
+        mkConnection(sqGroup.sqVec[idx].payloadGenReqPipeOut, payloadGenAndConVec[idx].genReqPipeIn);    // already Nr
+        mkConnection(sqGroup.sqVec[idx].payloadGenRespPipeIn, payloadGenAndConVec[idx].payloadGenStreamPipeOut);
 
-        mkConnection(rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn);
-        mkConnection(rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut);
-        mkConnection(rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn);
+        mkConnection(rqGroup.rqVec[idx].payloadConReqPipeOut, payloadGenAndConVec[idx].conReqPipeIn);
+        mkConnection(rqGroup.rqVec[idx].payloadConRespPipeIn, payloadGenAndConVec[idx].conRespPipeOut);
+        mkConnection(rqGroup.rqVec[idx].payloadConStreamPipeOut, payloadGenAndConVec[idx].payloadConStreamPipeIn);
 
         // Connection for ethernet packet generate
 
-        mkConnection(sqVec[idx].macIpUdpMetaPipeOut, packetGenReqArbiterVecInst[idx].macIpUdpMetaPipeInVec[0]);
-        mkConnection(sqVec[idx].rdmaPacketMetaPipeOut, packetGenReqArbiterVecInst[idx].rdmaPacketMetaPipeInVec[0]);
-        mkConnection(sqVec[idx].rdmaPayloadPipeOut, packetGenReqArbiterVecInst[idx].rdmaPayloadPipeInVec[0]);
+        mkConnection(sqGroup.sqVec[idx].macIpUdpMetaPipeOut, packetGenReqArbiterVecInst[idx].macIpUdpMetaPipeInVec[0]);
+        mkConnection(sqGroup.sqVec[idx].rdmaPacketMetaPipeOut, packetGenReqArbiterVecInst[idx].rdmaPacketMetaPipeInVec[0]);
+        mkConnection(sqGroup.sqVec[idx].rdmaPayloadPipeOut, packetGenReqArbiterVecInst[idx].rdmaPayloadPipeInVec[0]);
 
         mkConnection(cnpPacketGeneratorVec[idx].macIpUdpMetaPipeOut, packetGenReqArbiterVecInst[idx].macIpUdpMetaPipeInVec[1]);
         mkConnection(cnpPacketGeneratorVec[idx].rdmaPacketMetaPipeOut, packetGenReqArbiterVecInst[idx].rdmaPacketMetaPipeInVec[1]);
@@ -872,36 +871,36 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
         qpEthDataStreamIfcVecInst[idx] = (
                 interface IoChannelBiDirStreamNoMetaPipeB0In
-                    interface dataPipeIn = rqVec[idx].ethernetFramePipeIn;
+                    interface dataPipeIn = rqGroup.rqVec[idx].ethernetFramePipeIn;
                     interface dataPipeOut = ethTxStreamArbiterVec[idx].pipeOutIfc;
                 endinterface
             );
 
 
         // QPContext, MR Table and PGT
-        mkConnection(rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx]);
+        mkConnection(rqGroup.rqVec[idx].qpcQueryClt, qpContext.querySrvVec[idx]);
 
-        mkConnection(sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2]);
-        mkConnection(rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1]);
+        mkConnection(sqGroup.sqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2]);
+        mkConnection(rqGroup.rqVec[idx].mrTableQueryClt, mrTable.querySrvVec[idx * 2 + 1]);
 
         mkConnection(payloadGenAndConVec[idx].genAddrTranslateClt, addrTranslator.querySrvVec[idx * 2]);
         mkConnection(payloadGenAndConVec[idx].conAddrTranslateClt, addrTranslator.querySrvVec[idx * 2 + 1]);
 
         // Simple Nic Packet input
-        mkConnection(rqVec[idx].otherRawPacketPipeOut, simpleNicRxStreamArbiter.pipeInIfcVec[idx]);
+        mkConnection(rqGroup.rqVec[idx].otherRawPacketPipeOut, simpleNicRxStreamArbiter.pipeInIfcVec[idx]);
 
         // auto ack, bitmap report and CNP
-        mkConnection(rqVec[idx].autoAckGenReqPipeOut, autoAckGeneratorReqArbiter.pipeInVec[idx]);  // already Nr
-        mkConnection(rqVec[idx].genCnpReqPipeOut, cnpPacketGeneratorVec[idx].genReqPipeIn);  // already Nr
+        mkConnection(rqGroup.rqVec[idx].autoAckGenReqPipeOut, autoAckGeneratorReqArbiter.pipeInVec[idx]);  // already Nr
+        mkConnection(rqGroup.rqVec[idx].genCnpReqPipeOut, cnpPacketGeneratorVec[idx].genReqPipeIn);  // already Nr
 
         // meta report descriptors
-        mkConnection(rqVec[idx].metaReportDescPipeOut, metaReportDescriptorMux.descPipeInVec[idx]);  // already Nr
+        mkConnection(rqGroup.rqVec[idx].metaReportDescPipeOut, metaReportDescriptorMux.descPipeInVec[idx]);  // already Nr
 
         // RDMA payload DMA Ifc
         qpDmaRequestMasterIfcVecInst[idx] = payloadGenAndConVec[idx].ioChannelMemoryMasterPipeIfc;  
     
         // IO interface 
-        wqePipeInVecInst[idx]               = sqVec[idx].wqePipeIn;
+        wqePipeInVecInst[idx]               = sqGroup.sqVec[idx].wqePipeIn;
 
         rule deqNotused;
             ethTxStreamArbiterVec[idx].sourceChannelIdPipeOut.deq;
@@ -961,10 +960,10 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         endactionvalue
     endfunction
     CsrNodeFork8 csrNode <- mkCsrNode(csrMatchFunc, valueOf(NUMERIC_TYPE_ONE), "mkQpMrPgtQpc");
-    mkConnection(rqVec[0].csrUpStreamPort, csrNode.downStreamPortsVec[0]);
-    mkConnection(rqVec[1].csrUpStreamPort, csrNode.downStreamPortsVec[1]);
-    mkConnection(rqVec[2].csrUpStreamPort, csrNode.downStreamPortsVec[2]);
-    mkConnection(rqVec[3].csrUpStreamPort, csrNode.downStreamPortsVec[3]);
+    mkConnection(rqGroup.rqVec[0].csrUpStreamPort, csrNode.downStreamPortsVec[0]);
+    mkConnection(rqGroup.rqVec[1].csrUpStreamPort, csrNode.downStreamPortsVec[1]);
+    mkConnection(rqGroup.rqVec[2].csrUpStreamPort, csrNode.downStreamPortsVec[2]);
+    mkConnection(rqGroup.rqVec[3].csrUpStreamPort, csrNode.downStreamPortsVec[3]);
     mkConnection(ethernetPacketGenVecInst[0].csrUpStreamPort, csrNode.downStreamPortsVec[4]);
     mkConnection(ethernetPacketGenVecInst[1].csrUpStreamPort, csrNode.downStreamPortsVec[5]);
     mkConnection(ethernetPacketGenVecInst[2].csrUpStreamPort, csrNode.downStreamPortsVec[6]);
@@ -989,7 +988,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
 
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
         for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-            rqVec[idx].setLocalNetworkSettings(networkSettings);
+            rqGroup.rqVec[idx].setLocalNetworkSettings(networkSettings);
         end
     endmethod
 
