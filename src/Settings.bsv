@@ -19,7 +19,7 @@ typedef 1024                MAX_QP;
 typedef 32                  MAX_QP_WR;
 typedef 8                   MAX_CQ;
 typedef MAX_QP_WR           MAX_CQE;
-typedef 8192                MAX_MR;
+typedef 64                  MAX_MR;
 typedef 128                 MAX_PD;
 typedef TDiv#(MAX_QP_WR, 2) MAX_QP_RD_ATOM;
 typedef TDiv#(MAX_QP_WR, 2) MAX_QP_DST_RD_ATOM;
@@ -30,7 +30,7 @@ typedef 4                   HARDWARE_QP_CHANNEL_CNT;
 
 typedef 0 MAX_INLINE_DATA; // No inline data
 
-typedef TExp#(17)   MAX_PTE_ENTRY_CNT; // Max cover 256GB
+typedef TExp#(7)   MAX_PTE_ENTRY_CNT; // Max cover 256MB
 
 
 typedef `PCIE_MAX_BEAT_CNT_IN_BURST  PCIE_MAX_BEAT_CNT_IN_BURST;    // Important: must be suitable for the selected PCIe IO implementation

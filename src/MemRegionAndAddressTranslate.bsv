@@ -506,7 +506,7 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
                     entry: isZeroR(desc.mrLength) ?
                             tagged Invalid : 
                             tagged Valid MemRegionTableEntry {
-                                pgtOffset: desc.pgtOffset,
+                                pgtOffset: truncate(desc.pgtOffset),
                                 baseVA: desc.mrBaseVA,
                                 len: desc.mrLength,
                                 accFlags: unpack(desc.accFlags),
