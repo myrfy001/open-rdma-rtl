@@ -126,6 +126,9 @@ if {$project_already_exists} {
 	source "$quartus_backend_dir/sdc/set_pin_loc.tcl"
 	# source "$quartus_backend_dir/sdc/fitter_assignments.tcl"
 
+	# set patition
+	source "$quartus_backend_dir/sdc/add_partition.tcl"
+
 	set_global_assignment -name TOP_LEVEL_ENTITY $top_module
 	set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 	set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
