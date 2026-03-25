@@ -48,7 +48,7 @@ class SimplePcieBehaviorModel(object):
                 dut, f"{base_name}_writePipeIfc_writeDataPipeOut", self.clock))
             self.requester_read_meta_pipes.append(BluespecPipeOut(
                 dut, f"{base_name}_readPipeIfc_readMetaPipeOut", self.clock))
-            self.requester_read_data_pipes.append(BluespecPipeInNrWithQueue(
+            self.requester_read_data_pipes.append(BluespecPipeIn(
                 dut, f"{base_name}_readPipeIfc_readDataPipeIn", self.clock))
 
         self.requester_channel_cnt = len(requester_ifc_base_names)

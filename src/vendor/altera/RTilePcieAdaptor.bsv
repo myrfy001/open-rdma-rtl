@@ -2186,7 +2186,7 @@ typedef Bit#(TAdd#(1, TLog#(TDiv#(TMul#(2,ATOMIC_OPERAND_WIDTH), BYTE_WIDTH)))) 
 typedef Tuple2#(Bit#(TMul#(2,ATOMIC_OPERAND_WIDTH)), AtomicOperandCnt) AtomicOperandPack;
 
 interface PcieRequestTlpHeaderGen;
-    interface PcieBiDirUserDataStreamSlavePipesB0In                             dtldStreamSlavePipes;
+    interface PcieBiDirUserDataStreamSlavePipes                                 dtldStreamSlavePipes;
     interface PipeInB0#(PcieTlpHeaderCompletion)                                cpltTlpHeaderPipeIn;
     interface PipeInB0#(RtilePcieUserStream)                                    cpltTlpDataStreamPipeIn;
     
@@ -2204,9 +2204,9 @@ endinterface
 module mkPcieRequestTlpHeaderGen#(Byte chIdxForDebug)(PcieRequestTlpHeaderGen);
 
 
-    PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueWm                <- mkPipeInAdapterB1;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
-    PipeInAdapterB0#(RtilePcieUserStream)                     slaveSideQueueWd                <- mkPipeInAdapterB1;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
-    PipeInAdapterB0#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueRm                <- mkPipeInAdapterB0;
+    FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueWm                          <- mkFIFOF;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
+    FIFOF#(RtilePcieUserStream)                     slaveSideQueueWd                          <- mkFIFOF;  // Note & TODO: change this to B0 will lead cocotb handshake error. should fix cocotb in the future
+    FIFOF#(DtldStreamMemAccessMeta#(ADDR, Length))  slaveSideQueueRm                          <- mkFIFOF;
     FIFOF#(RtilePcieUserStream)                               slaveSideQueueRd                <- mkFIFOF;
 
     PipeInAdapterB0#(RtilePcieUserStream)                     cpltTlpDataStreamPipeInQueue    <- mkPipeInAdapterB0;
@@ -2538,14 +2538,14 @@ module mkPcieRequestTlpHeaderGen#(Byte chIdxForDebug)(PcieRequestTlpHeaderGen);
     endrule
 
 
-    interface DtldStreamBiDirSlavePipesB0In dtldStreamSlavePipes;
-        interface DtldStreamSlaveWritePipesB0In writePipeIfc;
-            interface  writeMetaPipeIn  = toPipeInB0(slaveSideQueueWm);
-            interface  writeDataPipeIn  = toPipeInB0(slaveSideQueueWd);
+    interface DtldStreamBiDirSlavePipes dtldStreamSlavePipes;
+        interface DtldStreamSlaveWritePipes writePipeIfc;
+            interface  writeMetaPipeIn  = toPipeIn(slaveSideQueueWm);
+            interface  writeDataPipeIn  = toPipeIn(slaveSideQueueWd);
         endinterface
 
-        interface DtldStreamSlaveReadPipesB0In readPipeIfc;
-            interface  readMetaPipeIn  = toPipeInB0(slaveSideQueueRm);
+        interface DtldStreamSlaveReadPipes readPipeIfc;
+            interface  readMetaPipeIn  = toPipeIn(slaveSideQueueRm);
             interface  readDataPipeOut = toPipeOut(slaveSideQueueRd);
         endinterface
     endinterface
@@ -3998,7 +3998,7 @@ endmodule
 interface RTilePcie;
     interface PipeIn#(PcieRxBeat)                                                                                   pcieRxPipeIn;
     interface PipeOut#(PcieTxBeat)                                                                                  pcieTxPipeOut;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesB0In)                     streamSlaveIfcVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)                         streamSlaveIfcVec;
     interface PcieBiDirUserDataStreamMasterPipes                                                                    streamMasterIfc;
     interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))       rxFlowControlReleaseReqPipeOut;
     interface PipeOut#(Tuple6#(CreditCount, CreditCount, CreditCount, CreditCount, CreditCount, CreditCount))       txFlowControlConsumeReqPipeOut;
@@ -4008,7 +4008,7 @@ endinterface
 
 (* synthesize *)
 module mkRTilePcie(RTilePcie);
-    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesB0In)     streamSlaveIfcVecInst = newVector;
+    Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)     streamSlaveIfcVecInst = newVector;
 
     let pcieRxStreamSegmentFork <- mkPcieRxStreamSegmentFork;
     Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieCompletionBuffer) cpltBufferVec <- replicateM(mkPcieCompletionBuffer);

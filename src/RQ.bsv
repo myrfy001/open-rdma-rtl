@@ -112,7 +112,7 @@ interface RQ;
     interface ClientP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQueryClt; 
     interface ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
 
-    interface PipeInB0#(IoChannelEthDataStream) ethernetFramePipeIn;
+    interface PipeIn#(IoChannelEthDataStream) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
     method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 

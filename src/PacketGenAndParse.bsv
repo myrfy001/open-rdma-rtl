@@ -781,7 +781,7 @@ endmodule
 interface PacketParse;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
 
-    interface PipeInB0#(IoChannelEthDataStream)       ethernetFramePipeIn;
+    interface PipeIn#(IoChannelEthDataStream)           ethernetFramePipeIn;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketMeta)              rdmaPacketMetaPipeOut;
     interface PipeOut#(RdmaRecvPacketTailMeta)          rdmaPacketTailMetaPipeOut;

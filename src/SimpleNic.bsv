@@ -40,7 +40,7 @@ interface SimpleNic;
     
     interface PipeIn#(RingbufRawDescriptor)                                     simpleNicTxDescPipeIn;
     interface PipeOut#(RingbufRawDescriptor)                                    simpleNicRxDescPipeOut;
-    interface IoChannelMemoryMasterPipeB0In                                     simpleNicPacketDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe                                         simpleNicPacketDmaMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -63,7 +63,6 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(IoChannelMemoryAccessMeta)           dmaWriteMetaPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)     dmaWriteDataPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessMeta)           dmaReadMetaPipeOutQueue     <- mkFIFOF;
-    // FIFOF#(IoChannelMemoryAccessDataStream)     dmaReadDataPipeInQueue      <- mkSizedFIFOF(2);
 
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) rxAddrChunker <- mkAddressChunker;
     AddressChunker#(ADDR, Length, ChunkAlignLogValue) txAddrChunker <- mkAddressChunker;
@@ -79,7 +78,6 @@ module mkSimpleNic(SimpleNic);
     FIFOF#(Tuple2#(SimpleNicSlotIdx, Word)) rxDescMetaPipelineQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
 
 
-    // mkConnection(toPipeOut(dmaReadDataPipeInQueue), txConcator.dataPipeIn);
     mkConnection(txConcator.dataPipeOut, toPipeIn(rawEthernetPacketPipeOutQueue));
 
     let rxSplitorDataPipeInPipeInConverter <- mkPipeInB0ToPipeIn(rxSplitor.dataPipeIn, 128);
@@ -216,7 +214,7 @@ module mkSimpleNic(SimpleNic);
     endrule
 
 
-    // let fifoToPipeInB0Bridge <- mkFifofToPipeInB0(dmaReadDataPipeInQueue);
+    let pipeInB0Convertor <- mkPipeInB0ToPipeIn(txConcator.dataPipeIn, 2);
 
 
     interface rawEthernetPacketPipeIn = toPipeIn(rawEthernetPacketPipeInQueue);
@@ -224,14 +222,17 @@ module mkSimpleNic(SimpleNic);
     interface simpleNicTxDescPipeIn = toPipeIn(simpleNicDescPipeInQueue);
     interface simpleNicRxDescPipeOut = toPipeOut(simpleNicDescPipeOutQueue);
 
-    interface IoChannelMemoryMasterPipeB0In simpleNicPacketDmaMasterPipeIfc;
+
+
+
+    interface IoChannelMemoryMasterPipe simpleNicPacketDmaMasterPipeIfc;
         interface DtldStreamMasterWritePipes  writePipeIfc;
             interface writeMetaPipeOut  = toPipeOut(dmaWriteMetaPipeOutQueue);
             interface writeDataPipeOut  = toPipeOut(dmaWriteDataPipeOutQueue);
         endinterface
-        interface DtldStreamMasterReadPipesB0In  readPipeIfc;
+        interface DtldStreamMasterReadPipes  readPipeIfc;
             interface readMetaPipeOut   = toPipeOut(dmaReadMetaPipeOutQueue);
-            interface readDataPipeIn    = txConcator.dataPipeIn;
+            interface readDataPipeIn    = pipeInB0Convertor;
         endinterface
     endinterface
 endmodule

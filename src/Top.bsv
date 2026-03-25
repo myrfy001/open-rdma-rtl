@@ -103,7 +103,7 @@ interface BsvTopOnlyHardIp;
     // to bsv side =======================================================
 
     interface PcieBiDirUserDataStreamMasterPipes                                                    rtilepcieStreamMasterIfc;
-    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipesB0In)     rtilepcieStreamSlaveIfcVec;
+    interface Vector#(RTILE_PCIE_USER_LOGIC_CHANNEL_CNT, PcieBiDirUserDataStreamSlavePipes)         rtilepcieStreamSlaveIfcVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeInB0#(FtileMacTxUserStream))           ftilemacTxStreamPipeInVec;
     interface Vector#(FTILE_MAC_USER_LOGIC_CHANNEL_CNT,  PipeOut#(FtileMacRxUserStream))            ftilemacRxStreamPipeOutVec;
     
@@ -149,23 +149,23 @@ endmodule
 
 interface TopLevelDmaChannelMux;
     // upstream port
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)   dmaMasterPipeIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)   dmaMasterPipeIfcVec;
 
     // downstream port
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)   qpRingbufDmaSlavePipeIfcVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)   qpDmaRequestSlaveIfcVec;
-    interface IoChannelMemorySlavePipeB0In cmdQueueRingbufDmaSlavePipeIfc;
-    interface IoChannelMemorySlavePipeB0In pgtUpdateDmaSlavePipe;
-    interface IoChannelMemorySlavePipeB0In simpleNicRingbufDmaSlavePipeIfc;
-    interface IoChannelMemorySlavePipeB0In simpleNicPacketDmaSlavePipeIfc;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)   qpRingbufDmaSlavePipeIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)   qpDmaRequestSlaveIfcVec;
+    interface IoChannelMemorySlavePipe cmdQueueRingbufDmaSlavePipeIfc;
+    interface IoChannelMemorySlavePipe pgtUpdateDmaSlavePipe;
+    interface IoChannelMemorySlavePipe simpleNicRingbufDmaSlavePipeIfc;
+    interface IoChannelMemorySlavePipe simpleNicPacketDmaSlavePipeIfc;
 endinterface
 
 (* synthesize *)
 module mkTopLevelDmaChannelMux(TopLevelDmaChannelMux);
     Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelThreeChannelDmaMux)       muxVector <- replicateM(mkDtldStreamArbiterSlave(256, 16, True, DebugConf{name: "mkTopLevelDmaChannelMux muxInst", enableDebug: False}));
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)     dmaMasterPipeIfcVecInst = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)      qpRingbufDmaSlavePipeIfcVecInst = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipeB0In)      qpDmaRequestSlaveIfcVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)     dmaMasterPipeIfcVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)      qpRingbufDmaSlavePipeIfcVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemorySlavePipe)      qpDmaRequestSlaveIfcVecInst = newVector;
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         dmaMasterPipeIfcVecInst[idx] = muxVector[idx].masterIfc;
@@ -196,8 +196,8 @@ endmodule
 
 interface BsvTopWithoutHardIpInstance;
     interface IoChannelMemorySlavePipe dmaSlavePipeIfc;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)       dmaMasterPipeIfcVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeB0In)  qpEthDataStreamIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       dmaMasterPipeIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)  qpEthDataStreamIfcVec;
 endinterface
 
 
@@ -258,9 +258,9 @@ endmodule
 
 
 interface RingbufAndDescriptorHandler;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)   qpRingbufDmaMasterPipeIfcVec;
-    interface IoChannelMemoryMasterPipeB0In                                     cmdQueueRingbufDmaMasterPipeIfc;
-    interface IoChannelMemoryMasterPipeB0In                                     simpleNicRingbufDmaMasterPipeIfc;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)       qpRingbufDmaMasterPipeIfcVec;
+    interface IoChannelMemoryMasterPipe                                         cmdQueueRingbufDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe                                         simpleNicRingbufDmaMasterPipeIfc;
     interface BlueRdmaCsrUpStreamPort                                           csrUpStreamPort;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(WorkQueueElem))         wqePipeOutVec;
@@ -285,7 +285,7 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
 
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, RingbufDmaIfcConvertor) qpRingbufDmaIfcConvertorVec <- replicateM(mkRingbufDmaIfcConvertor);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In) qpRingbufDmaMasterPipeIfcVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe) qpRingbufDmaMasterPipeIfcVecInst = newVector;
 
     // SimpleRoundRobinPipeArbiter#(HARDWARE_QP_CHANNEL_CNT, RingbufRawDescriptor) metaReportDescCollector <- mkSimpleRoundRobinPipeArbiter(valueOf(MULTI_CHANNEL_TO_ONE_CHANNEL_ARBITER_BUFFER_DEPTH));
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(RingbufRawDescriptor)) metaReportDescPipeInVecInst = newVector;
@@ -781,13 +781,13 @@ interface QpMrPgtQpc;
     interface BlueRdmaCsrUpStreamPort                   csrUpStreamPort;
 
     // DMA interfaces
-    interface IoChannelMemoryMasterPipeB0In pgtUpdateDmaMasterPipe;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)       qpDmaRequestMasterIfcVec;
-    interface IoChannelMemoryMasterPipeB0In                                         simpleNicPacketDmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe pgtUpdateDmaMasterPipe;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)           qpDmaRequestMasterIfcVec;
+    interface IoChannelMemoryMasterPipe                                             simpleNicPacketDmaMasterPipeIfc;
 
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeInB0#(WorkQueueElem))            wqePipeInVec;
     interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor))      metaReportDescPipeOutVec;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeB0In)  qpEthDataStreamIfcVec;
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)      qpEthDataStreamIfcVec;
 
     interface PipeOut#(RingbufRawDescriptor)                                        simpleNicRxDescPipeOut;
     interface PipeIn#(RingbufRawDescriptor)                                         simpleNicTxDescPipeIn;
@@ -828,8 +828,8 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
     DescriptorMux#(TAdd#(NUMERIC_TYPE_ONE, HARDWARE_QP_CHANNEL_CNT)) metaReportDescriptorMux <- mkDescriptorMux;
 
 
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipeB0In)         qpDmaRequestMasterIfcVecInst    = newVector;
-    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipeB0In)    qpEthDataStreamIfcVecInst       = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryMasterPipe)             qpDmaRequestMasterIfcVecInst    = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelBiDirStreamNoMetaPipe)        qpEthDataStreamIfcVecInst       = newVector;
 
     Vector#(HARDWARE_QP_CHANNEL_CNT, EthernetPacketGenerator)    ethernetPacketGenVecInst           <- replicateM(mkEthernetPacketGenerator);
     Vector#(HARDWARE_QP_CHANNEL_CNT, PacketGenReqArbiter)        packetGenReqArbiterVecInst         <- replicateM(mkPacketGenReqArbiter);
@@ -870,7 +870,7 @@ module mkQpMrPgtQpc(QpMrPgtQpc);
         mkConnection(ethernetPacketGenVecInst[idx].ethernetPacketPipeOut, ethTxStreamArbiterVec[idx].pipeInIfcVec[0]);
 
         qpEthDataStreamIfcVecInst[idx] = (
-                interface IoChannelBiDirStreamNoMetaPipeB0In
+                interface IoChannelBiDirStreamNoMetaPipe
                     interface dataPipeIn = rqGroup.rqVec[idx].ethernetFramePipeIn;
                     interface dataPipeOut = ethTxStreamArbiterVec[idx].pipeOutIfc;
                 endinterface

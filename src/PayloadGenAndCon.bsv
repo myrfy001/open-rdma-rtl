@@ -72,7 +72,7 @@ interface PayloadGenAndCon;
     interface PipeOut#(Bool) conRespPipeOut;
     interface PipeInB0#(IoChannelMemoryAccessDataStream) payloadConStreamPipeIn;
 
-    interface IoChannelMemoryMasterPipeB0In ioChannelMemoryMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -80,6 +80,8 @@ module mkPayloadGenAndCon#(Word channelIdx)(PayloadGenAndCon);
 
     PayloadGen payloadGen <- mkPayloadGen;
     PayloadCon payloadCon <- mkPayloadCon(channelIdx);
+
+    let pipeInB0Convertor <- mkPipeInB0ToPipeIn(payloadGen.dmaReadMasterPipe.readDataPipeIn, 2);
 
     interface genAddrTranslateClt = payloadGen.addrTranslateClt;
     interface genReqPipeIn = payloadGen.genReqPipeIn;
@@ -90,9 +92,14 @@ module mkPayloadGenAndCon#(Word channelIdx)(PayloadGenAndCon);
     interface conRespPipeOut = payloadCon.conRespPipeOut;
     interface payloadConStreamPipeIn = payloadCon.payloadConStreamPipeIn;
 
-    interface IoChannelMemoryMasterPipeB0In ioChannelMemoryMasterPipeIfc;
+    
+
+    interface IoChannelMemoryMasterPipe ioChannelMemoryMasterPipeIfc;
         interface writePipeIfc  = payloadCon.dmaWriteMasterPipe;
-        interface readPipeIfc   = payloadGen.dmaReadMasterPipe;
+        interface DtldStreamMasterReadPipes readPipeIfc; 
+            interface readMetaPipeOut = payloadGen.dmaReadMasterPipe.readMetaPipeOut;
+            interface readDataPipeIn = pipeInB0Convertor;
+        endinterface
     endinterface
 endmodule
 

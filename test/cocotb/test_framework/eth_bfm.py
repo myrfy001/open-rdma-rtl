@@ -40,7 +40,7 @@ class SimpleEthBehaviorModel(object):
             self.txChannels.append(BluespecPipeOut(
                 dut, tx_ifc_base_names[idx], self.clock))
         for idx in range(len(rx_ifc_base_names)):
-            self.rxChannels.append(BluespecPipeInNrWithQueue(
+            self.rxChannels.append(BluespecPipeIn(
                 dut, rx_ifc_base_names[idx], self.clock))
 
         self.main_rx_queue = Queue()

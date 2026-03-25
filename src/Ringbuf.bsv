@@ -435,7 +435,7 @@ interface RingbufDmaIfcConvertor;
     interface PipeOut#(Bool) dmaWriteRespPipeOut;
 
     // dma side interface
-    interface IoChannelMemoryMasterPipeB0In dmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe dmaMasterPipeIfc;
 endinterface
 
 (* synthesize *)
@@ -447,7 +447,7 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
     FIFOF#(Bool)                            dmaWriteRespPipeOutQ    <- mkFIFOF;
 
     FIFOF#(IoChannelMemoryAccessMeta)                       dmaReadMetaPipeOutQueue     <- mkFIFOF;
-    PipeInAdapterB0#(IoChannelMemoryAccessDataStream)       dmaReadDataPipeInQueue      <- mkPipeInAdapterB0;
+    FIFOF#(IoChannelMemoryAccessDataStream)                 dmaReadDataPipeInQueue      <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessMeta)                       dmaWriteMetaPipeOutQueue    <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream)                 dmaWriteDataPipeOutQueue    <- mkFIFOF;
 
@@ -654,14 +654,14 @@ module mkRingbufDmaIfcConvertor(RingbufDmaIfcConvertor);
     interface dmaWriteDataPipeIn = toPipeInB0(dmaWriteDataPipeInQ);
     interface dmaWriteRespPipeOut = toPipeOut(dmaWriteRespPipeOutQ);
 
-    interface IoChannelMemoryMasterPipeB0In dmaMasterPipeIfc;
+    interface IoChannelMemoryMasterPipe dmaMasterPipeIfc;
         interface DtldStreamMasterWritePipes  writePipeIfc ;
             interface writeMetaPipeOut = toPipeOut(dmaWriteMetaPipeOutQueue);
             interface writeDataPipeOut = toPipeOut(dmaWriteDataPipeOutQueue);
         endinterface
-        interface DtldStreamMasterReadPipesB0In  readPipeIfc;
+        interface DtldStreamMasterReadPipes  readPipeIfc;
             interface readMetaPipeOut = toPipeOut(dmaReadMetaPipeOutQueue);
-            interface readDataPipeIn = toPipeInB0(dmaReadDataPipeInQueue);
+            interface readDataPipeIn = toPipeIn(dmaReadDataPipeInQueue);
         endinterface
     endinterface
 endmodule

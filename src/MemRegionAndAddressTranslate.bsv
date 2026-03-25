@@ -628,19 +628,19 @@ typedef struct {
 
 
 interface PgtUpdateDmaInterfaceConvertor;
-    interface IoChannelMemoryMasterPipeB0In dmaSidePipeIfc;
+    interface IoChannelMemoryMasterPipe dmaSidePipeIfc;
 
-    interface PipeInB0#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
+    interface PipeIn#(PgtUpdateDmaReadReq) dmaReadReqPipeIn;
     interface PipeOut#(PgtUpdateDmaReadResp) dmaReadRespPipeOut;
 endinterface
 
 module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
     FIFOF#(IoChannelMemoryAccessMeta)       busReadMetaPipeOutQueue  <- mkFIFOF;
-    PipeInAdapterB0#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkPipeInAdapterB0;
+    FIFOF#(IoChannelMemoryAccessDataStream) busReadDataPipeInQueue   <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessMeta)       busWriteMetaPipeOutQueue <- mkFIFOF;
     FIFOF#(IoChannelMemoryAccessDataStream) busWriteDataPipeOutQueue <- mkFIFOF;
 
-    PipeInAdapterB0#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkPipeInAdapterB0;
+    FIFOF#(PgtUpdateDmaReadReq)   dmaReadReqPipeInQ       <- mkFIFOF;
     FIFOF#(PgtUpdateDmaReadResp)  dmaReadRespPipeOutQ     <- mkFIFOF;
 
     rule forwardReadReq;
@@ -671,18 +671,18 @@ module mkPgtUpdateDmaInterfaceConvertor(PgtUpdateDmaInterfaceConvertor);
         dmaReadRespPipeOutQ.enq(ds);
     endrule
 
-    interface IoChannelMemoryMasterPipeB0In dmaSidePipeIfc;
+    interface IoChannelMemoryMasterPipe dmaSidePipeIfc;
         interface DtldStreamMasterWritePipes writePipeIfc;
             interface writeMetaPipeOut = toPipeOut(busWriteMetaPipeOutQueue);
             interface writeDataPipeOut = toPipeOut(busWriteDataPipeOutQueue);
         endinterface
-        interface DtldStreamMasterReadPipesB0In readPipeIfc;
+        interface DtldStreamMasterReadPipes readPipeIfc;
             interface readMetaPipeOut = toPipeOut(busReadMetaPipeOutQueue);
-            interface readDataPipeIn  = toPipeInB0(busReadDataPipeInQueue);
+            interface readDataPipeIn  = toPipeIn(busReadDataPipeInQueue);
         endinterface
     endinterface
 
-    interface dmaReadReqPipeIn = toPipeInB0(dmaReadReqPipeInQ);
+    interface dmaReadReqPipeIn = toPipeIn(dmaReadReqPipeInQ);
     interface dmaReadRespPipeOut = toPipeOut(dmaReadRespPipeOutQ);
 endmodule
 
