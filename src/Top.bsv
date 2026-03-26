@@ -54,6 +54,8 @@ interface BsvTop;
         interface FTileMacAdaptorRx ftileMacAdaptorRxRawIfc;
         (* always_ready, always_enabled *)
         interface FTileMacAdaptorTx ftileMacAdaptorTxRawIfc;
+
+        interface Reset pipelinedReset1;
 endinterface
 
 
@@ -62,12 +64,56 @@ module mkBsvTop#(
         Reset ftileRst
     )(BsvTop);
 
-    BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(ftileClk, ftileRst);
-    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
 
 
-    mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
-    mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec);
+    Clock curClk <- exposeCurrentClock;
+    Reset curRst <- exposeCurrentReset;
+
+    Reset syncReset1 <- mkSyncReset(2, curRst, curClk);
+    Reset syncReset2 <- mkSyncReset(2, curRst, curClk);
+
+    BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(ftileClk, ftileRst, reset_by syncReset1);
+    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance(reset_by syncReset2);
+
+    SyncFIFOIfc#(IoChannelMemoryAccessMeta) syncQ1 <- mkSyncFIFO(2, curClk, syncReset1, curClk);
+    SyncFIFOIfc#(IoChannelMemoryAccessDataStream) syncQ2 <- mkSyncFIFO(2, curClk, syncReset1, curClk);
+    SyncFIFOIfc#(IoChannelMemoryAccessMeta) syncQ3 <- mkSyncFIFO(2, curClk, syncReset1, curClk);
+    SyncFIFOIfc#(IoChannelMemoryAccessDataStream) syncQ4 <- mkSyncFIFO(2, curClk, syncReset2, curClk);
+
+
+    mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc.writePipeIfc.writeMetaPipeOut, toPipeInSync(syncQ1));
+    mkConnection(toPipeOutSync(syncQ1), bsvTopWithoutHardIpInstance.dmaSlavePipeIfc.writePipeIfc.writeMetaPipeIn);
+
+    mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc.writePipeIfc.writeDataPipeOut, toPipeInSync(syncQ2));
+    mkConnection(toPipeOutSync(syncQ2), bsvTopWithoutHardIpInstance.dmaSlavePipeIfc.writePipeIfc.writeDataPipeIn);
+
+    mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc.readPipeIfc.readMetaPipeOut, toPipeInSync(syncQ3));
+    mkConnection(toPipeOutSync(syncQ3), bsvTopWithoutHardIpInstance.dmaSlavePipeIfc.readPipeIfc.readMetaPipeIn);
+
+    mkConnection(bsvTopWithoutHardIpInstance.dmaSlavePipeIfc.readPipeIfc.readDataPipeOut, toPipeInSync(syncQ4));
+    mkConnection(toPipeOutSync(syncQ4), bsvTopOnlyHardIp.rtilepcieStreamMasterIfc.readPipeIfc.readDataPipeIn);
+
+    for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+        SyncFIFOIfc#(IoChannelMemoryAccessMeta) syncQ11 <- mkSyncFIFO(2, curClk, syncReset2, curClk);
+        SyncFIFOIfc#(IoChannelMemoryAccessDataStream) syncQ22 <- mkSyncFIFO(2, curClk, syncReset2, curClk);
+        SyncFIFOIfc#(IoChannelMemoryAccessMeta) syncQ33 <- mkSyncFIFO(2, curClk, syncReset2, curClk);
+        SyncFIFOIfc#(IoChannelMemoryAccessDataStream) syncQ44 <- mkSyncFIFO(2, curClk, syncReset1, curClk);
+
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[idx].writePipeIfc.writeMetaPipeOut, toPipeInSync(syncQ11));
+        mkConnection(toPipeOutSync(syncQ11), bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec[idx].writePipeIfc.writeMetaPipeIn);
+
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[idx].writePipeIfc.writeDataPipeOut, toPipeInSync(syncQ22));
+        mkConnection(toPipeOutSync(syncQ22), bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec[idx].writePipeIfc.writeDataPipeIn);
+
+        mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[idx].readPipeIfc.readMetaPipeOut, toPipeInSync(syncQ33));
+        mkConnection(toPipeOutSync(syncQ33), bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec[idx].readPipeIfc.readMetaPipeIn);
+
+        mkConnection(bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec[idx].readPipeIfc.readDataPipeOut, toPipeInSync(syncQ44));
+        mkConnection(toPipeOutSync(syncQ44), bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec[idx].readPipeIfc.readDataPipeIn);
+    end
+
+    // mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
+    // mkConnection(bsvTopWithoutHardIpInstance.dmaMasterPipeIfcVec, bsvTopOnlyHardIp.rtilepcieStreamSlaveIfcVec);
 
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
         // loopback test
@@ -83,7 +129,7 @@ module mkBsvTop#(
     interface ftileMacAdaptorRxRawIfc   = bsvTopOnlyHardIp.ftileMacAdaptorRxRawIfc;
     interface ftileMacAdaptorTxRawIfc   = bsvTopOnlyHardIp.ftileMacAdaptorTxRawIfc;
 
-
+    interface pipelinedReset1 = syncReset1;
 endmodule
 
 
@@ -144,6 +190,22 @@ module mkBsvTopOnlyHardIp#(
     interface rtilepcieStreamSlaveIfcVec    = rtilePcie.streamSlaveIfcVec;
     interface ftilemacTxStreamPipeInVec     = ftileMac.ftilemacTxStreamPipeInVec;
     interface ftilemacRxStreamPipeOutVec    = ftileMac.ftilemacRxStreamPipeOutVec;
+endmodule
+
+
+(* synthesize *)
+module mkBsvTopOnlyHardIpPartitionWrapper#(
+        Clock ftileClk,
+        Reset ftileRst
+    )(BsvTopOnlyHardIp);
+
+    Clock curClk <- exposeCurrentClock;
+    Reset curRst <- exposeCurrentReset;
+
+    Reset syncReset1 <- mkSyncReset(2, curRst, curClk);
+    
+    let inner <- mkBsvTopOnlyHardIp(ftileClk, ftileRst);
+
 endmodule
 
 
