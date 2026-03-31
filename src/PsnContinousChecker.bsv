@@ -234,6 +234,7 @@ module mkBitmapWindowStorage(BitmapWindowStorage#(tRowAddr, tData, tBoundary, sz
                    newEntry                : newEntry
                    };
                 respPipeOutQueue.enq(resp);
+                bitmapUpdateBusyReg <= False;
             end
             else begin
                 let isShiftWindow = msb(boundaryDelta) == 0 && boundaryDelta > 0;
