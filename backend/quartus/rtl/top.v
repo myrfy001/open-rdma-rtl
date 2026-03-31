@@ -202,7 +202,14 @@ module bluerdma_top(
 	);
 
 
-    
+    assign rtile_pcie_p0_tx_st0_prefix = 0;
+	assign rtile_pcie_p0_tx_st0_pvalid = 0;
+	assign rtile_pcie_p0_tx_st1_prefix = 0;
+	assign rtile_pcie_p0_tx_st1_pvalid = 0;
+	assign rtile_pcie_p0_tx_st2_prefix = 0;
+	assign rtile_pcie_p0_tx_st2_pvalid = 0;
+	assign rtile_pcie_p0_tx_st3_prefix = 0;
+	assign rtile_pcie_p0_tx_st3_pvalid = 0;
     
 
     rtile_pcie_hip rtile_pcie_inst (

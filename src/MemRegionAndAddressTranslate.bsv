@@ -46,11 +46,11 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
 
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
 
-    PipeInAdapterB0#(addrType)   bramReadReqQ <- mkPipeInAdapterB0;
-    FIFOF#(dataType)  bramReadRespQ <- mkLFIFOFWithFullAssert(DebugConf{name:"mkBramCache bramReadRespQ", enableDebug:True});
+    FIFOF#(addrType)   bramReadReqQ <- mkFIFOF;
+    FIFOF#(dataType)  bramReadRespQ <- mkFIFOFWithFullAssert(DebugConf{name:"mkBramCache bramReadRespQ", enableDebug:True});
 
-    PipeInAdapterB0#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkPipeInAdapterB0;
-    FIFOF#(Bool)                         bramWriteRespQ <- mkLFIFOF;
+    FIFOF#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkFIFOF;
+    FIFOF#(Bool)                         bramWriteRespQ <- mkFIFOF;
 
 
     rule handleBramReadReq;
@@ -85,8 +85,8 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     endrule
 
 
-    interface read =  toGPServerP(toPipeInB0(bramReadReqQ),  toPipeOut(bramReadRespQ));
-    interface write = toGPServerP(toPipeInB0(bramWriteReqQ), toPipeOut(bramWriteRespQ));
+    interface read =  toGPServerP(toPipeIn(bramReadReqQ),  toPipeOut(bramReadRespQ));
+    interface write = toGPServerP(toPipeIn(bramWriteReqQ), toPipeOut(bramWriteRespQ));
 endmodule
 
 
@@ -101,13 +101,9 @@ module mkMemRegionTable(MemRegionTable);
     QueuedServerP#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkQueuedServerP(DebugConf{name: "mkMemRegionTable querySrvInst", enableDebug: False} );
     QueuedServerP#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkQueuedServerP(DebugConf{name: "MemRegionTable modifySrvInst", enableDebug: False});
 
-
-    let mrTableStorageReadRequestAdapter <- mkPipeInB0ToPipeIn(mrTableStorage.read.request, 1);
-    let mrTableStorageWriteRequestAdapter <- mkPipeInB0ToPipeIn(mrTableStorage.write.request, 1);
-
     rule handleQueryReq;
         let req <- querySrvInst.getReq;
-        mrTableStorageReadRequestAdapter.enq(req.idx);
+        mrTableStorage.read.request.enq(req.idx);
         $display("get MrTable query req: ", fshow(req));
     endrule
 
@@ -121,7 +117,7 @@ module mkMemRegionTable(MemRegionTable);
 
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
-        mrTableStorageWriteRequestAdapter.enq(tuple2(req.idx, req.entry));
+        mrTableStorage.write.request.enq(tuple2(req.idx, req.entry));
         $display("get MrTable update req: ", fshow(req));
     endrule
 
@@ -144,83 +140,44 @@ endinterface
 (* synthesize *)
 module mkMemRegionTableTwoWayQuery(MemRegionTableTwoWayQuery);
     
-    function Bool alwaysTrue(anytype resp);
-        return True;
-    endfunction
+    Vector#(NUMERIC_TYPE_TWO, MemRegionTable) memRegionTableVec <- replicateM(mkMemRegionTable);
+    Vector#(NUMERIC_TYPE_TWO, ServerP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) querySrvVecInst = newVector;
 
-    MemRegionTable memRegionTable <- mkMemRegionTable;
-
-    // MR Table need 10 beat for worst case to generate resp.
-    // For in RQ path, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
-    // For in SQ path, each WQE taks 2 beat, then the arbiter's keep order queue depth should be at least 5
-    // so, we use depth 5 here.
-    let arbiter <- mkServerToClientArbitFixPriorityP(
-        5,
-        True,
-        alwaysTrue,
-        alwaysTrue,
-        DebugConf{name: "MemRegionTableTwoWayQuery", enableDebug: True}
-    );
-
-    mkConnection(arbiter.cltIfc, memRegionTable.querySrv);
-
-    interface querySrvVec = arbiter.srvIfcVec;
-    interface modifySrv = memRegionTable.modifySrv;
-
-endmodule
-
-
-
-interface MemRegionTableEightWayQuery;
-    interface Vector#(NUMERIC_TYPE_EIGHT, ServerP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) querySrvVec;
-    interface ServerP#(MrTableModifyReq, MrTableModifyResp) modifySrv;
-endinterface
-
-(* synthesize *)
-module mkMemRegionTableEightWayQuery(MemRegionTableEightWayQuery);
-    
-
-    Vector#(NUMERIC_TYPE_FOUR, MemRegionTableTwoWayQuery) twoWayMemRegionTableVec <- replicateM(mkMemRegionTableTwoWayQuery);
-
-    Vector#(NUMERIC_TYPE_EIGHT, ServerP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) querySrvVecInst = newVector;
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_EIGHT); idx = idx + 1) begin
-        querySrvVecInst[idx] = twoWayMemRegionTableVec[idx / 2].querySrvVec[idx % 2 == 0 ? 0 : 1];
+    // For in RQ path, packet must have payload, which is at least 4 beats
+    // For in SQ path, each WQE taks 2 beat
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        querySrvVecInst[idx] = memRegionTableVec[idx].querySrv;
     end
 
     interface querySrvVec = querySrvVecInst;
 
     interface ServerP modifySrv;
-        interface PipeInB0 request;
-            method Action firstIn(MrTableModifyReq dataIn);
-                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
-                    twoWayMemRegionTableVec[idx].modifySrv.request.firstIn(dataIn);
-                end
-            endmethod
-    
-            method Action notEmptyIn(Bool val);
-                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
-                    twoWayMemRegionTableVec[idx].modifySrv.request.notEmptyIn(val);
+        interface PipeIn request;
+            method Action enq(MrTableModifyReq dataIn);
+                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                    memRegionTableVec[idx].modifySrv.request.enq(dataIn);
                 end
             endmethod
     
             // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-            method deqSignalOut = twoWayMemRegionTableVec[0].modifySrv.request.deqSignalOut;
+            method notFull = memRegionTableVec[0].modifySrv.request.notFull;
         endinterface
     
         interface PipeOut response;
             // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-            method first = twoWayMemRegionTableVec[0].modifySrv.response.first;
-            method Bool notEmpty = twoWayMemRegionTableVec[0].modifySrv.response.notEmpty;
+            method first = memRegionTableVec[0].modifySrv.response.first;
+            method Bool notEmpty = memRegionTableVec[0].modifySrv.response.notEmpty;
               
             method Action deq;
-                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
-                    twoWayMemRegionTableVec[idx].modifySrv.response.deq;
+                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                    memRegionTableVec[idx].modifySrv.response.deq;
                 end
             endmethod
         endinterface
     endinterface
+
 endmodule
+
 
 
 // module mkBypassMemRegionTableForTest(MemRegionTable);
@@ -273,9 +230,6 @@ module mkAddressTranslate(AddressTranslate);
 
     FIFOF#(Bit#(PAGE_OFFSET_WIDTH)) offsetInputQ <- mkSizedFIFOF(10);
 
-    let pageTableStorageReadRequestAdapter <- mkPipeInB0ToPipeIn(pageTableStorage.read.request, 1);
-    let pageTableStorageWriteRequestAdapter <- mkPipeInB0ToPipeIn(pageTableStorage.write.request, 1);
-
     rule handleTranslateReq;
         let req <- translateSrvInst.getReq;
         let va = req.addrToTrans;
@@ -284,7 +238,7 @@ module mkAddressTranslate(AddressTranslate);
         PTEIndex pteIdx = req.pgtOffset + truncate(pageNumberOffset);
 
 
-        pageTableStorageReadRequestAdapter.enq(pteIdx);
+        pageTableStorage.read.request.enq(pteIdx);
         offsetInputQ.enq(getPageOffset(va));
 
         $display("time=%0t, ", $time, " query AddressTranslate req = ", fshow(req), "pte index=", fshow(pteIdx));
@@ -307,7 +261,7 @@ module mkAddressTranslate(AddressTranslate);
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
 
-        pageTableStorageWriteRequestAdapter.enq(tuple2(req.idx, req.pte));
+        pageTableStorage.write.request.enq(tuple2(req.idx, req.pte));
         $display("insert AddressTranslate = ", fshow(req));
     endrule
 
@@ -335,83 +289,49 @@ endinterface
 
 (* synthesize *)
 module mkAddressTranslateTwoWayQuery(AddressTranslateTwoWayQuery);
-    
-    function Bool alwaysTrue(anytype resp);
-        return True;
-    endfunction
 
-    AddressTranslate addressTranslate <- mkAddressTranslate;
+    Vector#(NUMERIC_TYPE_TWO, AddressTranslate) addressTranslateVec <- replicateM(mkAddressTranslate);
+    Vector#(NUMERIC_TYPE_TWO, ServerP#(PgtAddrTranslateReq, ADDR)) querySrvVecInst = newVector;
 
-    // PGT need 10 beat for worst case to generate resp.
-    // For RQ, packet must have payload, which is at least 4 beats, then the arbiter's keep order queue depth should be at least 3
+
+    // For RQ, packet must have payload, which is at least 4 beats
     // For in SQ path, a big WQE can generate multi DMA read chunk and lead to query in every beat
-    // so we use depth 10 here.
-    let arbiter <- mkServerToClientArbitFixPriorityP(
-        10,
-        True,
-        alwaysTrue,
-        alwaysTrue,
-        DebugConf{name: "AddressTranslateTwoWayQuery", enableDebug: True}
-    );
+    // so we use two table to sepetately handle these two cases
 
-    mkConnection(arbiter.cltIfc, addressTranslate.translateSrv);
-
-    interface querySrvVec = arbiter.srvIfcVec;
-    interface modifySrv = addressTranslate.modifySrv;
-
-endmodule
-
-
-
-interface AddressTranslateEightWayQuery;
-    interface Vector#(NUMERIC_TYPE_EIGHT, ServerP#(PgtAddrTranslateReq, ADDR)) querySrvVec;
-    interface ServerP#(PgtModifyReq, PgtModifyResp) modifySrv;
-endinterface
-
-(* synthesize *)
-module mkAddressTranslateEightWayQuery(AddressTranslateEightWayQuery);
-    
-
-    Vector#(NUMERIC_TYPE_FOUR, AddressTranslateTwoWayQuery) twoWayAddressTranslateVec <- replicateM(mkAddressTranslateTwoWayQuery);
-    Vector#(NUMERIC_TYPE_EIGHT, ServerP#(PgtAddrTranslateReq, ADDR)) querySrvVecInst = newVector;
-
-    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_EIGHT); idx = idx + 1) begin
-        querySrvVecInst[idx] = twoWayAddressTranslateVec[idx / 2].querySrvVec[((idx % 2) == 0) ? 0 : 1];
+    for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+        querySrvVecInst[idx] = addressTranslateVec[idx].translateSrv;
     end
+
 
     interface querySrvVec = querySrvVecInst;
 
     interface ServerP modifySrv;
-        interface PipeInB0 request;
-            method Action firstIn(PgtModifyReq dataIn);
-                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
-                    twoWayAddressTranslateVec[idx].modifySrv.request.firstIn(dataIn);
-                end
-            endmethod
-    
-            method Action notEmptyIn(Bool val);
-                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
-                    twoWayAddressTranslateVec[idx].modifySrv.request.notEmptyIn(val);
+        interface PipeIn request;
+            method Action enq(PgtModifyReq dataIn);
+                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                    addressTranslateVec[idx].modifySrv.request.enq(dataIn);
                 end
             endmethod
     
             // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-            method deqSignalOut = twoWayAddressTranslateVec[0].modifySrv.request.deqSignalOut;
+            method notFull = addressTranslateVec[0].modifySrv.request.notFull;
         endinterface
     
         interface PipeOut response;
             // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-            method first = twoWayAddressTranslateVec[0].modifySrv.response.first;
-            method Bool notEmpty = twoWayAddressTranslateVec[0].modifySrv.response.notEmpty;
+            method first = addressTranslateVec[0].modifySrv.response.first;
+            method Bool notEmpty = addressTranslateVec[0].modifySrv.response.notEmpty;
               
             method Action deq;
-                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_FOUR); idx = idx + 1) begin
-                    twoWayAddressTranslateVec[idx].modifySrv.response.deq;
+                for (Integer idx = 0; idx < valueOf(NUMERIC_TYPE_TWO); idx = idx + 1) begin
+                    addressTranslateVec[idx].modifySrv.response.deq;
                 end
             endmethod
         endinterface
     endinterface
+
 endmodule
+
 
 
 // module mkBypassAddressTranslateForTest(AddressTranslate);
@@ -466,11 +386,11 @@ typedef Bit#(TLog#(TDiv#(PCIE_BYTE_PER_BEAT, PGT_SECOND_STAGE_ENTRY_BYTE_WIDTH_P
 (* synthesize *)
 module mkMrAndPgtUpdater(MrAndPgtUpdater);
 
-    PipeInAdapterB0#(RingbufRawDescriptor) reqQ <- mkPipeInAdapterB0;
-    FIFOF#(Bool) respQ <- mkLFIFOF;
+    FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
+    FIFOF#(Bool) respQ <- mkFIFOF;
 
     FIFOF#(PgtUpdateDmaReadReq) dmaReadReqQ <- mkFIFOF;
-    FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkLFIFOF;
+    FIFOF#(PgtUpdateDmaReadResp) dmaReadRespQ <- mkFIFOF;
 
     QueuedClientP#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkQueuedClientP(DebugConf{name: "mrModifyCltInst", enableDebug: False});
     QueuedClientP#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkQueuedClientP(DebugConf{name: "pgtModifyCltInst", enableDebug: False});
@@ -603,7 +523,7 @@ module mkMrAndPgtUpdater(MrAndPgtUpdater);
         end
     endrule
 
-    interface mrAndPgtModifyDescSrv = toGPServerP(toPipeInB0(reqQ), toPipeOut(respQ));
+    interface mrAndPgtModifyDescSrv = toGPServerP(toPipeIn(reqQ), toPipeOut(respQ));
 
     interface dmaReadReqPipeOut = toPipeOut(dmaReadReqQ);
     interface dmaReadRespPipeIn = toPipeIn(dmaReadRespQ);

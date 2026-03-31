@@ -79,83 +79,83 @@ endmodule
 
 
 
-interface QpContextTwoWayQuery;
-    interface Vector#(NUMERIC_TYPE_TWO, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
-    interface ServerP#(WriteReqQPC, Bool) updateSrv;
-endinterface
+// interface QpContextTwoWayQuery;
+//     interface Vector#(NUMERIC_TYPE_TWO, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
+//     interface ServerP#(WriteReqQPC, Bool) updateSrv;
+// endinterface
 
 
 
-(* synthesize *)
-module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
+// (* synthesize *)
+// module mkQpContextTwoWayQuery(QpContextTwoWayQuery);
     
-    function Bool alwaysTrue(anytype resp);
-        return True;
-    endfunction
+//     function Bool alwaysTrue(anytype resp);
+//         return True;
+//     endfunction
 
-    QpContext qpContext <- mkQpContext;
-    // QPC Table need 10 beat for worst case to generate resp.
-    // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
-    let arbiter <- mkServerToClientArbitFixPriorityP(
-        4,
-        True,
-        alwaysTrue,
-        alwaysTrue,
-        DebugConf{name: "QpContextTwoWayQuery", enableDebug: False}
-    );
+//     QpContext qpContext <- mkQpContext;
+//     // QPC Table need 10 beat for worst case to generate resp.
+//     // For QPC, packte without payload can occur, which is 3 beats, then the arbiter's keep order queue depth should be at least 4
+//     let arbiter <- mkServerToClientArbitFixPriorityP(
+//         4,
+//         True,
+//         alwaysTrue,
+//         alwaysTrue,
+//         DebugConf{name: "QpContextTwoWayQuery", enableDebug: False}
+//     );
 
-    mkConnection(arbiter.cltIfc, qpContext.querySrv);
+//     mkConnection(arbiter.cltIfc, qpContext.querySrv);
 
-    interface querySrvVec = arbiter.srvIfcVec;
-    interface updateSrv = qpContext.updateSrv;
-endmodule
+//     interface querySrvVec = arbiter.srvIfcVec;
+//     interface updateSrv = qpContext.updateSrv;
+// endmodule
 
 
 
-interface QpContextFourWayQuery;
-    interface Vector#(NUMERIC_TYPE_FOUR, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
-    interface ServerP#(WriteReqQPC, Bool) updateSrv;
-endinterface
+// interface QpContextFourWayQuery;
+//     interface Vector#(NUMERIC_TYPE_FOUR, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVec;
+//     interface ServerP#(WriteReqQPC, Bool) updateSrv;
+// endinterface
 
-(* synthesize *)
-module mkQpContextFourWayQuery(QpContextFourWayQuery);
+// (* synthesize *)
+// module mkQpContextFourWayQuery(QpContextFourWayQuery);
     
 
-    Vector#(NUMERIC_TYPE_TWO, QpContextTwoWayQuery) twoWayQpContextVec <- replicateM(mkQpContextTwoWayQuery);
-    Vector#(NUMERIC_TYPE_FOUR, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
+//     Vector#(NUMERIC_TYPE_TWO, QpContextTwoWayQuery) twoWayQpContextVec <- replicateM(mkQpContextTwoWayQuery);
+//     Vector#(NUMERIC_TYPE_FOUR, ServerP#(ReadReqQPC, Maybe#(EntryQPC))) querySrvVecInst = newVector;
 
-    querySrvVecInst[0] = twoWayQpContextVec[0].querySrvVec[0];
-    querySrvVecInst[1] = twoWayQpContextVec[0].querySrvVec[1];
-    querySrvVecInst[2] = twoWayQpContextVec[1].querySrvVec[0];
-    querySrvVecInst[3] = twoWayQpContextVec[1].querySrvVec[1];
+//     querySrvVecInst[0] = twoWayQpContextVec[0].querySrvVec[0];
+//     querySrvVecInst[1] = twoWayQpContextVec[0].querySrvVec[1];
+//     querySrvVecInst[2] = twoWayQpContextVec[1].querySrvVec[0];
+//     querySrvVecInst[3] = twoWayQpContextVec[1].querySrvVec[1];
     
-    interface querySrvVec = querySrvVecInst;
+//     interface querySrvVec = querySrvVecInst;
 
-    interface ServerP updateSrv;
-        interface PipeInB0 request;
-            method Action firstIn(WriteReqQPC dataIn);
-                twoWayQpContextVec[0].updateSrv.request.firstIn(dataIn);
-                twoWayQpContextVec[1].updateSrv.request.firstIn(dataIn);
-            endmethod
+//     interface ServerP updateSrv;
+//         interface PipeInB0 request;
+//             method Action firstIn(WriteReqQPC dataIn);
+//                 twoWayQpContextVec[0].updateSrv.request.firstIn(dataIn);
+//                 twoWayQpContextVec[1].updateSrv.request.firstIn(dataIn);
+//             endmethod
 
-            method Action notEmptyIn(Bool val);
-                twoWayQpContextVec[0].updateSrv.request.notEmptyIn(val);
-                twoWayQpContextVec[1].updateSrv.request.notEmptyIn(val);
-            endmethod
+//             method Action notEmptyIn(Bool val);
+//                 twoWayQpContextVec[0].updateSrv.request.notEmptyIn(val);
+//                 twoWayQpContextVec[1].updateSrv.request.notEmptyIn(val);
+//             endmethod
 
-            // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-            method deqSignalOut = twoWayQpContextVec[0].updateSrv.request.deqSignalOut;
-        endinterface
+//             // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
+//             method deqSignalOut = twoWayQpContextVec[0].updateSrv.request.deqSignalOut;
+//         endinterface
 
-        interface PipeOut response;
-            // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
-            method first = twoWayQpContextVec[0].updateSrv.response.first;
-            method Bool notEmpty = twoWayQpContextVec[0].updateSrv.response.notEmpty;
+//         interface PipeOut response;
+//             // two QpContextTwoWayQuery should be in sync, so only care one's response is enough.
+//             method first = twoWayQpContextVec[0].updateSrv.response.first;
+//             method Bool notEmpty = twoWayQpContextVec[0].updateSrv.response.notEmpty;
               
-            method Action deq;
-                twoWayQpContextVec[0].updateSrv.response.deq;
-                twoWayQpContextVec[1].updateSrv.response.deq;
-            endmethod
-        endinterface
-    endinterface
-endmodule
+//             method Action deq;
+//                 twoWayQpContextVec[0].updateSrv.response.deq;
+//                 twoWayQpContextVec[1].updateSrv.response.deq;
+//             endmethod
+//         endinterface
+//     endinterface
+// endmodule

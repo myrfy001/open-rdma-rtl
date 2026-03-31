@@ -267,8 +267,6 @@ module mkSizedQueuedClientP#(
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
     FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, dstClk, srcClk, dstRst);
 
-    let respQueuePipeInB0 <- mkFifofToPipeInB0(respQ);
-
     rule debug if (dbgConf.enableDebug);
         if (!reqQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedClient ", fshow(dbgConf.name) , " reqQ");
@@ -286,7 +284,7 @@ module mkSizedQueuedClientP#(
         end
     endrule
 
-    interface clt = toGPClientP(toPipeOut(reqQ), respQueuePipeInB0);
+    interface clt = toGPClientP(toPipeOut(reqQ), toPipeIn(respQ));
 
     method Action putReq(t_req req);
         reqQ.enq(req);
@@ -385,8 +383,6 @@ module mkSizedQueuedServerP#(
     FIFOF#(t_req) reqQ <- mkFifofByType(reqDepth, reqType, srcClk, dstClk, srcRst);
     FIFOF#(t_resp) respQ <- mkFifofByType(respDepth, respType, dstClk, srcClk, dstRst);
 
-    let reqQueuePipeInB0 <- mkFifofToPipeInB0(reqQ);
-
     rule debug;
         if (!reqQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkQueuedServer ", fshow(dbgConf.name) , " reqQ");
@@ -396,7 +392,7 @@ module mkSizedQueuedServerP#(
         end
     endrule
 
-    interface srv = toGPServerP(reqQueuePipeInB0, toPipeOut(respQ));
+    interface srv = toGPServerP(toPipeIn(reqQ), toPipeOut(respQ));
 
     method Action putResp(t_resp resp);
         respQ.enq(resp);

@@ -81,13 +81,13 @@ endmodule
 
 
 
-module mkClientArbiter#(
+module mkClientPArbiter#(
     Integer keepOrderQueueLen,
-    Vector#(portSz, Client#(reqType, respType)) clientVec,
+    Vector#(portSz, ClientP#(reqType, respType)) clientVec,
     function Bool isReqFinished(reqType request),
     function Bool isRespFinished(respType response),
     DebugConf dbgConf
-)(Client#(reqType, respType)) provisos(
+)(ClientP#(reqType, respType)) provisos(
     Bits#(reqType, reqSz),
     Bits#(respType, respSz),
     Add#(1, anysize, portSz),
@@ -105,13 +105,13 @@ module mkClientArbiter#(
     // This Fifo can be larger since receive response may take some time and there can be many outstanding requests.
     FIFOF#(Bit#(TLog#(portSz))) grantRespKeepOrderQ <- mkSizedFIFOF(keepOrderQueueLen);
 
-    FIFOF#(reqType)   reqQ <- mkLFIFOF;
-    FIFOF#(respType) respQ <- mkLFIFOF;
+    FIFOF#(reqType)   reqQ <- mkFIFOF;
+    FIFOF#(respType) respQ <- mkFIFOF;
 
     // convert input Get interface to a FIFOF since we need full/empty signal
     // THIS QUEUE MUST BE SIZE OF 2, SO WHEN IT FULL IT MEANS THAT WE HAVE TO ELEMENTS IN QUEUE NOW.
     for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
-        mkConnection(clientVec[idx].request, toPut(clientReqFifoVec[idx]));
+        mkConnection(clientVec[idx].request, toPipeIn(clientReqFifoVec[idx]));
     end
 
 
@@ -170,7 +170,7 @@ module mkClientArbiter#(
         rule forwardResponse if (grantRespKeepOrderQ.first == fromInteger(idx));
             let resp = respQ.first;
             respQ.deq;
-            clientVec[idx].response.put(resp);
+            clientVec[idx].response.enq(resp);
             let respFinished = isRespFinished(resp);
             if (respFinished) begin
                 grantRespKeepOrderQ.deq;
@@ -272,7 +272,7 @@ module mkClientArbiter#(
         end
     endrule
 
-    return toGPClient(reqQ, respQ);
+    return toGPClientP(toPipeOut(reqQ), toPipeIn(respQ));
 endmodule
 
 
@@ -314,11 +314,11 @@ module mkServerToClientArbitP#(
 
     Vector#(channelCnt, ServerP#(tReq, tResp))     srvIfcVecInst = newVector;
 
-    Vector#(channelCnt, PipeInAdapterB0#(tReq))                         srvSideReqQueueVec      <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, FIFOF#(tReq))                                    srvSideReqQueueVec      <- replicateM(mkFIFOF);
     Vector#(channelCnt, FIFOF#(tResp))                                   srvSideRespQueueVec     <- replicateM(mkFIFOF);
 
     FIFOF#(tReq)                           cltSideReqQueue   <-  mkFIFOF;
-    PipeInAdapterB0#(tResp)                 cltSideRespQueue  <-  mkPipeInAdapterB0;
+    FIFOF#(tResp)                          cltSideRespQueue  <-  mkFIFOF;
 
 
     Arbiter_IFC#(channelCnt) innerArbiter <- mkArbiter(False);
@@ -412,11 +412,11 @@ module mkServerToClientArbitP#(
 
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-        srvIfcVecInst[channelIdx] = toGPServerP(toPipeInB0(srvSideReqQueueVec[channelIdx]), toPipeOut(srvSideRespQueueVec[channelIdx]));
+        srvIfcVecInst[channelIdx] = toGPServerP(toPipeIn(srvSideReqQueueVec[channelIdx]), toPipeOut(srvSideRespQueueVec[channelIdx]));
     end
 
     interface srvIfcVec = srvIfcVecInst;
-    interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeInB0(cltSideRespQueue));
+    interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeIn(cltSideRespQueue));
 endmodule
 
 
@@ -448,11 +448,11 @@ module mkServerToClientArbitFixPriorityP#(
 
     Vector#(channelCnt, ServerP#(tReq, tResp))     srvIfcVecInst = newVector;
 
-    Vector#(channelCnt, PipeInAdapterB0#(tReq))                         srvSideReqQueueVec      <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, FIFOF#(tReq))                                    srvSideReqQueueVec      <- replicateM(mkFIFOF);
     Vector#(channelCnt, FIFOF#(tResp))                                   srvSideRespQueueVec     <- replicateM(mkFIFOF);
 
     FIFOF#(tReq)                           cltSideReqQueue   <-  mkFIFOF;
-    PipeInAdapterB0#(tResp)                 cltSideRespQueue  <-  mkPipeInAdapterB0;
+    FIFOF#(tResp)                          cltSideRespQueue  <-  mkFIFOF;
 
     Reg#(Bool) isReqFirstBeatReg <- mkReg(True);
     Reg#(tChannelIdx) curReqChannelIdxReg <- mkRegU;
@@ -541,11 +541,11 @@ module mkServerToClientArbitFixPriorityP#(
 
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-        srvIfcVecInst[channelIdx] = toGPServerP(toPipeInB0(srvSideReqQueueVec[channelIdx]), toPipeOut(srvSideRespQueueVec[channelIdx]));
+        srvIfcVecInst[channelIdx] = toGPServerP(toPipeIn(srvSideReqQueueVec[channelIdx]), toPipeOut(srvSideRespQueueVec[channelIdx]));
     end
 
     interface srvIfcVec = srvIfcVecInst;
-    interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeInB0(cltSideRespQueue));
+    interface cltIfc = toGPClientP(toPipeOut(cltSideReqQueue), toPipeIn(cltSideRespQueue));
 endmodule
 
 

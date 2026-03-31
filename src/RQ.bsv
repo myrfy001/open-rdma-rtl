@@ -15,6 +15,7 @@ import CsrRootConnector :: *;
 import CsrAddress :: *;
 import CsrFramework :: *;
 
+import Arbitration :: *;
 import DtldStream :: *;
 import StreamDataTypes :: *;
 import BasicDataTypes :: *;
@@ -32,6 +33,7 @@ import Descriptors :: *;
 import Ringbuf :: *;
 import AutoAckGenerator :: *;
 import CnpPacketGen :: *;
+import DescriptorParsers :: *;
 
 typedef Bit#(TAdd#(1, SizeOf#(Length))) TruncatedAddrForMrBoundCheck;
 
@@ -114,7 +116,6 @@ interface RQ;
 
     interface PipeIn#(IoChannelEthDataStream) ethernetFramePipeIn;
     interface PipeOut#(DataStream) otherRawPacketPipeOut;
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
 
     interface PipeOut#(PayloadConReq) payloadConReqPipeOut;
     interface PipeOut#(DataStream) payloadConStreamPipeOut;
@@ -123,6 +124,8 @@ interface RQ;
     interface PipeOut#(RingbufRawDescriptor)    metaReportDescPipeOut;
     interface PipeOut#(AutoAckGeneratorReq)     autoAckGenReqPipeOut;
     interface PipeOut#(CnpPacketGenReq)         genCnpReqPipeOut;
+
+    interface PipeIn#(LocalNetworkSettings)             setLocalNetworkSettingsPipeIn;
 endinterface
 
 // FIXME: handle illegal packet length. don't trust length or other meta extracted from header. 
@@ -995,24 +998,173 @@ module mkRQ#(Word channelIdx)(RQ);
     interface payloadConStreamPipeOut   = toPipeOut(filteredDataStreamForConsumeQ);
     interface payloadConRespPipeIn      = toPipeIn(conRespPipeInQ);
 
-    method setLocalNetworkSettings      = packetParser.setLocalNetworkSettings; 
-
+  
     interface metaReportDescPipeOut     = toPipeOut(metaReportDescPipeOutQueue);
     interface autoAckGenReqPipeOut      = toPipeOut(autoAckGenReqPipeOutQueue);
     interface genCnpReqPipeOut          = toPipeOut(genCnpReqPipeOutQueue);
+
+    interface setLocalNetworkSettingsPipeIn = packetParser.setLocalNetworkSettingsPipeIn; 
 endmodule
 
 
 
 interface RqGroup;
-    interface Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVec;
+
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, BlueRdmaCsrUpStreamPort)   csrUpStreamPortVec;
+
+    interface ClientP#(PgtAddrTranslateReq, ADDR)  pgtQueryCltIfc;
+    interface ClientP#(ReadReqQPC, Maybe#(EntryQPC))  qpcQueryCltIfc;
+    interface ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))  mrQueryCltIfc;
+
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(IoChannelEthDataStream)) ethernetFramePipeInVec;
+
+    interface PipeOut#(RingbufRawDescriptor)      metaReportDescPipeOut;
+    interface PipeOut#(IoChannelEthDataStream)    simpleNicRxStreamPipeOut;
+
+    interface Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryWriteMasterPipe) rqDmaWriteRequestMasterIfcVec;
+
+    interface PipeIn#(LocalNetworkSettings)             setLocalNetworkSettingsPipeIn;
+
+
+    interface PipeOut#(ThinMacIpUdpMetaDataForSend) autoAckMacIpUdpMetaPipeOut;
+    interface PipeOut#(RdmaSendPacketMeta)          autoAckRdmaPacketMetaPipeOut;
+    interface PipeOut#(DataStream)                  autoAckRdmaPayloadPipeOut;
+
+    interface PipeIn#(IndexQP)                      qpResetReqPipeIn;
+
+    // WARN： CNP Packet gen's output signal is ignored since in loopback mode, there is no ECN. no make the PnR more quickly, we "remove" this module for now.
 endinterface
 
 (* synthesize *)
 module mkRqGroup(RqGroup);
-    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) inner = newVector;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, BlueRdmaCsrUpStreamPort)   csrUpStreamPortVecInst = newVector;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, ClientP#(PgtAddrTranslateReq, ADDR)) pgtQueryCltVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, ClientP#(ReadReqQPC, Maybe#(EntryQPC))) qpcQueryCltVec = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) mrQueryCltVec = newVector;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeIn#(IoChannelEthDataStream)) ethernetFramePipeInVecInst = newVector;
+
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, RQ) rqVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PayloadCon) payloadConVecInst = newVector;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, IoChannelMemoryWriteMasterPipe) rqDmaWriteRequestMasterIfcVecInst = newVector;
+
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RdmaSendPacketMeta))          rqRdmaPacketMetaPipeOutVecInst = newVector;
+    Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(DataStream))                  rqRdmaPayloadPipeOutVecInst = newVector;
+
+    DescriptorMux#(TAdd#(NUMERIC_TYPE_ONE, HARDWARE_QP_CHANNEL_CNT)) metaReportDescriptorMux <- mkDescriptorMux;
+    DtldStreamNoMetaArbiterSlave#(HARDWARE_QP_CHANNEL_CNT, DATA) simpleNicRxStreamArbiter <- mkDtldStreamNoMetaArbiterSlave(valueOf(HARDWARE_QP_CHANNEL_CNT));
+
+    SimpleRoundRobinPipeArbiter#(HARDWARE_QP_CHANNEL_CNT, AutoAckGeneratorReq) autoAckGeneratorReqArbiter <- mkSimpleRoundRobinPipeArbiter(valueOf(MULTI_CHANNEL_TO_ONE_CHANNEL_ARBITER_BUFFER_DEPTH));
+    
+    // ------------------------------------------------------------------
+    // | WARN： CNP Packet gen's output signal is ignored since in loopback mode, there is no ECN. no make the PnR more quickly, we "remove" this module for now.
+    // | TODO: mkCnpPacketGenerator should be moced to outer, since a CnpReq is much smaller than a generated packet.
+    // ------------------------------------------------------------------
+    // Vector#(HARDWARE_QP_CHANNEL_CNT, CnpPacketGenerator) cnpPacketGeneratorVec <- replicateM(mkCnpPacketGenerator);
+    
+
+    AutoAckGenerator    autoAckGenerator <- mkAutoAckGenerator;
+
+    mkConnection(autoAckGeneratorReqArbiter.pipeOut, autoAckGenerator.reqPipeIn);
+
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
-        inner[idx] <- mkRQ(fromInteger(idx));
+        rqVecInst[idx] <- mkRQ(fromInteger(idx));
+        payloadConVecInst[idx] <- mkPayloadCon(fromInteger(idx));
+
+        csrUpStreamPortVecInst[idx] = rqVecInst[idx].csrUpStreamPort;
+
+        pgtQueryCltVec[idx] = payloadConVecInst[idx].addrTranslateClt;
+        qpcQueryCltVec[idx] = rqVecInst[idx].qpcQueryClt;
+        mrQueryCltVec[idx] = rqVecInst[idx].mrTableQueryClt;
+
+        ethernetFramePipeInVecInst[idx] = rqVecInst[idx].ethernetFramePipeIn; 
+
+        mkConnection(rqVecInst[idx].payloadConReqPipeOut, payloadConVecInst[idx].conReqPipeIn);
+        mkConnection(rqVecInst[idx].payloadConRespPipeIn, payloadConVecInst[idx].conRespPipeOut);
+        mkConnection(rqVecInst[idx].payloadConStreamPipeOut, payloadConVecInst[idx].payloadConStreamPipeIn);
+
+        // meta report descriptors
+        mkConnection(rqVecInst[idx].metaReportDescPipeOut, metaReportDescriptorMux.descPipeInVec[idx]); 
+
+        // auto ack, bitmap report and CNP
+        mkConnection(rqVecInst[idx].autoAckGenReqPipeOut, autoAckGeneratorReqArbiter.pipeInVec[idx]);  // already Nr
+        // mkConnection(rqVecInst[idx].genCnpReqPipeOut, cnpPacketGeneratorVec[idx].genReqPipeIn);  // already Nr
+
+        // Simple Nic Packet input
+        mkConnection(rqVecInst[idx].otherRawPacketPipeOut, simpleNicRxStreamArbiter.pipeInIfcVec[idx]);
+
+        rqDmaWriteRequestMasterIfcVecInst[idx] = payloadConVecInst[idx].dmaWriteMasterPipe;
     end
-    interface rqVec = inner;
+
+    mkConnection(autoAckGenerator.metaReportDescPipeOut, metaReportDescriptorMux.descPipeInVec[valueOf(HARDWARE_QP_CHANNEL_CNT)]);
+
+    function Bool isReqFinishedPGT(PgtAddrTranslateReq request) = True;
+    function Bool isRespFinishedPGT(ADDR response) = True;
+    ClientP#(PgtAddrTranslateReq, ADDR)  pgtQueryArbiter <- mkClientPArbiter(
+        valueOf(NUMERIC_TYPE_TWO),
+        pgtQueryCltVec,
+        isReqFinishedPGT,
+        isRespFinishedPGT,
+        DebugConf{name: "pgtQueryArbiter", enableDebug: False}
+    );
+
+    function Bool isReqFinishedQPC(ReadReqQPC request) = True;
+    function Bool isRespFinishedQPC(Maybe#(EntryQPC) response) = True;
+    ClientP#(ReadReqQPC, Maybe#(EntryQPC))  qpcQueryArbiter <- mkClientPArbiter(
+        valueOf(NUMERIC_TYPE_TWO),
+        qpcQueryCltVec,
+        isReqFinishedQPC,
+        isRespFinishedQPC,
+        DebugConf{name: "qpcQueryArbiter", enableDebug: False}
+    );
+
+    function Bool isReqFinishedMR(MrTableQueryReq request) = True;
+    function Bool isRespFinishedMR(Maybe#(MemRegionTableEntry) response) = True;
+    ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))  mrQueryArbiter <- mkClientPArbiter(
+        valueOf(NUMERIC_TYPE_TWO),
+        mrQueryCltVec,
+        isReqFinishedMR,
+        isRespFinishedMR,
+        DebugConf{name: "mrQueryArbiter", enableDebug: False}
+    );
+
+    FIFOF#(LocalNetworkSettings) localNetworkSettingsQ <- mkFIFOF;
+
+
+    rule drainSimpleNicRxStreamArbiterSourceIdOutput;
+        simpleNicRxStreamArbiter.sourceChannelIdPipeOut.deq;
+    endrule
+
+    rule dispatchLocalNetworkSettings;
+        let settings = localNetworkSettingsQ.first;
+        localNetworkSettingsQ.deq;
+        for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin
+            rqVecInst[idx].setLocalNetworkSettingsPipeIn.enq(settings);
+        end
+    endrule
+
+    interface csrUpStreamPortVec = csrUpStreamPortVecInst;
+
+    interface pgtQueryCltIfc = pgtQueryArbiter;
+    interface qpcQueryCltIfc = qpcQueryArbiter;
+    interface mrQueryCltIfc  = mrQueryArbiter;
+
+    interface ethernetFramePipeInVec = ethernetFramePipeInVecInst;
+
+    interface metaReportDescPipeOut = metaReportDescriptorMux.descPipeOut;
+    interface simpleNicRxStreamPipeOut = simpleNicRxStreamArbiter.pipeOutIfc;
+
+    interface rqDmaWriteRequestMasterIfcVec = rqDmaWriteRequestMasterIfcVecInst;
+    interface setLocalNetworkSettingsPipeIn = toPipeIn(localNetworkSettingsQ);
+
+    interface autoAckMacIpUdpMetaPipeOut = autoAckGenerator.macIpUdpMetaPipeOut;
+    interface autoAckRdmaPacketMetaPipeOut = autoAckGenerator.rdmaPacketMetaPipeOut;
+    interface autoAckRdmaPayloadPipeOut = autoAckGenerator.rdmaPayloadPipeOut;
+
+    interface qpResetReqPipeIn = autoAckGenerator.resetReqPipeIn;
+
 endmodule

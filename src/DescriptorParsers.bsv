@@ -112,7 +112,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     
     FIFOF#(RingbufRawDescriptor) mrAndPgtReqQ                                               <- mkLFIFOF;
     FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
-    PipeInAdapterB0#(Bool) mrAndPgtRespQ                                                    <- mkPipeInAdapterB0;
+    FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkFIFOF;
 
     QueuedClientP#(WriteReqQPC, Bool) qpcUpdateCltInst <- mkQueuedClientP(DebugConf{name: "mkCommandQueueDescParserAndDispatcher qpcUpdateCltInst", enableDebug: False});
     FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
@@ -240,7 +240,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
     interface reqRawDescPipeIn = descReadProxy.rawDescPipeIn;
     interface respRawDescPipeOut = descWriteProxy.rawDescPipeOut;
 
-    interface mrAndPgtManagerClt = toGPClientP(toPipeOut(mrAndPgtReqQ), toPipeInB0(mrAndPgtRespQ));
+    interface mrAndPgtManagerClt = toGPClientP(toPipeOut(mrAndPgtReqQ), toPipeIn(mrAndPgtRespQ));
     interface qpcModifyClt = qpcUpdateCltInst.clt;
 
     interface setNetworkParamReqPipeOut = toPipeOut(setNetworkParamPipeOutQ);

@@ -787,7 +787,7 @@ interface PacketParse;
     interface PipeOut#(RdmaRecvPacketTailMeta)          rdmaPacketTailMetaPipeOut;
     interface PipeOut#(DataStream)                      rdmaPayloadPipeOut;
     interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings); 
+    interface PipeIn#(LocalNetworkSettings)             setLocalNetworkSettingsPipeIn;
 endinterface
 
 (* synthesize *)
@@ -806,7 +806,7 @@ module mkPacketParse(PacketParse);
     interface rdmaPayloadPipeOut        = rdmaHeaderExtractor.rdmaPayloadPipeOut;
     interface otherRawPacketPipeOut     = inputPacketClassifier.otherRawPacketPipeOut;
 
-    method setLocalNetworkSettings      = inputPacketClassifier.setLocalNetworkSettings; 
+    interface setLocalNetworkSettingsPipeIn = inputPacketClassifier.setLocalNetworkSettingsPipeIn;
 endmodule
 
 

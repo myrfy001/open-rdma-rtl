@@ -80,13 +80,13 @@ interface ClientF#(type tReq, type tResp);
 endinterface
 
 interface ServerP#(type tReq, type tResp);
-    interface PipeInB0#(tReq) request;
+    interface PipeIn#(tReq) request;
     interface PipeOut#(tResp) response;
 endinterface
 
 interface ClientP#(type tReq, type tResp);
     interface PipeOut#(tReq) request;
-    interface PipeInB0#(tResp) response;
+    interface PipeIn#(tResp) response;
 endinterface
 
 
@@ -103,14 +103,14 @@ instance Connectable#(ClientP#(tReq, tResp), ServerP#(tReq, tResp));
     endmodule
 endinstance
 
-function ServerP#(tReq, tResp) toGPServerP(PipeInB0#(tReq) request, PipeOut#(tResp) response);
+function ServerP#(tReq, tResp) toGPServerP(PipeIn#(tReq) request, PipeOut#(tResp) response);
     return (interface ServerP;
         interface request = request;
         interface response = response;
     endinterface);
 endfunction
 
-function ClientP#(tReq, tResp) toGPClientP(PipeOut#(tReq) request, PipeInB0#(tResp) response);
+function ClientP#(tReq, tResp) toGPClientP(PipeOut#(tReq) request, PipeIn#(tResp) response);
     return (interface ClientP;
         interface request = request;
         interface response = response;

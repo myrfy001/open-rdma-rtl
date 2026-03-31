@@ -32,7 +32,7 @@ interface InputPacketClassifier;
     interface PipeOut#(DataStream)                      rdmaRawPacketPipeOut;
     interface PipeOut#(ThinMacIpUdpMetaDataForRecv)     rdmaMacIpUdpMetaPipeOut;
     interface PipeOut#(DataStream)                      otherRawPacketPipeOut;
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
+    interface PipeIn#(LocalNetworkSettings)             setLocalNetworkSettingsPipeIn;
 endinterface
 
 
@@ -76,6 +76,8 @@ module mkInputPacketClassifier(InputPacketClassifier);
 
     FIFOF#(DataStream) waitingForRouteQ <- mkSizedFIFOF(valueOf(NUMERIC_TYPE_FOUR));
     FIFOF#(EthernetPacketMeta) ethPacketMetaQ <- mkFIFOF;   // maybe not need FIFOF
+
+    FIFOF#(LocalNetworkSettings)setLocalNetworkSettingsPipeInQ <- mkFIFOF;
 
     Reg#(EthernetPacketMetaExtractPipelineEntry) ethPacketMetaExtractPipelineEntryReg <- mkRegU;
 
@@ -386,16 +388,18 @@ module mkInputPacketClassifier(InputPacketClassifier);
     endrule
 
 
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
-        networkSettingsReg <= networkSettings;
+    rule setLocalNetworkSettings;
+        networkSettingsReg <= setLocalNetworkSettingsPipeInQ.first;
+        setLocalNetworkSettingsPipeInQ.deq;
         networkSettingsIsSetReg <= True;
-    endmethod
+    endrule
 
     interface csrUpStreamPort           = csrNode.upStreamPort;
     interface ethRawPacketPipeIn        = toPipeIn(ethRawPacketInQ);
     interface rdmaRawPacketPipeOut      = toPipeOut(rdmaRawPacketOutQ);
     interface rdmaMacIpUdpMetaPipeOut   = toPipeOut(rdmaMacIpUdpMetaOutQ);
     interface otherRawPacketPipeOut     = toPipeOut(otherRawPacketOutQ);
+    interface setLocalNetworkSettingsPipeIn = toPipeIn(setLocalNetworkSettingsPipeInQ);
 endmodule
 
 typedef TMul#(2, DATA_BUS_BYTE_WIDTH) BYTE_NUM_OF_TWO_BEATS;            // 64
@@ -663,7 +667,7 @@ interface EthernetPacketGenerator;
     interface PipeInB0#(DataStream)                     rdmaPayloadPipeIn;
     interface PipeOut#(IoChannelEthDataStream)          ethernetPacketPipeOut;
 
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
+    interface PipeIn#(LocalNetworkSettings)    setLocalNetworkSettingsPipeIn;
 endinterface
 
 typedef enum {
@@ -733,6 +737,8 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
     FIFOF#(IoChannelEthDataStream) ethernetPacketPipeOutQ <- mkFIFOF;
 
     FIFOF#(IpHeader) ipHeaderForChecksumCalcQ <- mkFIFOF;
+
+    FIFOF#(LocalNetworkSettings)setLocalNetworkSettingsPipeInQ <- mkFIFOF;
 
     // Pipeline FIFOs and Regs
     FIFOF#(IpHeaderChecksumCalcPipelineEntry) ipHeaderChecksumCalcPipelineQ <- mkSizedFIFOF(3);
@@ -1049,13 +1055,16 @@ module mkEthernetPacketGenerator(EthernetPacketGenerator);
         end
     endrule
 
-    method Action setLocalNetworkSettings(LocalNetworkSettings networkSettings);
-        networkSettingsReg <= tagged Valid networkSettings;
-    endmethod
+    rule setLocalNetworkSettings;
+        networkSettingsReg <= tagged Valid setLocalNetworkSettingsPipeInQ.first;
+        setLocalNetworkSettingsPipeInQ.deq;
+    endrule
 
     interface csrUpStreamPort       = csrNode.upStreamPort;
     interface macIpUdpMetaPipeIn    = toPipeInB0(macIpUdpMetaPipeInQ);
     interface rdmaPacketMetaPipeIn  = toPipeInB0(rdmaPacketMetaPipeInQ);
     interface rdmaPayloadPipeIn     = toPipeInB0(rdmaPayloadPipeInQ);
     interface ethernetPacketPipeOut = toPipeOut(ethernetPacketPipeOutQ);
+
+    interface setLocalNetworkSettingsPipeIn = toPipeIn(setLocalNetworkSettingsPipeInQ);
 endmodule

@@ -184,9 +184,9 @@ verilog: compile
 	mkdir -p $(DIR_BSV_GENERATED)
 	bsc $(VERILOGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(TRANSFLAGS) -g $(BSV_TOP_MODULE) $(TARGETFILE)
 	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(BSV_TOP_MODULE) $(BSV_TOP_MODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)
-	python ./reset_tree_wrapper.py ./verilog/mkSqGroup.v
-	python ./reset_tree_wrapper.py ./verilog/mkRqGroup.v
-	python ./reset_tree_wrapper.py ./verilog/mkBsvTopOnlyHardIp.v
+	python3 ./reset_tree_wrapper.py ./verilog/mkSqGroup.v
+	python3 ./reset_tree_wrapper.py ./verilog/mkRqGroup.v
+	python3 ./reset_tree_wrapper.py ./verilog/mkBsvTopOnlyHardIp.v
 
 vivado:
 	cd vivado && \

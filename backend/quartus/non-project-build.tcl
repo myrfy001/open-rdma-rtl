@@ -140,7 +140,11 @@ if {$project_already_exists} {
 	set_global_assignment -name PWRMGT_VOLTAGE_OUTPUT_FORMAT "LINEAR FORMAT"
 	set_global_assignment -name PWRMGT_LINEAR_FORMAT_N "-12"
 	set_global_assignment -name POWER_APPLY_THERMAL_MARGIN ADDITIONAL
-	set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT WITH MAXIMUM PLACEMENT EFFORT"
+
+	# The following two lines set a non-builtin optimization mode, which balance compile time and performance. You can try other optimization modes if you want, but the compile time may increase a lot.
+	set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
+	set_global_assignment -name GLOBAL_PLACEMENT_EFFORT "HIGH EFFORT"
+
 	set_global_assignment -name BOARD default
 
 	# important, power mgt and flash related. will turn your card into dead brick if not correct.

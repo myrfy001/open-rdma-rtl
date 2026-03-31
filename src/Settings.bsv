@@ -19,7 +19,7 @@ typedef 1024                MAX_QP;
 typedef 32                  MAX_QP_WR;
 typedef 8                   MAX_CQ;
 typedef MAX_QP_WR           MAX_CQE;
-typedef 64                  MAX_MR;
+typedef 8192                MAX_MR;
 typedef 128                 MAX_PD;
 typedef TDiv#(MAX_QP_WR, 2) MAX_QP_RD_ATOM;
 typedef TDiv#(MAX_QP_WR, 2) MAX_QP_DST_RD_ATOM;
