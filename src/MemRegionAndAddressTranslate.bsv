@@ -42,7 +42,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
 );
 
 
-    Vector#(TExp#(splitCntExp), AutoInferBram#(subAddrType, dataType)) subBramVec <- replicateM(mkAutoInferBramUG(False, "", "mkBramCache subBramVec"));
+    Vector#(TExp#(splitCntExp), AutoInferBramQueuedOutput#(subAddrType, dataType)) subBramVec <- replicateM(mkAutoInferBramQueuedOutput(False, "", "mkBramCache subBramVec"));
 
     FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
 
@@ -67,7 +67,8 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     rule handleBramReadResp;
         let subIdx = orderKeepQueuePortA.first;
         orderKeepQueuePortA.deq;
-        let readRespData <- subBramVec[subIdx].getReadResp;
+        let readRespData = subBramVec[subIdx].readRespPipeOut.first;
+        subBramVec[subIdx].readRespPipeOut.deq;
         bramReadRespQ.enq(readRespData);
         // $display("recv BRAM read resp from sub block=", fshow(subIdx) , ", res=", fshow(readRespData));
     endrule

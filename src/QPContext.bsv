@@ -27,7 +27,7 @@ module mkQpContext(QpContext);
     QueuedServerP#(ReadReqQPC, Maybe#(EntryQPC)) qpcQuerySrvInst <- mkQueuedServerP(DebugConf{name: "qpcQuerySrvInst", enableDebug: False});
     QueuedServerP#(WriteReqQPC, Bool) qpcUpdateSrvInst <- mkQueuedServerP(DebugConf{name: "qpcUpdateSrvInst", enableDebug: False});
 
-    AutoInferBram#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramUG(False, "", "qpcEntryCommonStorage");
+    AutoInferBramQueuedOutput#(IndexQP, Maybe#(EntryQPC)) qpcEntryCommonStorage <- mkAutoInferBramQueuedOutput(False, "", "qpcEntryCommonStorage");
 
     FIFOF#(Tuple3#(IndexQP, KeyQP, Bool)) pipeQ <- mkLFIFOF;
 
@@ -42,7 +42,8 @@ module mkQpContext(QpContext);
     rule handleReadResp;
         let {idx, key, needCheckKey} = pipeQ.first;
         pipeQ.deq;
-        let qpcEntryMaybe <- qpcEntryCommonStorage.getReadResp;
+        let qpcEntryMaybe = qpcEntryCommonStorage.readRespPipeOut.first;
+        qpcEntryCommonStorage.readRespPipeOut.deq;
 
         if (qpcEntryMaybe matches tagged Valid .resp) begin
             if (needCheckKey) begin
