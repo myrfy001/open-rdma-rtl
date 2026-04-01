@@ -697,10 +697,10 @@ endmodule
 
 
 interface MultiBeatRoundRobinPipeArbiter#(type channelCnt, type tReq, type tResp);
-    interface Vector#(channelCnt, PipeInB0#(tReq)) reqPipeInVec;
+    interface Vector#(channelCnt, PipeIn#(tReq)) reqPipeInVec;
     interface PipeOut#(tReq) reqPipeOut;
 
-    interface PipeInB0#(tResp) respPipeIn;
+    interface PipeIn#(tResp) respPipeIn;
     interface Vector#(channelCnt, PipeOut#(tResp)) respPipeOutVec;
 
     interface PipeOut#(Bit#(TLog#(channelCnt))) channelIdxPipeOut;
@@ -723,12 +723,12 @@ module mkMultiBeatRoundRobinPipeArbiter#(
         FShow#(tResp)
     );
 
-    Vector#(channelCnt, PipeInB0#(tReq))  reqPipeInVecInst    = newVector;
-    PipeInAdapterB0#(tResp)               respPipeInQueue     <-  mkPipeInAdapterB0;
+    Vector#(channelCnt, PipeIn#(tReq))  reqPipeInVecInst    = newVector;
+    FIFOF#(tResp)               respPipeInQueue     <-  mkFIFOF;
     Vector#(channelCnt, PipeOut#(tResp))  respPipeOutVecInst  = newVector;
     
     
-    Vector#(channelCnt, PipeInAdapterB0#(tReq)) reqPipeInQueueVec   <- replicateM(mkPipeInAdapterB0);
+    Vector#(channelCnt, FIFOF#(tReq)) reqPipeInQueueVec   <- replicateM(mkFIFOF);
     Vector#(channelCnt, FIFOF#(tResp))          respPipeOutQueueVec <- replicateM(mkFIFOF);
 
     FIFOF#(tReq)                                reqPipeOutQueue     <- mkSizedFIFOF(bufferDepth);
@@ -739,7 +739,7 @@ module mkMultiBeatRoundRobinPipeArbiter#(
     FIFOF#(tChannelIdx) channelIdxPipeOutQueue  <- mkSizedFIFOFWithFullAssert(bufferDepth, concatDebugName (dbgConf, "mkMultiBeatRoundRobinPipeArbiter channelIdxPipeOutQueue"));
 
     for (Integer channelIdx = 0; channelIdx < valueOf(channelCnt); channelIdx = channelIdx + 1) begin
-        reqPipeInVecInst[channelIdx] = reqPipeInQueueVec[channelIdx].pipeInIfc;
+        reqPipeInVecInst[channelIdx] = toPipeIn(reqPipeInQueueVec[channelIdx]);
         respPipeOutVecInst[channelIdx] = toPipeOut(respPipeOutQueueVec[channelIdx]);
     end
 
@@ -823,7 +823,7 @@ module mkMultiBeatRoundRobinPipeArbiter#(
     interface reqPipeInVec = reqPipeInVecInst;
     interface reqPipeOut = toPipeOut(reqPipeOutQueue);
 
-    interface respPipeIn = toPipeInB0(respPipeInQueue);
+    interface respPipeIn = toPipeIn(respPipeInQueue);
     interface respPipeOutVec = respPipeOutVecInst;
 
     interface channelIdxPipeOut = toPipeOut(channelIdxPipeOutQueue);

@@ -249,7 +249,7 @@ module mkCommandQueueDescParserAndDispatcher(CommandQueueDescParserAndDispatcher
 endmodule
 
 interface DescriptorMux#(numeric type nChannelCnt);
-    interface Vector#(nChannelCnt, PipeInB0#(RingbufRawDescriptor)) descPipeInVec;
+    interface Vector#(nChannelCnt, PipeIn#(RingbufRawDescriptor)) descPipeInVec;
     interface PipeOut#(RingbufRawDescriptor) descPipeOut;
 endinterface
 
