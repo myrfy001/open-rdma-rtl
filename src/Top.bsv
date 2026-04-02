@@ -59,11 +59,12 @@ endinterface
 
 module mkBsvTop#(
         Clock ftileClk,
-        Reset ftileRst
+        Reset ftileRst,
+        Reset partitionReset
     )(BsvTop);
 
     BsvTopOnlyHardIp            bsvTopOnlyHardIp            <- mkBsvTopOnlyHardIp(ftileClk, ftileRst);
-    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance;
+    BsvTopWithoutHardIpInstance bsvTopWithoutHardIpInstance <- mkBsvTopWithoutHardIpInstance(partitionReset);
 
 
     mkConnection(bsvTopOnlyHardIp.rtilepcieStreamMasterIfc, bsvTopWithoutHardIpInstance.dmaSlavePipeIfc);
@@ -202,8 +203,8 @@ endinterface
 
 
 (* synthesize *)
-module mkBsvTopWithoutHardIpInstance(BsvTopWithoutHardIpInstance);
-    let qpMrPgtQpc <- mkQpMrPgtQpc;
+module mkBsvTopWithoutHardIpInstance#(Reset partitionReset)(BsvTopWithoutHardIpInstance);
+    let qpMrPgtQpc <- mkQpMrPgtQpc(partitionReset);
     let ringbufAndDescriptorHandler <- mkRingbufAndDescriptorHandler;
     mkConnection(ringbufAndDescriptorHandler.wqePipeOut, qpMrPgtQpc.wqePipeIn);  // already Nr
 
@@ -326,8 +327,8 @@ module mkRingbufAndDescriptorHandler(RingbufAndDescriptorHandler);
     mkConnection(cmdRespQueueRingbuf.dmaWriteRespPipeIn, cmdQueueRingbufDmaIfcConvertor.dmaWriteRespPipeOut);
 
 
-    RingbufH2cSlot4096 simpleNicTxQueueRingbuf <- mkRingbufH2c(4);
-    RingbufC2hSlot4096 simpleNicRxQueueRingbuf <- mkRingbufC2h(4);
+    RingbufH2cSlot4096 simpleNicTxQueueRingbuf <- mkRingbufH2c(5);
+    RingbufC2hSlot4096 simpleNicRxQueueRingbuf <- mkRingbufC2h(5);
     RingbufDmaIfcConvertor simpleNicRingbufDmaIfcConvertor <- mkRingbufDmaIfcConvertor;
 
     mkConnection(simpleNicTxQueueRingbuf.dmaReadReqPipeOut, simpleNicRingbufDmaIfcConvertor.dmaReadReqPipeIn);      // already Nr
@@ -802,7 +803,7 @@ endinterface
 
 
 (* synthesize *)
-module mkQpMrPgtQpc(QpMrPgtQpc);
+module mkQpMrPgtQpc#(Reset partitionReset)(QpMrPgtQpc);
     FIFOF#(WriteReqQPC) qpContextUpdateReqQueue <- mkFIFOF;
     FIFOF#(Bool) qpContextUpdateRespQueue <- mkLFIFOF;
     Vector#(HARDWARE_QP_CHANNEL_CNT, PipeOut#(RingbufRawDescriptor)) metaReportDescPipeOutVecInst = newVector;

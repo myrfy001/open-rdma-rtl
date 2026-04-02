@@ -179,6 +179,15 @@ class TB(object):
 
     async def gen_reset(self):
         self.resetn.value = 0
+        if hasattr(self.dut, "RST_N_partitionReset"):
+            self.dut.RST_N_partitionReset.value = 0
+            self.log.info("also assert RST_N_partitionReset")
+        await RisingEdge(self.clock)
+        await RisingEdge(self.clock)
+        await RisingEdge(self.clock)
+        if hasattr(self.dut, "RST_N_partitionReset"):
+            self.dut.RST_N_partitionReset.value = 1
+            self.log.info("also release RST_N_partitionReset")
         await RisingEdge(self.clock)
         await RisingEdge(self.clock)
         await RisingEdge(self.clock)

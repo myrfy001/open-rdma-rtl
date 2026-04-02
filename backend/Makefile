@@ -187,6 +187,7 @@ verilog: compile
 	python3 ./reset_tree_wrapper.py ./verilog/mkSqGroup.v
 	python3 ./reset_tree_wrapper.py ./verilog/mkRqGroup.v
 	python3 ./reset_tree_wrapper.py ./verilog/mkBsvTopOnlyHardIp.v
+	python3 ./apply_reset_signal_patch.py ./verilog
 
 vivado:
 	cd vivado && \
