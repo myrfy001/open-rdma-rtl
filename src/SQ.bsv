@@ -25,6 +25,50 @@ import IoChannels :: *;
 import Arbitration :: *;
 import FullyPipelineChecker :: *;
 
+
+
+
+interface WqePipeDispatcher#(type nChannel);
+    interface PipeIn#(WorkQueueElem)                     pipeIn;
+    interface Vector#(nChannel, PipeOut#(WorkQueueElem)) pipeOutVec;
+endinterface
+
+
+module mkWqePipeDispatcher#(Integer bufferDepth)(WqePipeDispatcher#(nChannel)) provisos (
+        Add#(a__, TLog#(nChannel), QPN_WIDTH)
+    );
+    Vector#(nChannel, PipeOut#(WorkQueueElem)) pipeOutVecInst = newVector;
+    
+    Vector#(nChannel, FIFOF#(WorkQueueElem)) pipeOutQueueVec <- replicateM(mkFIFOF);
+
+    
+    FIFOF#(WorkQueueElem) pipeInQueue <- mkSizedFIFOF(bufferDepth);
+
+
+    for (Integer channelIdx = 0; channelIdx < valueOf(nChannel); channelIdx = channelIdx + 1) begin
+        pipeOutVecInst[channelIdx] = toPipeOut(pipeOutQueueVec[channelIdx]);
+    end
+
+
+    rule recvArbitResp;
+        let wqe = pipeInQueue.first;
+        pipeInQueue.deq;
+        Bit#(TLog#(nChannel)) curChannelIdx = truncate(wqe.sqpn);
+        pipeOutQueueVec[curChannelIdx].enq(wqe);
+    endrule
+
+
+
+    interface pipeIn            = toPipeIn(pipeInQueue);
+    interface pipeOutVec        = pipeOutVecInst;
+endmodule
+
+
+
+
+
+
+
 interface SQ;
     interface PipeInB0#(WorkQueueElem) wqePipeIn;
 
@@ -88,7 +132,7 @@ module mkSqGroup(SqGroup);
     Vector#(HARDWARE_QP_CHANNEL_CNT, ClientP#(PgtAddrTranslateReq, ADDR)) pgtQueryCltVec = newVector;
     Vector#(HARDWARE_QP_CHANNEL_CNT, ClientP#(MrTableQueryReq, Maybe#(MemRegionTableEntry))) mrQueryCltVec = newVector;
 
-    SimpleRoundRobinPipeDispatcher#(HARDWARE_QP_CHANNEL_CNT, WorkQueueElem) wqeDispatcher <- mkSimpleRoundRobinPipeDispatcher(valueOf(NUMERIC_TYPE_SIXTEEN));
+    WqePipeDispatcher#(HARDWARE_QP_CHANNEL_CNT) wqeDispatcher <- mkWqePipeDispatcher(valueOf(NUMERIC_TYPE_SIXTEEN));
 
     
     for (Integer idx = 0; idx < valueOf(HARDWARE_QP_CHANNEL_CNT); idx = idx + 1) begin

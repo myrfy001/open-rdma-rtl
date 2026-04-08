@@ -164,7 +164,7 @@ module mkRQ#(Word channelIdx)(RQ);
     ) metaReportMimoQueue <- mkMIMO(mimoCfg);
 
     // Pipeline Queues
-    FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkSizedFIFOF(4);
+    FIFOF#(CheckQpcAndMrTablePipelineEntry) checkQpcAndMrTablePipeQ <- mkSizedFIFOF(16);
     FIFOF#(CheckMrTableStep2PipelineEntry) checkMrTableStep2PipeQ <- mkSizedFIFOF(2);
     FIFOF#(CheckMrTableStep3PipelineEntry) checkMrTableStep3PipeQ <- mkSizedFIFOF(2);
     FIFOF#(IssuePayloadConReqOrDiscardPipelineEntry) issuePayloadConReqOrDiscardPipeQ <- mkSizedFIFOF(2);
